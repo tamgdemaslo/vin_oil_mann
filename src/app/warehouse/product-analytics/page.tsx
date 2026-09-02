@@ -12,7 +12,7 @@ export default async function WarehouseProductAnalyticsPage() {
       <main className="eco-page eco-page--wide">
         <section className="eco-card eco-card--padded">
           <p className="eco-page-kicker">Склад</p>
-          <h1 className="eco-page-title">Аналитика товаров</h1>
+          <h1 className="eco-page-title">Аналитика</h1>
           <p className="eco-page-subtitle">Для просмотра нужен доступ warehouse.analytics.view.</p>
         </section>
       </main>

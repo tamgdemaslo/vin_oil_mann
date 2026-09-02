@@ -88,6 +88,7 @@ model Branch {
   clientVehicles         ClientVehicle[]
   bookings               Booking[]
   bookingServiceItems    BookingServiceItem[]
+  salesPlans             BranchSalesPlan[]
 
   @@unique([businessGroupId, slug])
   @@index([businessGroupId, status])
@@ -303,20 +304,102 @@ model PieceworkRule {
 model LocalCatalogGroup {
   id             String   @id
   branchId       String   @default("branch-main") @map("branch_id")
-  kind           String   // product | service
+  kind           String // product | service
   name           String
   normalizedName String   @map("normalized_name")
   archived       Boolean  @default(false)
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  products          LocalProduct[]       @relation("CatalogGroupProducts")
-  demandPositions   LocalDemandPosition[] @relation("CatalogGroupDemandPositions")
+  products        LocalProduct[]        @relation("CatalogGroupProducts")
+  demandPositions LocalDemandPosition[] @relation("CatalogGroupDemandPositions")
 
   @@unique([branchId, id])
   @@unique([branchId, kind, normalizedName])
   @@index([branchId, kind, archived])
   @@map("local_catalog_groups")
+}
+
+/// Расширяемый канонический справочник товарных категорий и сервисных операций.
+/// Коды глобальны: филиальные различия хранятся в SalesAnalyticsMapping.
+model SalesAnalyticsMetric {
+  code         String   @id
+  type         String // PRODUCT_CATEGORY | SERVICE_OPERATION
+  title        String
+  unit         String // PCS | LITER | OPERATION
+  active       Boolean  @default(true)
+  sortOrder    Int      @default(0) @map("sort_order")
+  parentCode   String?  @map("parent_code")
+  settingsJson Json?    @map("settings_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  mappings SalesAnalyticsMapping[]
+  plans    BranchSalesPlan[]
+
+  @@index([type, active, sortOrder])
+  @@map("sales_analytics_metrics")
+}
+
+/// Месячный план филиала по одной канонической товарной категории или
+/// варианту сервисной операции. История изменений сохраняется версиями в
+/// BranchAuditLog; текущая запись определяется уникальным rowKey.
+model BranchSalesPlan {
+  id                              String               @id @default(cuid())
+  businessGroupId                 String               @map("business_group_id")
+  branchId                        String               @map("branch_id")
+  branch                          Branch               @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  month                           String // YYYY-MM
+  rowKey                          String               @map("row_key")
+  metricCode                      String               @map("metric_code")
+  metric                          SalesAnalyticsMetric @relation(fields: [metricCode], references: [code], onDelete: Restrict, onUpdate: Cascade)
+  aggregateType                   String?              @map("aggregate_type")
+  procedure                       String?
+  configuration                   String?
+  targetCount                     Decimal              @map("target_count") @db.Decimal(14, 3)
+  targetRevenueCents              Int?                 @map("target_revenue_cents")
+  targetGrossProfitCents          Int?                 @map("target_gross_profit_cents")
+  targetAttachRateBasisPoints     Int?                 @map("target_attach_rate_basis_points")
+  expectedRevenuePerUnitCents     Int?                 @map("expected_revenue_per_unit_cents")
+  expectedGrossProfitPerUnitCents Int?                 @map("expected_gross_profit_per_unit_cents")
+  note                            String?              @db.Text
+  version                         Int                  @default(1)
+  createdById                     String?              @map("created_by_id")
+  updatedById                     String?              @map("updated_by_id")
+  createdAt                       DateTime             @default(now()) @map("created_at")
+  updatedAt                       DateTime             @updatedAt @map("updated_at")
+
+  @@unique([branchId, month, rowKey])
+  @@index([businessGroupId, month])
+  @@index([branchId, month, metricCode])
+  @@map("branch_sales_plans")
+}
+
+/// Подтверждённое соответствие устойчивого источника канонической метрике.
+/// Одна активная запись на источник; версия и BranchAuditLog сохраняют историю изменения.
+model SalesAnalyticsMapping {
+  id              String               @id @default(cuid())
+  businessGroupId String               @map("business_group_id")
+  branchId        String               @default("branch-main") @map("branch_id")
+  sourceType      String               @map("source_type") // CATALOG_GROUP | CATALOG_ITEM | LEGACY_NAME
+  sourceId        String               @map("source_id")
+  metricCode      String               @map("metric_code")
+  metric          SalesAnalyticsMetric @relation(fields: [metricCode], references: [code], onDelete: Restrict, onUpdate: Cascade)
+  matchMethod     String               @map("match_method") // ID | GROUP | VERIFIED_LEGACY | MANUAL
+  aggregateType   String?              @map("aggregate_type")
+  procedure       String?
+  configuration   String?
+  version         Int                  @default(1)
+  active          Boolean              @default(true)
+  confirmedById   String?              @map("confirmed_by_id")
+  confirmedAt     DateTime?            @map("confirmed_at")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+
+  @@unique([branchId, sourceType, sourceId])
+  @@index([businessGroupId, branchId, active])
+  @@index([branchId, metricCode])
+  @@map("sales_analytics_mappings")
 }
 
 model BonusPenalty {
@@ -3047,7 +3130,7 @@ model StorageCell {
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
-  assignments      ProductStorageAssignment[]
+  assignments       ProductStorageAssignment[]
   documentPositions LocalInventoryDocumentPosition[]
 
   @@unique([branchId, id])
@@ -3764,28 +3847,39 @@ model ClosingDocumentNumberSequence {
 
 /// Позиции локальной отгрузки.
 model LocalDemandPosition {
-  branchId             String        @default("branch-main") @map("branch_id")
-  id                   String        @id @default(cuid())
-  demandId             String        @map("demand_id")
-  demand               LocalDemand   @relation(fields: [branchId, demandId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
-  productId            String?       @map("product_id")
-  product              LocalProduct? @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
-  groupIdSnapshot      String?       @map("group_id_snapshot")
-  groupSnapshot        LocalCatalogGroup? @relation("CatalogGroupDemandPositions", fields: [branchId, groupIdSnapshot], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
-  assortmentType       String        @map("assortment_type")
-  name                 String
-  quantity             Decimal       @default(0) @db.Decimal(14, 3)
-  priceCentsPerUnit    Int           @default(0) @map("price_cents_per_unit")
-  discount             Decimal       @default(0) @db.Decimal(7, 3)
-  vat                  Int           @default(0)
-  vatEnabled           Boolean       @default(false) @map("vat_enabled")
-  buyPriceCentsPerUnit Int?          @map("buy_price_cents_per_unit")
-  slotName             String?       @map("slot_name")
-  raw                  Json?
+  branchId                String             @default("branch-main") @map("branch_id")
+  id                      String             @id @default(cuid())
+  demandId                String             @map("demand_id")
+  demand                  LocalDemand        @relation(fields: [branchId, demandId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
+  productId               String?            @map("product_id")
+  product                 LocalProduct?      @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  groupIdSnapshot         String?            @map("group_id_snapshot")
+  groupSnapshot           LocalCatalogGroup? @relation("CatalogGroupDemandPositions", fields: [branchId, groupIdSnapshot], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  assortmentType          String             @map("assortment_type")
+  name                    String
+  quantity                Decimal            @default(0) @db.Decimal(14, 3)
+  priceCentsPerUnit       Int                @default(0) @map("price_cents_per_unit")
+  discount                Decimal            @default(0) @db.Decimal(7, 3)
+  vat                     Int                @default(0)
+  vatEnabled              Boolean            @default(false) @map("vat_enabled")
+  buyPriceCentsPerUnit    Int?               @map("buy_price_cents_per_unit")
+  slotName                String?            @map("slot_name")
+  analyticsMetricCode     String?            @map("analytics_metric_code")
+  analyticsCategoryLabel  String?            @map("analytics_category_label")
+  analyticsMatchMethod    String?            @map("analytics_match_method")
+  analyticsMappingVersion Int?               @map("analytics_mapping_version")
+  serviceAggregateType    String?            @map("service_aggregate_type")
+  serviceProcedure        String?            @map("service_procedure")
+  serviceConfiguration    String?            @map("service_configuration")
+  analyticsBaseQuantity   Decimal?           @map("analytics_base_quantity") @db.Decimal(14, 3)
+  analyticsBaseUnit       String?            @map("analytics_base_unit")
+  raw                     Json?
 
   @@index([demandId])
   @@index([productId])
   @@index([branchId, groupIdSnapshot])
+  @@index([branchId, analyticsMetricCode])
+  @@index([branchId, demandId, analyticsMetricCode])
   @@index([branchId])
   @@map("local_demand_positions")
 }

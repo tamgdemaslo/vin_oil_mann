@@ -66,6 +66,7 @@
     "test:inventory-document-branch-isolation": "node scripts/test-inventory-document-branch-isolation.mjs",
     "test:inventory-costing": "node scripts/test-inventory-costing.mjs",
     "test:one-off-product": "node scripts/test-one-off-product.mjs",
+    "test:sales-performance": "node scripts/test-sales-performance.mjs",
     "test:inventory-costing-contract": "node scripts/test-inventory-costing-contract.mjs",
     "test:warehouse-branch-management": "node scripts/test-warehouse-branch-management.mjs",
     "audit:inventory-branch-isolation": "node scripts/audit-inventory-branch-isolation.mjs",

@@ -1,5 +1,6 @@
 import type { LocalEntityMeta } from "@/lib/local-entity-meta";
 import type { NonstockProductInput } from "@/lib/one-off-product";
+import type { OneOffServiceInput } from "@/lib/one-off-service";
 
 export type DemandDetailHeader = {
   id: string;
@@ -39,7 +40,7 @@ export type DemandDetailPosition = {
     available?: number;
   };
   assortmentMeta?: LocalEntityMeta;
-  lineKind?: "nonstock_product";
+  lineKind?: "nonstock_product" | "one_off_service";
   oneOffProduct?: NonstockProductInput & {
     groupLabel?: string;
     brandCanonical?: string;
@@ -50,6 +51,7 @@ export type DemandDetailPosition = {
     costSource?: string;
     catalogMatchProductId?: string | null;
   };
+  oneOffService?: OneOffServiceInput;
   comment?: string;
   product?: {
     id: string;

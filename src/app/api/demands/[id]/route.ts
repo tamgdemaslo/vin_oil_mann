@@ -7,6 +7,7 @@ import {
 } from "@/lib/local-demand-write";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import type { NonstockProductInput } from "@/lib/one-off-product";
+import type { OneOffServiceInput } from "@/lib/one-off-service";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -29,6 +30,7 @@ type UpdateBody = {
     assortment?: { meta: Meta };
     lineKind?: "catalog" | "one_off_service" | "nonstock_product";
     oneOffProduct?: NonstockProductInput;
+    oneOffService?: OneOffServiceInput;
     copyMeta?: unknown;
   }[];
 };

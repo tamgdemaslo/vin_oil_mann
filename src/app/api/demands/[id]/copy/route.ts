@@ -198,6 +198,29 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           },
         };
       }
+      if (position.lineKind === "one_off_service" && position.oneOffService) {
+        return {
+          name: position.name,
+          assortment: { meta: { href: `local://manual-service/${crypto.randomUUID()}`, type: "service", mediaType: "application/json" } },
+          quantity,
+          price: originalPriceCents / 100,
+          discount,
+          vat: 0,
+          vatEnabled: false,
+          lineKind: "one_off_service",
+          oneOffService: position.oneOffService,
+          copyMeta: {
+            source: "shipment-copy",
+            status: "linked",
+            message: "Структурированная категория разовой услуги сохранена.",
+            originalName: position.name,
+            originalPriceCents,
+            currentPriceCents: originalPriceCents,
+            priceUpdated: false,
+            productId: null,
+          },
+        };
+      }
       const assortmentId = extractLocalEntityId(position.assortmentMeta?.href);
       const byId = assortmentId ? productById.get(assortmentId) : undefined;
       const exactByName = productsByName.get(normalizeLookup(position.name)) ?? [];

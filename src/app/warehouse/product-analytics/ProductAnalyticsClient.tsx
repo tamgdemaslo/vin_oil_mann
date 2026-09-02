@@ -23,9 +23,11 @@ import type {
   WarehouseAnalyticsTable,
   WarehouseProductAnalytics,
 } from "@/lib/warehouse-product-analytics";
+import SalesPerformancePanel from "./SalesPerformancePanel";
 
 type AnalyticsTab =
   | "overview"
+  | "sales-plan"
   | "top"
   | "margins"
   | "dead"
@@ -89,6 +91,7 @@ const defaultFilters: Filters = {
 
 const tabs: Array<{ id: AnalyticsTab; label: string; count?: (data: WarehouseProductAnalytics) => number }> = [
   { id: "overview", label: "Обзор" },
+  { id: "sales-plan", label: "Продажи и план" },
   { id: "top", label: "Лидеры продаж", count: (data) => data.topProducts.length },
   { id: "margins", label: "Маржинальность", count: (data) => data.margins.length },
   { id: "dead", label: "Залежавшиеся", count: (data) => data.deadStock.length },
@@ -502,23 +505,25 @@ export default function ProductAnalyticsClient() {
       <header className="eco-page-head eco-pa-head">
         <div>
           <p className="eco-page-kicker">Склад</p>
-          <h1 className="eco-page-title">Аналитика товаров</h1>
-          <p className="eco-page-subtitle">Продажи, маржа, остатки, дефицит, качество карточек и стартовый склад для новой точки.</p>
+          <h1 className="eco-page-title">Аналитика</h1>
+          <p className="eco-page-subtitle">Товары, складские KPI, фактические продажи и выполненные услуги.</p>
         </div>
-        <div className="eco-actions">
-          {data && <EcoBadge tone="info">Обновлено {formatServiceDateTime(data.calculatedAt)}</EcoBadge>}
-          <button type="button" className="eco-btn" onClick={() => void load(filters, true)} disabled={loading}>
-            <RefreshCw className={`eco-icon ${loading ? "is-spin" : ""}`} aria-hidden />
-            Пересчитать
-          </button>
-          <button type="button" className="eco-btn eco-btn--primary" onClick={() => exportTable()} disabled={!data}>
-            <Download className="eco-icon" aria-hidden />
-            CSV
-          </button>
-        </div>
+        {activeTab !== "sales-plan" ? (
+          <div className="eco-actions">
+            {data && <EcoBadge tone="info">Обновлено {formatServiceDateTime(data.calculatedAt)}</EcoBadge>}
+            <button type="button" className="eco-btn" onClick={() => void load(filters, true)} disabled={loading}>
+              <RefreshCw className={`eco-icon ${loading ? "is-spin" : ""}`} aria-hidden />
+              Пересчитать
+            </button>
+            <button type="button" className="eco-btn eco-btn--primary" onClick={() => exportTable()} disabled={!data}>
+              <Download className="eco-icon" aria-hidden />
+              CSV
+            </button>
+          </div>
+        ) : null}
       </header>
 
-      <form className="eco-card eco-card--padded eco-pa-filters" onSubmit={submitFilters}>
+      {activeTab !== "sales-plan" ? <form className="eco-card eco-card--padded eco-pa-filters" onSubmit={submitFilters}>
         <div className="eco-pa-filter-head">
           <SlidersHorizontal className="eco-icon" aria-hidden />
           <strong>Фильтры</strong>
@@ -608,16 +613,16 @@ export default function ProductAnalyticsClient() {
             Показать
           </button>
         </div>
-      </form>
+      </form> : null}
 
-      {error && (
+      {activeTab !== "sales-plan" && error && (
         <div className="eco-pa-alert">
           <AlertTriangle className="eco-icon" aria-hidden />
           <span>{error}</span>
         </div>
       )}
 
-      {actionPreview?.message && (
+      {activeTab !== "sales-plan" && actionPreview?.message && (
         <div className="eco-pa-alert is-success">
           <CheckCircle2 className="eco-icon" aria-hidden />
           <span>{actionPreview.message}</span>
@@ -637,6 +642,8 @@ export default function ProductAnalyticsClient() {
               </button>
             ))}
           </nav>
+
+          {activeTab === "sales-plan" && <SalesPerformancePanel />}
 
           {activeTab === "overview" && (
             <div className="eco-pa-stack">

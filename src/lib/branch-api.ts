@@ -25,6 +25,25 @@ export function runWithBranchApiContext<T>(context: BranchContext, operation: ()
 }
 
 /**
+ * Run a mutation for one explicitly allowed branch while the UI is in the
+ * group-wide scope. Callers must still enforce their feature permission.
+ */
+export function runWithBranchApiTargetContext<T>(
+  context: BranchContext,
+  branchId: string,
+  operation: () => T,
+): T {
+  const allowed = context.branches.some((branch) => branch.id === branchId && branch.businessGroupId === context.businessGroupId);
+  if (!allowed) throw new Error("Нет доступа к выбранному филиалу");
+  return runWithRequestTenant({
+    ...requestTenantFromBranchContext(context),
+    mode: "branch",
+    branchId,
+    allowedBranchIds: [branchId],
+  }, operation);
+}
+
+/**
  * Branch ids resolved from the signed server-side branch context.  Route
  * handlers may pass these ids to read-only aggregate queries; never derive
  * this scope from a client parameter.

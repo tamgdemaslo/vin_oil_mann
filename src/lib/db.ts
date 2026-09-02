@@ -11,6 +11,7 @@ const BRANCH_SCOPED_MODELS = new Set([
   "Diagnostic", "DiagnosticPosition", "DiagnosticPhoto", "DiagnosticOffer", "DiagnosticMapSession",
   "DiagnosticMapItem", "DiagnosticMapPhoto", "DiagnosticMapVehiclePhoto",
   "DiagnosticMapRecommendationAction", "LocalStore", "LocalCatalogGroup", "LocalProduct", "LocalStockBalance",
+  "SalesAnalyticsMapping", "BranchSalesPlan",
   "StorageCell", "ProductStorageAssignment",
   "LocalCounterparty", "CashShift", "CashWithdrawal", "CashExpenseItem", "CashExpenseOrder",
   "LocalDemand", "ShipmentRevision", "NotificationTemplate", "NotificationRule", "NotificationJob",

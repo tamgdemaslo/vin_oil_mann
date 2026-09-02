@@ -42,6 +42,17 @@ import {
   type NonstockProductInput,
   type NormalizedNonstockProduct,
 } from "@/lib/one-off-product";
+import { normalizeOneOffServiceInput, type OneOffServiceInput } from "@/lib/one-off-service";
+import { invalidateSalesPerformanceAnalytics } from "@/lib/sales-performance-analytics";
+import {
+  classifySalesAnalyticsLine,
+  salesAnalyticsMappingKey,
+  type SalesAnalyticsMappingValue,
+  type SalesAnalyticsMatchMethod,
+  type SalesAnalyticsMetricDefinition,
+  type SalesAnalyticsSourceType,
+  type SalesAnalyticsUnit,
+} from "@/lib/sales-analytics-taxonomy";
 
 type LocalEntityMeta = {
   href: string;
@@ -68,6 +79,7 @@ type UpdateDemandBody = {
     assortment?: { meta: LocalEntityMeta };
     lineKind?: "catalog" | "one_off_service" | "nonstock_product";
     oneOffProduct?: NonstockProductInput;
+    oneOffService?: OneOffServiceInput;
     copyMeta?: unknown;
   }[];
 };
@@ -169,6 +181,15 @@ type ResolvedPosition = {
   vatEnabled: boolean;
   buyPriceCentsPerUnit: number | null;
   slotName: string | null;
+  analyticsMetricCode: string | null;
+  analyticsCategoryLabel: string | null;
+  analyticsMatchMethod: string | null;
+  analyticsMappingVersion: number | null;
+  serviceAggregateType: string | null;
+  serviceProcedure: string | null;
+  serviceConfiguration: string | null;
+  analyticsBaseQuantity: Prisma.Decimal | null;
+  analyticsBaseUnit: string | null;
   raw: Prisma.InputJsonValue | typeof Prisma.JsonNull;
 };
 
@@ -198,6 +219,7 @@ export function isLocalInventoryWritesEnabled(): boolean {
 
 function invalidateDemandCostConsumers() {
   invalidateWarehouseReadCaches();
+  invalidateSalesPerformanceAnalytics();
 }
 
 function toJson(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
@@ -528,6 +550,7 @@ type NonstockPositionInput = {
   assortment?: { meta: LocalEntityMeta };
   lineKind?: "catalog" | "one_off_service" | "nonstock_product";
   oneOffProduct?: NonstockProductInput;
+  oneOffService?: OneOffServiceInput;
   copyMeta?: unknown;
 };
 
@@ -653,6 +676,15 @@ async function buildNonstockResolvedPosition(
     vatEnabled: position.vatEnabled ?? false,
     buyPriceCentsPerUnit: normalized.purchasePriceCents,
     slotName: null,
+    analyticsMetricCode: null,
+    analyticsCategoryLabel: null,
+    analyticsMatchMethod: null,
+    analyticsMappingVersion: null,
+    serviceAggregateType: null,
+    serviceProcedure: null,
+    serviceConfiguration: null,
+    analyticsBaseQuantity: null,
+    analyticsBaseUnit: null,
     raw: toJson({
       lineKind: NONSTOCK_PRODUCT_LINE_KIND,
       nonStock: true,
@@ -709,6 +741,10 @@ async function resolveCreatePositions(
     const quantity = Number(position.quantity) || 0;
     const priceCents = Math.round((Number(position.price) || 0) * 100);
     const discount = typeof position.discount === "number" ? position.discount : 0;
+    if (position.lineKind === "one_off_service" && !position.oneOffService) {
+      throw new Error("Передайте структурированную категорию разовой услуги");
+    }
+    const oneOffService = position.oneOffService ? normalizeOneOffServiceInput(position.oneOffService) : null;
     return {
       productId: product?.id ?? null,
       groupIdSnapshot: product?.groupId ?? null,
@@ -725,14 +761,38 @@ async function resolveCreatePositions(
         averageCostCents: balance?.buyPriceCents,
       }).unitCostCents,
       slotName: balance?.slotName ?? product?.cell ?? null,
-      raw: toJson(position),
+      analyticsMetricCode: null,
+      analyticsCategoryLabel: null,
+      analyticsMatchMethod: null,
+      analyticsMappingVersion: null,
+      serviceAggregateType: null,
+      serviceProcedure: null,
+      serviceConfiguration: null,
+      analyticsBaseQuantity: null,
+      analyticsBaseUnit: null,
+      raw: toJson(oneOffService ? { ...position, lineKind: "one_off_service", oneOffService } : position),
     };
   }));
 }
 
 async function resolveUpdatePositions(
   positions: NonNullable<UpdateDemandBody["positions"]>,
-  existingById: Map<string, StockMovementPosition & { name: string; productId: string | null; groupIdSnapshot: string | null; buyPriceCentsPerUnit: number | null; raw: unknown }>,
+  existingById: Map<string, StockMovementPosition & {
+    name: string;
+    productId: string | null;
+    groupIdSnapshot: string | null;
+    buyPriceCentsPerUnit: number | null;
+    analyticsMetricCode: string | null;
+    analyticsCategoryLabel: string | null;
+    analyticsMatchMethod: string | null;
+    analyticsMappingVersion: number | null;
+    serviceAggregateType: string | null;
+    serviceProcedure: string | null;
+    serviceConfiguration: string | null;
+    analyticsBaseQuantity: Prisma.Decimal | null;
+    analyticsBaseUnit: string | null;
+    raw: unknown;
+  }>,
   branchId: string,
   actor?: ShipmentActor | null,
 ): Promise<ResolvedPosition[]> {
@@ -770,6 +830,10 @@ async function resolveUpdatePositions(
     const productId = product?.id ?? existing?.productId ?? null;
     const assortmentType = meta?.type ?? existing?.assortmentType ?? product?.entityType ?? "";
     const keepsExistingProduct = Boolean(existing && existing.productId === productId);
+    if (position.lineKind === "one_off_service" && !position.oneOffService) {
+      throw new Error("Передайте структурированную категорию разовой услуги");
+    }
+    const oneOffService = position.oneOffService ? normalizeOneOffServiceInput(position.oneOffService) : null;
     return {
       id: position.id,
       sourcePositionId: keepsExistingProduct ? position.id ?? null : null,
@@ -787,7 +851,16 @@ async function resolveUpdatePositions(
         ? 0
         : keepsExistingProduct ? existing?.buyPriceCentsPerUnit ?? null : null,
       slotName: null,
-      raw: toJson(position),
+      analyticsMetricCode: keepsExistingProduct ? existing?.analyticsMetricCode ?? null : null,
+      analyticsCategoryLabel: keepsExistingProduct ? existing?.analyticsCategoryLabel ?? null : null,
+      analyticsMatchMethod: keepsExistingProduct ? existing?.analyticsMatchMethod ?? null : null,
+      analyticsMappingVersion: keepsExistingProduct ? existing?.analyticsMappingVersion ?? null : null,
+      serviceAggregateType: keepsExistingProduct ? existing?.serviceAggregateType ?? null : null,
+      serviceProcedure: keepsExistingProduct ? existing?.serviceProcedure ?? null : null,
+      serviceConfiguration: keepsExistingProduct ? existing?.serviceConfiguration ?? null : null,
+      analyticsBaseQuantity: keepsExistingProduct ? existing?.analyticsBaseQuantity ?? null : null,
+      analyticsBaseUnit: keepsExistingProduct ? existing?.analyticsBaseUnit ?? null : null,
+      raw: toJson(oneOffService ? { ...position, lineKind: "one_off_service", oneOffService } : position),
     };
   }));
 }
@@ -845,6 +918,133 @@ async function freezePostingCostSnapshots(
       averageCostCents: balanceByProductId.get(position.productId)?.buyPriceCents,
     });
     return { ...position, buyPriceCentsPerUnit: averageCost };
+  });
+}
+
+function salesMetricType(value: string): "PRODUCT_CATEGORY" | "SERVICE_OPERATION" | null {
+  return value === "PRODUCT_CATEGORY" || value === "SERVICE_OPERATION" ? value : null;
+}
+
+function salesMetricUnit(value: string): SalesAnalyticsUnit | null {
+  return value === "PCS" || value === "LITER" || value === "OPERATION" ? value : null;
+}
+
+function salesMatchMethod(value: string): SalesAnalyticsMatchMethod {
+  return ["SNAPSHOT", "SAVED_CODE", "ID", "GROUP", "STRUCTURED_RAW", "VERIFIED_LEGACY", "MANUAL"].includes(value)
+    ? value as SalesAnalyticsMatchMethod
+    : "MANUAL";
+}
+
+async function freezeSalesAnalyticsSnapshots(
+  tx: Prisma.TransactionClient,
+  branchId: string,
+  positions: ResolvedPosition[],
+  options: { preserveExistingSnapshots: boolean },
+): Promise<ResolvedPosition[]> {
+  const productIds = [...new Set(positions.map((position) => position.productId).filter((id): id is string => Boolean(id)))];
+  const groupIds = [...new Set(positions.map((position) => position.groupIdSnapshot).filter((id): id is string => Boolean(id)))];
+  const [metricRows, mappingRows, products, groups] = await Promise.all([
+    tx.salesAnalyticsMetric.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }] }),
+    tx.salesAnalyticsMapping.findMany({ where: { branchId, active: true }, orderBy: [{ version: "desc" }] }),
+    productIds.length
+      ? tx.localProduct.findMany({
+          where: { branchId, id: { in: productIds } },
+          select: { id: true, entityType: true, groupId: true, groupPath: true, uomName: true },
+        })
+      : Promise.resolve([]),
+    groupIds.length
+      ? tx.localCatalogGroup.findMany({
+          where: { branchId, id: { in: groupIds } },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  const metrics = new Map<string, SalesAnalyticsMetricDefinition>();
+  for (const row of metricRows) {
+    const type = salesMetricType(row.type);
+    const unit = salesMetricUnit(row.unit);
+    if (!type || !unit) continue;
+    metrics.set(row.code, {
+      code: row.code,
+      type,
+      title: row.title,
+      unit,
+      sortOrder: row.sortOrder,
+      active: row.active,
+      parentCode: row.parentCode,
+    });
+  }
+  const mappings = new Map<string, SalesAnalyticsMappingValue>();
+  for (const row of mappingRows) {
+    mappings.set(salesAnalyticsMappingKey(row.sourceType as SalesAnalyticsSourceType, row.sourceId), {
+      metricCode: row.metricCode,
+      matchMethod: salesMatchMethod(row.matchMethod),
+      version: row.version,
+      aggregateType: row.aggregateType as SalesAnalyticsMappingValue["aggregateType"],
+      procedure: row.procedure as SalesAnalyticsMappingValue["procedure"],
+      configuration: row.configuration as SalesAnalyticsMappingValue["configuration"],
+    });
+  }
+  const productById = new Map(products.map((product) => [product.id, product] as const));
+  const groupNameById = new Map(groups.map((group) => [group.id, group.name] as const));
+
+  return positions.map((position) => {
+    const product = position.productId ? productById.get(position.productId) : null;
+    const kind: "product" | "service" = isServiceCostType(position.assortmentType) || product?.entityType === "service"
+      ? "service"
+      : "product";
+    const snapshot = options.preserveExistingSnapshots && position.analyticsMetricCode
+      ? {
+          metricCode: position.analyticsMetricCode,
+          categoryLabel: position.analyticsCategoryLabel,
+          matchMethod: position.analyticsMatchMethod,
+          mappingVersion: position.analyticsMappingVersion,
+          aggregateType: position.serviceAggregateType,
+          procedure: position.serviceProcedure,
+          configuration: position.serviceConfiguration,
+          baseQuantity: position.analyticsBaseQuantity == null ? null : decimalToNumber(position.analyticsBaseQuantity),
+          baseUnit: position.analyticsBaseUnit,
+        }
+      : null;
+    const classification = classifySalesAnalyticsLine({
+      kind,
+      productId: position.productId,
+      groupId: position.groupIdSnapshot ?? product?.groupId,
+      groupName: (position.groupIdSnapshot ? groupNameById.get(position.groupIdSnapshot) : null) ?? product?.groupPath,
+      positionName: position.name,
+      quantity: decimalToNumber(position.quantity),
+      uomName: product?.uomName,
+      raw: position.raw,
+      snapshot,
+      mappings,
+      metrics,
+    });
+    if (classification.status === "unclassified") {
+      return {
+        ...position,
+        analyticsMetricCode: null,
+        analyticsCategoryLabel: null,
+        analyticsMatchMethod: null,
+        analyticsMappingVersion: null,
+        serviceAggregateType: null,
+        serviceProcedure: null,
+        serviceConfiguration: null,
+        analyticsBaseQuantity: null,
+        analyticsBaseUnit: null,
+      };
+    }
+    return {
+      ...position,
+      analyticsMetricCode: classification.metricCode,
+      analyticsCategoryLabel: classification.metricTitle,
+      analyticsMatchMethod: classification.matchMethod,
+      analyticsMappingVersion: classification.mappingVersion,
+      serviceAggregateType: classification.aggregateType,
+      serviceProcedure: classification.procedure,
+      serviceConfiguration: classification.configuration,
+      analyticsBaseQuantity: classification.baseQuantity == null ? null : new Prisma.Decimal(classification.baseQuantity),
+      analyticsBaseUnit: classification.baseUnit,
+    };
   });
 }
 
@@ -1520,9 +1720,12 @@ export async function createLocalDemand(
   let demand: Awaited<ReturnType<typeof prisma.localDemand.create>>;
   try {
     demand = await prisma.$transaction(async (tx) => {
-      const effectivePositions = applicable
+      const costedPositions = applicable
         ? await freezePostingCostSnapshots(tx, scope.branchId, store.id, positions, { preserveExistingSnapshots: false })
         : positions;
+      const effectivePositions = applicable
+        ? await freezeSalesAnalyticsSnapshots(tx, scope.branchId, costedPositions, { preserveExistingSnapshots: false })
+        : costedPositions;
       const generatedNumber = body.name?.trim() ? null : await nextLocalDemandNameInTx(tx);
       const name = body.name?.trim() || generatedNumber?.name || "0001";
       const raw = {
@@ -1574,6 +1777,15 @@ export async function createLocalDemand(
             vatEnabled: position.vatEnabled,
             buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
             slotName: position.slotName,
+            analyticsMetricCode: position.analyticsMetricCode,
+            analyticsCategoryLabel: position.analyticsCategoryLabel,
+            analyticsMatchMethod: position.analyticsMatchMethod,
+            analyticsMappingVersion: position.analyticsMappingVersion,
+            serviceAggregateType: position.serviceAggregateType,
+            serviceProcedure: position.serviceProcedure,
+            serviceConfiguration: position.serviceConfiguration,
+            analyticsBaseQuantity: position.analyticsBaseQuantity,
+            analyticsBaseUnit: position.analyticsBaseUnit,
             raw: position.raw,
           })),
         });
@@ -1668,6 +1880,15 @@ export async function updateLocalDemand(
         quantity: position.quantity,
         name: position.name,
         buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
+        analyticsMetricCode: position.analyticsMetricCode,
+        analyticsCategoryLabel: position.analyticsCategoryLabel,
+        analyticsMatchMethod: position.analyticsMatchMethod,
+        analyticsMappingVersion: position.analyticsMappingVersion,
+        serviceAggregateType: position.serviceAggregateType,
+        serviceProcedure: position.serviceProcedure,
+        serviceConfiguration: position.serviceConfiguration,
+        analyticsBaseQuantity: position.analyticsBaseQuantity,
+        analyticsBaseUnit: position.analyticsBaseUnit,
         raw: position.raw,
       },
     ])
@@ -1690,6 +1911,15 @@ export async function updateLocalDemand(
         vatEnabled: position.vatEnabled,
         buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
         slotName: position.slotName,
+        analyticsMetricCode: position.analyticsMetricCode,
+        analyticsCategoryLabel: position.analyticsCategoryLabel,
+        analyticsMatchMethod: position.analyticsMatchMethod,
+        analyticsMappingVersion: position.analyticsMappingVersion,
+        serviceAggregateType: position.serviceAggregateType,
+        serviceProcedure: position.serviceProcedure,
+        serviceConfiguration: position.serviceConfiguration,
+        analyticsBaseQuantity: position.analyticsBaseQuantity,
+        analyticsBaseUnit: position.analyticsBaseUnit,
         raw: toJson(position.raw),
       }));
   const nextApplicable = typeof body.applicable === "boolean" ? body.applicable : current.applicable;
@@ -1711,11 +1941,16 @@ export async function updateLocalDemand(
       : false;
     const eventType = nextApplicable ? hasReopenHistory ? "REPOSTED" : "POSTED" : "UPDATED";
     const postMovementType = eventType === "REPOSTED" ? "SHIPMENT_REPOST" : "SHIPMENT_POST";
-    const effectivePositions = nextApplicable
+    const costedPositions = nextApplicable
       ? await freezePostingCostSnapshots(tx, current.branchId, nextStoreId, nextPositions, {
           preserveExistingSnapshots: eventType === "REPOSTED",
         })
       : nextPositions;
+    const effectivePositions = nextApplicable
+      ? await freezeSalesAnalyticsSnapshots(tx, current.branchId, costedPositions, {
+          preserveExistingSnapshots: eventType === "REPOSTED",
+        })
+      : costedPositions;
     const revisionNumber = await nextShipmentRevisionNumber(tx, current.id);
     const beforeSnapshot = shipmentSnapshot(current, current.positions);
     if (!importedDraftBeingPosted) {
@@ -1784,6 +2019,15 @@ export async function updateLocalDemand(
             vatEnabled: position.vatEnabled,
             buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
             slotName: position.slotName,
+            analyticsMetricCode: position.analyticsMetricCode,
+            analyticsCategoryLabel: position.analyticsCategoryLabel,
+            analyticsMatchMethod: position.analyticsMatchMethod,
+            analyticsMappingVersion: position.analyticsMappingVersion,
+            serviceAggregateType: position.serviceAggregateType,
+            serviceProcedure: position.serviceProcedure,
+            serviceConfiguration: position.serviceConfiguration,
+            analyticsBaseQuantity: position.analyticsBaseQuantity,
+            analyticsBaseUnit: position.analyticsBaseUnit,
             raw: position.raw,
           })),
         });
@@ -1793,7 +2037,18 @@ export async function updateLocalDemand(
         if (!position.id) continue;
         await tx.localDemandPosition.update({
           where: { id: position.id },
-          data: { buyPriceCentsPerUnit: position.buyPriceCentsPerUnit },
+          data: {
+            buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
+            analyticsMetricCode: position.analyticsMetricCode,
+            analyticsCategoryLabel: position.analyticsCategoryLabel,
+            analyticsMatchMethod: position.analyticsMatchMethod,
+            analyticsMappingVersion: position.analyticsMappingVersion,
+            serviceAggregateType: position.serviceAggregateType,
+            serviceProcedure: position.serviceProcedure,
+            serviceConfiguration: position.serviceConfiguration,
+            analyticsBaseQuantity: position.analyticsBaseQuantity,
+            analyticsBaseUnit: position.analyticsBaseUnit,
+          },
         });
       }
     }
@@ -2183,6 +2438,16 @@ export async function loadLocalDemandDetailPayload(
   const positions: DemandDetailPosition[] = demand.positions.map((position) => {
     const positionRaw = jsonRecord(position.raw);
     const copyMeta = positionRaw.copyMeta;
+    const oneOffServiceRaw = jsonRecord(positionRaw.oneOffService);
+    const oneOffService = cleanRecordText(oneOffServiceRaw.analyticsMetricCode)
+      ? {
+          analyticsMetricCode: cleanRecordText(oneOffServiceRaw.analyticsMetricCode),
+          aggregateType: cleanRecordText(oneOffServiceRaw.aggregateType) || null,
+          procedure: cleanRecordText(oneOffServiceRaw.procedure) || null,
+          configuration: cleanRecordText(oneOffServiceRaw.configuration) || null,
+          classificationVersion: Number(oneOffServiceRaw.classificationVersion) || 1,
+        }
+      : null;
     const nonstock = isNonstockProductType(position.assortmentType)
       ? nonstockRawRecord(position.raw)
       : null;
@@ -2190,7 +2455,9 @@ export async function loadLocalDemandDetailPayload(
       ? entityMeta(position.product.entityType, position.product.id, undefined, position.product.id)
       : nonstock
         ? localMeta(NONSTOCK_PRODUCT_ASSORTMENT_TYPE, position.id)
-        : undefined;
+        : oneOffService
+          ? localMeta("service", position.id)
+          : undefined;
     const purchasePriceCents = typeof nonstock?.purchasePriceCents === "number"
       ? nonstock.purchasePriceCents
       : position.buyPriceCentsPerUnit;
@@ -2205,7 +2472,7 @@ export async function loadLocalDemandDetailPayload(
         cost: position.buyPriceCentsPerUnit ?? undefined,
       },
       assortmentMeta,
-      lineKind: nonstock ? NONSTOCK_PRODUCT_LINE_KIND : undefined,
+      lineKind: nonstock ? NONSTOCK_PRODUCT_LINE_KIND : oneOffService ? "one_off_service" : undefined,
       oneOffProduct: nonstock
         ? {
             groupCode: cleanRecordText(nonstock.groupCode),
@@ -2227,6 +2494,7 @@ export async function loadLocalDemandDetailPayload(
             catalogMatchProductId: cleanRecordText(nonstock.catalogMatchProductId) || null,
           }
         : undefined,
+      oneOffService: oneOffService ?? undefined,
       comment: cleanRecordText(positionRaw.comment) || undefined,
       product: position.product
         ? {
@@ -2374,6 +2642,7 @@ export async function loadLocalDemandDetailPayload(
       product: position.product,
       lineKind: position.lineKind,
       oneOffProduct: position.oneOffProduct,
+      oneOffService: position.oneOffService,
       comment: position.comment,
     })),
   };

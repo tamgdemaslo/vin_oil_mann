@@ -44,6 +44,14 @@ import {
   normalizeNonstockProductInput,
   type NonstockProductInput,
 } from "@/lib/one-off-product";
+import {
+  ONE_OFF_SERVICE_AGGREGATES,
+  ONE_OFF_SERVICE_CONFIGURATIONS,
+  ONE_OFF_SERVICE_METRICS,
+  ONE_OFF_SERVICE_PROCEDURES,
+  normalizeOneOffServiceInput,
+  type OneOffServiceInput,
+} from "@/lib/one-off-service";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -110,7 +118,7 @@ type Position = {
   discountMode?: "percent" | "amount";
   discountAmount?: number;
   comment?: string;
-  lineKind?: "nonstock_product";
+  lineKind?: "nonstock_product" | "one_off_service";
   oneOffProduct?: NonstockProductInput & {
     groupLabel?: string;
     brandCanonical?: string;
@@ -121,6 +129,7 @@ type Position = {
     costSource?: string;
     catalogMatchProductId?: string | null;
   };
+  oneOffService?: OneOffServiceInput;
   copyMeta?: {
     status?: "linked" | "updated" | "unlinked" | "ambiguous" | "archived" | string;
     message?: string;
@@ -525,6 +534,7 @@ function demandPositionPayload(position: Position, options: { priceIsCents: bool
           clarification: position.oneOffProduct.clarification,
         }
       : undefined,
+    oneOffService: position.oneOffService,
     copyMeta: position.copyMeta,
   };
 }
@@ -1178,6 +1188,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [oneOffServiceName, setOneOffServiceName] = useState("");
   const [oneOffServicePrice, setOneOffServicePrice] = useState("");
   const [oneOffServiceComment, setOneOffServiceComment] = useState("");
+  const [oneOffServiceMetricCode, setOneOffServiceMetricCode] = useState("");
+  const [oneOffServiceAggregateType, setOneOffServiceAggregateType] = useState("UNKNOWN");
+  const [oneOffServiceProcedure, setOneOffServiceProcedure] = useState("UNKNOWN");
+  const [oneOffServiceConfiguration, setOneOffServiceConfiguration] = useState("UNKNOWN");
   const [nonstockProductOpen, setNonstockProductOpen] = useState(false);
   const [nonstockProductEditingIndex, setNonstockProductEditingIndex] = useState<number | null>(null);
   const [nonstockProductDraft, setNonstockProductDraft] = useState<NonstockProductDraft>(EMPTY_NONSTOCK_PRODUCT_DRAFT);
@@ -2517,6 +2531,18 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       window.requestAnimationFrame(() => document.getElementById("shipment-one-off-service-name")?.focus());
       return;
     }
+    let oneOffService: ReturnType<typeof normalizeOneOffServiceInput>;
+    try {
+      oneOffService = normalizeOneOffServiceInput({
+        analyticsMetricCode: oneOffServiceMetricCode,
+        aggregateType: oneOffServiceMetricCode === "TRANSMISSION_FLUID_SERVICE" ? oneOffServiceAggregateType : null,
+        procedure: oneOffServiceMetricCode === "TRANSMISSION_FLUID_SERVICE" ? oneOffServiceProcedure : null,
+        configuration: oneOffServiceMetricCode === "TRANSMISSION_FLUID_SERVICE" ? oneOffServiceConfiguration : null,
+      });
+    } catch (error) {
+      setProductAddNotice(error instanceof Error ? error.message : "Проверьте категорию разовой услуги");
+      return;
+    }
     const price = parseDecimalInput(oneOffServicePrice);
     const nextIndex = positions.length;
     setPositions((prev) => [
@@ -2529,8 +2555,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         discountMode: "percent",
         discountAmount: 0,
         comment: oneOffServiceComment.trim() || undefined,
+        lineKind: "one_off_service",
+        oneOffService,
         assortmentMeta: {
-          href: `local://manual-service/${Date.now()}`,
+          href: `local://manual-service/${crypto.randomUUID()}`,
           type: "service",
           mediaType: "application/json",
         },
@@ -2540,6 +2568,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setOneOffServiceName("");
     setOneOffServicePrice("");
     setOneOffServiceComment("");
+    setOneOffServiceMetricCode("");
+    setOneOffServiceAggregateType("UNKNOWN");
+    setOneOffServiceProcedure("UNKNOWN");
+    setOneOffServiceConfiguration("UNKNOWN");
     setProductSearch("");
     setProductOptions([]);
     setProductResultsOpen(false);
@@ -4606,6 +4638,41 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 />
               </label>
               <label className="eco-field">
+                <span>Категория аналитики</span>
+                <select
+                  value={oneOffServiceMetricCode}
+                  onChange={(event) => setOneOffServiceMetricCode(event.target.value)}
+                  className="eco-input"
+                >
+                  <option value="">Выберите операцию</option>
+                  {ONE_OFF_SERVICE_METRICS.map((metric) => (
+                    <option key={metric.code} value={metric.code}>{metric.label}</option>
+                  ))}
+                </select>
+              </label>
+              {oneOffServiceMetricCode === "TRANSMISSION_FLUID_SERVICE" ? (
+                <div className="eco-one-off-service-classification">
+                  <label className="eco-field">
+                    <span>Агрегат</span>
+                    <select className="eco-input" value={oneOffServiceAggregateType} onChange={(event) => setOneOffServiceAggregateType(event.target.value)}>
+                      {ONE_OFF_SERVICE_AGGREGATES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="eco-field">
+                    <span>Способ замены</span>
+                    <select className="eco-input" value={oneOffServiceProcedure} onChange={(event) => setOneOffServiceProcedure(event.target.value)}>
+                      {ONE_OFF_SERVICE_PROCEDURES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="eco-field">
+                    <span>Конфигурация</span>
+                    <select className="eco-input" value={oneOffServiceConfiguration} onChange={(event) => setOneOffServiceConfiguration(event.target.value)}>
+                      {ONE_OFF_SERVICE_CONFIGURATIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+              ) : null}
+              <label className="eco-field">
                 <span>Цена</span>
                 <input
                   type="text"
@@ -4637,6 +4704,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                     setOneOffServiceName("");
                     setOneOffServicePrice("");
                     setOneOffServiceComment("");
+                    setOneOffServiceMetricCode("");
+                    setOneOffServiceAggregateType("UNKNOWN");
+                    setOneOffServiceProcedure("UNKNOWN");
+                    setOneOffServiceConfiguration("UNKNOWN");
                   }}
                 >
                   Отмена
