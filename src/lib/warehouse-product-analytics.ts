@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { toServiceDateInput } from "@/lib/date-time";
+import { calculateLineFinancials } from "@/lib/inventory-costing";
 
 export type WarehouseAnalyticsTable =
   | "top-products"
@@ -46,7 +47,7 @@ export type WarehouseAnalyticsParams = {
 export type WarehouseAnalyticsKpi = {
   key: string;
   label: string;
-  value: number;
+  value: number | null;
   format: "count" | "money" | "percent" | "quantity";
   tone?: "neutral" | "rust" | "success" | "warning" | "danger" | "info";
   sub?: string;
@@ -71,9 +72,9 @@ export type WarehouseAnalyticsProductRow = {
   available: number;
   reserve: number;
   minimumBalance: number | null;
-  stockCost: number;
+  stockCost: number | null;
   stockSaleValue: number;
-  potentialStockMargin: number;
+  potentialStockMargin: number | null;
   soldQuantity: number;
   salesCount: number;
   shipmentsCount: number;
@@ -127,9 +128,9 @@ export type WarehouseAnalyticsQualityGroup = {
 export type WarehouseAnalyticsMatrixCell = {
   key: string;
   productsCount: number;
-  stockCost: number;
+  stockCost: number | null;
   revenue: number;
-  grossProfit: number;
+  grossProfit: number | null;
   recommendation: string;
 };
 
@@ -141,10 +142,10 @@ export type WarehouseAnalyticsGroupRow = {
   productsWithStock: number;
   soldQuantity: number;
   revenue: number;
-  grossProfit: number;
+  grossProfit: number | null;
   marginPercent: number | null;
   salesCount: number;
-  stockCost: number;
+  stockCost: number | null;
   deadStockCount: number;
   neverSoldCount: number;
   stockoutCount: number;
@@ -202,10 +203,10 @@ export type WarehouseProductAnalytics = {
     highMarginProducts: number;
     lowMarginProducts: number;
     frequentStockoutProducts: number;
-    stockCost: number;
+    stockCost: number | null;
     stockSaleValue: number;
-    potentialStockMargin: number;
-    grossProfit: number;
+    potentialStockMargin: number | null;
+    grossProfit: number | null;
     averageMarginPercent: number | null;
     salesRevenue: number;
     soldQuantity: number;
@@ -272,6 +273,7 @@ type InternalMetric = WarehouseAnalyticsProductRow & {
   profitCents: number;
   revenueCents: number;
   knownCostRevenueCents: number;
+  missingSalesCostLines: number;
   stockCostCents: number;
   stockSaleValueCents: number;
   potentialStockMarginCents: number;
@@ -283,6 +285,7 @@ type InternalMetric = WarehouseAnalyticsProductRow & {
   lifetimeSalesCount: number;
   salesBuckets: number[];
   hasScopedStock: boolean;
+  hasMissingStockCost: boolean;
 };
 
 type CacheEntry = { key: string; expiresAt: number; value: WarehouseProductAnalytics };
@@ -291,6 +294,10 @@ const ANALYTICS_CACHE_MS = 60_000;
 const analyticsCache = ((globalThis as typeof globalThis & {
   __warehouseProductAnalyticsCache?: { entry: CacheEntry | null };
 }).__warehouseProductAnalyticsCache ??= { entry: null });
+
+export function invalidateWarehouseProductAnalyticsCache() {
+  analyticsCache.entry = null;
+}
 
 function cleanText(value: string | null | undefined): string {
   return value?.trim() ?? "";
@@ -481,16 +488,6 @@ function buildOptions(values: Array<string | null | undefined>): WarehouseAnalyt
     .map(([value, count]) => ({ value, count }));
 }
 
-function lineRevenueCents(position: Pick<SalesPosition, "quantity" | "priceCentsPerUnit" | "discount">): number {
-  const quantity = decimalToNumber(position.quantity);
-  const discount = decimalToNumber(position.discount);
-  return Math.round(quantity * position.priceCentsPerUnit * (1 - discount / 100));
-}
-
-function lineCostCents(quantity: number, costPerUnit: number | null | undefined): number | null {
-  return costPerUnit == null ? null : Math.round(quantity * costPerUnit);
-}
-
 function isServiceEntity(type: string | null | undefined): boolean {
   return cleanText(type).toLowerCase() === "service";
 }
@@ -510,14 +507,19 @@ function emptyMetric(product: ProductWithStock, bucketCount: number): InternalMe
   let reserve = 0;
   let stockCostCents = 0;
   let stockSaleValueCents = 0;
+  let hasMissingStockCost = false;
   let cell = cleanText(product.cell) || null;
   for (const balance of product.stockBalances) {
     const quantity = decimalToNumber(balance.quantity);
     currentStock += quantity;
     available += decimalToNumber(balance.available);
     reserve += decimalToNumber(balance.reserve);
-    const cost = balance.buyPriceCents ?? product.buyPriceCents ?? 0;
-    stockCostCents += Math.round(quantity * cost);
+    const cost = balance.buyPriceCents;
+    if (Math.abs(quantity) > 0.0001 && (cost == null || cost <= 0)) {
+      hasMissingStockCost = true;
+    } else if (cost != null) {
+      stockCostCents += Math.round(quantity * cost);
+    }
     stockSaleValueCents += Math.round(quantity * product.salePriceCents);
     if (!cell) cell = cleanText(balance.slotName) || null;
   }
@@ -526,7 +528,7 @@ function emptyMetric(product: ProductWithStock, bucketCount: number): InternalMe
   const salePrice = money(product.salePriceCents);
   const minimumBalance = product.minimumBalance == null ? null : decimalToNumber(product.minimumBalance);
   const category = categoryLabel(product.groupPath);
-  const stockCost = money(stockCostCents);
+  const stockCost = hasMissingStockCost ? null : money(stockCostCents);
   const stockSaleValue = money(stockSaleValueCents);
 
   return {
@@ -550,7 +552,7 @@ function emptyMetric(product: ProductWithStock, bucketCount: number): InternalMe
     minimumBalance,
     stockCost,
     stockSaleValue,
-    potentialStockMargin: stockSaleValue - stockCost,
+    potentialStockMargin: stockCost == null ? null : stockSaleValue - stockCost,
     soldQuantity: 0,
     salesCount: 0,
     shipmentsCount: 0,
@@ -594,6 +596,7 @@ function emptyMetric(product: ProductWithStock, bucketCount: number): InternalMe
     profitCents: 0,
     revenueCents: 0,
     knownCostRevenueCents: 0,
+    missingSalesCostLines: 0,
     stockCostCents,
     stockSaleValueCents,
     potentialStockMarginCents: stockSaleValueCents - stockCostCents,
@@ -605,6 +608,7 @@ function emptyMetric(product: ProductWithStock, bucketCount: number): InternalMe
     lifetimeSalesCount: 0,
     salesBuckets: Array.from({ length: bucketCount }, () => 0),
     hasScopedStock: product.stockBalances.length > 0,
+    hasMissingStockCost,
   };
 }
 
@@ -665,6 +669,8 @@ function detectQualityProblems(row: InternalMetric): string[] {
   if (!cleanText(row.brand)) problems.push("нет бренда");
   if (!cleanText(row.article) && !cleanText(row.code)) problems.push("нет артикула или кода");
   if (row.buyPrice == null || row.buyPrice <= 0) problems.push("нет закупочной цены");
+  if (row.hasMissingStockCost) problems.push("нет средней себестоимости остатка");
+  if (row.missingSalesCostLines > 0) problems.push("продажа без себестоимости");
   if (row.salePrice <= 0) problems.push("нет цены продажи");
   if (!cleanText(row.supplier)) problems.push("нет поставщика");
   if (!cleanText(row.cell) && row.currentStock > 0) problems.push("нет ячейки");
@@ -699,6 +705,7 @@ function stockoutStatus(row: InternalMetric): string | null {
 }
 
 function recommendation(row: InternalMetric): string {
+  if (row.qualityProblems.includes("нет средней себестоимости остатка")) return "Восстановить подтверждённую opening cost для этого склада.";
   if (row.qualityProblems.includes("нет закупочной цены")) return "Заполнить закупочную цену, иначе маржа считается неточно.";
   if (row.stockoutStatus) return "Добавить в закупку и пересмотреть минимальный остаток.";
   if (row.deadStockStatus) return "Проверить цену, карточку и сценарий распродажи или заказа под клиента.";
@@ -713,12 +720,12 @@ function finalizeMetrics(metrics: InternalMetric[], period: { dateFrom: string; 
     row.shipmentsCount = row.salesDocuments.size;
     row.uniqueClients = row.clients.size;
     row.revenue = money(row.revenueCents);
-    row.cost = row.costCents > 0 || row.soldQuantity > 0 && row.knownCostRevenueCents > 0 ? money(row.costCents) : null;
-    row.grossProfit = row.knownCostRevenueCents > 0 ? money(row.profitCents) : null;
-    row.marginPercent = marginPercent(row.knownCostRevenueCents, row.knownCostRevenueCents > 0 ? row.profitCents : null);
+    row.cost = row.missingSalesCostLines > 0 ? null : row.costCents > 0 || row.soldQuantity > 0 && row.knownCostRevenueCents > 0 ? money(row.costCents) : null;
+    row.grossProfit = row.missingSalesCostLines > 0 ? null : row.knownCostRevenueCents > 0 ? money(row.profitCents) : null;
+    row.marginPercent = row.missingSalesCostLines > 0 ? null : marginPercent(row.knownCostRevenueCents, row.knownCostRevenueCents > 0 ? row.profitCents : null);
     row.marginPerUnit = row.soldQuantity > 0 && row.grossProfit != null ? row.grossProfit / row.soldQuantity : null;
     row.averageSalePrice = row.soldQuantity > 0 ? row.revenue / row.soldQuantity : null;
-    row.averageBuyPrice = row.soldQuantity > 0 && row.cost != null ? row.cost / row.soldQuantity : row.buyPrice;
+    row.averageBuyPrice = row.soldQuantity > 0 && row.cost != null ? row.cost / row.soldQuantity : null;
     row.averageDiscount = row.discountRows > 0 ? row.discountSum / row.discountRows : null;
     row.daysWithoutSale = row.lastSaleDate ? daysBetween(row.lastSaleDate, today) - 1 : null;
     row.dailySales = row.soldQuantity / period.days;
@@ -754,7 +761,7 @@ function productPassesPostFilters(row: InternalMetric, params: WarehouseProductA
   if (params.onlyWithoutSales && row.lifetimeSalesCount > 0) return false;
   if (params.onlyProblems && row.qualityProblems.length === 0 && !row.deadStockStatus && !row.stockoutStatus) return false;
   if (params.onlyNegativeStock && row.currentStock >= 0 && row.available >= 0) return false;
-  if (params.onlyZeroCost && !(row.buyPrice == null || row.buyPrice <= 0 || row.qualityProblems.includes("нет закупочной цены"))) return false;
+  if (params.onlyZeroCost && !(row.hasMissingStockCost || row.buyPrice == null || row.buyPrice <= 0)) return false;
   return true;
 }
 
@@ -844,20 +851,26 @@ function buildMatrix(rows: InternalMetric[]): WarehouseAnalyticsMatrixCell[] {
     CY: "Низкий вклад: проверить необходимость на складе.",
     CZ: "Кандидаты на вывод из склада или продажу под заказ.",
   };
-  const cells = new Map<string, WarehouseAnalyticsMatrixCell>();
+  const cells = new Map<string, WarehouseAnalyticsMatrixCell & { missingStockCost: boolean; missingProfit: boolean }>();
   for (const key of Object.keys(recommendations)) {
-    cells.set(key, { key, productsCount: 0, stockCost: 0, revenue: 0, grossProfit: 0, recommendation: recommendations[key] });
+    cells.set(key, { key, productsCount: 0, stockCost: 0, revenue: 0, grossProfit: 0, recommendation: recommendations[key], missingStockCost: false, missingProfit: false });
   }
   for (const row of rows) {
     const key = `${row.abcRevenue}${row.xyz}`;
     const current = cells.get(key);
     if (!current) continue;
     current.productsCount += 1;
-    current.stockCost += row.stockCost;
+    if (row.stockCost == null) current.missingStockCost = true;
+    else current.stockCost = (current.stockCost ?? 0) + row.stockCost;
     current.revenue += row.revenue;
-    current.grossProfit += row.grossProfit ?? 0;
+    if (row.revenue > 0 && row.grossProfit == null) current.missingProfit = true;
+    else current.grossProfit = (current.grossProfit ?? 0) + (row.grossProfit ?? 0);
   }
-  return [...cells.values()];
+  return [...cells.values()].map(({ missingStockCost, missingProfit, ...cell }) => ({
+    ...cell,
+    stockCost: missingStockCost ? null : cell.stockCost,
+    grossProfit: missingProfit ? null : cell.grossProfit,
+  }));
 }
 
 function emptyGroup(key: string, name: string): WarehouseAnalyticsGroupRow {
@@ -880,18 +893,20 @@ function emptyGroup(key: string, name: string): WarehouseAnalyticsGroupRow {
 }
 
 function groupRows(rows: InternalMetric[], keyGetter: (row: InternalMetric) => string | null | undefined): WarehouseAnalyticsGroupRow[] {
-  const groups = new Map<string, WarehouseAnalyticsGroupRow & { revenueForMargin: number; profitForMargin: number }>();
+  const groups = new Map<string, WarehouseAnalyticsGroupRow & { revenueForMargin: number; profitForMargin: number; missingStockCost: boolean; missingProfit: boolean }>();
   for (const row of rows) {
     const key = optionKey(keyGetter(row));
-    const group = groups.get(key) ?? { ...emptyGroup(key, key), revenueForMargin: 0, profitForMargin: 0 };
+    const group = groups.get(key) ?? { ...emptyGroup(key, key), revenueForMargin: 0, profitForMargin: 0, missingStockCost: false, missingProfit: false };
     group.productsCount += 1;
     if (!row.archived) group.activeProducts += 1;
     if (row.currentStock > 0) group.productsWithStock += 1;
     group.soldQuantity += row.soldQuantity;
     group.revenue += row.revenue;
-    group.grossProfit += row.grossProfit ?? 0;
+    if (row.revenue > 0 && row.grossProfit == null) group.missingProfit = true;
+    else group.grossProfit = (group.grossProfit ?? 0) + (row.grossProfit ?? 0);
     group.salesCount += row.salesCount;
-    group.stockCost += row.stockCost;
+    if (row.stockCost == null) group.missingStockCost = true;
+    else group.stockCost = (group.stockCost ?? 0) + row.stockCost;
     if (row.deadStockStatus) group.deadStockCount += 1;
     if (row.lifetimeSalesCount === 0) group.neverSoldCount += 1;
     if (row.stockoutStatus) group.stockoutCount += 1;
@@ -902,11 +917,13 @@ function groupRows(rows: InternalMetric[], keyGetter: (row: InternalMetric) => s
     groups.set(key, group);
   }
   return [...groups.values()]
-    .map(({ revenueForMargin, profitForMargin, ...group }) => ({
+    .map(({ revenueForMargin, profitForMargin, missingStockCost, missingProfit, ...group }) => ({
       ...group,
-      marginPercent: revenueForMargin > 0 ? (profitForMargin / revenueForMargin) * 100 : null,
+      stockCost: missingStockCost ? null : group.stockCost,
+      grossProfit: missingProfit ? null : group.grossProfit,
+      marginPercent: missingProfit ? null : revenueForMargin > 0 ? (profitForMargin / revenueForMargin) * 100 : null,
     }))
-    .sort((a, b) => b.revenue - a.revenue || b.grossProfit - a.grossProfit || a.name.localeCompare(b.name, "ru"));
+    .sort((a, b) => b.revenue - a.revenue || (b.grossProfit ?? -Infinity) - (a.grossProfit ?? -Infinity) || a.name.localeCompare(b.name, "ru"));
 }
 
 function buildKpis(summary: WarehouseProductAnalytics["summary"]): WarehouseAnalyticsKpi[] {
@@ -924,7 +941,7 @@ function buildKpis(summary: WarehouseProductAnalytics["summary"]): WarehouseAnal
     { key: "potentialStockMargin", label: "Потенциальная маржа склада", value: summary.potentialStockMargin, format: "money", tone: "rust" },
     { key: "grossProfit", label: "Валовая прибыль за период", value: summary.grossProfit, format: "money", tone: "success" },
     { key: "averageMarginPercent", label: "Средняя маржинальность", value: summary.averageMarginPercent ?? 0, format: "percent", tone: "info" },
-    { key: "productsWithoutBuyPrice", label: "Без закупочной цены", value: summary.productsWithoutBuyPrice, format: "count", tone: summary.productsWithoutBuyPrice > 0 ? "danger" : "success" },
+    { key: "productsWithoutBuyPrice", label: "Без средней себестоимости", value: summary.productsWithoutBuyPrice, format: "count", tone: summary.productsWithoutBuyPrice > 0 ? "danger" : "success" },
     { key: "productsWithoutSalePrice", label: "Без цены продажи", value: summary.productsWithoutSalePrice, format: "count", tone: summary.productsWithoutSalePrice > 0 ? "danger" : "success" },
     { key: "productsWithoutCell", label: "Без ячейки", value: summary.productsWithoutCell, format: "count", tone: "warning" },
   ];
@@ -1147,10 +1164,14 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
     const metric = metricMap.get(position.productId);
     if (!metric) continue;
     const quantity = decimalToNumber(position.quantity);
-    const revenueCents = lineRevenueCents(position);
-    const costPerUnit = position.buyPriceCentsPerUnit ?? position.product?.buyPriceCents ?? null;
-    const costCents = lineCostCents(quantity, costPerUnit);
-    const profitCents = costCents == null ? null : revenueCents - costCents;
+    const line = calculateLineFinancials({
+      quantity,
+      salePriceCents: position.priceCentsPerUnit,
+      discountPercent: decimalToNumber(position.discount),
+      assortmentType: position.assortmentType,
+      snapshotCents: position.buyPriceCentsPerUnit,
+    });
+    const { revenueCents, costCents, profitCents } = line;
     metric.soldQuantity += quantity;
     metric.salesCount += 1;
     metric.salesDocuments.add(position.demand.id);
@@ -1160,6 +1181,7 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
     metric.revenueCents += revenueCents;
     if (costCents == null || profitCents == null) {
       metric.qualityProblems.push("продажа без себестоимости");
+      metric.missingSalesCostLines += 1;
     } else {
       metric.costCents += costCents;
       metric.profitCents += profitCents;
@@ -1195,6 +1217,8 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
 
   const totalRevenueForMargin = filteredMetrics.reduce((sum, row) => sum + (row.grossProfit == null ? 0 : row.revenue), 0);
   const totalProfitForMargin = filteredMetrics.reduce((sum, row) => sum + (row.grossProfit ?? 0), 0);
+  const hasIncompleteSalesCost = filteredMetrics.some((row) => row.revenue > 0 && row.missingSalesCostLines > 0);
+  const hasIncompleteStockCost = filteredMetrics.some((row) => Math.abs(row.currentStock) > 0.0001 && row.hasMissingStockCost);
   const summary = {
     totalProducts: filteredMetrics.length,
     activeProducts: filteredMetrics.filter((row) => !row.archived).length,
@@ -1202,7 +1226,7 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
     productsWithoutStock: filteredMetrics.filter((row) => row.currentStock <= 0).length,
     negativeStockProducts: filteredMetrics.filter((row) => row.currentStock < 0 || row.available < 0).length,
     productsWithoutCategory: filteredMetrics.filter((row) => !row.category).length,
-    productsWithoutBuyPrice: filteredMetrics.filter((row) => row.buyPrice == null || row.buyPrice <= 0).length,
+    productsWithoutBuyPrice: filteredMetrics.filter((row) => row.hasMissingStockCost).length,
     productsWithoutSalePrice: filteredMetrics.filter((row) => row.salePrice <= 0).length,
     productsWithoutSupplier: filteredMetrics.filter((row) => !cleanText(row.supplier)).length,
     productsWithoutCell: filteredMetrics.filter((row) => row.currentStock > 0 && !cleanText(row.cell)).length,
@@ -1212,11 +1236,11 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
     highMarginProducts: filteredMetrics.filter((row) => row.marginPercent != null && row.marginPercent >= 35).length,
     lowMarginProducts: filteredMetrics.filter((row) => row.revenue > 0 && row.marginPercent != null && row.marginPercent < 12).length,
     frequentStockoutProducts: filteredMetrics.filter((row) => Boolean(row.stockoutStatus)).length,
-    stockCost: filteredMetrics.reduce((sum, row) => sum + row.stockCost, 0),
+    stockCost: hasIncompleteStockCost ? null : filteredMetrics.reduce((sum, row) => sum + (row.stockCost ?? 0), 0),
     stockSaleValue: filteredMetrics.reduce((sum, row) => sum + row.stockSaleValue, 0),
-    potentialStockMargin: filteredMetrics.reduce((sum, row) => sum + row.potentialStockMargin, 0),
-    grossProfit: totalProfitForMargin,
-    averageMarginPercent: totalRevenueForMargin > 0 ? (totalProfitForMargin / totalRevenueForMargin) * 100 : null,
+    potentialStockMargin: hasIncompleteStockCost ? null : filteredMetrics.reduce((sum, row) => sum + (row.potentialStockMargin ?? 0), 0),
+    grossProfit: hasIncompleteSalesCost ? null : totalProfitForMargin,
+    averageMarginPercent: hasIncompleteSalesCost ? null : totalRevenueForMargin > 0 ? (totalProfitForMargin / totalRevenueForMargin) * 100 : null,
     salesRevenue: filteredMetrics.reduce((sum, row) => sum + row.revenue, 0),
     soldQuantity: filteredMetrics.reduce((sum, row) => sum + row.soldQuantity, 0),
   };
@@ -1227,8 +1251,8 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
   const marginRows = [
     ...sortByNumber(filteredMetrics.filter((row) => row.revenue > 0), (row) => row.grossProfit ?? -999_999_999),
   ];
-  const deadStockRows = sortByNumber(filteredMetrics.filter((row) => Boolean(row.deadStockStatus)), (row) => row.stockCost);
-  const neverSoldRows = sortByNumber(filteredMetrics.filter((row) => row.lifetimeSalesCount === 0), (row) => row.stockCost);
+  const deadStockRows = sortByNumber(filteredMetrics.filter((row) => Boolean(row.deadStockStatus)), (row) => row.stockCost ?? -1);
+  const neverSoldRows = sortByNumber(filteredMetrics.filter((row) => row.lifetimeSalesCount === 0), (row) => row.stockCost ?? -1);
   const stockoutRows = sortByNumber(filteredMetrics.filter((row) => Boolean(row.stockoutStatus)), (row) => row.recommendedOrderQuantity || row.shortage || row.revenue);
   const cardProblemRows = sortByNumber(filteredMetrics.filter((row) => row.qualityProblems.length > 0), (row) => row.qualityProblems.length);
   const abcRows = sortByNumber(filteredMetrics.filter((row) => row.revenue > 0 || row.currentStock > 0), (row) => row.revenue);

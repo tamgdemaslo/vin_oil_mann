@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
     try {
       created = await createLocalDemand(body, {
         ecoUserName: session.user.name || session.user.login,
+        actor: session.user,
         branchId: branchAccess.context.branchId!,
         organizationId: branchAccess.context.organizationId!,
       });

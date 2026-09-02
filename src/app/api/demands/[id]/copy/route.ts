@@ -9,7 +9,7 @@ import { toServiceMomentString } from "@/lib/time";
 import type { Prisma } from "@prisma/client";
 
 type CopyProduct = Prisma.LocalProductGetPayload<{ include: { stockBalances: true } }>;
-type CopyMetaStatus = "linked" | "updated" | "unlinked" | "ambiguous" | "archived";
+type CopyMetaStatus = "linked" | "updated" | "unlinked" | "ambiguous" | "archived" | "one_off_price_check";
 
 function normalizeLookup(value: unknown): string {
   return String(value ?? "")
@@ -43,7 +43,7 @@ function stockSnapshot(product: CopyProduct) {
     reserve: decimalToNumber(balance?.reserve),
     available: decimalToNumber(balance?.available),
     slotName: balance?.slotName ?? product.cell ?? null,
-    buyPriceCents: balance?.buyPriceCents ?? product.buyPriceCents ?? null,
+    buyPriceCents: balance?.buyPriceCents ?? null,
   };
 }
 
@@ -166,6 +166,38 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       const originalPriceCents = Math.round(Number(position.price) || 0);
       const quantity = Number(position.quantity) || 1;
       const discount = typeof position.discount === "number" ? position.discount : 0;
+      if (position.lineKind === "nonstock_product" && position.oneOffProduct) {
+        return {
+          name: position.name,
+          quantity,
+          price: originalPriceCents / 100,
+          discount,
+          vat: 0,
+          vatEnabled: false,
+          lineKind: "nonstock_product",
+          oneOffProduct: {
+            groupCode: position.oneOffProduct.groupCode,
+            brand: position.oneOffProduct.brandCanonical || position.oneOffProduct.brand,
+            article: position.oneOffProduct.articleDisplay || position.oneOffProduct.article,
+            uomCode: position.oneOffProduct.uomCode,
+            purchasePrice: position.oneOffProduct.purchasePrice,
+            explicitZeroCost: position.oneOffProduct.explicitZeroCost,
+            purchaseSourceId: position.oneOffProduct.purchaseSourceId,
+            purchaseSourceLabel: position.oneOffProduct.purchaseSourceLabel,
+            clarification: position.oneOffProduct.clarification,
+          },
+          copyMeta: {
+            source: "shipment-copy",
+            status: "one_off_price_check",
+            message: "Закупочная цена взята из предыдущей отгрузки. Проверьте актуальность.",
+            originalName: position.name,
+            originalPriceCents,
+            currentPriceCents: originalPriceCents,
+            priceUpdated: false,
+            productId: null,
+          },
+        };
+      }
       const assortmentId = extractLocalEntityId(position.assortmentMeta?.href);
       const byId = assortmentId ? productById.get(assortmentId) : undefined;
       const exactByName = productsByName.get(normalizeLookup(position.name)) ?? [];

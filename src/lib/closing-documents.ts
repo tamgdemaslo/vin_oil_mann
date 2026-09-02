@@ -511,6 +511,10 @@ function classifyPosition(position: { assortmentType: string; product?: { entity
   return type.includes("service") ? "work" : "material";
 }
 
+function positionRawRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
 function buildVatSnapshot(positions: ClosingPositionSnapshot[]): ClosingVatSnapshot {
   const vatLines = positions.filter((p) => p.vatEnabled && p.vatRate > 0);
   if (vatLines.length === 0) return { mode: "without_vat", label: "Без НДС", rates: [] };
@@ -653,6 +657,8 @@ export async function buildClosingDocumentPayload(
   };
 
   const positions: ClosingPositionSnapshot[] = demand.positions.map((position) => {
+    const oneOffProduct = positionRawRecord(positionRawRecord(position.raw).oneOffProduct);
+    const oneOffText = (key: string) => typeof oneOffProduct[key] === "string" ? String(oneOffProduct[key]).trim() : "";
     const quantity = position.quantity.toNumber();
     const discountPercent = position.discount.toNumber();
     const priceCents = position.priceCentsPerUnit;
@@ -662,9 +668,9 @@ export async function buildClosingDocumentPayload(
       id: position.id,
       kind: classifyPosition(position),
       name: position.name,
-      article: position.product?.article ?? "",
+      article: position.product?.article ?? oneOffText("articleDisplay") ?? "",
       code: position.product?.code ?? position.product?.externalCode ?? "",
-      uomName: position.product?.uomName ?? "шт",
+      uomName: position.product?.uomName ?? (oneOffText("uomLabel") || "шт"),
       quantity,
       priceCents,
       discountPercent,

@@ -16,7 +16,7 @@ function isRole(value: string): value is PieceworkRole {
 }
 
 function isTargetType(value: string): value is PieceworkTargetType {
-  return value === "service" || value === "product_group";
+  return value === "service_group" || value === "product_group";
 }
 
 function isMode(value: string): value is PieceworkMode {
@@ -49,7 +49,6 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const targetType = typeof body.targetType === "string" ? body.targetType.trim() : "";
   const targetId = typeof body.targetId === "string" ? body.targetId.trim() : "";
-  const targetName = typeof body.targetName === "string" ? body.targetName.trim() : "";
   const role = typeof body.role === "string" ? body.role.trim() : "";
   const mode = typeof body.mode === "string" ? body.mode.trim() : "";
   const fixedRaw =
@@ -61,12 +60,12 @@ export async function POST(request: NextRequest) {
         ? body.percentBasisPoints
         : Number(body.percentBasisPoints);
 
-  if (!isTargetType(targetType) || !targetId || !targetName || !isRole(role) || !isMode(mode)) {
+  if (!isTargetType(targetType) || !targetId || !isRole(role) || !isMode(mode)) {
     return NextResponse.json({ error: "Некорректные данные правила" }, { status: 400 });
   }
   if (!isAllowedPieceworkRule(targetType, role)) {
     return NextResponse.json(
-      { error: "Для мастера можно задавать только услуги, а для администратора только группы товаров" },
+      { error: "Для мастера можно задавать только группы услуг, а для администратора только группы товаров" },
       { status: 400 }
     );
   }
@@ -79,6 +78,18 @@ export async function POST(request: NextRequest) {
   }
   if (mode === "percent" && (percentBasisPoints == null || percentBasisPoints < 0)) {
     return NextResponse.json({ error: "Для процента укажите значение >= 0" }, { status: 400 });
+  }
+
+  const expectedKind = targetType === "service_group" ? "service" : "product";
+  const group = await prisma.localCatalogGroup.findFirst({
+    where: { id: targetId, branchId, kind: expectedKind, archived: false },
+    select: { id: true, name: true },
+  });
+  if (!group) {
+    return NextResponse.json(
+      { error: "Группа не найдена в активном филиале. Обновите список правил и повторите попытку." },
+      { status: 400 }
+    );
   }
 
   const existing = await prisma.pieceworkRule.findUnique({
@@ -97,7 +108,7 @@ export async function POST(request: NextRequest) {
         where: { id: existing.id },
         data: {
           branchId,
-          targetName,
+          targetName: group.name,
           mode,
           fixedCents: mode === "fixed" ? fixedCents : null,
           percentBasisPoints: mode === "percent" ? percentBasisPoints : null,
@@ -108,7 +119,7 @@ export async function POST(request: NextRequest) {
           branchId,
           targetType,
           targetId,
-          targetName,
+          targetName: group.name,
           role,
           mode,
           fixedCents: mode === "fixed" ? fixedCents : null,
@@ -134,7 +145,7 @@ export async function POST(request: NextRequest) {
     newValue: {
       targetType,
       targetId,
-      targetName,
+      targetName: group.name,
       role,
       mode,
       fixedCents: mode === "fixed" ? fixedCents : null,

@@ -265,7 +265,7 @@ export default function ProductCopyToBranchDialog({
                 <div className="eco-copy-dialog__section-head"><span>Что переносить</span><small>Технические и маркетинговые поля копируются всегда</small></div>
                 <div className="eco-copy-options">
                   <label><input type="checkbox" checked={options.copyRetailPrice} onChange={(event) => updateOption("copyRetailPrice", event.target.checked)} /> Розничную цену</label>
-                  <label><input type="checkbox" checked={options.copyPurchasePrice} onChange={(event) => updateOption("copyPurchasePrice", event.target.checked)} /> Цену закупки</label>
+                  <label title="Последняя закупочная цена формируется приходами целевого филиала"><input type="checkbox" checked={false} disabled /> Последнюю закупку не копировать</label>
                   <label><input type="checkbox" checked={options.copyMinimumBalance} onChange={(event) => updateOption("copyMinimumBalance", event.target.checked)} /> Минимальный остаток</label>
                   <label><input type="checkbox" checked={options.mapSupplierByInn} onChange={(event) => updateOption("mapSupplierByInn", event.target.checked)} /> Поставщика по совпадению ИНН</label>
                 </div>

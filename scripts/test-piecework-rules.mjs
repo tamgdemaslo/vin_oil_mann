@@ -3,38 +3,38 @@ import { resolve } from "node:path";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { alias: { "@": resolve(process.cwd(), "src") } });
-const {
-  normalizeProductGroupName,
-  resolveProductGroupPieceworkRule,
-  resolveProductGroupTargetId,
-} = await jiti.import("../src/lib/piecework-rules.ts");
+const { resolveGroupPieceworkRule } = await jiti.import("../src/lib/piecework-rules.ts");
 
-const transmissionRule = {
+const groupId = "grp_4bd78d2bd445d3ed73b8f66066a02633";
+const rule = {
   targetType: "product_group",
-  targetId: "transmission-oil-cans",
+  targetId: groupId,
   targetName: "Масло в канистрах трансмиссионное",
   role: "admin",
   mode: "percent",
   fixedCents: null,
   percentBasisPoints: 1000,
+  isConfigured: true,
   isDefault: false,
 };
-const rules = new Map([["product_group:transmission-oil-cans:admin", transmissionRule]]);
+const rules = new Map([["product_group:grp_4bd78d2bd445d3ed73b8f66066a02633:admin", rule]]);
 
-for (const groupName of [
-  "Масло в канистрах трансмиссионное",
-  "Maслo в канистрах трансмиссионное",
-  "Авто > Масло в канистрах трансмиссионное",
-  "Масло в канистрах трансмиссионное\u200B",
-  "Масло в канистрах трансмиссион\u00ADное",
-  "Масло в канистрах трансмиссион-ное",
-]) {
-  assert.equal(resolveProductGroupTargetId(groupName), "transmission-oil-cans");
-  assert.deepEqual(resolveProductGroupPieceworkRule({ ruleMap: rules, groupPath: groupName, role: "admin" }), {
-    targetId: "transmission-oil-cans",
-    rule: transmissionRule,
-  });
-}
+assert.equal(
+  resolveGroupPieceworkRule({ ruleMap: rules, groupId, targetType: "product_group", role: "admin" }),
+  rule
+);
+assert.equal(
+  resolveGroupPieceworkRule({
+    ruleMap: rules,
+    groupId: "grp_different_group_with_same_caption",
+    targetType: "product_group",
+    role: "admin",
+  }),
+  undefined
+);
+assert.equal(
+  resolveGroupPieceworkRule({ ruleMap: rules, groupId, targetType: "service_group", role: "master" }),
+  undefined
+);
 
-assert.equal(normalizeProductGroupName("Уплотнительныe кольца и прокладки"), "уплотнительные кольца и прокладки");
-console.log("Piecework group matching checks passed.");
+console.log("Piecework group ID checks passed.");

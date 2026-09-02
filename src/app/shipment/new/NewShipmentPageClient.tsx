@@ -35,6 +35,15 @@ import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-
 import { isValidMannYear, normalizeMannYearInput, shouldApplyMannRequest } from "@/lib/mann-picker-state";
 import { vehicleFieldValues, type NormalizedVehicleIdentity } from "@/lib/vehicle-identity-client";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
+import {
+  NONSTOCK_PRODUCT_ASSORTMENT_TYPE,
+  NONSTOCK_PRODUCT_GROUPS,
+  NONSTOCK_PRODUCT_UOMS,
+  normalizeNonstockProductArticle,
+  normalizeNonstockProductBrand,
+  normalizeNonstockProductInput,
+  type NonstockProductInput,
+} from "@/lib/one-off-product";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -101,6 +110,17 @@ type Position = {
   discountMode?: "percent" | "amount";
   discountAmount?: number;
   comment?: string;
+  lineKind?: "nonstock_product";
+  oneOffProduct?: NonstockProductInput & {
+    groupLabel?: string;
+    brandCanonical?: string;
+    articleDisplay?: string;
+    articleCanonical?: string;
+    uomLabel?: string;
+    analyticsKey?: string;
+    costSource?: string;
+    catalogMatchProductId?: string | null;
+  };
   copyMeta?: {
     status?: "linked" | "updated" | "unlinked" | "ambiguous" | "archived" | string;
     message?: string;
@@ -109,6 +129,46 @@ type Position = {
     currentPriceCents?: number;
     archived?: boolean;
   } | null;
+};
+
+type NonstockProductDraft = {
+  groupCode: string;
+  brand: string;
+  article: string;
+  clarification: string;
+  quantity: number;
+  uomCode: string;
+  purchasePrice: string;
+  explicitZeroCost: boolean;
+  salePrice: string;
+  purchaseSourceId: string;
+  purchaseSourceLabel: string;
+  comment: string;
+};
+
+type NonstockProductOptions = {
+  groups: Array<{ code: string; label: string; articleRequired: boolean }>;
+  uoms: Array<{ code: string; label: string }>;
+  brands: string[];
+  suppliers: Array<{ id: string; name: string }>;
+  normalized?: { brand?: string; article?: string; articleCanonical?: string };
+  exactMatch?: Product | null;
+  error?: string;
+};
+
+const EMPTY_NONSTOCK_PRODUCT_DRAFT: NonstockProductDraft = {
+  groupCode: "",
+  brand: "",
+  article: "",
+  clarification: "",
+  quantity: 1,
+  uomCode: "PCS",
+  purchasePrice: "",
+  explicitZeroCost: false,
+  salePrice: "",
+  purchaseSourceId: "",
+  purchaseSourceLabel: "",
+  comment: "",
 };
 
 type ShipmentAttribute = { id: string; name: string; type: string; meta: Meta; value: string | null; source?: string };
@@ -425,7 +485,8 @@ function productCatalogHref(product: Product): string {
   return `/inventory/products?product=${encodeURIComponent(product.id)}`;
 }
 
-function positionProductHref(position: Position): string {
+function positionProductHref(position: Position): string | null {
+  if (isNonstockProduct(position)) return null;
   const productId = localEntityIdFromMeta(position.assortmentMeta);
   if (productId) return `/inventory/products?product=${encodeURIComponent(productId)}`;
   return `/inventory/products?search=${encodeURIComponent(position.name)}`;
@@ -433,6 +494,39 @@ function positionProductHref(position: Position): string {
 
 function isServiceMeta(meta?: Meta): boolean {
   return meta?.type === "service" || /^local:\/\/service\//i.test(meta?.href ?? "") || /\/entity\/service\//i.test(meta?.href ?? "");
+}
+
+function isNonstockProduct(position: Position): boolean {
+  return position.lineKind === "nonstock_product"
+    || position.assortmentMeta?.type === NONSTOCK_PRODUCT_ASSORTMENT_TYPE
+    || Boolean(position.oneOffProduct);
+}
+
+function demandPositionPayload(position: Position, options: { priceIsCents: boolean; includeId?: boolean }) {
+  return {
+    id: options.includeId ? position.id : undefined,
+    name: position.name,
+    comment: position.comment,
+    quantity: position.quantity,
+    price: options.priceIsCents ? Math.round((Number(position.price) || 0) * 100) : Number(position.price) || 0,
+    discount: typeof position.discount === "number" ? position.discount : 0,
+    assortment: position.assortmentMeta ? { meta: position.assortmentMeta } : undefined,
+    lineKind: position.lineKind,
+    oneOffProduct: position.oneOffProduct
+      ? {
+          groupCode: position.oneOffProduct.groupCode,
+          brand: position.oneOffProduct.brand,
+          article: position.oneOffProduct.article,
+          uomCode: position.oneOffProduct.uomCode,
+          purchasePrice: position.oneOffProduct.purchasePrice,
+          explicitZeroCost: position.oneOffProduct.explicitZeroCost,
+          purchaseSourceId: position.oneOffProduct.purchaseSourceId,
+          purchaseSourceLabel: position.oneOffProduct.purchaseSourceLabel,
+          clarification: position.oneOffProduct.clarification,
+        }
+      : undefined,
+    copyMeta: position.copyMeta,
+  };
 }
 
 function counterpartyCatalogHref(counterparty: Counterparty): string {
@@ -963,6 +1057,7 @@ function KeyValueGrid({ items }: { items: KeyValueItem[] }) {
 
 type PositionAvailabilityViewProps = {
   isService: boolean;
+  isNonstock?: boolean;
   slot?: number | string | null;
   quantity?: number;
   reserve?: number;
@@ -970,12 +1065,20 @@ type PositionAvailabilityViewProps = {
   needed: number;
 };
 
-function PositionAvailabilityView({ isService, slot, quantity, reserve, available, needed }: PositionAvailabilityViewProps) {
+function PositionAvailabilityView({ isService, isNonstock = false, slot, quantity, reserve, available, needed }: PositionAvailabilityViewProps) {
   if (isService) {
     return (
       <div className="eco-position-availability">
         <strong>Услуга</strong>
         <span>Без складского остатка</span>
+      </div>
+    );
+  }
+  if (isNonstock) {
+    return (
+      <div className="eco-position-availability is-nonstock">
+        <strong>Вне склада</strong>
+        <span>Не учитывается в остатках</span>
       </div>
     );
   }
@@ -1075,6 +1178,17 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [oneOffServiceName, setOneOffServiceName] = useState("");
   const [oneOffServicePrice, setOneOffServicePrice] = useState("");
   const [oneOffServiceComment, setOneOffServiceComment] = useState("");
+  const [nonstockProductOpen, setNonstockProductOpen] = useState(false);
+  const [nonstockProductEditingIndex, setNonstockProductEditingIndex] = useState<number | null>(null);
+  const [nonstockProductDraft, setNonstockProductDraft] = useState<NonstockProductDraft>(EMPTY_NONSTOCK_PRODUCT_DRAFT);
+  const [nonstockProductOptions, setNonstockProductOptions] = useState<NonstockProductOptions>({
+    groups: [...NONSTOCK_PRODUCT_GROUPS],
+    uoms: [...NONSTOCK_PRODUCT_UOMS],
+    brands: [],
+    suppliers: [],
+  });
+  const [nonstockProductOptionsLoading, setNonstockProductOptionsLoading] = useState(false);
+  const [nonstockProductError, setNonstockProductError] = useState<string | null>(null);
 
   const [submitLoading, setSubmitLoading] = useState(false);
   const [paying, setPaying] = useState(false);
@@ -1468,7 +1582,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   }, [authChecked, demandId, router]);
 
   const positionAssortmentHrefs = useMemo(
-    () => positions.map((p) => p.assortmentMeta?.href).filter(Boolean).sort() as string[],
+    () => positions.filter((position) => !isNonstockProduct(position)).map((p) => p.assortmentMeta?.href).filter(Boolean).sort() as string[],
     [positions]
   );
 
@@ -1509,6 +1623,43 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       cancelled = true;
     };
   }, [authChecked, positionAssortmentHrefs]);
+
+  useEffect(() => {
+    if (!authChecked || !nonstockProductOpen) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setNonstockProductOptionsLoading(true);
+      const params = new URLSearchParams();
+      if (nonstockProductDraft.brand.trim()) params.set("brand", nonstockProductDraft.brand.trim());
+      if (nonstockProductDraft.article.trim()) params.set("article", nonstockProductDraft.article.trim());
+      if (selectedStore?.id) params.set("storeId", selectedStore.id);
+      try {
+        const response = await fetch(`/api/demands/one-off-product?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const data = await safeJson<NonstockProductOptions>(response, {
+          groups: [...NONSTOCK_PRODUCT_GROUPS],
+          uoms: [...NONSTOCK_PRODUCT_UOMS],
+          brands: [],
+          suppliers: [],
+        });
+        if (!response.ok) throw new Error(data.error ?? "Не удалось загрузить справочники разового товара");
+        setNonstockProductOptions(data);
+        setNonstockProductError(null);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setNonstockProductError(error instanceof Error ? error.message : "Не удалось загрузить справочники разового товара");
+        }
+      } finally {
+        if (!controller.signal.aborted) setNonstockProductOptionsLoading(false);
+      }
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [authChecked, nonstockProductDraft.article, nonstockProductDraft.brand, nonstockProductOpen, selectedStore?.id]);
 
   useEffect(() => {
     if (!authChecked) return;
@@ -2179,10 +2330,184 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setProductOem("");
     setProductParams("");
     setOneOffServiceOpen(true);
+    setNonstockProductOpen(false);
     setOneOffServiceName((current) => current || productSearch.trim());
     productResultsDismissedRef.current = false;
     setProductResultsOpen(false);
     window.requestAnimationFrame(() => document.getElementById("shipment-one-off-service-name")?.focus());
+  };
+
+  const closeNonstockProductForm = () => {
+    setNonstockProductOpen(false);
+    setNonstockProductEditingIndex(null);
+    setNonstockProductDraft(EMPTY_NONSTOCK_PRODUCT_DRAFT);
+    setNonstockProductError(null);
+  };
+
+  const openNonstockProductForm = (positionIndex?: number) => {
+    const position = positionIndex == null ? null : positions[positionIndex];
+    const oneOff = position?.oneOffProduct;
+    setPositionAddMode("catalog");
+    setOneOffServiceOpen(false);
+    setProductResultsOpen(false);
+    setNonstockProductEditingIndex(positionIndex ?? null);
+    setNonstockProductDraft(oneOff
+      ? {
+          groupCode: oneOff.groupCode,
+          brand: oneOff.brandCanonical || oneOff.brand,
+          article: oneOff.articleDisplay || oneOff.article,
+          clarification: oneOff.clarification ?? "",
+          quantity: position?.quantity || 1,
+          uomCode: oneOff.uomCode || "PCS",
+          purchasePrice: oneOff.purchasePrice == null ? "" : String(oneOff.purchasePrice).replace(".", ","),
+          explicitZeroCost: oneOff.explicitZeroCost === true,
+          salePrice: position ? String(position.price).replace(".", ",") : "",
+          purchaseSourceId: oneOff.purchaseSourceId ?? "",
+          purchaseSourceLabel: oneOff.purchaseSourceLabel ?? "",
+          comment: position?.comment ?? "",
+        }
+      : {
+          ...EMPTY_NONSTOCK_PRODUCT_DRAFT,
+          article: productSearch.trim(),
+        });
+    setNonstockProductOpen(true);
+    setNonstockProductError(null);
+    window.requestAnimationFrame(() => document.getElementById("shipment-nonstock-product-type")?.focus());
+  };
+
+  const saveNonstockProductPosition = () => {
+    const group = nonstockProductOptions.groups.find((item) =>
+      item.code === nonstockProductDraft.groupCode
+      || item.label.toLocaleLowerCase("ru-RU") === nonstockProductDraft.groupCode.trim().toLocaleLowerCase("ru-RU")
+    );
+    const purchasePrice = nonstockProductDraft.explicitZeroCost
+      ? 0
+      : nonstockProductDraft.purchasePrice.trim()
+        ? parseDecimalInput(nonstockProductDraft.purchasePrice)
+        : null;
+    const salePrice = nonstockProductDraft.salePrice.trim()
+      ? parseDecimalInput(nonstockProductDraft.salePrice)
+      : Number.NaN;
+    if (!Number.isFinite(nonstockProductDraft.quantity) || nonstockProductDraft.quantity <= 0) {
+      setNonstockProductError("Количество разового товара должно быть больше нуля");
+      return;
+    }
+    if (!Number.isFinite(salePrice) || salePrice < 0) {
+      setNonstockProductError("Укажите цену для клиента");
+      return;
+    }
+    try {
+      const input: NonstockProductInput = {
+        groupCode: group?.code ?? nonstockProductDraft.groupCode,
+        brand: nonstockProductDraft.brand,
+        article: nonstockProductDraft.article,
+        uomCode: nonstockProductDraft.uomCode,
+        purchasePrice,
+        explicitZeroCost: nonstockProductDraft.explicitZeroCost,
+        purchaseSourceId: nonstockProductDraft.purchaseSourceId || null,
+        purchaseSourceLabel: nonstockProductDraft.purchaseSourceLabel || null,
+        clarification: nonstockProductDraft.clarification || null,
+      };
+      const normalized = normalizeNonstockProductInput(input);
+      const duplicateIndex = positions.findIndex((position, index) => {
+        if (index === nonstockProductEditingIndex || !position.oneOffProduct) return false;
+        try {
+          const current = normalizeNonstockProductInput(position.oneOffProduct);
+          return current.analyticsKey === normalized.analyticsKey
+            && current.uomCode === normalized.uomCode
+            && current.purchasePriceCents === normalized.purchasePriceCents
+            && Math.abs((position.price || 0) - salePrice) < 0.005;
+        } catch {
+          return false;
+        }
+      });
+      if (duplicateIndex >= 0) {
+        const increase = window.confirm(
+          "Такая разовая позиция с теми же закупочной ценой и ценой продажи уже есть. Увеличить её количество?\n\nНажмите «Отмена», чтобы сохранить отдельной строкой."
+        );
+        if (increase) {
+          setPositions((current) => current.map((position, index) => index === duplicateIndex
+            ? { ...position, quantity: (position.quantity || 0) + nonstockProductDraft.quantity }
+            : position));
+          setRecentlyAddedPositionIndex(duplicateIndex);
+          setProductAddNotice("Количество разового товара увеличено");
+          markDraftDirty();
+          closeNonstockProductForm();
+          return;
+        }
+      }
+
+      const existing = nonstockProductEditingIndex == null ? null : positions[nonstockProductEditingIndex];
+      const nextPosition: Position = {
+        ...existing,
+        id: existing?.id,
+        name: normalized.name,
+        quantity: nonstockProductDraft.quantity,
+        price: salePrice,
+        discount: existing?.discount ?? 0,
+        discountMode: existing?.discountMode ?? "percent",
+        discountAmount: existing?.discountAmount ?? 0,
+        comment: nonstockProductDraft.comment.trim() || undefined,
+        lineKind: "nonstock_product",
+        oneOffProduct: input,
+        assortmentMeta: {
+          href: existing?.assortmentMeta?.href ?? `local://one-off-product/${crypto.randomUUID()}`,
+          type: NONSTOCK_PRODUCT_ASSORTMENT_TYPE,
+          mediaType: "application/json",
+        },
+        cell: undefined,
+        slotName: undefined,
+        stock: { cost: normalized.purchasePriceCents == null ? undefined : normalized.purchasePriceCents / 100 },
+      };
+      if (nonstockProductEditingIndex == null) {
+        const nextIndex = positions.length;
+        setPositions((current) => [...current, nextPosition]);
+        setRecentlyAddedPositionIndex(nextIndex);
+        setProductAddNotice("Разовый товар добавлен в отгрузку");
+      } else {
+        setPositions((current) => current.map((position, index) => index === nonstockProductEditingIndex ? nextPosition : position));
+        setRecentlyAddedPositionIndex(nonstockProductEditingIndex);
+        setProductAddNotice("Разовый товар обновлён");
+      }
+      markDraftDirty();
+      closeNonstockProductForm();
+    } catch (error) {
+      setNonstockProductError(error instanceof Error ? error.message : "Проверьте данные разового товара");
+    }
+  };
+
+  const useExactCatalogProduct = () => {
+    const product = nonstockProductOptions.exactMatch;
+    if (!product) return;
+    if (nonstockProductEditingIndex == null) {
+      addPosition(product);
+    } else {
+      const index = nonstockProductEditingIndex;
+      const current = positions[index];
+      setPositions((items) => items.map((position, positionIndex) => positionIndex === index
+        ? {
+            name: product.name,
+            quantity: current?.quantity || 1,
+            price: product.price,
+            discount: current?.discount ?? 0,
+            discountMode: current?.discountMode ?? "percent",
+            discountAmount: current?.discountAmount ?? 0,
+            assortmentMeta: product.meta,
+            cell: product.cell,
+            slotName: product.slotName ?? product.cell,
+            stock: {
+              cost: product.cost,
+              quantity: product.stockQuantity,
+              reserve: product.reserveQuantity,
+              available: product.availableQuantity,
+            },
+          }
+        : position));
+      setRecentlyAddedPositionIndex(index);
+      markDraftDirty();
+    }
+    setProductAddNotice("Товар из каталога добавлен в отгрузку");
+    closeNonstockProductForm();
   };
 
   const addOneOffServicePosition = () => {
@@ -2629,12 +2954,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         attributes: atts,
         positions:
           positions.length > 0
-            ? positions.map((p) => ({
-                quantity: p.quantity,
-                price: Number(p.price) || 0,
-                discount: typeof p.discount === "number" ? p.discount : 0,
-                assortment: p.assortmentMeta ? { meta: p.assortmentMeta } : undefined,
-              }))
+            ? positions.map((position) => demandPositionPayload(position, { priceIsCents: false }))
             : undefined,
       };
       const res = await fetch("/api/demands", {
@@ -2741,14 +3061,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         attributes: atts,
         positions:
           positions.length > 0
-            ? positions.map((p) => ({
-                id: isExistingDraft ? p.id : undefined,
-                name: p.name,
-                comment: p.comment,
-                quantity: p.quantity,
-                price: isExistingDraft ? Math.round((Number(p.price) || 0) * 100) : Number(p.price) || 0,
-                discount: typeof p.discount === "number" ? p.discount : 0,
-                assortment: p.assortmentMeta ? { meta: p.assortmentMeta } : undefined,
+            ? positions.map((position) => demandPositionPayload(position, {
+                priceIsCents: isExistingDraft,
+                includeId: isExistingDraft,
               }))
             : undefined,
       };
@@ -2831,15 +3146,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           applicable: false,
           moment: momentStr || toServiceMomentString(),
           attributes: atts,
-          positions: positions.map((p) => ({
-            id: p.id,
-            name: p.name,
-            comment: p.comment,
-            quantity: p.quantity,
-            price: Math.round((Number(p.price) || 0) * 100),
-            discount: typeof p.discount === "number" ? p.discount : 0,
-            assortment: p.assortmentMeta ? { meta: p.assortmentMeta } : undefined,
-          })),
+          positions: positions.map((position) => demandPositionPayload(position, { priceIsCents: true, includeId: true })),
         }),
       });
       const data = await safeJson<DemandCreateJson>(res, {});
@@ -2897,6 +3204,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 
   const getPositionStock = useCallback(
     (position: Position) => {
+      if (isServiceMeta(position.assortmentMeta)) return position.stock ?? { cost: 0 };
       const href = position.assortmentMeta?.href ?? "";
       return position.stock ?? stockByAssortment[href] ?? null;
     },
@@ -2943,16 +3251,46 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     : positions.reduce((sum, p) => sum + ((getPositionStock(p)?.cost ?? 0) * (p.quantity || 0)), 0);
   const positionsMargin = positionsCost == null ? null : positionsTotal - positionsCost;
   const positionsMarginPct = positionsMargin != null && positionsTotal > 0 ? Math.round((positionsMargin / positionsTotal) * 100) : null;
+  const nonstockDraftGroup = nonstockProductOptions.groups.find((item) =>
+    item.code === nonstockProductDraft.groupCode
+    || item.label.toLocaleLowerCase("ru-RU") === nonstockProductDraft.groupCode.trim().toLocaleLowerCase("ru-RU")
+  );
+  const nonstockDraftUomLabel = nonstockProductOptions.uoms.find((uom) => uom.code === nonstockProductDraft.uomCode)?.label ?? "ед.";
+  const nonstockDraftBrand = normalizeNonstockProductBrand(nonstockProductDraft.brand).display;
+  const nonstockDraftArticle = normalizeNonstockProductArticle(nonstockProductDraft.article).display;
+  const nonstockDraftPreview = [
+    nonstockDraftGroup?.label,
+    nonstockProductDraft.clarification.trim(),
+    nonstockDraftBrand,
+    nonstockDraftArticle,
+  ].filter(Boolean).join(" ");
+  const nonstockDraftSalePrice = nonstockProductDraft.salePrice.trim() ? parseDecimalInput(nonstockProductDraft.salePrice) : 0;
+  const nonstockDraftPurchasePrice = nonstockProductDraft.explicitZeroCost
+    ? 0
+    : nonstockProductDraft.purchasePrice.trim()
+      ? parseDecimalInput(nonstockProductDraft.purchasePrice)
+      : null;
+  const nonstockDraftRevenue = nonstockProductDraft.quantity * nonstockDraftSalePrice;
+  const nonstockDraftCost = nonstockDraftPurchasePrice == null ? null : nonstockProductDraft.quantity * nonstockDraftPurchasePrice;
+  const nonstockDraftProfit = nonstockDraftCost == null ? null : nonstockDraftRevenue - nonstockDraftCost;
+  const nonstockDraftMargin = nonstockDraftProfit == null || nonstockDraftRevenue <= 0
+    ? null
+    : (nonstockDraftProfit / nonstockDraftRevenue) * 100;
   const overAvailablePositionsCount = positions.filter((position) => {
-    if (isServiceMeta(position.assortmentMeta)) return false;
+    if (isServiceMeta(position.assortmentMeta) || isNonstockProduct(position)) return false;
     const available = getPositionStock(position)?.available;
     return typeof available === "number" && (position.quantity || 0) > available;
   }).length;
   const copiedPositionsWithMeta = positions.filter((position) => position.copyMeta?.status);
   const copiedPriceUpdates = copiedPositionsWithMeta.filter((position) => position.copyMeta?.priceUpdated);
   const copiedPositionIssues = copiedPositionsWithMeta.filter((position) =>
-    ["unlinked", "ambiguous", "archived"].includes(String(position.copyMeta?.status ?? ""))
+    ["unlinked", "ambiguous", "archived", "one_off_price_check"].includes(String(position.copyMeta?.status ?? ""))
   );
+  const missingNonstockCostCount = positions.filter((position) =>
+    isNonstockProduct(position)
+    && position.oneOffProduct?.purchasePrice == null
+    && position.oneOffProduct?.explicitZeroCost !== true
+  ).length;
   const decodedVehicle = vinLookupResult?.decoded;
   const attrModel = getAttributeString(attributes, (name) => name === "модель авто");
   const attrYear = getAttributeString(attributes, (name) => name === "год");
@@ -3026,10 +3364,15 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     : workflowMissing.length > 0
       ? `Можно дополнить: ${workflowMissing.join(", ")}`
       : "Готово к сохранению";
-  const saveDisabledReason = readinessMissing.length > 0 ? `Не хватает: ${readinessMissing.join(", ")}` : "";
-  const saveDisabled = submitLoading || readinessMissing.length > 0;
+  const nonstockCostBlocksPosting = applicable && missingNonstockCostCount > 0;
+  const saveDisabledReason = readinessMissing.length > 0
+    ? `Не хватает: ${readinessMissing.join(", ")}`
+    : nonstockCostBlocksPosting
+      ? "Укажите закупочную цену разового товара"
+      : "";
+  const saveDisabled = submitLoading || readinessMissing.length > 0 || nonstockCostBlocksPosting;
   const documentStepReady = Boolean(selectedOrg && selectedStore);
-  const finalStepReady = documentStepReady && Boolean(selectedAgent) && positions.length > 0 && overAvailablePositionsCount === 0;
+  const finalStepReady = documentStepReady && Boolean(selectedAgent) && positions.length > 0 && overAvailablePositionsCount === 0 && !nonstockCostBlocksPosting;
   const vehicleAttributeControls = [
     {
       key: "model",
@@ -4039,7 +4382,216 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               <Plus className="eco-icon" aria-hidden />
               Добавить услугу
             </button>
+            <button
+              type="button"
+              className={`eco-shipment-link-btn ${nonstockProductOpen ? "is-active" : ""}`}
+              onClick={() => nonstockProductOpen ? closeNonstockProductForm() : openNonstockProductForm()}
+              title="Добавить товар только в эту отгрузку без создания карточки в каталоге"
+              aria-expanded={nonstockProductOpen}
+              aria-controls="shipment-nonstock-product-form"
+            >
+              <Plus className="eco-icon" aria-hidden />
+              Добавить разовый товар
+            </button>
           </div>
+          {nonstockProductOpen && (
+            <section id="shipment-nonstock-product-form" className="eco-nonstock-product-form" aria-labelledby="shipment-nonstock-product-title">
+              <header className="eco-nonstock-product-form__head">
+                <div>
+                  <h4 id="shipment-nonstock-product-title">
+                    {nonstockProductEditingIndex == null ? "Добавить разовый товар" : "Редактировать разовый товар"}
+                  </h4>
+                  <p>Не добавляется в каталог и не изменяет складские остатки.</p>
+                </div>
+                {nonstockProductOptionsLoading ? <span role="status">Проверяем каталог…</span> : null}
+              </header>
+
+              <div className="eco-nonstock-product-form__grid">
+                <label className="eco-field">
+                  <span>Тип товара</span>
+                  <input
+                    id="shipment-nonstock-product-type"
+                    list="shipment-nonstock-product-types"
+                    value={nonstockDraftGroup?.label ?? nonstockProductDraft.groupCode}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      const match = nonstockProductOptions.groups.find((item) => item.label === value || item.code === value);
+                      setNonstockProductDraft((current) => ({ ...current, groupCode: match?.code ?? value }));
+                    }}
+                    className="eco-input"
+                    placeholder="Начните вводить тип"
+                    autoComplete="off"
+                  />
+                  <datalist id="shipment-nonstock-product-types">
+                    {nonstockProductOptions.groups.map((group) => <option key={group.code} value={group.label} />)}
+                  </datalist>
+                </label>
+                <label className="eco-field">
+                  <span>Бренд</span>
+                  <input
+                    list="shipment-nonstock-product-brands"
+                    value={nonstockProductDraft.brand}
+                    onChange={(event) => setNonstockProductDraft((current) => ({ ...current, brand: event.target.value }))}
+                    className="eco-input"
+                    placeholder="Например, MANN-FILTER"
+                    autoComplete="off"
+                  />
+                  <datalist id="shipment-nonstock-product-brands">
+                    {nonstockProductOptions.brands.map((brand) => <option key={brand} value={brand} />)}
+                  </datalist>
+                </label>
+                <label className="eco-field">
+                  <span>Артикул{nonstockDraftGroup?.articleRequired ? " *" : ""}</span>
+                  <input
+                    value={nonstockProductDraft.article}
+                    onChange={(event) => setNonstockProductDraft((current) => ({ ...current, article: event.target.value }))}
+                    className="eco-input"
+                    placeholder="Например, C 35 154"
+                    autoComplete="off"
+                  />
+                </label>
+                {nonstockDraftGroup?.code === "OTHER" ? (
+                  <label className="eco-field">
+                    <span>Уточнение</span>
+                    <input
+                      value={nonstockProductDraft.clarification}
+                      onChange={(event) => setNonstockProductDraft((current) => ({ ...current, clarification: event.target.value }))}
+                      className="eco-input"
+                      placeholder="Что это за товар"
+                    />
+                  </label>
+                ) : null}
+                <label className="eco-field">
+                  <span>Количество</span>
+                  <QuantityInput
+                    value={nonstockProductDraft.quantity}
+                    onValueChange={(quantity) => setNonstockProductDraft((current) => ({ ...current, quantity }))}
+                    className="eco-input"
+                  />
+                </label>
+                <label className="eco-field">
+                  <span>Единица</span>
+                  <select
+                    value={nonstockProductDraft.uomCode}
+                    onChange={(event) => setNonstockProductDraft((current) => ({ ...current, uomCode: event.target.value }))}
+                    className="eco-input"
+                  >
+                    {nonstockProductOptions.uoms.map((uom) => <option key={uom.code} value={uom.code}>{uom.label}</option>)}
+                  </select>
+                </label>
+                <label className="eco-field">
+                  <span>Купили за, ₽/{nonstockDraftUomLabel}</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={nonstockProductDraft.explicitZeroCost ? "0" : nonstockProductDraft.purchasePrice}
+                    onChange={(event) => setNonstockProductDraft((current) => ({ ...current, purchasePrice: event.target.value }))}
+                    className="eco-input"
+                    placeholder="Можно заполнить перед проведением"
+                    disabled={nonstockProductDraft.explicitZeroCost}
+                  />
+                </label>
+                <label className="eco-field">
+                  <span>Цена клиенту, ₽/{nonstockDraftUomLabel}</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={nonstockProductDraft.salePrice}
+                    onChange={(event) => setNonstockProductDraft((current) => ({ ...current, salePrice: event.target.value }))}
+                    className="eco-input"
+                    placeholder="1400"
+                  />
+                </label>
+                <label className="eco-field eco-nonstock-product-form__wide">
+                  <span>Где купили <small>необязательно</small></span>
+                  <input
+                    list="shipment-nonstock-product-suppliers"
+                    value={nonstockProductDraft.purchaseSourceLabel}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      const supplier = nonstockProductOptions.suppliers.find((item) => item.name === value);
+                      setNonstockProductDraft((current) => ({
+                        ...current,
+                        purchaseSourceId: supplier?.id ?? "",
+                        purchaseSourceLabel: value,
+                      }));
+                    }}
+                    className="eco-input"
+                    placeholder="Поставщик или название магазина"
+                    autoComplete="off"
+                  />
+                  <datalist id="shipment-nonstock-product-suppliers">
+                    {nonstockProductOptions.suppliers.map((supplier) => <option key={supplier.id} value={supplier.name} />)}
+                  </datalist>
+                </label>
+                <label className="eco-field eco-nonstock-product-form__wide">
+                  <span>Комментарий <small>необязательно</small></span>
+                  <input
+                    value={nonstockProductDraft.comment}
+                    onChange={(event) => setNonstockProductDraft((current) => ({ ...current, comment: event.target.value }))}
+                    className="eco-input"
+                    placeholder="Внутренний комментарий к покупке"
+                  />
+                </label>
+              </div>
+
+              <label className="eco-nonstock-product-zero-cost">
+                <input
+                  type="checkbox"
+                  checked={nonstockProductDraft.explicitZeroCost}
+                  onChange={(event) => setNonstockProductDraft((current) => ({
+                    ...current,
+                    explicitZeroCost: event.target.checked,
+                    purchasePrice: event.target.checked ? "" : current.purchasePrice,
+                  }))}
+                />
+                <span><strong>Получено бесплатно</strong><small>Подтверждает фактическую нулевую себестоимость</small></span>
+              </label>
+
+              {nonstockProductOptions.exactMatch ? (
+                <div className="eco-nonstock-product-match" role="status">
+                  <div>
+                    <strong>Такой товар уже есть в каталоге</strong>
+                    <span>{nonstockProductOptions.exactMatch.name}</span>
+                    <small>
+                      Остаток: {nonstockProductOptions.exactMatch.availableQuantity ?? 0}
+                      {nonstockProductOptions.exactMatch.slotName ? ` · Ячейка: ${nonstockProductOptions.exactMatch.slotName}` : ""}
+                    </small>
+                  </div>
+                  <EcoButton type="button" onClick={useExactCatalogProduct}>Добавить товар из каталога</EcoButton>
+                  <p>Разовую внешнюю покупку всё равно можно оформить ниже — складской остаток существующей карточки изменён не будет.</p>
+                </div>
+              ) : null}
+
+              <div className="eco-nonstock-product-preview" aria-live="polite">
+                <div>
+                  <span>В отгрузке будет отображаться:</span>
+                  <strong>{nonstockDraftPreview || "Заполните тип, бренд и артикул"}</strong>
+                </div>
+                <dl>
+                  <div><dt>Количество</dt><dd>{formatQuantityInput(nonstockProductDraft.quantity)} {nonstockDraftUomLabel}</dd></div>
+                  <div><dt>Закупка</dt><dd>{nonstockDraftPurchasePrice == null ? "Не указана" : `${formatShipmentMoney(nonstockDraftPurchasePrice)} / ${nonstockDraftUomLabel}`}</dd></div>
+                  <div><dt>Продажа</dt><dd>{`${formatShipmentMoney(nonstockDraftSalePrice)} / ${nonstockDraftUomLabel}`}</dd></div>
+                  <div><dt>Выручка</dt><dd>{formatShipmentMoney(nonstockDraftRevenue)}</dd></div>
+                  <div><dt>Себестоимость</dt><dd>{nonstockDraftCost == null ? "Не указана" : formatShipmentMoney(nonstockDraftCost)}</dd></div>
+                  <div><dt>Валовая прибыль</dt><dd>{nonstockDraftProfit == null ? "Не рассчитана" : formatShipmentMoney(nonstockDraftProfit)}</dd></div>
+                  <div><dt>Маржа</dt><dd>{nonstockDraftMargin == null ? "—" : `${nonstockDraftMargin.toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%`}</dd></div>
+                </dl>
+              </div>
+
+              {nonstockProductError ? <p className="eco-nonstock-product-error" role="alert">{nonstockProductError}</p> : null}
+              <div className="eco-nonstock-product-actions">
+                <EcoButton type="button" variant="primary" onClick={saveNonstockProductPosition}>
+                  {nonstockProductEditingIndex != null
+                    ? "Сохранить изменения"
+                    : nonstockProductOptions.exactMatch
+                      ? "Оформить как разовую внешнюю покупку"
+                      : "Добавить разовый товар"}
+                </EcoButton>
+                <EcoButton type="button" onClick={closeNonstockProductForm}>Отмена</EcoButton>
+              </div>
+            </section>
+          )}
           {oneOffServiceOpen && (
             <div className="eco-one-off-service-form">
               <label className="eco-field">
@@ -4750,7 +5302,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           </div>
           <div className="eco-shipment-empty-state">
             <strong>Позиции пока не добавлены</strong>
-            <span>Найдите товар выше или добавьте услугу.</span>
+            <span>Найдите товар выше, добавьте услугу или разовый товар.</span>
           </div>
         </section>
       )}
@@ -4777,11 +5329,17 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 </div>
 	            {group.items.map(({ position: p, index }) => {
 	              const isService = isServiceMeta(p.assortmentMeta);
+	              const isNonstock = isNonstockProduct(p);
+	              const productHref = positionProductHref(p);
 	              const stock = getPositionStock(p);
-	              const available = isService ? undefined : stock?.available;
+	              const available = isService || isNonstock ? undefined : stock?.available;
 	              const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
 	              const lineTotal = p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100);
-	              const slot = isService ? undefined : p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
+	              const slot = isService || isNonstock ? undefined : p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
+	              const nonstockCost = isNonstock && p.oneOffProduct?.purchasePrice != null
+	                ? p.oneOffProduct.purchasePrice * p.quantity
+	                : null;
+	              const nonstockProfit = nonstockCost == null ? null : lineTotal - nonstockCost;
               return (
                 <article
                   key={p.assortmentMeta?.href ?? index}
@@ -4789,34 +5347,52 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 >
                   <div className="eco-position-card-head">
                     <div>
-	                      <Link href={positionProductHref(p)} className="eco-linked-entity" title={isService ? "Открыть услугу" : "Открыть товар"}>
-                        <strong>{p.name}</strong>
-                        <ExternalLink className="eco-icon" aria-hidden />
-                      </Link>
-		                      <span>{isService ? "локальная услуга" : p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}</span>
+	                      {productHref ? (
+	                        <Link href={productHref} className="eco-linked-entity" title={isService ? "Открыть услугу" : "Открыть товар"}>
+                            <strong>{p.name}</strong>
+                            <ExternalLink className="eco-icon" aria-hidden />
+                          </Link>
+	                      ) : <strong>{p.name}</strong>}
+		                      <span>{isService ? "локальная услуга" : isNonstock ? "Разовый товар · не учитывается в остатках" : p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}</span>
 		                      {p.copyMeta?.priceUpdated && (
 		                        <span className="eco-position-copy-note is-updated">
 		                          Цена обновлена: было {formatCents(p.copyMeta.originalPriceCents)} → стало {formatCents(p.copyMeta.currentPriceCents)}
 		                        </span>
 		                      )}
-		                      {["unlinked", "ambiguous", "archived"].includes(String(p.copyMeta?.status ?? "")) && (
+		                      {["unlinked", "ambiguous", "archived", "one_off_price_check"].includes(String(p.copyMeta?.status ?? "")) && (
 		                        <span className="eco-position-copy-note is-warning">
 		                          {p.copyMeta?.message ?? "Позиция требует проверки"}
 		                        </span>
 		                      )}
 	                    </div>
-                    <button type="button" onClick={() => removePosition(index)} aria-label="Удалить позицию" title="Удалить позицию">
-                      <Trash2 className="eco-icon" aria-hidden />
-                    </button>
+                    <div className="eco-position-card-actions">
+                      {isNonstock ? (
+                        <button type="button" onClick={() => openNonstockProductForm(index)} aria-label="Редактировать разовый товар" title="Редактировать разовый товар">
+                          <Pencil className="eco-icon" aria-hidden />
+                        </button>
+                      ) : null}
+                      <button type="button" onClick={() => removePosition(index)} aria-label="Удалить позицию" title="Удалить позицию">
+                        <Trash2 className="eco-icon" aria-hidden />
+                      </button>
+                    </div>
                   </div>
                   <PositionAvailabilityView
                     isService={isService}
+                    isNonstock={isNonstock}
                     slot={slot}
                     quantity={stock?.quantity}
                     reserve={stock?.reserve}
                     available={available}
                     needed={p.quantity || 0}
                   />
+                  {isNonstock ? (
+                    <dl className="eco-position-nonstock-details">
+                      <div><dt>Купили</dt><dd>{nonstockCost == null ? "Не указано" : formatShipmentMoney(nonstockCost)}</dd></div>
+                      <div><dt>Продали</dt><dd>{formatShipmentMoney(lineTotal)}</dd></div>
+                      <div><dt>Прибыль</dt><dd>{nonstockProfit == null ? "Не рассчитана" : formatShipmentMoney(nonstockProfit)}</dd></div>
+                      {p.oneOffProduct?.purchaseSourceLabel ? <div><dt>Где купили</dt><dd>{p.oneOffProduct.purchaseSourceLabel}</dd></div> : null}
+                    </dl>
+                  ) : null}
                   {overAvailable && <p className="eco-position-warning">Количество больше доступного остатка.</p>}
                   <div className="eco-position-card-controls">
                     <label>
@@ -4934,10 +5510,12 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                     </tr>
 	                {group.items.map(({ position: p, index }, groupRowIndex) => {
 	                  const isService = isServiceMeta(p.assortmentMeta);
+	                  const isNonstock = isNonstockProduct(p);
+	                  const productHref = positionProductHref(p);
 	                  const stock = getPositionStock(p);
-	                  const available = isService ? undefined : stock?.available;
+	                  const available = isService || isNonstock ? undefined : stock?.available;
 	                  const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
-	                  const slot = isService ? undefined : p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
+	                  const slot = isService || isNonstock ? undefined : p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
                   const lineTotal = p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100);
                   return (
                   <tr
@@ -4946,19 +5524,21 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   >
                     <td className="eco-position-row-number">{String(groupRowIndex + 1).padStart(2, "0")}</td>
                     <td className="eco-position-product-cell" title={p.name}>
-	                      <Link href={positionProductHref(p)} className="eco-position-product-name eco-position-product-link" title={isService ? "Открыть услугу" : "Открыть товар"}>
-                        <span>{p.name}</span>
-                        <ExternalLink className="eco-icon" aria-hidden />
-                      </Link>
+	                      {productHref ? (
+	                        <Link href={productHref} className="eco-position-product-name eco-position-product-link" title={isService ? "Открыть услугу" : "Открыть товар"}>
+                            <span>{p.name}</span>
+                            <ExternalLink className="eco-icon" aria-hidden />
+                          </Link>
+	                      ) : <span className="eco-position-product-name">{p.name}</span>}
 	                      <span className="eco-position-product-code">
-		                        {isService ? "локальная услуга" : p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}
+		                        {isService ? "локальная услуга" : isNonstock ? "Разовый товар · не учитывается в остатках" : p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}
 	                      </span>
 	                      {p.copyMeta?.priceUpdated && (
 	                        <span className="eco-position-copy-note is-updated">
 	                          Цена обновлена: было {formatCents(p.copyMeta.originalPriceCents)} → стало {formatCents(p.copyMeta.currentPriceCents)}
 	                        </span>
 	                      )}
-	                      {["unlinked", "ambiguous", "archived"].includes(String(p.copyMeta?.status ?? "")) && (
+	                      {["unlinked", "ambiguous", "archived", "one_off_price_check"].includes(String(p.copyMeta?.status ?? "")) && (
 	                        <span className="eco-position-copy-note is-warning">
 	                          {p.copyMeta?.message ?? "Позиция требует проверки"}
 	                        </span>
@@ -4967,6 +5547,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                     <td>
                       <PositionAvailabilityView
                         isService={isService}
+                        isNonstock={isNonstock}
                         slot={slot}
                         quantity={stock?.quantity}
                         reserve={stock?.reserve}
@@ -5052,6 +5633,17 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                       <strong className="eco-position-line-total">{formatShipmentMoney(lineTotal)}</strong>
                     </td>
                     <td className="is-action">
+                      {isNonstock ? (
+                        <button
+                          type="button"
+                          onClick={() => openNonstockProductForm(index)}
+                          className="eco-position-row-action"
+                          aria-label="Редактировать разовый товар"
+                          title="Редактировать разовый товар"
+                        >
+                          <Pencil className="eco-icon" aria-hidden />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => removePosition(index)}
@@ -5156,8 +5748,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	              <div className="eco-shipment-final-actions">
 	                <label className="eco-shipment-new-check">
 	                  <input id="applicable" type="checkbox" checked={applicable} onChange={(e) => { setApplicable(e.target.checked); markDraftDirty(); }} />
-	                  <span>Провести отгрузку и списать остатки со склада.</span>
+	                  <span>Провести отгрузку. Складские товары будут списаны; разовые товары остатки не изменят.</span>
 	                </label>
+	                {nonstockCostBlocksPosting && (
+	                  <p className="eco-shipment-new-error">Укажите закупочную цену разового товара. Без неё прибыль по отгрузке будет рассчитана неверно.</p>
+	                )}
 	                {overAvailablePositionsCount > 0 && (
 	                  <p className="eco-shipment-new-error">Нужно исправить позиции с нехваткой остатка: {overAvailablePositionsCount}</p>
 	                )}
@@ -5260,8 +5855,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               </label>
               <label className="eco-shipment-new-check">
                 <input type="checkbox" checked={applicable} onChange={(e) => { setApplicable(e.target.checked); markDraftDirty(); }} />
-                <span>Проведён. Списывает остатки локального склада.</span>
+                <span>Провести отгрузку. Складские товары будут списаны; разовые товары остатки не изменят.</span>
               </label>
+              {nonstockCostBlocksPosting ? (
+                <p className="eco-shipment-new-error">Укажите закупочную цену разового товара. Без неё прибыль по отгрузке будет рассчитана неверно.</p>
+              ) : null}
               <div className="eco-readiness-list">
                 {readinessItems.map((item) => (
                   <span key={item.key} className={item.ready ? "is-ready" : item.partial ? "is-partial" : ""}>

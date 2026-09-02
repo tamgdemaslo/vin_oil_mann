@@ -97,7 +97,7 @@ export async function POST(
           productId: product.id,
           name: product.name,
           priceCentsPerUnit: Math.round((Number(v.priceRub) || product.salePriceCents / 100) * 100),
-          buyPriceCentsPerUnit: stock?.buyPriceCents ?? product.buyPriceCents ?? null,
+          buyPriceCentsPerUnit: stock?.buyPriceCents ?? null,
           slotName: stock?.slotName ?? product.cell ?? null,
         });
 

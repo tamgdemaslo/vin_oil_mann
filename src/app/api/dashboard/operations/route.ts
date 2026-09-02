@@ -11,6 +11,7 @@ import { demandPaymentStatusFromRaw } from "@/lib/demand-payment";
 import { resolveDashboardAccessForBranch } from "@/lib/dashboard-variant";
 import { buildJournalFreeWindows } from "@/lib/booking/journal-windows";
 import { localDateIsoWeekday } from "@/lib/booking/timezone";
+import { calculateLineFinancials } from "@/lib/inventory-costing";
 
 export const dynamic = "force-dynamic";
 
@@ -127,12 +128,17 @@ function lineProfitCents(position: {
   priceCentsPerUnit: number;
   buyPriceCentsPerUnit: number | null;
   discount: unknown;
-}) {
+  assortmentType: string;
+}): number | null {
   const quantity = Number(position.quantity ?? 0);
   const discount = Number(position.discount ?? 0);
-  const sale = position.priceCentsPerUnit * quantity * (1 - discount / 100);
-  const cost = (position.buyPriceCentsPerUnit ?? 0) * quantity;
-  return cents(sale - cost);
+  return calculateLineFinancials({
+    quantity,
+    salePriceCents: position.priceCentsPerUnit,
+    discountPercent: discount,
+    assortmentType: position.assortmentType,
+    snapshotCents: position.buyPriceCentsPerUnit,
+  }).profitCents;
 }
 
 function dateTimeForServiceDate(date: string, time = "00:00") {
@@ -458,10 +464,11 @@ export async function GET() {
   const notifications: DashboardNotification[] = [];
   const todayShipments = todayDemands.filter((demand) => demand.applicable);
   const revenueCents = todayShipments.reduce((sum, demand) => sum + demand.sumCents, 0);
-  const grossProfitCents = todayShipments.reduce(
-    (sum, demand) => sum + demand.positions.reduce((lineSum, position) => lineSum + lineProfitCents(position), 0),
-    0
-  );
+  const todayLineProfits = todayShipments.flatMap((demand) => demand.positions.map(lineProfitCents));
+  const missingCostLines = todayLineProfits.filter((profit) => profit == null).length;
+  const grossProfitCents = missingCostLines > 0
+    ? null
+    : todayLineProfits.reduce<number>((sum, profit) => sum + (profit ?? 0), 0);
   const paidStats = todayShipments.reduce(
     (acc, demand) => {
       const paymentStatus = demandPaymentStatusFromRaw(demand.raw, demand.applicable);
@@ -700,6 +707,7 @@ export async function GET() {
     finance: canViewFinance ? {
       revenueCents,
       grossProfitCents,
+      missingCostLines,
       averageCheckCents: todayShipments.length ? cents(revenueCents / todayShipments.length) : 0,
       shipmentsCount: todayShipments.length,
       paidCents: paidStats.paidCents,

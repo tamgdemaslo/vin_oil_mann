@@ -3,23 +3,28 @@
  * Нужна отдельным модулем, чтобы синхронизация МС не тянула весь customer-analytics.
  */
 
+import { calculateLineFinancials } from "./inventory-costing";
+
 export type ComputedPositionForProfit = {
   priceCentsPerUnit: number;
   quantity: number;
   discount: number;
   buyPriceCentsPerUnit: number | null;
+  assortmentType: string;
 };
 
-export function documentProfitFromComputedPositions(positions: ComputedPositionForProfit[]): number {
+export function documentProfitFromComputedPositions(positions: ComputedPositionForProfit[]): number | null {
   let profit = 0;
   for (const p of positions) {
-    const qty = p.quantity || 0;
-    const disc = p.discount || 0;
-    const factor = (100 - disc) / 100;
-    const revenueCents = Math.round(p.priceCentsPerUnit * qty * factor);
-    const buy = p.buyPriceCentsPerUnit;
-    const costCents = buy != null ? Math.round(buy * qty) : 0;
-    profit += revenueCents - costCents;
+    const line = calculateLineFinancials({
+      quantity: p.quantity || 0,
+      salePriceCents: p.priceCentsPerUnit,
+      discountPercent: p.discount || 0,
+      assortmentType: p.assortmentType,
+      snapshotCents: p.buyPriceCentsPerUnit,
+    });
+    if (line.profitCents == null) return null;
+    profit += line.profitCents;
   }
   return profit;
 }

@@ -1115,7 +1115,7 @@ function localMatchFromProduct(
   match: { confidence: number; reason: string; matchType: MannLocalProductMatchType }
 ): MannLocalProductMatch {
   const stock = product.stockBalances[0];
-  const buyPriceCents = stock?.buyPriceCents ?? product.buyPriceCents ?? null;
+  const buyPriceCents = stock?.buyPriceCents ?? null;
   return {
     id: product.id,
     name: product.name,

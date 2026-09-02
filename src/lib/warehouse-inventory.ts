@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import type { User } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { calculateWeightedAverageCostCents, requireBalanceAverageCost } from "@/lib/inventory-costing";
+import { lockInventoryCostKeys } from "@/lib/inventory-costing-db";
 
 export const INVENTORY_CATEGORIES = [
   "Моторное масло",
@@ -322,7 +324,7 @@ async function buildScopeRows(
       snapshotQuantity: balance.quantity,
       snapshotReservedQuantity: balance.reserve,
       snapshotAvailableQuantity: balance.available,
-      unitCostSnapshotCents: balance.buyPriceCents ?? product.buyPriceCents,
+      unitCostSnapshotCents: balance.buyPriceCents,
       stockVersion: Math.round(balance.syncedAt.getTime() / 1000),
       productName: product.name,
     });
@@ -350,7 +352,7 @@ async function buildScopeRows(
         snapshotQuantity: ZERO,
         snapshotReservedQuantity: ZERO,
         snapshotAvailableQuantity: ZERO,
-        unitCostSnapshotCents: product.buyPriceCents,
+        unitCostSnapshotCents: null,
         stockVersion: 0,
         productName: product.name,
       });
@@ -1320,6 +1322,7 @@ async function createResultDocument(
   const sumCents = lines.reduce((sum, line) => sum + Math.abs(line.differenceCostCents ?? 0), 0);
   const document = await tx.localInventoryDocument.create({
     data: {
+      branchId: session.branchId,
       type,
       name: `${session.number} ${title}`,
       momentAt: now,
@@ -1338,6 +1341,7 @@ async function createResultDocument(
       raw: toJson({ inventorySessionId: session.id, source: "inventory" }),
       positions: {
         create: lines.map((line) => ({
+          branchId: session.branchId,
           productId: line.productId,
           productName: line.product?.name ?? "Товар",
           quantity: line.differenceQuantity?.abs() ?? ZERO,
@@ -1386,12 +1390,17 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
     const missingReason = lines.find((line) => line.differenceQuantity != null && !line.differenceQuantity.equals(ZERO) && !line.reasonCode && line.finalAction !== "NO_ACTION" && line.finalAction !== "SKIP");
     if (missingReason) return { ok: false as const, error: "Для всех расхождений нужна причина" };
 
+    const movingLines = lines.filter((line) => ledgerMovementForAction(line.finalAction, line.differenceQuantity) && line.productId && line.differenceQuantity);
+    await lockInventoryCostKeys(tx, {
+      branchId: session.branchId,
+      storeId: session.warehouseId,
+      productIds: movingLines.map((line) => line.productId as string),
+    });
+    const movementCostByLine = new Map<string, number>();
+
     for (const line of lines) {
       const movementType = ledgerMovementForAction(line.finalAction, line.differenceQuantity);
       if (!movementType || !line.productId || !line.differenceQuantity) continue;
-      if (line.differenceQuantity.gt(0) && (line.unitCostSnapshotCents == null || line.unitCostSnapshotCents <= 0)) {
-        return { ok: false as const, error: `Укажите себестоимость излишка: ${line.product?.name ?? line.id}` };
-      }
       const current = await tx.localStockBalance.findUnique({
         where: { productId_storeId: { productId: line.productId, storeId: session.warehouseId } },
       });
@@ -1401,6 +1410,33 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
       if (nextQuantity.lt(currentReserve)) {
         return { ok: false as const, error: `Фактический остаток станет меньше резерва: ${line.product?.name ?? line.id}` };
       }
+      try {
+        if (line.differenceQuantity.gt(0)) {
+          if (line.unitCostSnapshotCents == null || line.unitCostSnapshotCents <= 0) {
+            return { ok: false as const, error: `Укажите себестоимость излишка: ${line.product?.name ?? line.id}` };
+          }
+          calculateWeightedAverageCostCents({
+            oldQuantity: currentQuantity.toNumber(),
+            oldAverageCostCents: current?.buyPriceCents,
+            receivedQuantity: line.differenceQuantity.toNumber(),
+            receiptUnitCostCents: line.unitCostSnapshotCents,
+            productName: line.product?.name ?? line.id,
+          });
+          movementCostByLine.set(line.id, line.unitCostSnapshotCents);
+        } else {
+          movementCostByLine.set(line.id, requireBalanceAverageCost({
+            productName: line.product?.name ?? line.id,
+            averageCostCents: current?.buyPriceCents,
+          }));
+        }
+      } catch (error) {
+        return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось определить себестоимость расхождения" };
+      }
+    }
+
+    for (const line of lines) {
+      const movementCost = movementCostByLine.get(line.id);
+      if (movementCost != null) line.unitCostSnapshotCents = movementCost;
     }
 
     const shortageExpense = lines.filter((line) => line.finalAction === "SHORTAGE_EXPENSE");
@@ -1418,9 +1454,26 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
       const movementType = ledgerMovementForAction(line.finalAction, line.differenceQuantity);
       if (!movementType || !line.productId || !line.differenceQuantity) continue;
       const analyticsImpact = line.affectsManagementProfit && line.finalAction === "SHORTAGE_EXPENSE";
-      const totalCostSnapshot = costForDifference(line.differenceQuantity, line.unitCostSnapshotCents);
+      const movementCostCents = movementCostByLine.get(line.id) ?? null;
+      const totalCostSnapshot = costForDifference(line.differenceQuantity, movementCostCents);
+      const current = await tx.localStockBalance.findUnique({
+        where: { productId_storeId: { productId: line.productId, storeId: session.warehouseId } },
+      });
+      const currentQuantity = current?.quantity ?? ZERO;
+      const reserve = current?.reserve ?? ZERO;
+      const nextQuantity = currentQuantity.plus(line.differenceQuantity);
+      const nextAverageCost = line.differenceQuantity.gt(0)
+        ? calculateWeightedAverageCostCents({
+            oldQuantity: currentQuantity.toNumber(),
+            oldAverageCostCents: current?.buyPriceCents,
+            receivedQuantity: line.differenceQuantity.toNumber(),
+            receiptUnitCostCents: movementCostCents as number,
+            productName: line.product?.name ?? line.id,
+          })
+        : current?.buyPriceCents ?? movementCostCents;
       const ledger = await tx.inventoryLedgerEntry.create({
         data: {
+          branchId: session.branchId,
           sourceType: "INVENTORY_SESSION",
           sourceId: session.id,
           organizationId: session.organizationId,
@@ -1430,26 +1483,27 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
           batchId: line.batchId,
           movementType,
           quantityDelta: line.differenceQuantity,
-          unitCostSnapshot: line.unitCostSnapshotCents,
+          unitCostSnapshot: movementCostCents,
           totalCostSnapshot,
           analyticsImpact,
           createdById: user.login,
           createdByName: user.name,
-          raw: toJson({ inventoryLineId: line.id, finalAction: line.finalAction, reasonCode: line.reasonCode }),
+          raw: toJson({
+            inventoryLineId: line.id,
+            finalAction: line.finalAction,
+            reasonCode: line.reasonCode,
+            balanceBefore: { quantity: currentQuantity.toNumber(), reserve: reserve.toNumber(), averageCostCents: current?.buyPriceCents ?? null },
+            balanceAfter: { quantity: nextQuantity.toNumber(), reserve: reserve.toNumber(), averageCostCents: nextAverageCost },
+          }),
         },
       });
-      const current = await tx.localStockBalance.findUnique({
-        where: { productId_storeId: { productId: line.productId, storeId: session.warehouseId } },
-      });
-      const nextQuantity = (current?.quantity ?? ZERO).plus(line.differenceQuantity);
-      const reserve = current?.reserve ?? ZERO;
       if (current) {
         await tx.localStockBalance.update({
           where: { id: current.id },
           data: {
             quantity: nextQuantity,
             available: nextQuantity.minus(reserve),
-            buyPriceCents: line.differenceQuantity.gt(0) ? line.unitCostSnapshotCents ?? current.buyPriceCents : current.buyPriceCents,
+            buyPriceCents: nextAverageCost,
             slotName: line.cellId ?? current.slotName,
             syncedAt: new Date(),
           },
@@ -1457,12 +1511,13 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
       } else {
         await tx.localStockBalance.create({
           data: {
+            branchId: session.branchId,
             productId: line.productId,
             storeId: session.warehouseId,
             quantity: nextQuantity,
             reserve: ZERO,
             available: nextQuantity,
-            buyPriceCents: line.unitCostSnapshotCents,
+            buyPriceCents: nextAverageCost,
             slotName: line.cellId,
             syncedAt: new Date(),
           },
@@ -1476,6 +1531,7 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
           : null;
       await tx.inventoryMovementLink.create({
         data: {
+          branchId: session.branchId,
           inventorySessionId: session.id,
           inventoryLineId: line.id,
           ledgerEntryId: ledger.id,
@@ -1515,12 +1571,49 @@ export async function reverseInventorySession(sessionId: string, body: { reason?
     }
     const entries = await tx.inventoryLedgerEntry.findMany({
       where: { sourceType: "INVENTORY_SESSION", sourceId: session.id, movementType: { not: "INVENTORY_REVERSAL" } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     });
+    await lockInventoryCostKeys(tx, {
+      branchId: session.branchId,
+      storeId: session.warehouseId,
+      productIds: entries.map((entry) => entry.productId).filter((productId): productId is string => Boolean(productId)),
+    });
+    for (const entry of entries) {
+      if (!entry.productId || !entry.storeId) continue;
+      const laterExternalMovement = await tx.inventoryLedgerEntry.findFirst({
+        where: {
+          branchId: session.branchId,
+          productId: entry.productId,
+          storeId: entry.storeId,
+          createdAt: { gt: entry.createdAt },
+          NOT: { sourceType: "INVENTORY_SESSION", sourceId: session.id },
+        },
+        select: { id: true },
+      });
+      if (laterExternalMovement) {
+        return { ok: false as const, error: "После инвентаризации уже есть складские движения. Создайте новую корректировку вместо небезопасного отката." };
+      }
+      const raw = asRecord(entry.raw);
+      const balanceBefore = asRecord(raw.balanceBefore);
+      const averageBefore = balanceBefore.averageCostCents;
+      if (!(averageBefore == null || typeof averageBefore === "number")) {
+        return { ok: false as const, error: "Ledger инвентаризации не содержит корректный снимок средней себестоимости для отката." };
+      }
+      const currentBalance = await tx.localStockBalance.findUnique({
+        where: { productId_storeId: { productId: entry.productId, storeId: entry.storeId } },
+        select: { quantity: true },
+      });
+      const projectedQuantity = (currentBalance?.quantity ?? ZERO).minus(entry.quantityDelta);
+      if (projectedQuantity.gt(ZERO) && !(typeof averageBefore === "number" && averageBefore > 0)) {
+        return { ok: false as const, error: "Нельзя безопасно восстановить среднюю себестоимость после инвентаризации." };
+      }
+    }
     for (const entry of entries) {
       if (!entry.productId || !entry.storeId) continue;
       const reverseDelta = entry.quantityDelta.neg();
       const reverseEntry = await tx.inventoryLedgerEntry.create({
         data: {
+          branchId: session.branchId,
           sourceType: "INVENTORY_SESSION",
           sourceId: session.id,
           organizationId: entry.organizationId,
@@ -1544,20 +1637,26 @@ export async function reverseInventorySession(sessionId: string, body: { reason?
       });
       const nextQuantity = (current?.quantity ?? ZERO).plus(reverseDelta);
       const reserve = current?.reserve ?? ZERO;
+      const balanceBefore = asRecord(asRecord(entry.raw).balanceBefore);
+      const rawAverageBefore = balanceBefore.averageCostCents;
+      const restoredAverageCost = typeof rawAverageBefore === "number" && rawAverageBefore > 0
+        ? Math.round(rawAverageBefore)
+        : null;
       if (current) {
         await tx.localStockBalance.update({
           where: { id: current.id },
-          data: { quantity: nextQuantity, available: nextQuantity.minus(reserve), syncedAt: new Date() },
+          data: { quantity: nextQuantity, available: nextQuantity.minus(reserve), buyPriceCents: restoredAverageCost, syncedAt: new Date() },
         });
       } else {
         await tx.localStockBalance.create({
           data: {
+            branchId: session.branchId,
             productId: entry.productId,
             storeId: entry.storeId,
             quantity: nextQuantity,
             reserve: ZERO,
             available: nextQuantity,
-            buyPriceCents: entry.unitCostSnapshot,
+            buyPriceCents: restoredAverageCost,
             slotName: entry.cellId,
             syncedAt: new Date(),
           },
@@ -1565,6 +1664,7 @@ export async function reverseInventorySession(sessionId: string, body: { reason?
       }
       await tx.inventoryMovementLink.create({
         data: {
+          branchId: session.branchId,
           inventorySessionId: session.id,
           ledgerEntryId: reverseEntry.id,
           documentType: "INVENTORY_REVERSAL",
@@ -1660,7 +1760,7 @@ export async function addInventoryProduct(
         snapshotReservedQuantity: balance?.reserve ?? ZERO,
         snapshotAvailableQuantity: balance?.available ?? ZERO,
         expectedQuantityAtCount: balance?.quantity ?? ZERO,
-        unitCostSnapshotCents: balance?.buyPriceCents ?? product.buyPriceCents,
+        unitCostSnapshotCents: balance?.buyPriceCents ?? null,
         stockVersion: balance ? Math.round(balance.syncedAt.getTime() / 1000) : 0,
         isUnexpected: true,
       },

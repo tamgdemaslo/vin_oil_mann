@@ -106,7 +106,7 @@ async function hasCorrectBypassPassword(password?: string, registerId?: string |
 function isProductOrderPosition(row: OrderPosition): boolean {
   const type = row.assortmentType ?? "";
   if (type === "service") return false;
-  if (type === "product" || type === "variant" || type === "bundle") return true;
+  if (type === "product" || type === "variant" || type === "bundle" || type === "nonstock_product") return true;
   return /\/entity\/(?:product|variant|bundle)\//i.test(row.assortmentHref ?? "");
 }
 
@@ -350,23 +350,27 @@ async function trySendLocalDemand(
     return NextResponse.json({ error: loaded.error }, { status: 400 });
   }
 
-  const rows: OrderPosition[] = loaded.data.positions.map((position) => ({
-    id: position.id,
-    productId: position.product?.id,
-    name: position.name,
-    quantity: position.quantity,
-    priceCents: position.price,
-    discountPercent: typeof position.discount === "number" ? position.discount : 0,
-    assortmentType: position.assortmentMeta?.type,
-    assortmentHref: position.assortmentMeta?.href,
-    productName: position.product?.name,
-    productGroupPath: position.product?.groupPath,
-    productUomName: position.product?.uomName,
-    productMarkingEnabled: position.product?.markingEnabled,
-    productMarkingMode: position.product?.markingMode,
-    productMarkingStatus: position.product?.markingStatus,
-    productMarkingSettings: position.product?.markingSettings,
-  }));
+  const rows: OrderPosition[] = loaded.data.positions.map((position) => {
+    const nonstockOilRequiresCheck = position.lineKind === "nonstock_product"
+      && ["ENGINE_OIL", "TRANSMISSION_FLUID"].includes(position.oneOffProduct?.groupCode ?? "");
+    return {
+      id: position.id,
+      productId: position.product?.id,
+      name: position.name,
+      quantity: position.quantity,
+      priceCents: position.price,
+      discountPercent: typeof position.discount === "number" ? position.discount : 0,
+      assortmentType: position.assortmentMeta?.type,
+      assortmentHref: position.assortmentMeta?.href,
+      productName: position.product?.name,
+      productGroupPath: position.product?.groupPath ?? position.oneOffProduct?.groupLabel,
+      productUomName: position.product?.uomName ?? position.oneOffProduct?.uomLabel,
+      productMarkingEnabled: position.product?.markingEnabled ?? nonstockOilRequiresCheck,
+      productMarkingMode: position.product?.markingMode ?? (nonstockOilRequiresCheck ? "REQUIRES_CHECK" : "NOT_MARKED"),
+      productMarkingStatus: position.product?.markingStatus ?? (nonstockOilRequiresCheck ? "REQUIRES_CHECK" : "NOT_MARKED"),
+      productMarkingSettings: position.product?.markingSettings,
+    };
+  });
   const currentShift = await getCurrentShift();
   const bypassPasswordAccepted = !body.markingBypassPositionIds?.length
     || await hasCorrectBypassPassword(body.markingBypassPassword, currentShift?.aqsiRegisterId);

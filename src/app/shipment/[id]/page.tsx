@@ -77,6 +77,23 @@ type Position = {
   discount?: number; // %
   discountMode?: "percent" | "amount";
   discountAmount?: number; // ₽ по строке
+  comment?: string;
+  lineKind?: "nonstock_product";
+  oneOffProduct?: {
+    groupCode: string;
+    groupLabel?: string;
+    brand: string;
+    brandCanonical?: string;
+    article: string;
+    articleDisplay?: string;
+    uomCode: string;
+    uomLabel?: string;
+    purchasePrice: number | null;
+    explicitZeroCost?: boolean;
+    purchaseSourceId?: string | null;
+    purchaseSourceLabel?: string | null;
+    clarification?: string | null;
+  };
 };
 
 type VinLookupItem = {
@@ -271,7 +288,12 @@ function isServiceMeta(meta?: Meta): boolean {
   return meta?.type === "service" || /^local:\/\/service\//i.test(meta?.href ?? "") || /\/entity\/service\//i.test(meta?.href ?? "");
 }
 
-function localProductHref(position: Position): string {
+function isNonstockProduct(position: Position): boolean {
+  return position.lineKind === "nonstock_product" || position.assortmentMeta?.type === "nonstock_product";
+}
+
+function localProductHref(position: Position): string | null {
+  if (isNonstockProduct(position)) return null;
   const productId = productIdFromMeta(position.assortmentMeta);
   if (productId) return `/inventory/products?product=${encodeURIComponent(productId)}`;
   return `/inventory/products?search=${encodeURIComponent(position.name)}`;
@@ -1188,11 +1210,15 @@ export default function ShipmentDetailPage() {
           attributes,
           positions: positions.map((p) => ({
             id: p.id,
+            name: p.name,
+            comment: p.comment,
             quantity: p.quantity,
             // обратно в копейки для локального API
             price: Math.round((p.price || 0) * 100),
             discount: typeof p.discount === "number" ? p.discount : 0,
             assortment: p.assortmentMeta ? { meta: p.assortmentMeta } : undefined,
+            lineKind: p.lineKind,
+            oneOffProduct: p.oneOffProduct,
           })),
         }),
       });
@@ -2024,10 +2050,14 @@ export default function ShipmentDetailPage() {
                         {group.items.map(({ position: p, index }, groupRowIndex) => {
                           const discount = typeof p.discount === "number" ? p.discount : 0;
                           const lineTotal = (p.quantity || 0) * (p.price || 0) * (1 - discount / 100);
+                          const nonstock = isNonstockProduct(p);
                           const type = isServiceMeta(p.assortmentMeta) ? "услуга" : "товар";
                           const productHref = localProductHref(p);
-                          const sourceProductId = productIdFromMeta(p.assortmentMeta);
-                          const availabilityDetails = [
+                          const sourceProductId = nonstock ? "" : productIdFromMeta(p.assortmentMeta);
+                          const availabilityDetails = nonstock ? [
+                            <strong key="nonstock">Вне склада</strong>,
+                            <span key="nonstock-note">Не учитывается в остатках</span>,
+                          ] : [
                             p.slotName ? <strong key="slot">{p.slotName}</strong> : null,
                             typeof p.stock?.quantity === "number" ? <span key="qty">Остаток: {p.stock.quantity}</span> : null,
                             typeof p.stock?.reserve === "number" ? <span key="reserve">Резерв: {p.stock.reserve}</span> : null,
@@ -2045,7 +2075,13 @@ export default function ShipmentDetailPage() {
                                 ) : (
                                   <strong>{p.name}</strong>
                                 )}
-                                <span>{sourceProductId || "локальная карточка"} · {type}</span>
+                                <span>{nonstock ? "Разовый товар" : sourceProductId || "локальная карточка"} · {type}</span>
+                                {nonstock ? (
+                                  <small className="eco-position-nonstock-summary">
+                                    Купили: {p.oneOffProduct?.purchasePrice == null ? "не указано" : `${p.oneOffProduct.purchasePrice.toLocaleString("ru-RU")} ₽`}
+                                    {p.oneOffProduct?.purchaseSourceLabel ? ` · ${p.oneOffProduct.purchaseSourceLabel}` : ""}
+                                  </small>
+                                ) : null}
                               </td>
                               <td>
                                 <div className="eco-position-availability">

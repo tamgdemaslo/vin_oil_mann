@@ -29,6 +29,14 @@ import {
   type ProductMarkingStatus,
 } from "@/lib/product-marking";
 import { assertNoActiveInventoryLocks } from "@/lib/warehouse-inventory";
+import {
+  calculateWeightedAverageCostCents,
+  lineCostCents as inventoryLineCostCents,
+  requireBalanceAverageCost,
+} from "@/lib/inventory-costing";
+import { lockInventoryCostKeys } from "@/lib/inventory-costing-db";
+import { invalidateWarehouseProductAnalyticsCache } from "@/lib/warehouse-product-analytics";
+import { invalidatePayrollCache } from "@/lib/payroll";
 
 export type LocalStockDocumentType = "receipt" | "writeoff";
 type LocalAdjustmentType = "technical" | "expense";
@@ -901,8 +909,15 @@ function mapProduct(product: ProductWithStock) {
     quantity: decimalToNumber(balance.quantity),
     reserve: decimalToNumber(balance.reserve),
     available: decimalToNumber(balance.available),
+    averageCost: balance.buyPriceCents == null ? null : balance.buyPriceCents / 100,
     slotName: balance.slotName ?? "",
   }));
+  const positiveStock = product.stockBalances.filter((balance) => decimalToNumber(balance.quantity) > 0.0001);
+  const averageCost = positiveStock.length === 0 || positiveStock.some((balance) => balance.buyPriceCents == null || balance.buyPriceCents <= 0)
+    ? null
+    : positiveStock.reduce((sum, balance) => sum + decimalToNumber(balance.quantity) * (balance.buyPriceCents ?? 0), 0)
+      / positiveStock.reduce((sum, balance) => sum + decimalToNumber(balance.quantity), 0)
+      / 100;
   return {
     id: product.id,
     name: product.name,
@@ -914,6 +929,7 @@ function mapProduct(product: ProductWithStock) {
     entityType: product.entityType,
     salePrice: product.salePriceCents / 100,
     buyPrice: product.buyPriceCents == null ? null : product.buyPriceCents / 100,
+    averageCost,
     currencyName: product.currencyName ?? "руб.",
     minimumBalance: decimalToNullableNumber(product.minimumBalance),
     barcodeEan13: product.barcodeEan13 ?? "",
@@ -1017,7 +1033,7 @@ function mapProduct(product: ProductWithStock) {
 
 function mapProductSearchRow(
   product: ProductListIndexProduct,
-  totals: { totalQuantity: number; totalAvailable: number } | undefined
+  totals: { totalQuantity: number; totalAvailable: number; positiveQuantity: number; stockCostCents: number; hasMissingCost: boolean } | undefined
 ): ProductSearchRow {
   return {
     id: product.id,
@@ -1030,6 +1046,9 @@ function mapProductSearchRow(
     entityType: product.entityType,
     salePrice: product.salePriceCents / 100,
     buyPrice: product.buyPriceCents == null ? null : product.buyPriceCents / 100,
+    averageCost: !totals || totals.positiveQuantity <= 0 || totals.hasMissingCost
+      ? null
+      : totals.stockCostCents / totals.positiveQuantity / 100,
     barcodeEan13: product.barcodeEan13 ?? "",
     barcodeEan8: product.barcodeEan8 ?? "",
     barcodeCode128: product.barcodeCode128 ?? "",
@@ -1113,6 +1132,7 @@ type ProductSearchRow = Pick<ProductListRow,
   | "entityType"
   | "salePrice"
   | "buyPrice"
+  | "averageCost"
   | "barcodeEan13"
   | "barcodeEan8"
   | "barcodeCode128"
@@ -1402,7 +1422,7 @@ function compareNullableNumber(a: number | null | undefined, b: number | null | 
 }
 
 function productMargin(product: ProductSearchRow): number | null {
-  return product.buyPrice == null ? null : product.salePrice - product.buyPrice;
+  return product.averageCost == null ? null : product.salePrice - product.averageCost;
 }
 
 function compareProducts(a: ProductSearchRow, b: ProductSearchRow, sort: ProductSortKey, direction: SortDirection) {
@@ -1550,6 +1570,8 @@ export function invalidateWarehouseReadCaches() {
   invalidateSupplierInvoiceLists();
   invalidateRestockNeedsLists();
   invalidateLocalInventoryFinanceCache();
+  invalidateWarehouseProductAnalyticsCache();
+  invalidatePayrollCache();
 }
 
 export async function listLocalProductGroups(options: { branchId: string; includeArchived?: boolean }) {
@@ -1590,14 +1612,21 @@ async function getProductRowsForAdmin(branchId: string, includeArchived?: boolea
         productId: true,
         quantity: true,
         available: true,
+        buyPriceCents: true,
       },
     }),
   ]);
-  const totalsByProduct = new Map<string, { totalQuantity: number; totalAvailable: number }>();
+  const totalsByProduct = new Map<string, { totalQuantity: number; totalAvailable: number; positiveQuantity: number; stockCostCents: number; hasMissingCost: boolean }>();
   for (const balance of balances) {
-    const current = totalsByProduct.get(balance.productId) ?? { totalQuantity: 0, totalAvailable: 0 };
-    current.totalQuantity += decimalToNumber(balance.quantity);
+    const current = totalsByProduct.get(balance.productId) ?? { totalQuantity: 0, totalAvailable: 0, positiveQuantity: 0, stockCostCents: 0, hasMissingCost: false };
+    const quantity = decimalToNumber(balance.quantity);
+    current.totalQuantity += quantity;
     current.totalAvailable += decimalToNumber(balance.available);
+    if (quantity > 0.0001) {
+      current.positiveQuantity += quantity;
+      if (balance.buyPriceCents == null || balance.buyPriceCents <= 0) current.hasMissingCost = true;
+      else current.stockCostCents += quantity * balance.buyPriceCents;
+    }
     totalsByProduct.set(balance.productId, current);
   }
   const rows = products.map((product) => mapProductSearchRow(product, totalsByProduct.get(product.id)));
@@ -2830,7 +2859,7 @@ export async function createLocalAdminProduct(
       groupPath,
       uomName,
       salePriceCents: centsFromRub(body.salePrice),
-      buyPriceCents: body.buyPrice == null ? null : centsFromRub(body.buyPrice),
+      buyPriceCents: null,
       currencyName,
       minimumBalance: decimalFromInput(body.minimumBalance),
       barcodeEan13,
@@ -2945,11 +2974,7 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
   }
   const uomName = body.uomName === undefined ? current.uomName : cleanText(body.uomName);
   const currencyName = body.currencyName == null ? current.currencyName ?? "руб." : body.currencyName.trim() || "руб.";
-  const buyPriceCents = body.buyPrice === undefined
-    ? current.buyPriceCents
-    : body.buyPrice == null
-      ? null
-      : centsFromRub(body.buyPrice);
+  const buyPriceCents = current.buyPriceCents;
   const minimumBalance = body.minimumBalance === undefined ? current.minimumBalance : decimalFromInput(body.minimumBalance);
   const barcodeEan13 = body.barcodeEan13 === undefined ? current.barcodeEan13 : cleanText(body.barcodeEan13);
   const barcodeEan8 = body.barcodeEan8 === undefined ? current.barcodeEan8 : cleanText(body.barcodeEan8);
@@ -4460,8 +4485,170 @@ export async function updateLocalSupplierInvoiceStatus(invoiceId: string, status
   return { ok: true as const, invoice: mapSupplierInvoice(updated) };
 }
 
+type CostedStockDocumentPosition = {
+  product: { id: string; name: string };
+  quantity: Prisma.Decimal;
+  priceCents: number;
+  slotName: string | null;
+  makeDefaultCell: boolean;
+};
+
+async function preparePostedStockDocumentCosts<T extends CostedStockDocumentPosition>(
+  tx: Prisma.TransactionClient,
+  input: {
+    branchId: string;
+    type: LocalStockDocumentType;
+    store: { id: string; name: string };
+    positions: T[];
+  }
+): Promise<T[]> {
+  await lockInventoryCostKeys(tx, {
+    branchId: input.branchId,
+    storeId: input.store.id,
+    productIds: input.positions.map((position) => position.product.id),
+  });
+  const balanceRows = await tx.localStockBalance.findMany({
+    where: {
+      storeId: input.store.id,
+      productId: { in: input.positions.map((position) => position.product.id) },
+    },
+  });
+  const balances = new Map(balanceRows.map((balance) => [balance.productId, balance]));
+  return input.positions.map((position) => {
+    if (input.type === "receipt") {
+      if (position.priceCents <= 0) throw new Error(`Укажите закупочную цену товара «${position.product.name}»`);
+      return position;
+    }
+    const cost = requireBalanceAverageCost({
+      productName: position.product.name,
+      storeName: input.store.name,
+      averageCostCents: balances.get(position.product.id)?.buyPriceCents,
+    });
+    return { ...position, priceCents: cost };
+  });
+}
+
+async function applyPostedStockDocumentMovements<T extends CostedStockDocumentPosition>(
+  tx: Prisma.TransactionClient,
+  input: {
+    branchId: string;
+    documentId: string;
+    type: LocalStockDocumentType;
+    store: { id: string; organizationId: string | null };
+    positions: T[];
+    user?: ActingUser;
+  }
+) {
+  await assertNoActiveInventoryLocks(tx, {
+    organizationId: input.store.organizationId,
+    warehouseId: input.store.id,
+    productIds: input.positions.map((position) => position.product.id),
+  });
+  for (const [positionIndex, position] of input.positions.entries()) {
+    const quantity = position.quantity.toNumber();
+    if (quantity <= 0) throw new Error(`Количество товара «${position.product.name}» должно быть больше нуля`);
+    const current = await tx.localStockBalance.findUnique({
+      where: { productId_storeId: { productId: position.product.id, storeId: input.store.id } },
+    });
+    const currentQuantity = current?.quantity.toNumber() ?? 0;
+    const reserve = current?.reserve.toNumber() ?? 0;
+    const currentAvailable = current?.available.toNumber() ?? currentQuantity - reserve;
+    if (input.type === "writeoff") {
+      if (currentQuantity < 0) {
+        throw new Error(`Остаток товара «${position.product.name}» уже отрицательный. Используйте корректировку фактического остатка.`);
+      }
+      if (quantity > currentQuantity + 0.000001) {
+        throw new Error(`Нельзя списать ${quantity} шт. товара «${position.product.name}»: на складе ${currentQuantity} шт.`);
+      }
+      if (quantity > currentAvailable + 0.000001) {
+        throw new Error(`Из ${currentQuantity} шт. товара «${position.product.name}» ${reserve} шт. находятся в резерве. Сначала снимите резерв или выберите меньшее количество.`);
+      }
+    }
+
+    const delta = input.type === "receipt" ? quantity : -quantity;
+    const nextQuantity = currentQuantity + delta;
+    const nextAvailable = nextQuantity - reserve;
+    if (nextQuantity < -0.000001 || nextAvailable < -0.000001) {
+      throw new Error(`Операция создаёт отрицательный остаток по товару «${position.product.name}»`);
+    }
+    const nextAverageCost = input.type === "receipt"
+      ? calculateWeightedAverageCostCents({
+          oldQuantity: currentQuantity,
+          oldAverageCostCents: current?.buyPriceCents,
+          receivedQuantity: quantity,
+          receiptUnitCostCents: position.priceCents,
+          productName: position.product.name,
+        })
+      : requireBalanceAverageCost({
+          productName: position.product.name,
+          averageCostCents: current?.buyPriceCents,
+        });
+
+    if (current) {
+      await tx.localStockBalance.update({
+        where: { id: current.id },
+        data: {
+          quantity: new Prisma.Decimal(nextQuantity),
+          available: new Prisma.Decimal(nextAvailable),
+          buyPriceCents: nextAverageCost,
+          slotName: position.slotName ?? current.slotName,
+          syncedAt: new Date(),
+        },
+      });
+    } else {
+      await tx.localStockBalance.create({
+        data: {
+          branchId: input.branchId,
+          productId: position.product.id,
+          storeId: input.store.id,
+          quantity: new Prisma.Decimal(nextQuantity),
+          reserve: new Prisma.Decimal(0),
+          available: new Prisma.Decimal(nextAvailable),
+          buyPriceCents: nextAverageCost,
+          slotName: position.slotName,
+          syncedAt: new Date(),
+        },
+      });
+    }
+
+    if (input.type === "receipt") {
+      const productUpdate: Prisma.LocalProductUpdateInput = {
+        buyPriceCents: position.priceCents,
+        syncedAt: new Date(),
+      };
+      if (position.makeDefaultCell && position.slotName) productUpdate.cell = position.slotName;
+      await tx.localProduct.update({ where: { id: position.product.id }, data: productUpdate });
+    }
+
+    await tx.inventoryLedgerEntry.create({
+      data: {
+        branchId: input.branchId,
+        sourceType: "INVENTORY_DOCUMENT",
+        sourceId: input.documentId,
+        organizationId: input.store.organizationId,
+        productId: position.product.id,
+        storeId: input.store.id,
+        movementType: input.type === "receipt" ? "RECEIPT_POST" : "WRITEOFF_POST",
+        quantityDelta: new Prisma.Decimal(delta),
+        unitCostSnapshot: position.priceCents,
+        totalCostSnapshot: inventoryLineCostCents(quantity, position.priceCents),
+        revision: 1,
+        createdById: input.user?.login ?? null,
+        createdByName: input.user?.name ?? null,
+        raw: toJson({
+          balanceBefore: { quantity: currentQuantity, reserve, available: currentAvailable, averageCostCents: current?.buyPriceCents ?? null },
+          balanceAfter: { quantity: nextQuantity, reserve, available: nextAvailable, averageCostCents: nextAverageCost },
+          costSource: input.type === "receipt" ? "receipt_price" : "balance_average",
+          costStatus: "confirmed",
+          positionIndex,
+        }),
+      },
+    });
+  }
+}
+
 export async function createLocalStockDocument(body: StockDocumentInput, user?: ActingUser, options?: StockDocumentCreateOptions) {
-  getScopedBranchId();
+  const branchId = getScopedBranchId();
   const type = body.type === "receipt" || body.type === "writeoff" ? body.type : null;
   const client = options?.transaction ?? prisma;
   if (!type) return { ok: false as const, error: "Неизвестный тип складского документа" };
@@ -4508,9 +4695,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     if (!isStockTrackedType(product.entityType)) return { error: `Позиция не является складским товаром: ${product.name}` as const };
     const quantity = Number(position.quantity) || 0;
     const inputPriceCents = centsFromRub(position.price);
-    const priceCents = type === "writeoff" && inputPriceCents <= 0
-      ? product.buyPriceCents ?? 0
-      : inputPriceCents;
+    const priceCents = inputPriceCents;
     const salePriceCents = type === "receipt" && position.salePrice !== undefined
       ? Math.max(0, centsFromRub(position.salePrice))
       : null;
@@ -4529,14 +4714,16 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
   if (positionError && "error" in positionError) {
     return { ok: false as const, error: positionError.error };
   }
+  const validPositions = positions.filter(
+    (position): position is Exclude<(typeof positions)[number], { error: string }> => !("error" in position)
+  );
 
   const counterpartyId = body.counterpartyId?.trim();
   const supplierSnapshotName = supplierSnapshotNameFromId(counterpartyId);
   const counterparty = counterpartyId && !supplierSnapshotName
     ? await client.localCounterparty.findFirst({ where: { OR: [{ id: counterpartyId }, { id: counterpartyId }] } })
     : null;
-  const sumCents = positions.reduce((sum, position) => {
-    if ("error" in position) return sum;
+  const sumCents = validPositions.reduce((sum, position) => {
     return sum + Math.round(position.quantity.toNumber() * position.priceCents);
   }, 0);
   const name = await nextStockDocumentName(type, documentDate, adjustmentType, options?.transaction);
@@ -4561,15 +4748,28 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
   };
   try {
     const createDocument = async (tx: Prisma.TransactionClient) => {
+      const effectivePositions = applicable
+        ? await preparePostedStockDocumentCosts(tx, {
+            branchId,
+            type,
+            store: store!,
+            positions: validPositions,
+          })
+        : validPositions;
+      const effectiveSumCents = effectivePositions.reduce(
+        (sum, position) => sum + Math.round(position.quantity.toNumber() * position.priceCents),
+        0
+      );
       const document = await tx.localInventoryDocument.create({
       data: {
+        branchId,
         type,
         name,
         momentAt,
         documentDate,
         status: applicable ? "posted" : "draft",
         applicable,
-        sumCents,
+        sumCents: effectiveSumCents,
         description: body.description?.trim() || null,
         adjustmentType,
         adjustmentMethod,
@@ -4588,9 +4788,9 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     });
 
     await tx.localInventoryDocumentPosition.createMany({
-      data: positions.map((position) => {
-        if ("error" in position) throw new Error(position.error);
+      data: effectivePositions.map((position) => {
         return {
+          branchId,
           documentId: document.id,
           productId: position.product.id,
           productName: position.product.name,
@@ -4605,8 +4805,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     });
 
     if (type === "receipt") {
-      for (const position of positions) {
-        if ("error" in position) throw new Error(position.error);
+      for (const position of effectivePositions) {
         if (position.salePriceCents === null || position.salePriceCents === position.product.salePriceCents) continue;
         await tx.localProduct.update({
           where: { id: position.product.id },
@@ -4623,8 +4822,8 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
           invoiceDate: invoiceDate!,
           dueDate: invoiceDueDate,
           status: invoiceStatus!,
-          sumCents,
-          paidAmountCents: initialPaidCentsForStatus(invoiceStatus!, sumCents),
+          sumCents: effectiveSumCents,
+          paidAmountCents: initialPaidCentsForStatus(invoiceStatus!, effectiveSumCents),
           source: "receipt",
           createdBy: user?.login ?? null,
           counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
@@ -4635,78 +4834,14 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
 
     if (applicable) {
       if (!store) throw new Error("Выберите склад");
-      await assertNoActiveInventoryLocks(tx, {
-        organizationId: store.organizationId,
-        warehouseId: store.id,
-        productIds: positions.map((position) => "error" in position ? null : position.product.id),
+      await applyPostedStockDocumentMovements(tx, {
+        branchId,
+        documentId: document.id,
+        type,
+        store,
+        positions: effectivePositions,
+        user,
       });
-      for (const position of positions) {
-        if ("error" in position) throw new Error(position.error);
-        const delta = position.quantity.toNumber() * (type === "receipt" ? 1 : -1);
-        const current = await tx.localStockBalance.findUnique({
-          where: { productId_storeId: { productId: position.product.id, storeId: store.id } },
-        });
-        const currentQuantity = current?.quantity.toNumber() ?? 0;
-        const reserve = current?.reserve.toNumber() ?? 0;
-        const currentAvailable = current?.available.toNumber() ?? currentQuantity - reserve;
-        if (type === "writeoff") {
-          if (currentQuantity < 0) {
-            throw new Error(`Остаток товара «${position.product.name}» уже отрицательный. Используйте корректировку фактического остатка.`);
-          }
-          if (position.quantity.toNumber() > currentQuantity + 0.000001) {
-            throw new Error(`Нельзя списать ${position.quantity.toNumber()} шт. товара «${position.product.name}»: на складе ${currentQuantity} шт.`);
-          }
-          if (position.quantity.toNumber() > currentAvailable + 0.000001) {
-            throw new Error(`Из ${currentQuantity} шт. товара «${position.product.name}» ${reserve} шт. находятся в резерве. Сначала снимите резерв или выберите меньшее количество.`);
-          }
-        }
-        const nextQuantity = currentQuantity + delta;
-        const nextAvailable = nextQuantity - reserve;
-        if (nextQuantity < -0.000001 || nextAvailable < -0.000001) {
-          throw new Error(`Операция создаёт отрицательный остаток по товару «${position.product.name}»`);
-        }
-        if (current) {
-          await tx.localStockBalance.update({
-            where: { id: current.id },
-            data: {
-              quantity: new Prisma.Decimal(nextQuantity),
-              available: new Prisma.Decimal(nextAvailable),
-              slotName: position.slotName ?? current.slotName,
-              syncedAt: new Date(),
-            },
-          });
-        } else {
-          await tx.localStockBalance.create({
-            data: {
-              productId: position.product.id,
-              storeId: store.id,
-              quantity: new Prisma.Decimal(nextQuantity),
-              reserve: new Prisma.Decimal(0),
-              available: new Prisma.Decimal(nextAvailable),
-              slotName: position.slotName,
-              syncedAt: new Date(),
-            },
-          });
-        }
-        if (type === "receipt") {
-          const productUpdate: Prisma.LocalProductUpdateInput = { syncedAt: new Date() };
-          let shouldUpdateProduct = false;
-          if (position.priceCents > 0) {
-            productUpdate.buyPriceCents = position.priceCents;
-            shouldUpdateProduct = true;
-          }
-          if (position.makeDefaultCell && position.slotName) {
-            productUpdate.cell = position.slotName;
-            shouldUpdateProduct = true;
-          }
-          if (shouldUpdateProduct) {
-            await tx.localProduct.update({
-              where: { id: position.product.id },
-              data: productUpdate,
-            });
-          }
-        }
-      }
     }
 
     await writeStockDocumentAudit(tx, {
@@ -4718,8 +4853,8 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
         type,
         name,
         documentDate,
-        sumCents,
-        positionsCount: positions.length,
+        sumCents: effectiveSumCents,
+        positionsCount: effectivePositions.length,
         invoiceCreated: invoiceRequested,
       },
       user,
@@ -4762,7 +4897,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
 }
 
 export async function updateLocalStockDocument(documentId: string, body: StockDocumentInput, user?: ActingUser) {
-  getScopedBranchId();
+  const branchId = getScopedBranchId();
   const id = documentId?.trim();
   if (!id) return { ok: false as const, error: "Не выбран складской документ" };
 
@@ -4853,9 +4988,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
     if (!isStockTrackedType(product.entityType)) return { error: `Позиция не является складским товаром: ${product.name}` as const };
     const quantity = Number(position.quantity) || 0;
     const inputPriceCents = centsFromRub(position.price);
-    const priceCents = type === "writeoff" && inputPriceCents <= 0
-      ? product.buyPriceCents ?? 0
-      : inputPriceCents;
+    const priceCents = inputPriceCents;
     const salePriceCents = type === "receipt" && position.salePrice !== undefined
       ? Math.max(0, centsFromRub(position.salePrice))
       : null;
@@ -4874,14 +5007,16 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
   if (positionError && "error" in positionError) {
     return { ok: false as const, error: positionError.error };
   }
+  const validPositions = positions.filter(
+    (position): position is Exclude<(typeof positions)[number], { error: string }> => !("error" in position)
+  );
 
   const counterpartyId = body.counterpartyId?.trim();
   const supplierSnapshotName = supplierSnapshotNameFromId(counterpartyId);
   const counterparty = counterpartyId && !supplierSnapshotName
     ? await prisma.localCounterparty.findFirst({ where: { OR: [{ id: counterpartyId }, { id: counterpartyId }] } })
     : null;
-  const sumCents = positions.reduce((sum, position) => {
-    if ("error" in position) return sum;
+  const sumCents = validPositions.reduce((sum, position) => {
     return sum + Math.round(position.quantity.toNumber() * position.priceCents);
   }, 0);
   const invoiceRequested = type === "receipt" && body.invoice?.create === true;
@@ -4917,6 +5052,18 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
   try {
     const oldSnapshot = stockDocumentSnapshot(current);
     updated = await prisma.$transaction(async (tx) => {
+      const effectivePositions = applicable
+        ? await preparePostedStockDocumentCosts(tx, {
+            branchId,
+            type,
+            store: store!,
+            positions: validPositions,
+          })
+        : validPositions;
+      const effectiveSumCents = effectivePositions.reduce(
+        (sum, position) => sum + Math.round(position.quantity.toNumber() * position.priceCents),
+        0
+      );
       const document = await tx.localInventoryDocument.update({
       where: { id: current.id },
       data: {
@@ -4925,7 +5072,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
         documentDate,
         status: applicable ? "posted" : "draft",
         applicable,
-        sumCents,
+        sumCents: effectiveSumCents,
         description: body.description?.trim() || null,
         adjustmentType,
         adjustmentMethod,
@@ -4949,9 +5096,9 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
 
     await tx.localInventoryDocumentPosition.deleteMany({ where: { documentId: document.id } });
     await tx.localInventoryDocumentPosition.createMany({
-      data: positions.map((position) => {
-        if ("error" in position) throw new Error(position.error);
+      data: effectivePositions.map((position) => {
         return {
+          branchId,
           documentId: document.id,
           productId: position.product.id,
           productName: position.product.name,
@@ -4972,8 +5119,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
     });
 
     if (type === "receipt") {
-      for (const position of positions) {
-        if ("error" in position) throw new Error(position.error);
+      for (const position of effectivePositions) {
         if (position.salePriceCents === null || position.salePriceCents === position.product.salePriceCents) continue;
         await tx.localProduct.update({
           where: { id: position.product.id },
@@ -4991,8 +5137,8 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
           invoiceDate: invoiceDate!,
           dueDate: invoiceDueDate,
           status: invoiceStatus!,
-          sumCents,
-          paidAmountCents: initialPaidCentsForStatus(invoiceStatus!, sumCents),
+          sumCents: effectiveSumCents,
+          paidAmountCents: initialPaidCentsForStatus(invoiceStatus!, effectiveSumCents),
           source: "receipt",
           createdBy: user?.login ?? null,
           counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
@@ -5003,10 +5149,10 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
           invoiceDate: invoiceDate!,
           dueDate: invoiceDueDate,
           status: paidInvoiceLocked ? "requires_review" : invoiceStatus!,
-          sumCents,
+          sumCents: effectiveSumCents,
           paidAmountCents: paidInvoiceLocked
             ? current.supplierInvoice?.paidAmountCents ?? 0
-            : initialPaidCentsForStatus(invoiceStatus!, sumCents),
+            : initialPaidCentsForStatus(invoiceStatus!, effectiveSumCents),
           counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
           raw: toJson(body.invoice),
         },
@@ -5017,78 +5163,14 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
 
     if (applicable) {
       if (!store) throw new Error("Выберите склад");
-      await assertNoActiveInventoryLocks(tx, {
-        organizationId: store.organizationId,
-        warehouseId: store.id,
-        productIds: positions.map((position) => "error" in position ? null : position.product.id),
+      await applyPostedStockDocumentMovements(tx, {
+        branchId,
+        documentId: document.id,
+        type,
+        store,
+        positions: effectivePositions,
+        user,
       });
-      for (const position of positions) {
-        if ("error" in position) throw new Error(position.error);
-        const delta = position.quantity.toNumber() * (type === "receipt" ? 1 : -1);
-        const currentBalance = await tx.localStockBalance.findUnique({
-          where: { productId_storeId: { productId: position.product.id, storeId: store.id } },
-        });
-        const currentQuantity = currentBalance?.quantity.toNumber() ?? 0;
-        const reserve = currentBalance?.reserve.toNumber() ?? 0;
-        const currentAvailable = currentBalance?.available.toNumber() ?? currentQuantity - reserve;
-        if (type === "writeoff") {
-          if (currentQuantity < 0) {
-            throw new Error(`Остаток товара «${position.product.name}» уже отрицательный. Используйте корректировку фактического остатка.`);
-          }
-          if (position.quantity.toNumber() > currentQuantity + 0.000001) {
-            throw new Error(`Нельзя списать ${position.quantity.toNumber()} шт. товара «${position.product.name}»: на складе ${currentQuantity} шт.`);
-          }
-          if (position.quantity.toNumber() > currentAvailable + 0.000001) {
-            throw new Error(`Из ${currentQuantity} шт. товара «${position.product.name}» ${reserve} шт. находятся в резерве. Сначала снимите резерв или выберите меньшее количество.`);
-          }
-        }
-        const nextQuantity = currentQuantity + delta;
-        const nextAvailable = nextQuantity - reserve;
-        if (nextQuantity < -0.000001 || nextAvailable < -0.000001) {
-          throw new Error(`Операция создаёт отрицательный остаток по товару «${position.product.name}»`);
-        }
-        if (currentBalance) {
-          await tx.localStockBalance.update({
-            where: { id: currentBalance.id },
-            data: {
-              quantity: new Prisma.Decimal(nextQuantity),
-              available: new Prisma.Decimal(nextAvailable),
-              slotName: position.slotName ?? currentBalance.slotName,
-              syncedAt: new Date(),
-            },
-          });
-        } else {
-          await tx.localStockBalance.create({
-            data: {
-              productId: position.product.id,
-              storeId: store.id,
-              quantity: new Prisma.Decimal(nextQuantity),
-              reserve: new Prisma.Decimal(0),
-              available: new Prisma.Decimal(nextAvailable),
-              slotName: position.slotName,
-              syncedAt: new Date(),
-            },
-          });
-        }
-        if (type === "receipt") {
-          const productUpdate: Prisma.LocalProductUpdateInput = { syncedAt: new Date() };
-          let shouldUpdateProduct = false;
-          if (position.priceCents > 0) {
-            productUpdate.buyPriceCents = position.priceCents;
-            shouldUpdateProduct = true;
-          }
-          if (position.makeDefaultCell && position.slotName) {
-            productUpdate.cell = position.slotName;
-            shouldUpdateProduct = true;
-          }
-          if (shouldUpdateProduct) {
-            await tx.localProduct.update({
-              where: { id: position.product.id },
-              data: productUpdate,
-            });
-          }
-        }
-      }
     }
 
     await writeStockDocumentAudit(tx, {
@@ -5101,8 +5183,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
       newValue: {
         ...stockDocumentSnapshot({
           ...document,
-          positions: positions.map((position, index) => {
-            if ("error" in position) throw new Error(position.error);
+          positions: effectivePositions.map((position, index) => {
             return {
               id: `${document.id}:${index}`,
               productId: position.product.id,
@@ -5117,8 +5198,8 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
                 id: current.supplierInvoice?.id ?? "",
                 number: invoiceNumber,
                 status: paidInvoiceLocked ? "requires_review" : invoiceStatus!,
-                sumCents,
-                paidAmountCents: paidInvoiceLocked ? current.supplierInvoice?.paidAmountCents ?? 0 : initialPaidCentsForStatus(invoiceStatus!, sumCents),
+                sumCents: effectiveSumCents,
+                paidAmountCents: paidInvoiceLocked ? current.supplierInvoice?.paidAmountCents ?? 0 : initialPaidCentsForStatus(invoiceStatus!, effectiveSumCents),
               }
             : null,
         }),
@@ -5248,7 +5329,7 @@ export async function checkReceiptRollbackSafety(documentId: string, action: Rec
   const productNames = new Map(positions.map((position) => [position.productId, position.productName]));
 
   if (document.storeId && productIds.length > 0) {
-    const [balances, salesAfter, writeoffsAfter, inventoryAfter] = await Promise.all([
+    const [balances, salesAfter, writeoffsAfter, receiptsAfter, inventoryAfter, receiptLedgerEntries] = await Promise.all([
       prisma.localStockBalance.findMany({
         where: { storeId: document.storeId, productId: { in: productIds } },
       }),
@@ -5280,6 +5361,20 @@ export async function checkReceiptRollbackSafety(documentId: string, action: Rec
         include: { positions: true },
         take: 20,
       }),
+      prisma.localInventoryDocument.findMany({
+        where: {
+          id: { not: document.id },
+          type: "receipt",
+          applicable: true,
+          isDeleted: false,
+          status: { not: "cancelled" },
+          storeId: document.storeId,
+          momentAt: { gt: document.momentAt },
+          positions: { some: { productId: { in: productIds } } },
+        },
+        include: { positions: true },
+        take: 20,
+      }),
       prisma.inventoryLine.findMany({
         where: {
           productId: { in: productIds },
@@ -5293,7 +5388,22 @@ export async function checkReceiptRollbackSafety(documentId: string, action: Rec
         include: { session: { select: { number: true, postedAt: true } } },
         take: 20,
       }),
+      prisma.inventoryLedgerEntry.findMany({
+        where: {
+          sourceType: "INVENTORY_DOCUMENT",
+          sourceId: document.id,
+          movementType: "RECEIPT_POST",
+          reversalEntries: { none: {} },
+        },
+        select: { id: true, productId: true, quantityDelta: true, unitCostSnapshot: true },
+      }),
     ]);
+
+    if (receiptLedgerEntries.length === 0) {
+      problems.push({
+        message: `Нельзя ${receiptActionLabel(action)}: у исторической приёмки нет ledger-снимка для безопасного восстановления средней себестоимости.`,
+      });
+    }
 
     const balanceByProduct = new Map(balances.map((balance) => [balance.productId, balance]));
     for (const position of positions) {
@@ -5367,6 +5477,21 @@ export async function checkReceiptRollbackSafety(documentId: string, action: Rec
       });
     }
 
+    const laterReceiptProductIds = new Set<string>();
+    for (const receipt of receiptsAfter) {
+      for (const position of receipt.positions) {
+        if (position.productId && productIds.includes(position.productId)) laterReceiptProductIds.add(position.productId);
+      }
+    }
+    for (const productId of laterReceiptProductIds) {
+      const productName = productNames.get(productId) ?? "товар";
+      problems.push({
+        productId,
+        productName,
+        message: `Нельзя ${receiptActionLabel(action)}: после неё по товару «${productName}» уже был другой приход.`,
+      });
+    }
+
     const inventoryProductIds = new Set(inventoryAfter.map((line) => line.productId).filter(Boolean) as string[]);
     for (const productId of inventoryProductIds) {
       const productName = productNames.get(productId) ?? "товар";
@@ -5405,16 +5530,43 @@ function formatQtyForError(value: number) {
 
 async function rollbackPostedReceiptStock(
   tx: Prisma.TransactionClient,
-  document: StockDocumentForAction
+  document: StockDocumentForAction,
+  action: ReceiptDangerAction,
+  user?: ActingUser
 ) {
   if (!document.storeId || !document.store) throw new Error("У приёмки не указан склад");
   const positions = receiptPositionsByProduct(document);
+  await lockInventoryCostKeys(tx, {
+    branchId: document.branchId,
+    storeId: document.store.id,
+    productIds: positions.map((position) => position.productId),
+  });
   await assertNoActiveInventoryLocks(tx, {
     organizationId: document.store.organizationId,
     warehouseId: document.store.id,
     productIds: positions.map((position) => position.productId),
   });
+  const originalEntries = await tx.inventoryLedgerEntry.findMany({
+    where: {
+      branchId: document.branchId,
+      sourceType: "INVENTORY_DOCUMENT",
+      sourceId: document.id,
+      movementType: "RECEIPT_POST",
+      reversalEntries: { none: {} },
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  if (originalEntries.length === 0) {
+    throw new Error("Безопасный откат недоступен: у этой исторической приёмки нет ledger-снимка средней себестоимости.");
+  }
   for (const position of positions) {
+    const productEntries = originalEntries
+      .filter((entry) => entry.productId === position.productId)
+      .sort((a, b) => Number(jsonRecord(a.raw).positionIndex ?? 0) - Number(jsonRecord(b.raw).positionIndex ?? 0));
+    const ledgerQuantity = productEntries.reduce((sum, entry) => sum + entry.quantityDelta.toNumber(), 0);
+    if (productEntries.length === 0 || Math.abs(ledgerQuantity - position.quantity) > 0.0001) {
+      throw new Error(`Ledger приёмки по товару «${position.productName}» не совпадает с количеством документа.`);
+    }
     const balance = await tx.localStockBalance.findUnique({
       where: { productId_storeId: { productId: position.productId, storeId: document.store.id } },
     });
@@ -5426,83 +5578,101 @@ async function rollbackPostedReceiptStock(
     if (nextQuantity < -0.000001 || nextAvailable < -0.000001) {
       throw new Error(`Откат создаёт отрицательный остаток по товару «${position.productName}»`);
     }
+    const firstRaw = jsonRecord(productEntries[0]?.raw);
+    const balanceBefore = jsonRecord(firstRaw.balanceBefore);
+    const restoredAverageCandidate = balanceBefore.averageCostCents;
+    const restoredAverageCost = typeof restoredAverageCandidate === "number" && restoredAverageCandidate > 0
+      ? Math.round(restoredAverageCandidate)
+      : null;
+    if (nextQuantity > 0.0001 && restoredAverageCost == null) {
+      throw new Error(`Ledger приёмки не содержит opening cost товара «${position.productName}».`);
+    }
     await tx.localStockBalance.update({
       where: { id: balance.id },
       data: {
         quantity: new Prisma.Decimal(nextQuantity),
         available: new Prisma.Decimal(nextAvailable),
+        buyPriceCents: restoredAverageCost,
         syncedAt: new Date(),
       },
+    });
+    for (const entry of productEntries) {
+      await tx.inventoryLedgerEntry.create({
+        data: {
+          branchId: document.branchId,
+          sourceType: "INVENTORY_DOCUMENT",
+          sourceId: document.id,
+          organizationId: document.store.organizationId,
+          productId: position.productId,
+          storeId: document.store.id,
+          movementType: action === "cancel" ? "RECEIPT_CANCEL_REVERSAL" : "RECEIPT_UNPOST_REVERSAL",
+          quantityDelta: entry.quantityDelta.negated(),
+          unitCostSnapshot: entry.unitCostSnapshot,
+          totalCostSnapshot: entry.totalCostSnapshot,
+          originalEntryId: entry.id,
+          revision: entry.revision + 1,
+          createdById: user?.login ?? null,
+          createdByName: user?.name ?? null,
+          raw: toJson({
+            reversalAction: action,
+            balanceBefore: { quantity: currentQuantity, reserve, available: balance.available.toNumber(), averageCostCents: balance.buyPriceCents },
+            balanceAfter: { quantity: nextQuantity, reserve, available: nextAvailable, averageCostCents: restoredAverageCost },
+          }),
+        },
+      });
+    }
+    const latestOtherReceipt = await tx.localInventoryDocumentPosition.findFirst({
+      where: {
+        productId: position.productId,
+        document: {
+          is: {
+            id: { not: document.id },
+            type: "receipt",
+            applicable: true,
+            isDeleted: false,
+            status: { not: "cancelled" },
+          },
+        },
+      },
+      orderBy: [{ document: { momentAt: "desc" } }, { id: "desc" }],
+      select: { priceCentsPerUnit: true },
+    });
+    await tx.localProduct.update({
+      where: { id: position.productId },
+      data: { buyPriceCents: latestOtherReceipt?.priceCentsPerUnit ?? null, syncedAt: new Date() },
     });
   }
 }
 
 async function postDraftReceiptStock(
   tx: Prisma.TransactionClient,
-  document: StockDocumentForAction
+  document: StockDocumentForAction,
+  user?: ActingUser
 ) {
   if (!document.storeId || !document.store) throw new Error("Выберите склад");
   const positions = document.positions.filter((position) => position.productId && position.product);
   if (positions.length === 0) throw new Error("Добавьте хотя бы одну позицию приёмки");
-  await assertNoActiveInventoryLocks(tx, {
-    organizationId: document.store.organizationId,
-    warehouseId: document.store.id,
-    productIds: positions.map((position) => position.productId),
+  const costPositions = positions.map((position) => ({
+    product: { id: position.productId!, name: position.productName },
+    quantity: position.quantity,
+    priceCents: position.priceCentsPerUnit,
+    slotName: position.slotName,
+    makeDefaultCell: jsonRecord(position.raw).makeDefaultCell === true,
+  }));
+  const effectivePositions = await preparePostedStockDocumentCosts(tx, {
+    branchId: document.branchId,
+    type: "receipt",
+    store: document.store,
+    positions: costPositions,
   });
-  for (const position of positions) {
-    if (!position.productId || !position.product) continue;
-    const quantity = position.quantity.toNumber();
-    if (quantity <= 0) throw new Error(`Количество товара «${position.productName}» должно быть больше нуля`);
-    if (position.priceCentsPerUnit <= 0) throw new Error(`Укажите закупочную цену товара «${position.productName}»`);
-    const current = await tx.localStockBalance.findUnique({
-      where: { productId_storeId: { productId: position.productId, storeId: document.store.id } },
-    });
-    const currentQuantity = current?.quantity.toNumber() ?? 0;
-    const reserve = current?.reserve.toNumber() ?? 0;
-    const nextQuantity = currentQuantity + quantity;
-    const nextAvailable = nextQuantity - reserve;
-    const raw = jsonRecord(position.raw);
-    const makeDefaultCell = raw.makeDefaultCell === true;
-    if (current) {
-      await tx.localStockBalance.update({
-        where: { id: current.id },
-        data: {
-          quantity: new Prisma.Decimal(nextQuantity),
-          available: new Prisma.Decimal(nextAvailable),
-          slotName: position.slotName ?? current.slotName,
-          syncedAt: new Date(),
-        },
-      });
-    } else {
-      await tx.localStockBalance.create({
-        data: {
-          productId: position.productId,
-          storeId: document.store.id,
-          quantity: new Prisma.Decimal(nextQuantity),
-          reserve: new Prisma.Decimal(0),
-          available: new Prisma.Decimal(nextAvailable),
-          slotName: position.slotName,
-          syncedAt: new Date(),
-        },
-      });
-    }
-    const productUpdate: Prisma.LocalProductUpdateInput = { syncedAt: new Date() };
-    let shouldUpdateProduct = false;
-    if (position.priceCentsPerUnit > 0) {
-      productUpdate.buyPriceCents = position.priceCentsPerUnit;
-      shouldUpdateProduct = true;
-    }
-    if (makeDefaultCell && position.slotName) {
-      productUpdate.cell = position.slotName;
-      shouldUpdateProduct = true;
-    }
-    if (shouldUpdateProduct) {
-      await tx.localProduct.update({
-        where: { id: position.productId },
-        data: productUpdate,
-      });
-    }
-  }
+  await applyPostedStockDocumentMovements(tx, {
+    branchId: document.branchId,
+    documentId: document.id,
+    type: "receipt",
+    store: document.store,
+    positions: effectivePositions,
+    user,
+  });
 }
 
 export async function postLocalReceipt(documentId: string, user?: ActingUser) {
@@ -5513,7 +5683,7 @@ export async function postLocalReceipt(documentId: string, user?: ActingUser) {
   const oldSnapshot = stockDocumentSnapshot(document);
   try {
     const updated = await prisma.$transaction(async (tx) => {
-      await postDraftReceiptStock(tx, document);
+      await postDraftReceiptStock(tx, document, user);
       const next = await tx.localInventoryDocument.update({
         where: { id: document.id },
         data: {
@@ -5575,7 +5745,7 @@ export async function unpostLocalReceipt(documentId: string, user?: ActingUser) 
   const oldSnapshot = stockDocumentSnapshot(document);
 
   const updated = await prisma.$transaction(async (tx) => {
-    await rollbackPostedReceiptStock(tx, document);
+    await rollbackPostedReceiptStock(tx, document, "unpost", user);
     await markReceiptInvoiceRequiresReview(tx, document);
     const next = await tx.localInventoryDocument.update({
       where: { id: document.id },
@@ -5618,7 +5788,7 @@ export async function cancelLocalReceipt(documentId: string, user?: ActingUser) 
   const oldSnapshot = stockDocumentSnapshot(document);
 
   const updated = await prisma.$transaction(async (tx) => {
-    await rollbackPostedReceiptStock(tx, document);
+    await rollbackPostedReceiptStock(tx, document, "cancel", user);
     await markReceiptInvoiceRequiresReview(tx, document);
     const next = await tx.localInventoryDocument.update({
       where: { id: document.id },

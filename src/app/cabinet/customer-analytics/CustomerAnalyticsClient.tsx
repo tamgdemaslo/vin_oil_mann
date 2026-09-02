@@ -72,10 +72,10 @@ type ClientRow = {
   daysSinceLastVisit: number | null;
   revenueCents: number;
   revenueAllTimeCents: number;
-  profitCents: number;
-  profitAllTimeCents: number;
+  profitCents: number | null;
+  profitAllTimeCents: number | null;
   avgRevenuePerVisitCents: number;
-  avgProfitPerVisitCents: number;
+  avgProfitPerVisitCents: number | null;
   avgCheckAllTimeCents: number;
   avgDaysBetweenVisits: number | null;
   hasIncompleteCost: boolean;
@@ -100,9 +100,9 @@ type Kpis = {
   noHistoryClients: number;
   visits: number;
   totalRevenueCents: number;
-  totalProfitCents: number;
+  totalProfitCents: number | null;
   avgCheckCents: number;
-  avgProfitPerVisitCents: number;
+  avgProfitPerVisitCents: number | null;
   avgDaysBetweenVisits: number | null;
 };
 
@@ -176,7 +176,7 @@ type HistoryPayload = {
     documentDate: string;
     momentAt: string;
     sumCents: number;
-    profitCents: number;
+    profitCents: number | null;
     hasIncompleteCost: boolean;
     services: { id: string; name: string }[];
     positions: {
@@ -184,7 +184,7 @@ type HistoryPayload = {
       assortmentType: string;
       quantity: number;
       revenueCents: number;
-      costCents: number;
+      costCents: number | null;
       lineIncompleteCost: boolean;
     }[];
   }[];
@@ -264,7 +264,8 @@ function periodToRange(preset: PeriodPreset, customFrom: string, customTo: strin
   }
 }
 
-function formatRub(cents: number): string {
+function formatRub(cents: number | null): string {
+  if (cents == null) return "—";
   return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(cents / 100)} ₽`;
 }
 
@@ -426,7 +427,7 @@ function buildExportRows(clients: ClientRow[]): string[][] {
     String(client.visitCount),
     String(client.visitCountAllTime),
     String(client.revenueCents / 100),
-    String(client.profitCents / 100),
+    client.profitCents == null ? "" : String(client.profitCents / 100),
     String(client.avgRevenuePerVisitCents / 100),
     client.daysSinceLastVisit != null ? String(client.daysSinceLastVisit) : "",
     statusLabel(client.segment),

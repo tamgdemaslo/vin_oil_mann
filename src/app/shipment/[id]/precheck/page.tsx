@@ -66,6 +66,12 @@ type Position = {
   discount?: number;
   slotName?: string;
   assortmentMeta?: Meta;
+  lineKind?: "nonstock_product";
+  oneOffProduct?: {
+    groupCode?: string;
+    groupLabel?: string;
+    uomLabel?: string;
+  };
   product?: {
     id: string;
     name: string;
@@ -196,13 +202,19 @@ function getAssortmentSource(position: Position): { label: string; code: string 
 function positionMarkingContext(position: Position) {
   return {
     productName: position.product?.name ?? position.name,
-    groupPath: position.product?.groupPath,
-    uomName: position.product?.uomName,
+    groupPath: position.product?.groupPath ?? position.oneOffProduct?.groupLabel,
+    uomName: position.product?.uomName ?? position.oneOffProduct?.uomLabel,
   };
 }
 
+function nonstockOilRequiresMarkingCheck(position: Position): boolean {
+  return position.lineKind === "nonstock_product"
+    && ["ENGINE_OIL", "TRANSMISSION_FLUID"].includes(position.oneOffProduct?.groupCode ?? "");
+}
+
 function positionNeedsMarking(position: Position): boolean {
-  return Boolean(position.product?.markingEnabled) && normalizeProductMarkingMode(position.product?.markingMode) !== "NOT_MARKED";
+  return nonstockOilRequiresMarkingCheck(position)
+    || Boolean(position.product?.markingEnabled) && normalizeProductMarkingMode(position.product?.markingMode) !== "NOT_MARKED";
 }
 
 function positionBulkCandidate(position: Position): boolean {
@@ -210,7 +222,9 @@ function positionBulkCandidate(position: Position): boolean {
 }
 
 function positionMarkingMode(position: Position) {
-  return normalizeProductMarkingMode(position.product?.markingMode);
+  return nonstockOilRequiresMarkingCheck(position)
+    ? "REQUIRES_CHECK"
+    : normalizeProductMarkingMode(position.product?.markingMode);
 }
 
 function positionIsBulkOil(position: Position): boolean {
@@ -235,7 +249,9 @@ function positionMarkingBlockingReason(position: Position): string | null {
   const mode = positionMarkingMode(position);
   const settings = normalizeProductMarkingSettings(position.product?.markingSettings);
   if (mode === "REQUIRES_CHECK") {
-    return "Товар требует проверки маркировки. Откройте карточку товара и выберите сценарий.";
+    return position.lineKind === "nonstock_product"
+      ? "Разовый товар в категории масла требует проверки маркировки. Проведение оплаты заблокировано до выбора корректного сценария."
+      : "Товар требует проверки маркировки. Откройте карточку товара и выберите сценарий.";
   }
   if (!positionIsBulkOil(position)) {
     const problemReasons = productMarkingProblemReasons({

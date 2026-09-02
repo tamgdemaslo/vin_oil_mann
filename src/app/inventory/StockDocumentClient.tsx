@@ -68,7 +68,7 @@ type ProductOption = {
   salePrice: number;
   buyPrice: number | null;
   totalAvailable: number;
-  stock: { storeId: string; storeName: string; available: number; slotName: string }[];
+  stock: { storeId: string; storeName: string; available: number; averageCost: number | null; slotName: string }[];
 };
 
 type KnownCell = { storeId: string; storeName: string; slotName: string; available: number };
@@ -887,6 +887,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     const quantityToAdd = Math.max(1, Math.floor(Number(requestedQuantity) || 1));
     const slotName = slotForStore(product);
     const defaultCell = cleanCell(product.cell);
+    const storeAverageCost = product.stock.find((row) => row.storeId === selectedStoreId)?.averageCost ?? null;
     setPositions((prev) => {
       const existing = prev.find((position) => position.productId === product.id);
       if (existing) {
@@ -907,7 +908,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           code: product.code,
           brand: product.brand || product.supplierName || "",
           quantity: quantityToAdd,
-          price: isReceipt ? product.buyPrice ?? 0 : product.buyPrice ?? product.salePrice ?? 0,
+          price: isReceipt ? product.buyPrice ?? 0 : storeAverageCost ?? 0,
           salePrice: product.salePrice ?? 0,
           slotName,
           slotStoreId: slotStoreForProduct(product),

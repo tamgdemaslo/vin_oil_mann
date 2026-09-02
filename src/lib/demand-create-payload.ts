@@ -1,4 +1,5 @@
 import type { LocalEntityMeta } from "@/lib/local-entity-meta";
+import type { NonstockProductInput } from "@/lib/one-off-product";
 
 export type DemandPositionInput = {
   assortment?: { meta: LocalEntityMeta };
@@ -10,6 +11,8 @@ export type DemandPositionInput = {
   vat?: number;
   vatEnabled?: boolean;
   copyMeta?: unknown;
+  lineKind?: "catalog" | "one_off_service" | "nonstock_product";
+  oneOffProduct?: NonstockProductInput;
 };
 
 export type CreateDemandBody = {
@@ -50,6 +53,8 @@ export function buildDemandCreatePayload(body: CreateDemandBody): Record<string,
       vat: p.vat ?? 0,
       vatEnabled: p.vatEnabled ?? false,
       copyMeta: p.copyMeta,
+      lineKind: p.lineKind,
+      oneOffProduct: p.oneOffProduct,
     }));
   }
   return payload;

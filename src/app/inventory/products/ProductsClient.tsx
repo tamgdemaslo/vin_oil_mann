@@ -60,6 +60,7 @@ type StockRow = {
   quantity: number;
   available: number;
   reserve: number;
+  averageCost: number | null;
   slotName: string;
 };
 
@@ -83,6 +84,7 @@ type ProductRow = {
   entityType: string;
   salePrice: number;
   buyPrice: number | null;
+  averageCost: number | null;
   currencyName: string;
   minimumBalance: number | null;
   barcodeEan13: string;
@@ -386,6 +388,7 @@ type ProductFieldRenderOptions = {
   step?: string;
   aliases?: string[];
   hint?: string;
+  readOnly?: boolean;
 };
 
 type ProductEditorBufferedInputProps = {
@@ -397,6 +400,7 @@ type ProductEditorBufferedInputProps = {
   step?: string;
   rows?: number;
   onCommit: (value: string) => void;
+  disabled?: boolean;
 };
 
 type ProductEditorSectionId = "main" | "pricing" | "marking" | "codes" | "oil" | "extra" | "technical";
@@ -530,7 +534,7 @@ const sortOptions: Array<{ key: ProductSortKey; label: string; defaultDirection:
   { key: "code", label: "Код", defaultDirection: "asc" },
   { key: "available", label: "Остаток", defaultDirection: "desc" },
   { key: "quantity", label: "Остаток общий", defaultDirection: "desc" },
-  { key: "buyPrice", label: "Цена закупки", defaultDirection: "desc" },
+  { key: "buyPrice", label: "Последняя закупка", defaultDirection: "desc" },
   { key: "salePrice", label: "Цена продажи", defaultDirection: "desc" },
   { key: "margin", label: "Маржа", defaultDirection: "desc" },
   { key: "updatedAt", label: "Недавно изменённые", defaultDirection: "desc" },
@@ -608,6 +612,7 @@ function ProductEditorBufferedInput({
   step,
   rows,
   onCommit,
+  disabled,
 }: ProductEditorBufferedInputProps) {
   const [draft, setDraft] = useState(value);
   const focusedRef = useRef(false);
@@ -646,6 +651,7 @@ function ProductEditorBufferedInput({
     value: draft,
     placeholder,
     className,
+    disabled,
     onFocus: () => {
       focusedRef.current = true;
     },
@@ -679,6 +685,7 @@ function ProductEditorBufferedMoneyInput({
   className,
   placeholder,
   onCommit,
+  disabled,
 }: Omit<ProductEditorBufferedInputProps, "type" | "step" | "rows">) {
   const [draft, setDraft] = useState(value);
   const focusedRef = useRef(false);
@@ -718,6 +725,7 @@ function ProductEditorBufferedMoneyInput({
       value={draft}
       placeholder={placeholder}
       className={className}
+      disabled={disabled}
       onFocus={() => {
         focusedRef.current = true;
       }}
@@ -1153,7 +1161,7 @@ function validateProductForm(values: ProductForm): ProductFormErrors {
 }
 
 function marginValue(row: ProductRow) {
-  return row.buyPrice == null ? null : row.salePrice - row.buyPrice;
+  return row.averageCost == null ? null : row.salePrice - row.averageCost;
 }
 
 function reserveValue(row: ProductRow) {
@@ -1899,7 +1907,7 @@ export default function ProductsClient() {
     () => form.buyPrice.trim() ? parseMoneyInput(form.buyPrice) : null,
     [form.buyPrice]
   );
-  const marginDraft = buyPriceDraft == null ? null : salePriceDraft - buyPriceDraft;
+  const marginDraft = editingProduct?.averageCost == null ? null : salePriceDraft - editingProduct.averageCost;
   const marginDraftPercent = marginDraft == null || salePriceDraft <= 0
     ? null
     : Math.round((marginDraft / salePriceDraft) * 100);
@@ -3654,6 +3662,7 @@ export default function ProductsClient() {
             rows={options.rows ?? 3}
             placeholder={options.placeholder}
             className={inputClass}
+            disabled={options.readOnly}
             onCommit={(value) => {
               if (String(key).startsWith("marking")) setMarkingTouched(true);
               updateForm({ [key]: value } as Partial<ProductForm>);
@@ -3665,6 +3674,7 @@ export default function ProductsClient() {
             value={form[key]}
             placeholder={options.placeholder}
             className={inputClass}
+            disabled={options.readOnly}
             onCommit={(value) => {
               if (String(key).startsWith("marking")) setMarkingTouched(true);
               updateForm({ [key]: value } as Partial<ProductForm>);
@@ -3678,6 +3688,7 @@ export default function ProductsClient() {
             value={form[key]}
             placeholder={options.placeholder}
             className={inputClass}
+            disabled={options.readOnly}
             onCommit={(value) => {
               if (String(key).startsWith("marking")) setMarkingTouched(true);
               updateForm({ [key]: value } as Partial<ProductForm>);
@@ -4751,7 +4762,7 @@ export default function ProductsClient() {
                       {renderGroupField()}
                       {renderUomField()}
                       {renderField("salePrice", "Цена продажи", { type: "money", required: true, placeholder: "0,00" })}
-                      {renderField("buyPrice", "Цена закупки", { type: "money", placeholder: "0,00" })}
+                      {renderField("buyPrice", "Последняя цена закупки", { type: "money", placeholder: "—", readOnly: true, hint: "Обновляется только проведённым приходом." })}
                       <SupplierCombobox
                         value={form.supplierCounterpartyId}
                         displayName={form.supplierName}
@@ -4770,7 +4781,7 @@ export default function ProductsClient() {
                     <div className="product-editor-section-head">
                       <div>
                         <h3>Складская сводка</h3>
-                        <p>Остатки и размещение без дублирования цен</p>
+                        <p>Остатки, размещение и средняя себестоимость по складам</p>
                       </div>
                     </div>
                     <div className="product-editor-stock-grid">
@@ -4784,7 +4795,7 @@ export default function ProductsClient() {
                           <div key={stockRow.storeId}>
                             <span>{stockRow.storeName || "Склад"}</span>
                             <b>{formatQty(stockRow.available)}</b>
-                            <em>{stockRow.slotName || "без ячейки"}</em>
+                            <em>{stockRow.averageCost == null ? "себестоимость не задана" : `ср. ${formatMoneyWhole(stockRow.averageCost)} ₽`} · {stockRow.slotName || "без ячейки"}</em>
                           </div>
                         ))}
                       </div>
@@ -4872,8 +4883,8 @@ export default function ProductsClient() {
                       <span><em>Остаток</em><b>{formatQty(editingProduct?.totalQuantity ?? 0)}</b></span>
                       <span><em>Доступно</em><b>{formatQty(editingProduct?.totalAvailable ?? 0)}</b></span>
                       <span><em>Продажа</em><b>{formatMoneyWhole(salePriceDraft)} ₽</b></span>
-                      <span><em>Закупка</em><b>{buyPriceDraft == null ? "—" : `${formatMoneyWhole(buyPriceDraft)} ₽`}</b></span>
-                      <span><em>Маржа</em><b>{marginDraft == null ? "—" : `${formatMoneyWhole(marginDraft)} ₽${marginDraftPercent == null ? "" : ` · ${marginDraftPercent}%`}`}</b></span>
+                      <span><em>Посл. закупка</em><b>{buyPriceDraft == null ? "—" : `${formatMoneyWhole(buyPriceDraft)} ₽`}</b></span>
+                      <span><em>Маржа по средней</em><b>{marginDraft == null ? "—" : `${formatMoneyWhole(marginDraft)} ₽${marginDraftPercent == null ? "" : ` · ${marginDraftPercent}%`}`}</b></span>
                     </div>
                   </section>
 
@@ -5428,7 +5439,7 @@ export default function ProductsClient() {
                 <th>OEM</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Остаток", "quantity", "right")}</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Доступно", "available", "right")}</th>
-                <th style={{ textAlign: "right" }}>{sortHeader("Закуп.", "buyPrice", "right")}</th>
+                <th style={{ textAlign: "right" }}>{sortHeader("Посл. закупка", "buyPrice", "right")}</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Цена", "salePrice", "right")}</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Маржа", "margin", "right")}</th>
                 <th style={{ width: 84 }} />
@@ -5518,7 +5529,8 @@ export default function ProductsClient() {
                     {formatQty(row.totalAvailable)}
                   </td>
                   <td className="eco-product-number is-muted">
-                    {row.buyPrice == null ? "—" : formatMoneyWhole(row.buyPrice)}
+                    <span>{row.buyPrice == null ? "—" : formatMoneyWhole(row.buyPrice)}</span>
+                    <small>{row.averageCost == null ? "ср. —" : `ср. ${formatMoneyWhole(row.averageCost)}`}</small>
                   </td>
                   <td className="eco-product-price">
                     <strong>{formatMoneyWhole(row.salePrice)}</strong>

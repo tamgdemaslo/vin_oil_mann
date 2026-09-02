@@ -9,7 +9,7 @@ import { invalidateDemandListCache } from "@/lib/demand-list-cache";
 import { syncActiveDiagnosticVehiclesForShipment } from "@/lib/diagnostic-vehicle-sync";
 import { prisma } from "@/lib/db";
 import { getBranchContext } from "@/lib/branch-context";
-import { invalidateCounterpartyRows, invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
+import { invalidateCounterpartyRows, invalidateWarehouseReadCaches, supplierCounterpartyIdentityWhere } from "@/lib/local-inventory-admin";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { extractLocalEntityId } from "@/lib/piecework-rules";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
@@ -20,6 +20,28 @@ import type {
   DemandDetailPayload,
   DemandDetailPosition,
 } from "@/lib/demand-detail-load";
+import {
+  calculateAverageAfterValuedRemoval,
+  calculateWeightedAverageCostCents,
+  isServiceCostType,
+  lineCostCents as inventoryLineCostCents,
+  requireBalanceAverageCost,
+  resolveBalanceCost,
+  roundMoneyCents,
+} from "@/lib/inventory-costing";
+import { lockInventoryCostKeys } from "@/lib/inventory-costing-db";
+import { sameExactProductIdentity } from "@/lib/product-identity";
+import {
+  assertNonstockProductPostingCost,
+  isNonstockProductType,
+  NONSTOCK_PRODUCT_ASSORTMENT_TYPE,
+  NONSTOCK_PRODUCT_COST_SOURCE,
+  NONSTOCK_PRODUCT_LINE_KIND,
+  NONSTOCK_PRODUCT_PAYROLL_GROUP_NAMES,
+  normalizeNonstockProductInput,
+  type NonstockProductInput,
+  type NormalizedNonstockProduct,
+} from "@/lib/one-off-product";
 
 type LocalEntityMeta = {
   href: string;
@@ -44,6 +66,9 @@ type UpdateDemandBody = {
     price: number;
     discount?: number;
     assortment?: { meta: LocalEntityMeta };
+    lineKind?: "catalog" | "one_off_service" | "nonstock_product";
+    oneOffProduct?: NonstockProductInput;
+    copyMeta?: unknown;
   }[];
 };
 
@@ -133,6 +158,7 @@ type ResolvedPosition = {
   id?: string;
   sourcePositionId?: string | null;
   productId: string | null;
+  groupIdSnapshot: string | null;
   assortmentReference?: string | null;
   assortmentType: string;
   name: string;
@@ -168,6 +194,10 @@ type StockMovementContext = {
 
 export function isLocalInventoryWritesEnabled(): boolean {
   return true;
+}
+
+function invalidateDemandCostConsumers() {
+  invalidateWarehouseReadCaches();
 }
 
 function toJson(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
@@ -486,9 +516,158 @@ async function buildLocalDemandAttributes(
   return [...out.values()];
 }
 
+type NonstockPositionInput = {
+  id?: string;
+  name?: string;
+  comment?: string;
+  quantity: number;
+  price: number;
+  discount?: number;
+  vat?: number;
+  vatEnabled?: boolean;
+  assortment?: { meta: LocalEntityMeta };
+  lineKind?: "catalog" | "one_off_service" | "nonstock_product";
+  oneOffProduct?: NonstockProductInput;
+  copyMeta?: unknown;
+};
+
+function isNonstockPositionInput(position: NonstockPositionInput): boolean {
+  return position.lineKind === NONSTOCK_PRODUCT_LINE_KIND
+    || isNonstockProductType(position.assortment?.meta?.type)
+    || Boolean(position.oneOffProduct);
+}
+
+function nonstockRawRecord(value: unknown): Record<string, unknown> {
+  const root = jsonRecord(value);
+  return jsonRecord(root.oneOffProduct);
+}
+
+async function resolveNonstockPurchaseSource(
+  branchId: string,
+  normalized: NormalizedNonstockProduct,
+): Promise<NormalizedNonstockProduct> {
+  if (!normalized.purchaseSourceId) return normalized;
+  const supplier = await prisma.localCounterparty.findFirst({
+    where: {
+      id: normalized.purchaseSourceId,
+      branchId,
+      archived: false,
+      AND: [supplierCounterpartyIdentityWhere()],
+    },
+    select: { id: true, name: true, displayName: true },
+  });
+  if (!supplier) throw new Error("Выберите активного поставщика текущего филиала или укажите магазин текстом");
+  return {
+    ...normalized,
+    purchaseSourceId: supplier.id,
+    purchaseSourceLabel: supplier.displayName.trim() || supplier.name.trim(),
+  };
+}
+
+async function findExactNonstockCatalogMatch(branchId: string, normalized: NormalizedNonstockProduct) {
+  if (!normalized.articleCanonical) return null;
+  const candidates = await prisma.localProduct.findMany({
+    where: { branchId, archived: false },
+    select: { id: true, brand: true, article: true, code: true },
+  });
+  return candidates.find((candidate) => sameExactProductIdentity(
+    { brand: normalized.brandCanonical, article: normalized.articleDisplay },
+    { brand: candidate.brand, article: candidate.article || candidate.code },
+  ))?.id ?? null;
+}
+
+async function buildNonstockResolvedPosition(
+  position: NonstockPositionInput,
+  options: {
+    branchId: string;
+    priceIsCents: boolean;
+    actorId?: string | null;
+    actorName?: string | null;
+    existingRaw?: unknown;
+  },
+): Promise<ResolvedPosition> {
+  if (!position.oneOffProduct) throw new Error("Передайте структурированные данные разового товара");
+  const quantity = Number(position.quantity);
+  if (!Number.isFinite(quantity) || quantity <= 0) throw new Error("Количество разового товара должно быть больше нуля");
+  const priceValue = Number(position.price);
+  if (!Number.isFinite(priceValue) || priceValue < 0) throw new Error("Цена разового товара должна быть неотрицательным числом");
+  const discount = typeof position.discount === "number" ? position.discount : 0;
+  if (!Number.isFinite(discount) || discount < 0 || discount > 100) throw new Error("Скидка должна быть от 0 до 100%");
+
+  const normalized = await resolveNonstockPurchaseSource(
+    options.branchId,
+    normalizeNonstockProductInput(position.oneOffProduct),
+  );
+  const catalogMatchProductId = await findExactNonstockCatalogMatch(options.branchId, normalized);
+  const payrollGroupName = NONSTOCK_PRODUCT_PAYROLL_GROUP_NAMES[normalized.groupCode];
+  const payrollGroup = payrollGroupName
+    ? await prisma.localCatalogGroup.findFirst({
+        where: {
+          branchId: options.branchId,
+          kind: "product",
+          archived: false,
+          normalizedName: payrollGroupName.toLocaleLowerCase("ru-RU").replace(/\s+/g, " ").trim(),
+        },
+        select: { id: true },
+      })
+    : null;
+  const previousRaw = nonstockRawRecord(options.existingRaw);
+  const now = new Date().toISOString();
+  const structured = {
+    groupCode: normalized.groupCode,
+    groupLabel: normalized.groupLabel,
+    brandRaw: normalized.brandRaw,
+    brandCanonical: normalized.brandCanonical,
+    brandIdentity: normalized.brandIdentity,
+    articleRaw: normalized.articleRaw,
+    articleDisplay: normalized.articleDisplay,
+    articleCanonical: normalized.articleCanonical,
+    uomCode: normalized.uomCode,
+    uomLabel: normalized.uomLabel,
+    purchasePriceCents: normalized.purchasePriceCents,
+    purchaseSourceId: normalized.purchaseSourceId,
+    purchaseSourceLabel: normalized.purchaseSourceLabel,
+    clarification: normalized.clarification,
+    catalogMatchProductId,
+    analyticsKey: normalized.analyticsKey,
+    costSource: NONSTOCK_PRODUCT_COST_SOURCE,
+    explicitZeroCost: normalized.explicitZeroCost,
+    createdById: cleanRecordText(previousRaw.createdById) || options.actorId || null,
+    createdByName: cleanRecordText(previousRaw.createdByName) || options.actorName || null,
+    createdAt: cleanRecordText(previousRaw.createdAt) || now,
+    updatedAt: now,
+  };
+
+  return {
+    id: position.id,
+    sourcePositionId: position.id ?? null,
+    productId: null,
+    groupIdSnapshot: payrollGroup?.id ?? null,
+    assortmentReference: null,
+    assortmentType: NONSTOCK_PRODUCT_ASSORTMENT_TYPE,
+    name: normalized.name,
+    quantity: new Prisma.Decimal(quantity),
+    priceCentsPerUnit: options.priceIsCents ? Math.round(priceValue) : Math.round(priceValue * 100),
+    discount: new Prisma.Decimal(discount),
+    vat: position.vat ?? 0,
+    vatEnabled: position.vatEnabled ?? false,
+    buyPriceCentsPerUnit: normalized.purchasePriceCents,
+    slotName: null,
+    raw: toJson({
+      lineKind: NONSTOCK_PRODUCT_LINE_KIND,
+      nonStock: true,
+      comment: cleanRecordText(position.comment) || null,
+      copyMeta: position.copyMeta ?? null,
+      oneOffProduct: structured,
+    }),
+  };
+}
+
 async function resolveCreatePositions(
   positions: CreateDemandBody["positions"] | undefined,
-  storeId?: string | null
+  storeId: string | null | undefined,
+  branchId: string,
+  actor?: ShipmentActor | null,
 ): Promise<ResolvedPosition[]> {
   const input = positions ?? [];
   const assortmentIds = input
@@ -496,7 +675,7 @@ async function resolveCreatePositions(
     .filter((id): id is string => Boolean(id));
   const products = assortmentIds.length
     ? await prisma.localProduct.findMany({
-        where: { OR: [{ id: { in: [...new Set(assortmentIds)] } }, { id: { in: [...new Set(assortmentIds)] } }] },
+        where: { branchId, OR: [{ id: { in: [...new Set(assortmentIds)] } }, { id: { in: [...new Set(assortmentIds)] } }] },
       })
     : [];
   const productByExternalId = new Map<string, (typeof products)[number]>();
@@ -514,7 +693,15 @@ async function resolveCreatePositions(
     : [];
   const balanceByProductId = new Map(balances.map((balance) => [balance.productId, balance]));
 
-  return input.map((position) => {
+  return Promise.all(input.map(async (position) => {
+    if (isNonstockPositionInput(position)) {
+      return buildNonstockResolvedPosition(position, {
+        branchId,
+        priceIsCents: false,
+        actorId: actor?.login ?? null,
+        actorName: actor?.name ?? null,
+      });
+    }
     const meta = position.assortment?.meta;
     const assortmentReference = entityIdFromMeta(meta);
     const product = assortmentReference ? productByExternalId.get(assortmentReference) : undefined;
@@ -524,6 +711,7 @@ async function resolveCreatePositions(
     const discount = typeof position.discount === "number" ? position.discount : 0;
     return {
       productId: product?.id ?? null,
+      groupIdSnapshot: product?.groupId ?? null,
       assortmentReference,
       assortmentType: meta?.type ?? product?.entityType ?? "",
       name: (product?.name ?? cleanRecordText(position.name)) || assortmentReference || "Позиция",
@@ -532,23 +720,28 @@ async function resolveCreatePositions(
       discount: new Prisma.Decimal(discount),
       vat: position.vat ?? 0,
       vatEnabled: position.vatEnabled ?? false,
-      buyPriceCentsPerUnit: balance?.buyPriceCents ?? product?.buyPriceCents ?? null,
+      buyPriceCentsPerUnit: resolveBalanceCost({
+        assortmentType: meta?.type ?? product?.entityType ?? "",
+        averageCostCents: balance?.buyPriceCents,
+      }).unitCostCents,
       slotName: balance?.slotName ?? product?.cell ?? null,
       raw: toJson(position),
     };
-  });
+  }));
 }
 
 async function resolveUpdatePositions(
   positions: NonNullable<UpdateDemandBody["positions"]>,
-  existingById: Map<string, StockMovementPosition & { name: string; productId: string | null; buyPriceCentsPerUnit: number | null }>
+  existingById: Map<string, StockMovementPosition & { name: string; productId: string | null; groupIdSnapshot: string | null; buyPriceCentsPerUnit: number | null; raw: unknown }>,
+  branchId: string,
+  actor?: ShipmentActor | null,
 ): Promise<ResolvedPosition[]> {
   const assortmentIds = positions
     .map((position) => entityIdFromMeta(position.assortment?.meta))
     .filter((id): id is string => Boolean(id));
   const products = assortmentIds.length
     ? await prisma.localProduct.findMany({
-        where: { OR: [{ id: { in: [...new Set(assortmentIds)] } }, { id: { in: [...new Set(assortmentIds)] } }] },
+        where: { branchId, OR: [{ id: { in: [...new Set(assortmentIds)] } }, { id: { in: [...new Set(assortmentIds)] } }] },
       })
     : [];
   const productByExternalId = new Map<string, (typeof products)[number]>();
@@ -557,30 +750,123 @@ async function resolveUpdatePositions(
     if (product.id) productByExternalId.set(product.id, product);
   }
 
-  return positions.map((position) => {
+  return Promise.all(positions.map(async (position) => {
     const existing = position.id ? existingById.get(position.id) : undefined;
+    if (isNonstockPositionInput(position)) {
+      return buildNonstockResolvedPosition(position, {
+        branchId,
+        priceIsCents: true,
+        actorId: actor?.login ?? null,
+        actorName: actor?.name ?? null,
+        existingRaw: existing?.raw,
+      });
+    }
     const meta = position.assortment?.meta;
     const assortmentReference = entityIdFromMeta(meta);
     const product = assortmentReference ? productByExternalId.get(assortmentReference) : undefined;
     const quantity = Number(position.quantity) || 0;
     const priceCents = Math.round(Number(position.price) || 0);
     const discount = typeof position.discount === "number" ? position.discount : 0;
+    const productId = product?.id ?? existing?.productId ?? null;
+    const assortmentType = meta?.type ?? existing?.assortmentType ?? product?.entityType ?? "";
+    const keepsExistingProduct = Boolean(existing && existing.productId === productId);
     return {
       id: position.id,
-      productId: product?.id ?? existing?.productId ?? null,
+      sourcePositionId: keepsExistingProduct ? position.id ?? null : null,
+      productId,
+      groupIdSnapshot: product?.groupId ?? existing?.groupIdSnapshot ?? null,
       assortmentReference,
-      assortmentType: meta?.type ?? existing?.assortmentType ?? product?.entityType ?? "",
+      assortmentType,
       name: product?.name ?? existing?.name ?? assortmentReference ?? "Позиция",
       quantity: new Prisma.Decimal(quantity),
       priceCentsPerUnit: priceCents,
       discount: new Prisma.Decimal(discount),
       vat: 0,
       vatEnabled: false,
-      buyPriceCentsPerUnit: product?.buyPriceCents ?? existing?.buyPriceCentsPerUnit ?? null,
+      buyPriceCentsPerUnit: isServiceCostType(assortmentType)
+        ? 0
+        : keepsExistingProduct ? existing?.buyPriceCentsPerUnit ?? null : null,
       slotName: null,
       raw: toJson(position),
     };
+  }));
+}
+
+async function freezePostingCostSnapshots(
+  tx: Prisma.TransactionClient,
+  branchId: string,
+  storeId: string | null,
+  positions: ResolvedPosition[],
+  options: { preserveExistingSnapshots: boolean }
+): Promise<ResolvedPosition[]> {
+  if (!storeId && positions.some((position) => position.productId && isStockTrackedType(position.assortmentType))) {
+    throw new Error("Для проведения товарной отгрузки выберите склад");
+  }
+  const productIds = [...new Set(
+    positions
+      .filter((position) => position.productId && isStockTrackedType(position.assortmentType))
+      .map((position) => position.productId as string)
+  )];
+  if (storeId && productIds.length > 0) {
+    await lockInventoryCostKeys(tx, { branchId, storeId, productIds });
+  }
+  const [balances, store] = await Promise.all([
+    storeId && productIds.length > 0
+      ? tx.localStockBalance.findMany({ where: { storeId, productId: { in: productIds } } })
+      : Promise.resolve([]),
+    storeId ? tx.localStore.findUnique({ where: { id: storeId }, select: { name: true } }) : Promise.resolve(null),
+  ]);
+  const balanceByProductId = new Map(balances.map((balance) => [balance.productId, balance]));
+
+  return positions.map((position) => {
+    if (isServiceCostType(position.assortmentType)) {
+      return { ...position, buyPriceCentsPerUnit: 0 };
+    }
+    if (isNonstockProductType(position.assortmentType)) {
+      const raw = nonstockRawRecord(position.raw);
+      assertNonstockProductPostingCost({
+        purchasePriceCents: position.buyPriceCentsPerUnit,
+        explicitZeroCost: raw.explicitZeroCost === true,
+      });
+      return position;
+    }
+    if (!position.productId || !isStockTrackedType(position.assortmentType)) return position;
+    if (
+      options.preserveExistingSnapshots &&
+      position.sourcePositionId &&
+      position.buyPriceCentsPerUnit != null &&
+      position.buyPriceCentsPerUnit > 0
+    ) {
+      return position;
+    }
+    const averageCost = requireBalanceAverageCost({
+      productName: position.name,
+      storeName: store?.name,
+      averageCostCents: balanceByProductId.get(position.productId)?.buyPriceCents,
+    });
+    return { ...position, buyPriceCentsPerUnit: averageCost };
   });
+}
+
+function movementCostForProduct(positions: StockMovementPosition[], productId: string): {
+  unitCostCents: number | null;
+  totalCostCents: number | null;
+} {
+  const productPositions = positions.filter((position) => position.productId === productId);
+  let totalQuantity = 0;
+  let totalCost = 0;
+  for (const position of productPositions) {
+    const quantity = decimalToNumber(position.quantity);
+    const unitCost = position.buyPriceCentsPerUnit;
+    if (unitCost == null || unitCost <= 0) return { unitCostCents: null, totalCostCents: null };
+    totalQuantity += quantity;
+    totalCost += inventoryLineCostCents(quantity, unitCost) ?? 0;
+  }
+  if (totalQuantity <= 0.0001) return { unitCostCents: null, totalCostCents: null };
+  return {
+    unitCostCents: roundMoneyCents(totalCost / totalQuantity),
+    totalCostCents: totalCost,
+  };
 }
 
 function appliedQuantityByProduct(positions: StockMovementPosition[], applicable: boolean): Map<string, number> {
@@ -617,6 +903,9 @@ async function applyStockMovements(
       warehouseId: storeId,
       productIds: changedProductIds,
     });
+    if (context) {
+      await lockInventoryCostKeys(tx, { branchId: context.branchId, storeId, productIds: changedProductIds });
+    }
   }
 
   for (const productId of productIds) {
@@ -627,6 +916,13 @@ async function applyStockMovements(
     const sourcePosition =
       newPositions.find((position) => position.productId === productId) ??
       oldPositions.find((position) => position.productId === productId);
+    const costPositions = deltaApplied > 0 ? newPositions : oldPositions;
+    const movementCost = movementCostForProduct(costPositions, productId);
+    if (context && (movementCost.unitCostCents == null || movementCost.unitCostCents <= 0)) {
+      throw new Error(
+        `У движения товара «${sourcePosition?.name?.trim() || productId}» отсутствует подтверждённый cost snapshot.`
+      );
+    }
 
     const current = await tx.localStockBalance.findUnique({
       where: { productId_storeId: { productId, storeId } },
@@ -649,6 +945,36 @@ async function applyStockMovements(
     }
     const nextQuantity = currentQuantity - deltaApplied;
     const nextAvailable = nextQuantity - reserve;
+    let nextAverageCost = current?.buyPriceCents ?? null;
+    if (context && deltaApplied < -0.0001) {
+      nextAverageCost = calculateWeightedAverageCostCents({
+        oldQuantity: currentQuantity,
+        oldAverageCostCents: current?.buyPriceCents,
+        receivedQuantity: Math.abs(deltaApplied),
+        receiptUnitCostCents: movementCost.unitCostCents as number,
+        productName: sourcePosition?.name,
+      });
+    } else if (context && deltaApplied > 0.0001) {
+      const currentAverage = requireBalanceAverageCost({
+        productName: sourcePosition?.name?.trim() || productId,
+        averageCostCents: current?.buyPriceCents,
+      });
+      if (
+        context.movementType === "SHIPMENT_REPOST" &&
+        movementCost.unitCostCents != null &&
+        movementCost.unitCostCents !== currentAverage
+      ) {
+        nextAverageCost = calculateAverageAfterValuedRemoval({
+          oldQuantity: currentQuantity,
+          oldAverageCostCents: currentAverage,
+          removedQuantity: deltaApplied,
+          removedUnitCostCents: movementCost.unitCostCents,
+        });
+        if (nextAverageCost == null) {
+          throw new Error(`Повторное проведение «${sourcePosition?.name?.trim() || productId}» создаёт неопределённую стоимость остатка.`);
+        }
+      }
+    }
 
     if (current) {
       await tx.localStockBalance.update({
@@ -656,6 +982,7 @@ async function applyStockMovements(
         data: {
           quantity: new Prisma.Decimal(nextQuantity),
           available: new Prisma.Decimal(nextAvailable),
+          buyPriceCents: nextAverageCost,
           syncedAt: new Date(),
         },
       });
@@ -669,6 +996,7 @@ async function applyStockMovements(
           quantity: new Prisma.Decimal(nextQuantity),
           reserve: new Prisma.Decimal(0),
           available: new Prisma.Decimal(nextAvailable),
+          buyPriceCents: nextAverageCost,
           syncedAt: new Date(),
         },
       });
@@ -686,7 +1014,10 @@ async function applyStockMovements(
           storeId,
           movementType: context.movementType,
           quantityDelta: new Prisma.Decimal(-deltaApplied),
-          unitCostSnapshot: sourcePosition?.buyPriceCentsPerUnit ?? current?.buyPriceCents ?? null,
+          unitCostSnapshot: movementCost.unitCostCents,
+          totalCostSnapshot: movementCost.unitCostCents == null
+            ? null
+            : roundMoneyCents(Math.abs(deltaApplied) * movementCost.unitCostCents),
           revision: context.revision,
           createdById: context.createdById ?? null,
           createdByName: context.createdByName ?? null,
@@ -699,11 +1030,13 @@ async function applyStockMovements(
               quantity: currentQuantity,
               reserve,
               available: currentAvailable,
+              averageCostCents: current?.buyPriceCents ?? null,
             },
             balanceAfter: {
               quantity: nextQuantity,
               reserve,
               available: nextAvailable,
+              averageCostCents: nextAverageCost,
             },
           }),
         },
@@ -1019,7 +1352,7 @@ export async function createLocalDemandFromRecord(
       };
     });
 
-    invalidateWarehouseReadCaches();
+    invalidateDemandCostConsumers();
     invalidateDemandListCache();
     invalidateCounterpartyRows();
     return {
@@ -1130,7 +1463,7 @@ export async function linkLocalDemandToAppointment(
       return updated;
     });
 
-    invalidateWarehouseReadCaches();
+    invalidateDemandCostConsumers();
     invalidateDemandListCache();
     invalidateCounterpartyRows();
     return { ok: true, id: result.id, name: result.name, appointmentId };
@@ -1142,7 +1475,7 @@ export async function linkLocalDemandToAppointment(
 
 export async function createLocalDemand(
   body: CreateDemandBody,
-  options: { ecoUserName?: string; branchId?: string; organizationId?: string } = {}
+  options: { ecoUserName?: string; actor?: ShipmentActor | null; branchId?: string; organizationId?: string } = {}
 ): Promise<{ ok: true; id: string; name: string; href: string } | { ok: false; error: string }> {
   let scope: { branchId: string; organizationId: string };
   try {
@@ -1177,13 +1510,19 @@ export async function createLocalDemand(
   }
 
   const { documentDate, momentAt } = parseMoment(body.moment);
-  const positions = await resolveCreatePositions(body.positions, store.id);
+  const actor = options.actor ?? (options.ecoUserName
+    ? { login: options.ecoUserName, name: options.ecoUserName, role: "admin" as const }
+    : null);
+  const positions = await resolveCreatePositions(body.positions, store.id, scope.branchId, actor);
   const applicable = body.applicable ?? false;
   const localAttributes = await buildLocalDemandAttributes(body.attributes, options?.ecoUserName);
 
   let demand: Awaited<ReturnType<typeof prisma.localDemand.create>>;
   try {
     demand = await prisma.$transaction(async (tx) => {
+      const effectivePositions = applicable
+        ? await freezePostingCostSnapshots(tx, scope.branchId, store.id, positions, { preserveExistingSnapshots: false })
+        : positions;
       const generatedNumber = body.name?.trim() ? null : await nextLocalDemandNameInTx(tx);
       const name = body.name?.trim() || generatedNumber?.name || "0001";
       const raw = {
@@ -1205,7 +1544,7 @@ export async function createLocalDemand(
           momentAt,
           documentDate,
           applicable,
-          sumCents: sumPositionsCents(positions),
+          sumCents: sumPositionsCents(effectivePositions),
           description: body.description?.trim() || null,
           counterpartyId: counterparty.id,
           agentNameSnapshot: counterparty.name,
@@ -1219,11 +1558,13 @@ export async function createLocalDemand(
         },
       });
 
-      if (positions.length > 0) {
+      if (effectivePositions.length > 0) {
         await tx.localDemandPosition.createMany({
-          data: positions.map((position) => ({
+          data: effectivePositions.map((position) => ({
+            branchId: scope.branchId,
             demandId: created.id,
             productId: position.productId,
+            groupIdSnapshot: position.groupIdSnapshot,
             assortmentType: position.assortmentType,
             name: position.name,
             quantity: position.quantity,
@@ -1243,7 +1584,7 @@ export async function createLocalDemand(
         store.id,
         [],
         false,
-        positions,
+        effectivePositions,
         applicable,
         applicable
           ? {
@@ -1253,7 +1594,8 @@ export async function createLocalDemand(
               organizationId: organization.id,
               movementType: "SHIPMENT_POST",
               revision: 1,
-              createdByName: options?.ecoUserName ?? null,
+              createdById: actor?.login ?? null,
+              createdByName: actor?.name ?? null,
             }
           : undefined
       );
@@ -1263,8 +1605,8 @@ export async function createLocalDemand(
         eventType: "CREATED",
         statusBefore: null,
         statusAfter: demandStatus(created.applicable),
-        snapshotAfter: shipmentSnapshot(created, positions),
-        actor: options?.ecoUserName ? { login: options.ecoUserName, name: options.ecoUserName, role: "admin" } : null,
+        snapshotAfter: shipmentSnapshot(created, effectivePositions),
+        actor,
       });
       return created;
     });
@@ -1272,7 +1614,7 @@ export async function createLocalDemand(
     return { ok: false, error: error instanceof Error ? error.message : "Не удалось создать локальную отгрузку" };
   }
 
-  invalidateWarehouseReadCaches();
+  invalidateDemandCostConsumers();
   invalidateDemandListCache();
   return { ok: true, id: demand.id, name: demand.name, href: `local://demand/${demand.id}` };
 }
@@ -1321,19 +1663,23 @@ export async function updateLocalDemand(
       position.id,
       {
         productId: position.productId,
+        groupIdSnapshot: position.groupIdSnapshot,
         assortmentType: position.assortmentType,
         quantity: position.quantity,
         name: position.name,
         buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
+        raw: position.raw,
       },
     ])
   );
 
   const nextPositions = Array.isArray(body.positions)
-    ? await resolveUpdatePositions(body.positions, existingById)
+    ? await resolveUpdatePositions(body.positions, existingById, scope.branchId, actor)
     : current.positions.map((position) => ({
         id: position.id,
+        sourcePositionId: position.id,
         productId: position.productId,
+        groupIdSnapshot: position.groupIdSnapshot,
         assortmentReference: null,
         assortmentType: position.assortmentType,
         name: position.name,
@@ -1365,6 +1711,11 @@ export async function updateLocalDemand(
       : false;
     const eventType = nextApplicable ? hasReopenHistory ? "REPOSTED" : "POSTED" : "UPDATED";
     const postMovementType = eventType === "REPOSTED" ? "SHIPMENT_REPOST" : "SHIPMENT_POST";
+    const effectivePositions = nextApplicable
+      ? await freezePostingCostSnapshots(tx, current.branchId, nextStoreId, nextPositions, {
+          preserveExistingSnapshots: eventType === "REPOSTED",
+        })
+      : nextPositions;
     const revisionNumber = await nextShipmentRevisionNumber(tx, current.id);
     const beforeSnapshot = shipmentSnapshot(current, current.positions);
     if (!importedDraftBeingPosted) {
@@ -1379,7 +1730,7 @@ export async function updateLocalDemand(
           createdById: actor?.login ?? null,
           createdByName: actor?.name ?? null,
         });
-        await applyStockMovements(tx, nextStoreId, [], false, nextPositions, nextApplicable, nextApplicable
+        await applyStockMovements(tx, nextStoreId, [], false, effectivePositions, nextApplicable, nextApplicable
           ? {
               branchId: current.branchId,
               sourceType: "SHIPMENT",
@@ -1397,7 +1748,7 @@ export async function updateLocalDemand(
           current.storeId,
           current.positions,
           current.applicable,
-          nextPositions,
+          effectivePositions,
           nextApplicable,
           nextApplicable
             ? {
@@ -1417,11 +1768,13 @@ export async function updateLocalDemand(
 
     if (Array.isArray(body.positions)) {
       await tx.localDemandPosition.deleteMany({ where: { demandId: current.id } });
-      if (nextPositions.length > 0) {
+      if (effectivePositions.length > 0) {
         await tx.localDemandPosition.createMany({
-          data: nextPositions.map((position) => ({
+          data: effectivePositions.map((position) => ({
+            branchId: current.branchId,
             demandId: current.id,
             productId: position.productId,
+            groupIdSnapshot: position.groupIdSnapshot,
             assortmentType: position.assortmentType,
             name: position.name,
             quantity: position.quantity,
@@ -1433,6 +1786,14 @@ export async function updateLocalDemand(
             slotName: position.slotName,
             raw: position.raw,
           })),
+        });
+      }
+    } else if (nextApplicable) {
+      for (const position of effectivePositions) {
+        if (!position.id) continue;
+        await tx.localDemandPosition.update({
+          where: { id: position.id },
+          data: { buyPriceCentsPerUnit: position.buyPriceCentsPerUnit },
         });
       }
     }
@@ -1453,7 +1814,7 @@ export async function updateLocalDemand(
         organizationId: nextOrganization?.id ?? current.organizationId,
         organizationName: nextOrganization?.name ?? current.organizationName,
         attributes: Array.isArray(body.attributes) ? toJson(body.attributes) : current.attributes ?? Prisma.JsonNull,
-        sumCents: sumPositionsCents(nextPositions),
+        sumCents: sumPositionsCents(effectivePositions),
         raw: toJson({
           ...nextRawBase,
           ...(nextCounterparty
@@ -1475,7 +1836,7 @@ export async function updateLocalDemand(
       statusBefore: demandStatus(current.applicable),
       statusAfter: demandStatus(updated.applicable),
       snapshotBefore: beforeSnapshot,
-      snapshotAfter: shipmentSnapshot(updated, nextPositions),
+      snapshotAfter: shipmentSnapshot(updated, effectivePositions),
       actor,
     });
     return updated;
@@ -1484,7 +1845,7 @@ export async function updateLocalDemand(
     return { ok: false, error: demandWriteErrorMessage(error, "Не удалось сохранить отгрузку") };
   }
 
-  invalidateWarehouseReadCaches();
+  invalidateDemandCostConsumers();
   invalidateDemandListCache();
   await syncActiveDiagnosticVehiclesForShipment(updated.id, {
     userLogin: actor?.login ?? "system",
@@ -1725,7 +2086,7 @@ export async function reopenLocalDemand(
       return next;
     });
 
-    invalidateWarehouseReadCaches();
+    invalidateDemandCostConsumers();
     invalidateDemandListCache();
     return {
       ok: true,
@@ -1793,7 +2154,7 @@ export async function deleteLocalDemand(
     await tx.localDemand.delete({ where: { id: current.id } });
   });
 
-  invalidateWarehouseReadCaches();
+  invalidateDemandCostConsumers();
   invalidateDemandListCache();
   return { ok: true };
 }
@@ -1822,9 +2183,17 @@ export async function loadLocalDemandDetailPayload(
   const positions: DemandDetailPosition[] = demand.positions.map((position) => {
     const positionRaw = jsonRecord(position.raw);
     const copyMeta = positionRaw.copyMeta;
+    const nonstock = isNonstockProductType(position.assortmentType)
+      ? nonstockRawRecord(position.raw)
+      : null;
     const assortmentMeta = position.product
       ? entityMeta(position.product.entityType, position.product.id, undefined, position.product.id)
-      : undefined;
+      : nonstock
+        ? localMeta(NONSTOCK_PRODUCT_ASSORTMENT_TYPE, position.id)
+        : undefined;
+    const purchasePriceCents = typeof nonstock?.purchasePriceCents === "number"
+      ? nonstock.purchasePriceCents
+      : position.buyPriceCentsPerUnit;
     return {
       id: position.id,
       name: position.name,
@@ -1836,6 +2205,29 @@ export async function loadLocalDemandDetailPayload(
         cost: position.buyPriceCentsPerUnit ?? undefined,
       },
       assortmentMeta,
+      lineKind: nonstock ? NONSTOCK_PRODUCT_LINE_KIND : undefined,
+      oneOffProduct: nonstock
+        ? {
+            groupCode: cleanRecordText(nonstock.groupCode),
+            groupLabel: cleanRecordText(nonstock.groupLabel),
+            brand: cleanRecordText(nonstock.brandRaw) || cleanRecordText(nonstock.brandCanonical),
+            brandCanonical: cleanRecordText(nonstock.brandCanonical),
+            article: cleanRecordText(nonstock.articleRaw) || cleanRecordText(nonstock.articleDisplay),
+            articleDisplay: cleanRecordText(nonstock.articleDisplay),
+            articleCanonical: cleanRecordText(nonstock.articleCanonical),
+            uomCode: cleanRecordText(nonstock.uomCode),
+            uomLabel: cleanRecordText(nonstock.uomLabel),
+            purchasePrice: purchasePriceCents == null ? null : purchasePriceCents / 100,
+            explicitZeroCost: nonstock.explicitZeroCost === true,
+            purchaseSourceId: cleanRecordText(nonstock.purchaseSourceId) || null,
+            purchaseSourceLabel: cleanRecordText(nonstock.purchaseSourceLabel) || null,
+            clarification: cleanRecordText(nonstock.clarification) || null,
+            analyticsKey: cleanRecordText(nonstock.analyticsKey),
+            costSource: cleanRecordText(nonstock.costSource),
+            catalogMatchProductId: cleanRecordText(nonstock.catalogMatchProductId) || null,
+          }
+        : undefined,
+      comment: cleanRecordText(positionRaw.comment) || undefined,
       product: position.product
         ? {
             id: position.product.id,
@@ -1980,6 +2372,9 @@ export async function loadLocalDemandDetailPayload(
       discount: position.discount,
       assortment: { name: position.name, meta: position.assortmentMeta },
       product: position.product,
+      lineKind: position.lineKind,
+      oneOffProduct: position.oneOffProduct,
+      comment: position.comment,
     })),
   };
 

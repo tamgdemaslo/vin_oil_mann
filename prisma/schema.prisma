@@ -281,7 +281,7 @@ model ShiftRate {
 model PieceworkRule {
   id                 String   @id @default(cuid())
   branchId           String   @default("branch-main") @map("branch_id")
-  targetType         String   @map("target_type") // service | product_group
+  targetType         String   @map("target_type") // service_group | product_group
   targetId           String   @map("target_id")
   targetName         String   @map("target_name")
   role               String
@@ -293,6 +293,30 @@ model PieceworkRule {
 
   @@unique([branchId, targetType, targetId, role])
   @@map("piecework_rules")
+}
+
+/// Канонические группы ассортимента внутри филиала.
+///
+/// Имя группы остаётся удобной подписью для человека, а все связи зарплаты
+/// строятся по id. Это защищает начисления от переименований, пробелов и
+/// различий в символах импортированных названий.
+model LocalCatalogGroup {
+  id             String   @id
+  branchId       String   @default("branch-main") @map("branch_id")
+  kind           String   // product | service
+  name           String
+  normalizedName String   @map("normalized_name")
+  archived       Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  products          LocalProduct[]       @relation("CatalogGroupProducts")
+  demandPositions   LocalDemandPosition[] @relation("CatalogGroupDemandPositions")
+
+  @@unique([branchId, id])
+  @@unique([branchId, kind, normalizedName])
+  @@index([branchId, kind, archived])
+  @@map("local_catalog_groups")
 }
 
 model BonusPenalty {
@@ -2365,6 +2389,7 @@ model LocalProduct {
   code                      String?
   externalCode              String?   @map("external_code")
   groupPath                 String?   @map("group_path") @db.Text
+  groupId                   String?   @map("group_id")
   uomName                   String?   @map("uom_name")
   salePriceCents            Int       @default(0) @map("sale_price_cents")
   /// Defines how the internal assistant may use a service-card price.  The
@@ -2444,6 +2469,7 @@ model LocalProduct {
   mannLinks                  ProductMannLink[]
   mannPomanMigrationAudits   ProductMannPomanMigrationAudit[]
   oemBatchItems              ProductOemBatchItem[]
+  group                      LocalCatalogGroup?               @relation("CatalogGroupProducts", fields: [branchId, groupId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   supplierCounterparty       LocalCounterparty?               @relation("ProductSupplierCounterparty", fields: [branchId, supplierCounterpartyId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([branchId, id])
@@ -2459,6 +2485,7 @@ model LocalProduct {
   @@index([sae])
   @@index([legacySupplierName])
   @@index([branchId, supplierCounterpartyId])
+  @@index([branchId, groupId])
   @@index([groupPath])
   @@index([apiSpec])
   @@index([acea])
@@ -3691,6 +3718,8 @@ model LocalDemandPosition {
   demand               LocalDemand   @relation(fields: [branchId, demandId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
   productId            String?       @map("product_id")
   product              LocalProduct? @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  groupIdSnapshot      String?       @map("group_id_snapshot")
+  groupSnapshot        LocalCatalogGroup? @relation("CatalogGroupDemandPositions", fields: [branchId, groupIdSnapshot], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   assortmentType       String        @map("assortment_type")
   name                 String
   quantity             Decimal       @default(0) @db.Decimal(14, 3)
@@ -3704,6 +3733,7 @@ model LocalDemandPosition {
 
   @@index([demandId])
   @@index([productId])
+  @@index([branchId, groupIdSnapshot])
   @@index([branchId])
   @@map("local_demand_positions")
 }

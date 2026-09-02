@@ -1,4 +1,5 @@
 import type { LocalEntityMeta } from "@/lib/local-entity-meta";
+import type { NonstockProductInput } from "@/lib/one-off-product";
 
 export type DemandDetailHeader = {
   id: string;
@@ -38,6 +39,18 @@ export type DemandDetailPosition = {
     available?: number;
   };
   assortmentMeta?: LocalEntityMeta;
+  lineKind?: "nonstock_product";
+  oneOffProduct?: NonstockProductInput & {
+    groupLabel?: string;
+    brandCanonical?: string;
+    articleDisplay?: string;
+    articleCanonical?: string;
+    uomLabel?: string;
+    analyticsKey?: string;
+    costSource?: string;
+    catalogMatchProductId?: string | null;
+  };
+  comment?: string;
   product?: {
     id: string;
     name: string;

@@ -277,7 +277,8 @@ function copyData(source: SourceProduct, input: {
 }) {
   const { options } = input;
   const salePriceCents = options.copyRetailPrice ? source.salePriceCents : 0;
-  const buyPriceCents = options.copyPurchasePrice ? source.buyPriceCents : null;
+  // Last purchase price belongs to the destination branch's own receipt history.
+  const buyPriceCents = null;
   const minimumBalance = options.copyMinimumBalance ? source.minimumBalance : null;
   const data: Prisma.LocalProductUncheckedCreateInput = {
     branchId: input.targetBranchId,
@@ -384,7 +385,6 @@ function copyAttributesWithoutLocations(value: unknown): unknown {
 function updateDataForDuplicate(source: SourceProduct, target: TargetProduct, createData: Prisma.LocalProductUncheckedCreateInput, options: ProductCopyOptions) {
   const selectedDefaults = [
     ...(options.copyRetailPrice ? ["salePriceCents"] : []),
-    ...(options.copyPurchasePrice ? ["buyPriceCents"] : []),
     ...(options.copyMinimumBalance ? ["minimumBalance"] : []),
     ...(options.mapSupplierByInn ? ["supplierCounterpartyId", "legacySupplierName"] : []),
   ];

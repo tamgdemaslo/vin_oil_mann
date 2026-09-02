@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MoneyInput from "@/components/MoneyInput";
 
 type PieceworkRuleItem = {
-  targetType: "service" | "product_group";
+  targetType: "service_group" | "product_group";
   targetId: string;
   targetName: string;
   role: "master" | "admin";
   mode: "fixed" | "percent";
   fixedCents: number | null;
   percentBasisPoints: number | null;
+  isConfigured: boolean;
   isDefault: boolean;
 };
 
@@ -44,7 +45,7 @@ function makeDraft(rule: PieceworkRuleItem): DraftRule {
 }
 
 function targetTypeLabel(targetType: PieceworkRuleItem["targetType"]) {
-  return targetType === "service" ? "Услуга" : "Группа товара";
+  return targetType === "service_group" ? "Группа услуг" : "Группа товара";
 }
 
 function roleLabel(role: PieceworkRuleItem["role"]) {
@@ -103,9 +104,9 @@ export default function PieceworkRulesEditor({ onSaved }: { onSaved?: () => void
   const sections = useMemo(
     () => [
       {
-        id: "service" as const,
-        title: "Услуги",
-        rows: rules.filter((rule) => rule.targetType === "service"),
+        id: "service_group" as const,
+        title: "Группы услуг",
+        rows: rules.filter((rule) => rule.targetType === "service_group"),
       },
       {
         id: "product_group" as const,
@@ -132,7 +133,6 @@ export default function PieceworkRulesEditor({ onSaved }: { onSaved?: () => void
         body: JSON.stringify({
           targetType: rule.targetType,
           targetId: rule.targetId,
-          targetName: rule.targetName,
           role: rule.role,
           mode: draft.mode,
           fixedCents: draft.mode === "fixed" ? Math.round(numericValue * 100) : null,
@@ -158,6 +158,7 @@ export default function PieceworkRulesEditor({ onSaved }: { onSaved?: () => void
                 mode: draft.mode,
                 fixedCents: draft.mode === "fixed" ? Math.round(numericValue * 100) : null,
                 percentBasisPoints: draft.mode === "percent" ? Math.round(numericValue * 100) : null,
+                isConfigured: true,
                 isDefault: false,
               }
             : item
@@ -178,8 +179,8 @@ export default function PieceworkRulesEditor({ onSaved }: { onSaved?: () => void
         <div>
           <h3 className="font-semibold text-zinc-900 dark:text-zinc-50">Правила сдельной части</h3>
           <p className="text-sm text-zinc-500">
-            Для мастера начисления считаются только по услугам, для администратора - только по
-            группам товаров. Для каждой строки можно выбрать фикс или процент от суммы продажи.
+            Для мастера начисления считаются по ID групп услуг, для администратора — по ID групп
+            товаров. Для каждой строки можно выбрать фикс или процент.
           </p>
           {!loading && !errorMessage && (
             <p className="mt-1 text-xs text-zinc-500">Загружено правил: {rules.length}</p>
@@ -290,7 +291,7 @@ export default function PieceworkRulesEditor({ onSaved }: { onSaved?: () => void
                               </div>
                             </td>
                             <td className="px-4 py-3 text-xs text-zinc-500">
-                              {rule.isDefault ? "Дефолт" : "Изменено"}
+                              {rule.isConfigured ? "Настроено" : "Не настроено"}
                             </td>
                             <td className="px-4 py-3 text-right">
                               <button

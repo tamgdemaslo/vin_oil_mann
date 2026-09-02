@@ -6,6 +6,7 @@ import {
 } from "@/lib/customer-analytics-profit";
 import { prisma } from "@/lib/db";
 import type { CustomerAnalyticsResolvedSettings } from "@/lib/customer-analytics-settings";
+import { calculateLineFinancials } from "@/lib/inventory-costing";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 
 export type { ComputedPositionForProfit };
@@ -135,13 +136,20 @@ export function lineRevenueAndCostCents(p: {
   discount: Prisma.Decimal | number | string;
   priceCentsPerUnit: number;
   buyPriceCentsPerUnit: number | null;
-}): { revenueCents: number; costCents: number; lineIncompleteCost: boolean } {
-  const qty = decimalToNumber(p.quantity);
-  const disc = decimalToNumber(p.discount);
-  const factor = (100 - disc) / 100;
-  const revenueCents = Math.round(p.priceCentsPerUnit * qty * factor);
-  const costCents = p.buyPriceCentsPerUnit != null ? Math.round(p.buyPriceCentsPerUnit * qty) : 0;
-  return { revenueCents, costCents, lineIncompleteCost: p.buyPriceCentsPerUnit == null && revenueCents > 0 };
+  assortmentType: string;
+}): { revenueCents: number; costCents: number | null; lineIncompleteCost: boolean } {
+  const line = calculateLineFinancials({
+    quantity: decimalToNumber(p.quantity),
+    salePriceCents: p.priceCentsPerUnit,
+    discountPercent: decimalToNumber(p.discount),
+    assortmentType: p.assortmentType,
+    snapshotCents: p.buyPriceCentsPerUnit,
+  });
+  return {
+    revenueCents: line.revenueCents,
+    costCents: line.costCents,
+    lineIncompleteCost: line.costCents == null && line.revenueCents > 0,
+  };
 }
 
 export function documentProfitCents(positions: Array<{
@@ -149,13 +157,15 @@ export function documentProfitCents(positions: Array<{
   discount: Prisma.Decimal | number | string;
   priceCentsPerUnit: number;
   buyPriceCentsPerUnit: number | null;
-}>): number {
+  assortmentType: string;
+}>): number | null {
   return documentProfitFromComputedPositions(
     positions.map((p) => ({
       priceCentsPerUnit: p.priceCentsPerUnit,
       quantity: decimalToNumber(p.quantity),
       discount: decimalToNumber(p.discount),
       buyPriceCentsPerUnit: p.buyPriceCentsPerUnit,
+      assortmentType: p.assortmentType,
     }))
   );
 }
@@ -217,10 +227,10 @@ export type CustomerAnalyticsRow = {
   daysSinceLastVisit: number | null;
   revenueCents: number;
   revenueAllTimeCents: number;
-  profitCents: number;
-  profitAllTimeCents: number;
+  profitCents: number | null;
+  profitAllTimeCents: number | null;
   avgRevenuePerVisitCents: number;
-  avgProfitPerVisitCents: number;
+  avgProfitPerVisitCents: number | null;
   avgCheckAllTimeCents: number;
   avgDaysBetweenVisits: number | null;
   hasIncompleteCost: boolean;
@@ -245,9 +255,9 @@ export type CustomerAnalyticsKpis = {
   noHistoryClients: number;
   visits: number;
   totalRevenueCents: number;
-  totalProfitCents: number;
+  totalProfitCents: number | null;
   avgCheckCents: number;
-  avgProfitPerVisitCents: number;
+  avgProfitPerVisitCents: number | null;
   avgDaysBetweenVisits: number | null;
 };
 
@@ -536,7 +546,7 @@ function computeAvgGapDays(documentDatesYmd: string[]): number | null {
   return Math.round(sum / (unique.length - 1));
 }
 
-function demandFinancials(demand: LocalDemandWithRelations): { revenueCents: number; profitCents: number; hasIncompleteCost: boolean } {
+function demandFinancials(demand: LocalDemandWithRelations): { revenueCents: number; profitCents: number | null; hasIncompleteCost: boolean } {
   const profitCents = documentProfitCents(demand.positions);
   return {
     revenueCents: demand.sumCents,
@@ -671,17 +681,19 @@ function buildClientRows(params: {
     let revenueAllTimeCents = 0;
     let profitAllTimeCents = 0;
     let hasIncompleteCost = false;
+    let periodHasIncompleteCost = false;
 
     for (const demand of allServiceDemands) {
       const financials = demandFinancials(demand);
       revenueAllTimeCents += financials.revenueCents;
-      profitAllTimeCents += financials.profitCents;
+      if (financials.profitCents != null) profitAllTimeCents += financials.profitCents;
       if (financials.hasIncompleteCost) hasIncompleteCost = true;
     }
     for (const demand of periodDemands) {
       const financials = demandFinancials(demand);
       revenueCents += financials.revenueCents;
-      profitCents += financials.profitCents;
+      if (financials.profitCents != null) profitCents += financials.profitCents;
+      if (financials.hasIncompleteCost) periodHasIncompleteCost = true;
     }
 
     const lastDemand = allServiceDemands[allServiceDemands.length - 1] ?? null;
@@ -747,10 +759,10 @@ function buildClientRows(params: {
       daysSinceLastVisit,
       revenueCents,
       revenueAllTimeCents,
-      profitCents,
-      profitAllTimeCents,
+      profitCents: periodHasIncompleteCost ? null : profitCents,
+      profitAllTimeCents: hasIncompleteCost ? null : profitAllTimeCents,
       avgRevenuePerVisitCents: visitCount > 0 ? Math.round(revenueCents / visitCount) : 0,
-      avgProfitPerVisitCents: visitCount > 0 ? Math.round(profitCents / visitCount) : 0,
+      avgProfitPerVisitCents: periodHasIncompleteCost ? null : visitCount > 0 ? Math.round(profitCents / visitCount) : 0,
       avgCheckAllTimeCents: visitCountAllTime > 0 ? Math.round(revenueAllTimeCents / visitCountAllTime) : 0,
       avgDaysBetweenVisits: computeAvgGapDays(datesAll),
       hasIncompleteCost,
@@ -786,7 +798,7 @@ function buildClientRows(params: {
 type AnonymousRetailDocumentStats = {
   visits: number;
   revenueCents: number;
-  profitCents: number;
+  profitCents: number | null;
 };
 
 function anonymousRetailDocumentStats(
@@ -800,10 +812,13 @@ function anonymousRetailDocumentStats(
     demandMatchesServiceFilter(demand, serviceIds) &&
     ymdInRange(demand.documentDate, dateFrom, dateTo)
   );
+  const profits = rows.map((demand) => documentProfitCents(demand.positions));
   return {
     visits: rows.length,
     revenueCents: rows.reduce((sum, demand) => sum + demand.sumCents, 0),
-    profitCents: rows.reduce((sum, demand) => sum + documentProfitCents(demand.positions), 0),
+    profitCents: profits.some((profit) => profit == null)
+      ? null
+      : profits.reduce<number>((sum, profit) => sum + (profit ?? 0), 0),
   };
 }
 
@@ -814,7 +829,10 @@ function buildKpis(
   const clientsInPeriod = clients.filter((client) => client.visitCount > 0).length;
   const visits = clients.reduce((sum, client) => sum + client.visitCount, 0) + anonymousRetail.visits;
   const totalRevenueCents = clients.reduce((sum, client) => sum + client.revenueCents, 0) + anonymousRetail.revenueCents;
-  const totalProfitCents = clients.reduce((sum, client) => sum + client.profitCents, 0) + anonymousRetail.profitCents;
+  const hasIncompleteProfit = anonymousRetail.profitCents == null || clients.some((client) => client.profitCents == null);
+  const totalProfitCents = hasIncompleteProfit
+    ? null
+    : clients.reduce((sum, client) => sum + (client.profitCents ?? 0), 0) + (anonymousRetail.profitCents ?? 0);
   const gapValues = clients.map((client) => client.avgDaysBetweenVisits).filter((value): value is number => value != null);
 
   return {
@@ -830,7 +848,7 @@ function buildKpis(
     totalRevenueCents,
     totalProfitCents,
     avgCheckCents: visits > 0 ? Math.round(totalRevenueCents / visits) : 0,
-    avgProfitPerVisitCents: visits > 0 ? Math.round(totalProfitCents / visits) : 0,
+    avgProfitPerVisitCents: totalProfitCents == null ? null : visits > 0 ? Math.round(totalProfitCents / visits) : 0,
     avgDaysBetweenVisits: gapValues.length > 0 ? Math.round(gapValues.reduce((sum, value) => sum + value, 0) / gapValues.length) : null,
   };
 }
@@ -1169,7 +1187,7 @@ export async function loadCustomerDemandHistory(params: {
     documentDate: string;
     momentAt: string;
     sumCents: number;
-    profitCents: number;
+    profitCents: number | null;
     hasIncompleteCost: boolean;
     services: { id: string; name: string }[];
     positions: {
@@ -1177,7 +1195,7 @@ export async function loadCustomerDemandHistory(params: {
       assortmentType: string;
       quantity: number;
       revenueCents: number;
-      costCents: number;
+      costCents: number | null;
       lineIncompleteCost: boolean;
     }[];
   }[];

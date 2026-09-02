@@ -113,7 +113,8 @@ type DashboardData = {
   };
   finance: {
     revenueCents: number;
-    grossProfitCents: number;
+    grossProfitCents: number | null;
+    missingCostLines: number;
     averageCheckCents: number;
     shipmentsCount: number;
     paidCents: number;
@@ -193,7 +194,8 @@ type DashboardData = {
 
 const CASH_SHIFT_EVENT = "eco-cash-shift-changed";
 
-function formatMoneyCents(amountCents: number) {
+function formatMoneyCents(amountCents: number | null) {
+  if (amountCents == null) return "—";
   return `${new Intl.NumberFormat("ru-RU").format(Math.round(amountCents / 100))} ₽`;
 }
 

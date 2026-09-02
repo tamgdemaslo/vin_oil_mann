@@ -132,7 +132,7 @@ function buildShipmentCard(vehicle: VehicleRecord, login: string, status: "CONFI
 function buildOpportunities(month: PayrollSummary, login: string) {
   const ownVehicles = month.vehicleHistory.filter((vehicle) => employeeEarnings(vehicle, login) > 0);
   const missingRuleCount = month.vehicleHistory.reduce(
-    (sum, vehicle) => sum + vehicle.unallocatedPiecework.filter((item) => item.reason === "missing_rule").length,
+    (sum, vehicle) => sum + vehicle.unallocatedPiecework.filter((item) => item.reason === "missing_rule" || item.reason === "missing_cost").length,
     0
   );
 

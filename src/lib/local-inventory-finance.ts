@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
+import { calculateLineFinancials, lineCostCents } from "@/lib/inventory-costing";
 
 type DocumentTypeFilter = "all" | "sale" | "receipt" | "writeoff";
 
@@ -84,10 +85,10 @@ type DailyFinance = {
   date: string;
   revenue: number;
   cost: number;
-  profit: number;
+  profit: number | null;
   marginPercent: number | null;
-  writeoffLoss: number;
-  operationalProfit: number;
+  writeoffLoss: number | null;
+  operationalProfit: number | null;
 };
 
 type ProductSnapshot = {
@@ -187,16 +188,6 @@ function decimalToNumber(value: { toNumber(): number } | number | null | undefin
   return typeof value === "number" ? value : value.toNumber();
 }
 
-function lineRevenueCents(position: { quantity: { toNumber(): number } | number; priceCentsPerUnit: number; discount?: { toNumber(): number } | number | null }) {
-  const quantity = decimalToNumber(position.quantity);
-  const discount = decimalToNumber(position.discount);
-  return Math.round(quantity * position.priceCentsPerUnit * (1 - discount / 100));
-}
-
-function lineCostCents(quantity: number, costPerUnit: number | null | undefined): number | null {
-  return costPerUnit == null ? null : Math.round(quantity * costPerUnit);
-}
-
 function marginPercent(revenue: number, profit: number | null): number | null {
   if (profit == null || revenue <= 0) return null;
   return (profit / revenue) * 100;
@@ -206,24 +197,29 @@ function rub(cents: number | null): number | null {
   return cents == null ? null : cents / 100;
 }
 
-function isService(type: string): boolean {
-  return type === "service";
-}
-
 function categoryLabel(value: string | null | undefined): string | null {
   if (!value) return null;
   const parts = value.split(/[>/]/).map((part) => part.trim()).filter(Boolean);
   return parts.at(-1) ?? value;
 }
 
-function productMeta(product: ProductSnapshot | null | undefined, fallbackName: string) {
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function productMeta(product: ProductSnapshot | null | undefined, fallbackName: string, raw?: unknown) {
+  const oneOff = record(record(raw).oneOffProduct);
+  const oneOffText = (key: string) => typeof oneOff[key] === "string" && String(oneOff[key]).trim()
+    ? String(oneOff[key]).trim()
+    : null;
   return {
     productId: product?.id ?? null,
     productName: product?.name ?? fallbackName,
-    productArticle: product?.article ?? product?.code ?? null,
-    productBrand: product?.brand ?? null,
-    productCategory: categoryLabel(product?.groupPath),
+    productArticle: product?.article ?? product?.code ?? oneOffText("articleDisplay") ?? oneOffText("articleCanonical"),
+    productBrand: product?.brand ?? oneOffText("brandCanonical"),
+    productCategory: categoryLabel(product?.groupPath) ?? oneOffText("groupLabel") ?? (oneOffText("groupCode") ? "Разовые товары" : null),
     currentBuyPrice: rub(product?.buyPriceCents ?? null),
+    analyticsKey: oneOffText("analyticsKey"),
   };
 }
 
@@ -286,9 +282,9 @@ function addTopProduct(
 }
 
 function addDaily(
-  map: Map<string, { revenueCents: number; knownRevenueCents: number; costCents: number; profitCents: number; writeoffLossCents: number }>,
+  map: Map<string, { revenueCents: number; knownRevenueCents: number; costCents: number; profitCents: number; writeoffLossCents: number; missingSalesCostLines: number; missingWriteoffCostLines: number }>,
   date: string,
-  patch: Partial<{ revenueCents: number; knownRevenueCents: number; costCents: number; profitCents: number; writeoffLossCents: number }>
+  patch: Partial<{ revenueCents: number; knownRevenueCents: number; costCents: number; profitCents: number; writeoffLossCents: number; missingSalesCostLines: number; missingWriteoffCostLines: number }>
 ) {
   const current = map.get(date) ?? {
     revenueCents: 0,
@@ -296,12 +292,16 @@ function addDaily(
     costCents: 0,
     profitCents: 0,
     writeoffLossCents: 0,
+    missingSalesCostLines: 0,
+    missingWriteoffCostLines: 0,
   };
   current.revenueCents += patch.revenueCents ?? 0;
   current.knownRevenueCents += patch.knownRevenueCents ?? 0;
   current.costCents += patch.costCents ?? 0;
   current.profitCents += patch.profitCents ?? 0;
   current.writeoffLossCents += patch.writeoffLossCents ?? 0;
+  current.missingSalesCostLines += patch.missingSalesCostLines ?? 0;
+  current.missingWriteoffCostLines += patch.missingWriteoffCostLines ?? 0;
   map.set(date, current);
 }
 
@@ -380,6 +380,8 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
   let salesProfitCents = 0;
   let missingCostRevenueCents = 0;
   let missingCostLines = 0;
+  let missingSalesCostLines = 0;
+  let missingWriteoffCostLines = 0;
   let receiptValueCents = 0;
   let writeoffLossCents = 0;
   let technicalAdjustmentValueCents = 0;
@@ -402,27 +404,30 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
     documents: Set<string>;
     writeoffLossCents: number;
   }>();
-  const daily = new Map<string, { revenueCents: number; knownRevenueCents: number; costCents: number; profitCents: number; writeoffLossCents: number }>();
+  const daily = new Map<string, { revenueCents: number; knownRevenueCents: number; costCents: number; profitCents: number; writeoffLossCents: number; missingSalesCostLines: number; missingWriteoffCostLines: number }>();
   const receiptPricesByProduct = new Map<string, { productName: string; prices: number[] }>();
 
   for (const demand of demands) {
     for (const position of demand.positions) {
       processedLines += 1;
       const quantity = decimalToNumber(position.quantity);
-      const revenueCents = lineRevenueCents(position);
       const discountPercent = decimalToNumber(position.discount);
-      const fallbackCost = position.product?.buyPriceCents ?? null;
-      const costPerUnit = position.buyPriceCentsPerUnit ?? (isService(position.assortmentType) ? 0 : fallbackCost);
-      const costSource = position.buyPriceCentsPerUnit != null
-        ? "себестоимость в отгрузке"
-        : isService(position.assortmentType)
-          ? "услуга без себестоимости"
-          : fallbackCost != null
-            ? "текущая закупочная цена товара"
-            : "нет себестоимости";
-      const costCents = lineCostCents(quantity, costPerUnit);
-      const profitCents = costCents == null ? null : revenueCents - costCents;
-      const product = productMeta(position.product, position.name);
+      const financials = calculateLineFinancials({
+        quantity,
+        salePriceCents: position.priceCentsPerUnit,
+        discountPercent,
+        assortmentType: position.assortmentType,
+        snapshotCents: position.buyPriceCentsPerUnit,
+      });
+      const { revenueCents, costCents, profitCents } = financials;
+      const costSource = financials.cost.source === "service"
+        ? "услуга без складской себестоимости"
+        : financials.cost.source === "one_off_purchase_snapshot"
+          ? "фактическая закупка разового товара"
+        : financials.cost.source === "posted_snapshot"
+          ? "снимок себестоимости в отгрузке"
+          : "нет подтверждённого снимка себестоимости";
+      const product = productMeta(position.product, position.name, position.raw);
       const href = documentHref("sale", demand.id, demand.applicable);
       const status: FinanceRowStatus =
         costCents == null
@@ -439,6 +444,7 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
       if (costCents == null || profitCents == null) {
         missingCostRevenueCents += revenueCents;
         missingCostLines += 1;
+        missingSalesCostLines += 1;
       } else {
         knownSalesRevenueCents += revenueCents;
         salesCostCents += costCents;
@@ -450,10 +456,11 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
         knownRevenueCents: costCents == null ? 0 : revenueCents,
         costCents: costCents ?? 0,
         profitCents: profitCents ?? 0,
+        missingSalesCostLines: costCents == null ? 1 : 0,
       });
       addTopProduct(
         topProducts,
-        product.productId ?? position.productId ?? position.name,
+        product.analyticsKey ?? product.productId ?? position.productId ?? position.name,
         product,
         demand.id,
         quantity,
@@ -500,10 +507,10 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
       if (costCents == null) {
         addIssue(issues, {
           id: `missing-cost:${position.id}`,
-          type: fallbackCost == null ? "no_buy_price" : "missing_cost",
+          type: "missing_cost",
           severity: "warning",
-          title: fallbackCost == null ? "Товар без закупочной цены" : "Строка без себестоимости",
-          description: "Прибыль по строке не попала в валовую прибыль, пока не будет указана себестоимость.",
+          title: "Проведённая товарная строка без снимка себестоимости",
+          description: "Прибыль неизвестна. Текущая цена карточки намеренно не используется для изменения истории.",
           productId: product.productId,
           productName: product.productName,
           documentId: demand.id,
@@ -613,10 +620,14 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
           affectsManagementProfit: true,
         });
       } else if (document.type === "writeoff") {
-        const costPerUnit = position.priceCentsPerUnit > 0 ? position.priceCentsPerUnit : position.product?.buyPriceCents ?? null;
-        const lossCents = lineCostCents(quantity, costPerUnit) ?? 0;
+        const costPerUnit = position.priceCentsPerUnit > 0 ? position.priceCentsPerUnit : null;
+        const lossCents = lineCostCents(quantity, costPerUnit);
         const isTechnicalAdjustment = document.affectsManagementProfit === false || document.adjustmentType === "technical";
-        if (isTechnicalAdjustment) {
+        if (lossCents == null) {
+          missingCostLines += 1;
+          missingWriteoffCostLines += 1;
+          addDaily(daily, document.documentDate, { missingWriteoffCostLines: 1 });
+        } else if (isTechnicalAdjustment) {
           technicalAdjustmentValueCents += lossCents;
           technicalAdjustmentQuantity += quantity;
         } else {
@@ -654,13 +665,13 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
           revenue: 0,
           cost: rub(lossCents),
           discountPercent: null,
-          profit: isTechnicalAdjustment ? 0 : rub(-lossCents),
+          profit: lossCents == null ? null : isTechnicalAdjustment ? 0 : rub(-lossCents),
           marginPercent: null,
           currentBuyPrice: product.currentBuyPrice,
           costSource: isTechnicalAdjustment
             ? "техническая корректировка без влияния на прибыль"
-            : position.priceCentsPerUnit > 0 ? "цена учёта в списании" : "текущая закупочная цена товара",
-          status: isTechnicalAdjustment ? "technical_adjustment" : noReason ? "writeoff_no_reason" : "writeoff",
+            : lossCents != null ? "снимок средней себестоимости в списании" : "нет подтверждённого снимка себестоимости",
+          status: lossCents == null ? "missing_cost" : isTechnicalAdjustment ? "technical_adjustment" : noReason ? "writeoff_no_reason" : "writeoff",
           createdByName: document.createdByName,
           writeoffReason,
           adjustmentType: document.adjustmentType,
@@ -680,6 +691,22 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
             documentHref: href,
             date: document.documentDate,
             amount: rub(lossCents),
+          });
+        }
+        if (lossCents == null) {
+          addIssue(issues, {
+            id: `writeoff-missing-cost:${position.id}`,
+            type: "missing_cost",
+            severity: "danger",
+            title: "Проведённое списание без снимка себестоимости",
+            description: "Потеря неизвестна. Текущая цена карточки намеренно не используется для изменения истории.",
+            productId: product.productId,
+            productName: product.productName,
+            documentId: document.id,
+            documentName: document.name,
+            documentHref: href,
+            date: document.documentDate,
+            amount: null,
           });
         }
       }
@@ -709,7 +736,11 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
     }
   }
 
-  const operationalProfitCents = salesProfitCents - writeoffLossCents;
+  const grossProfitComplete = missingSalesCostLines === 0;
+  const writeoffLossComplete = missingWriteoffCostLines === 0;
+  const operationalProfitCents = grossProfitComplete && writeoffLossComplete
+    ? salesProfitCents - writeoffLossCents
+    : null;
   const receiptDocuments = documents.filter((document) => document.type === "receipt");
   const writeoffDocuments = documents.filter((document) => document.type === "writeoff");
   const technicalAdjustmentDocuments = writeoffDocuments.filter((document) => (
@@ -728,7 +759,8 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
       "Валовая прибыль = выручка с известной себестоимостью − себестоимость продаж",
       "Прибыль после списаний = валовая прибыль − обычные списания",
       "Технические корректировки уменьшают складской остаток, но не включаются в расходы и управленческую прибыль",
-      "Если себестоимость не сохранена в отгрузке, используется текущая закупочная цена товара; если её нет, строка помечается как проблемная.",
+      "Товар считается только по сохранённому снимку себестоимости; текущая цена карточки не меняет историю.",
+      "Услуга без складского учёта имеет явную себестоимость 0; неизвестная товарная себестоимость остаётся null.",
     ],
     summary: {
       demandsCount: demands.length,
@@ -739,10 +771,10 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
       salesRevenue: rub(salesRevenueCents),
       knownSalesRevenue: rub(knownSalesRevenueCents),
       salesCost: rub(salesCostCents),
-      grossProfit: rub(salesProfitCents),
-      grossMarginPercent: marginPercent(knownSalesRevenueCents, salesProfitCents),
+      grossProfit: grossProfitComplete ? rub(salesProfitCents) : null,
+      grossMarginPercent: grossProfitComplete ? marginPercent(knownSalesRevenueCents, salesProfitCents) : null,
       receiptValue: rub(receiptValueCents),
-      writeoffLoss: rub(writeoffLossCents),
+      writeoffLoss: writeoffLossComplete ? rub(writeoffLossCents) : null,
       technicalAdjustmentValue: rub(technicalAdjustmentValueCents),
       technicalAdjustmentQuantity,
       technicalAdjustmentsCount: technicalAdjustmentDocuments.length,
@@ -762,9 +794,9 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
         productCategory: row.productCategory,
         quantity: row.quantity,
         revenue: rub(row.revenueCents),
-        cost: rub(row.costCents),
-        profit: rub(row.profitCents),
-        marginPercent: marginPercent(row.revenueCents, row.profitCents),
+        cost: row.missingCostLines > 0 ? null : rub(row.costCents),
+        profit: row.missingCostLines > 0 ? null : rub(row.profitCents),
+        marginPercent: row.missingCostLines > 0 ? null : marginPercent(row.revenueCents, row.profitCents),
         documentsCount: row.documents.size,
         rowsCount: row.rowsCount,
         missingCostLines: row.missingCostLines,
@@ -776,10 +808,12 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
         date,
         revenue: rub(row.revenueCents) ?? 0,
         cost: rub(row.costCents) ?? 0,
-        profit: rub(row.profitCents) ?? 0,
-        marginPercent: marginPercent(row.knownRevenueCents, row.profitCents),
-        writeoffLoss: rub(row.writeoffLossCents) ?? 0,
-        operationalProfit: rub(row.profitCents - row.writeoffLossCents) ?? 0,
+        profit: row.missingSalesCostLines > 0 ? null : rub(row.profitCents),
+        marginPercent: row.missingSalesCostLines > 0 ? null : marginPercent(row.knownRevenueCents, row.profitCents),
+        writeoffLoss: row.missingWriteoffCostLines > 0 ? null : rub(row.writeoffLossCents),
+        operationalProfit: row.missingSalesCostLines > 0 || row.missingWriteoffCostLines > 0
+          ? null
+          : rub(row.profitCents - row.writeoffLossCents),
       })),
     issues: issues.sort((a, b) => {
       const severity = a.severity === b.severity ? 0 : a.severity === "danger" ? -1 : 1;

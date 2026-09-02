@@ -2,277 +2,33 @@ import { prisma } from "@/lib/db";
 import { getBranchContext } from "@/lib/branch-context";
 
 export type PieceworkRole = "master" | "admin";
-export type PieceworkTargetType = "service" | "product_group";
+export type PieceworkTargetType = "service_group" | "product_group";
 export type PieceworkMode = "fixed" | "percent";
 
 export type PieceworkRuleView = {
   targetType: PieceworkTargetType;
+  /** Stable LocalCatalogGroup.id. Never a display name or a legacy slug. */
   targetId: string;
+  /** Canonical current name, shown only to the operator. */
   targetName: string;
   role: PieceworkRole;
   mode: PieceworkMode;
   fixedCents: number | null;
   percentBasisPoints: number | null;
-  isDefault: boolean;
+  isConfigured: boolean;
+  isDefault: false;
 };
-
-type DefaultTargetDefinition = {
-  targetType: PieceworkTargetType;
-  targetId: string;
-  targetName: string;
-  matchers?: string[];
-  rules: Partial<
-    Record<
-      PieceworkRole,
-      {
-        mode: PieceworkMode;
-        fixedCents: number | null;
-        percentBasisPoints: number | null;
-      }
-    >
-  >;
-};
-
-export function isAllowedPieceworkRule(targetType: PieceworkTargetType, role: PieceworkRole) {
-  return (targetType === "service" && role === "master") || (targetType === "product_group" && role === "admin");
-}
-
-const DEFAULT_TARGETS: DefaultTargetDefinition[] = [
-  {
-    targetType: "service",
-    targetId: "e2c897e4-b557-11ee-0a80-14f00017e2ef",
-    targetName: "Замена воздушного фильтра",
-    rules: {
-      master: { mode: "fixed", fixedCents: 100 * 100, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "13d998a2-b919-11ee-0a80-174700387000",
-    targetName: "Замена масла в заднем редукторе",
-    rules: {
-      master: { mode: "fixed", fixedCents: 300 * 100, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "c96965d6-b9e9-11ee-0a80-013000121bc2",
-    targetName: "Замена масла в механической коробке передач",
-    rules: {
-      master: { mode: "fixed", fixedCents: 0, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "fd118c96-b918-11ee-0a80-119c0038d4a5",
-    targetName: "Замена масла в переднем редукторе",
-    rules: {
-      master: { mode: "fixed", fixedCents: 300 * 100, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "7e1d8874-edb2-11ee-0a80-0e6b000d4701",
-    targetName: "Замена масла в раздаточной коробке",
-    rules: {
-      master: { mode: "fixed", fixedCents: 300 * 100, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "4c073551-806f-11ee-0a80-13c60033ea8d",
-    targetName: "Замена моторного масла в двигателе и масляного фильтра",
-    rules: {
-      master: { mode: "fixed", fixedCents: 300 * 100, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "9b4863b7-9512-11ee-0a80-111f002e8397",
-    targetName: "Замена салонного фильтра",
-    rules: {
-      master: { mode: "fixed", fixedCents: 100 * 100, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "b939bdc7-dacd-11ee-0a80-170f0052b4dc",
-    targetName: "Замена топливного фильтра",
-    rules: {
-      master: { mode: "fixed", fixedCents: 0, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "e16fccb8-29b7-11f0-0a80-189a00554631",
-    targetName: "Замена тормозной жидкости, аппаратная",
-    rules: {
-      master: { mode: "fixed", fixedCents: 600 * 100, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "303f657b-5bda-11ee-0a80-08870001583c",
-    targetName: "Замена трансмиссионного масла, полная/аппаратная",
-    rules: {
-      master: { mode: "fixed", fixedCents: 1500 * 100, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "3cfce8ef-4a29-11ee-0a80-09c6001ed7ad",
-    targetName: "Замена трансмиссионного масла, частичная",
-    rules: {
-      master: { mode: "fixed", fixedCents: 900 * 100, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "service",
-    targetId: "56c63f56-315d-11ef-0a80-1414002bc041",
-    targetName: "Работа по выставлению уровня масла в АКПП",
-    rules: {
-      master: { mode: "fixed", fixedCents: 0, percentBasisPoints: null },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "autochemicals",
-    targetName: "Автохимия",
-    matchers: ["автохимия"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "antifreeze",
-    targetName: "Антифриз",
-    matchers: ["антифриз"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "air-filters",
-    targetName: "Воздушные фильтры",
-    matchers: ["воздушные фильтры"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "hydraulic-fluids",
-    targetName: "Гидравлические жидкости",
-    matchers: ["гидравлические жидкости"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "motor-oil-cans",
-    targetName: "Масло в канистрах моторное",
-    matchers: ["масло в канистрах моторное"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "transmission-oil-cans",
-    targetName: "Масло в канистрах трансмиссионное",
-    matchers: ["масло в канистрах трансмиссионное"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "motor-oil-barrels",
-    targetName: "Масло моторное в бочках на розлив",
-    matchers: ["масло моторное в бочках на розлив", "масло моторное в бочках"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "transmission-oil-barrels",
-    targetName: "Масло трансмиссионное в бочках на розлив",
-    matchers: ["масло трансмиссионное в бочках на розлив", "масло трансмиссионное в бочках"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "oil-filters",
-    targetName: "Масляные фильтры",
-    matchers: ["масляные фильтры"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "transmission-oil-filters",
-    targetName: "Масляные фильтры АКПП",
-    matchers: ["масляные фильтры акпп"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "cabin-filters",
-    targetName: "Салонные фильтры",
-    matchers: ["салонные фильтры"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "online-store-goods",
-    targetName: "Товары интернет-магазинов",
-    matchers: ["товары интернет-магазинов", "товары интернет магазинов"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "fuel-filters",
-    targetName: "Топливные фильтры",
-    matchers: ["топливные фильтры"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "brake-fluid",
-    targetName: "Тормозная жидкость",
-    matchers: ["тормозная жидкость"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-  {
-    targetType: "product_group",
-    targetId: "seals-and-gaskets",
-    targetName: "Уплотнительные кольца и прокладки",
-    matchers: ["уплотнительные кольца и прокладки"],
-    rules: {
-      admin: { mode: "percent", fixedCents: null, percentBasisPoints: 20 * 100 },
-    },
-  },
-];
 
 function toKey(targetType: PieceworkTargetType, targetId: string, role: PieceworkRole) {
   return `${targetType}:${targetId}:${role}`;
+}
+
+export function isAllowedPieceworkRule(targetType: PieceworkTargetType, role: PieceworkRole) {
+  return (targetType === "service_group" && role === "master") || (targetType === "product_group" && role === "admin");
+}
+
+export function isPieceworkRole(role: string): role is PieceworkRole {
+  return role === "master" || role === "admin";
 }
 
 export function normalizeText(value: string) {
@@ -283,82 +39,6 @@ export function normalizeText(value: string) {
     .toLowerCase()
     .replace(/ё/g, "е")
     .replace(/\s+/g, " ");
-}
-
-/**
- * Imported product groups occasionally contain Latin lookalikes (for example
- * `Maслo`) or hierarchy separators. They look identical in the UI but do not
- * compare equal to a rule title. Keep this normalization limited to payroll
- * groups: ordinary product names and logins must retain their original text.
- */
-const LATIN_TO_CYRILLIC_LOOKALIKE: Record<string, string> = {
-  a: "а",
-  b: "в",
-  c: "с",
-  e: "е",
-  h: "н",
-  k: "к",
-  m: "м",
-  o: "о",
-  p: "р",
-  t: "т",
-  x: "х",
-  y: "у",
-};
-
-export function normalizeProductGroupName(value: string) {
-  return normalizeText(value)
-    // Supplier imports can contain invisible format and combining characters
-    // inside a word (for example `трансмиссион\u00ADное`). They are not part of
-    // the group name and must not turn one word into two during matching.
-    .replace(/[\p{Cf}\p{Cc}\p{M}]/gu, "")
-    .replace(/[abcehkmoptxy]/g, (character) => LATIN_TO_CYRILLIC_LOOKALIKE[character] ?? character)
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-function productGroupNamesMatch(left: string, right: string) {
-  const normalizedLeft = normalizeProductGroupName(left);
-  const normalizedRight = normalizeProductGroupName(right);
-  // A hierarchy separator or an invisible import character can land inside a
-  // word. Compare a compact form as well, while retaining the ordinary text
-  // comparison above for readable group paths.
-  const compactLeft = normalizedLeft.replace(/[^\p{L}\p{N}]+/gu, "");
-  const compactRight = normalizedRight.replace(/[^\p{L}\p{N}]+/gu, "");
-  return Boolean(
-    normalizedLeft &&
-      normalizedRight &&
-      (normalizedLeft === normalizedRight ||
-        normalizedLeft.includes(normalizedRight) ||
-        normalizedRight.includes(normalizedLeft) ||
-        (compactLeft &&
-          compactRight &&
-          (compactLeft === compactRight ||
-            compactLeft.includes(compactRight) ||
-            compactRight.includes(compactLeft))))
-  );
-}
-
-function defaultRulesToList(): PieceworkRuleView[] {
-  return DEFAULT_TARGETS.flatMap((target) =>
-    (Object.entries(target.rules) as Array<
-      [PieceworkRole, { mode: PieceworkMode; fixedCents: number | null; percentBasisPoints: number | null }]
-    >).map(([role, rule]) => ({
-      targetType: target.targetType,
-      targetId: target.targetId,
-      targetName: target.targetName,
-      role,
-      mode: rule.mode,
-      fixedCents: rule.fixedCents,
-      percentBasisPoints: rule.percentBasisPoints,
-      isDefault: true,
-    }))
-  );
-}
-
-export function isPieceworkRole(role: string): role is PieceworkRole {
-  return role === "master" || role === "admin";
 }
 
 export function extractLocalEntityId(href?: string): string | null {
@@ -379,106 +59,74 @@ export function calculatePieceworkAmountCents(
   return (rule.fixedCents ?? 0) * quantity;
 }
 
-export function resolveProductGroupTargetId(pathName?: string): string | null {
-  if (!pathName) return null;
-  for (const target of DEFAULT_TARGETS) {
-    if (target.targetType !== "product_group") continue;
-    if ((target.matchers ?? []).some((matcher) => productGroupNamesMatch(pathName, matcher))) {
-      return target.targetId;
-    }
-  }
-  return null;
-}
-
 /**
- * Product groups are editable data, so a payroll calculation must also match
- * the saved rule name — not only the built-in catalogue matcher. This keeps
- * existing, renamed and imported groups connected to their active rule.
+ * Lists actual catalog groups in the active branch. Missing entries are
+ * intentionally returned to the UI so a new group cannot silently receive a
+ * guessed rate.
  */
-export function resolveProductGroupPieceworkRule(params: {
-  ruleMap: Map<string, PieceworkRuleView>;
-  groupPath?: string;
-  role: PieceworkRole;
-}): { targetId: string | null; rule: PieceworkRuleView | undefined } {
-  const { ruleMap, groupPath, role } = params;
-  const directTargetId = resolveProductGroupTargetId(groupPath);
-  if (directTargetId) {
-    const directRule = ruleMap.get(toKey("product_group", directTargetId, role));
-    if (directRule) return { targetId: directTargetId, rule: directRule };
-  }
-
-  if (!normalizeProductGroupName(groupPath ?? "")) return { targetId: null, rule: undefined };
-
-  const candidates = [...ruleMap.values()].filter(
-    (rule) =>
-      rule.targetType === "product_group" &&
-      rule.role === role &&
-      productGroupNamesMatch(rule.targetName, groupPath ?? "")
-  );
-  if (candidates.length !== 1) {
-    return { targetId: directTargetId, rule: undefined };
-  }
-
-  return { targetId: candidates[0].targetId, rule: candidates[0] };
-}
-
 export async function listPieceworkRules(branchId?: string): Promise<PieceworkRuleView[]> {
   const scopedBranchId = branchId ?? (await getBranchContext({ requireActive: true }))?.branchId;
   if (!scopedBranchId) throw new Error("Для сдельных правил нужен активный филиал");
-  const rows = await prisma.pieceworkRule.findMany({
-    where: { branchId: scopedBranchId },
-    orderBy: [{ targetType: "asc" }, { targetName: "asc" }, { role: "asc" }],
-  });
 
-  const merged = new Map<string, PieceworkRuleView>();
-  for (const rule of defaultRulesToList()) {
-    merged.set(toKey(rule.targetType, rule.targetId, rule.role), rule);
-  }
+  const [groups, savedRules] = await Promise.all([
+    prisma.localCatalogGroup.findMany({
+      where: { branchId: scopedBranchId, archived: false, kind: { in: ["product", "service"] } },
+      select: { id: true, kind: true, name: true },
+      orderBy: [{ kind: "asc" }, { name: "asc" }],
+    }),
+    prisma.pieceworkRule.findMany({
+      where: { branchId: scopedBranchId },
+      orderBy: [{ targetType: "asc" }, { targetName: "asc" }, { role: "asc" }],
+    }),
+  ]);
 
-  for (const row of rows) {
-    const role = row.role as PieceworkRole;
-    const targetType = row.targetType as PieceworkTargetType;
-    if (!isAllowedPieceworkRule(targetType, role)) continue;
-    merged.set(toKey(targetType, row.targetId, role), {
+  const savedByKey = new Map(
+    savedRules
+      .filter((rule) => {
+        const targetType = rule.targetType as PieceworkTargetType;
+        const role = rule.role as PieceworkRole;
+        return isAllowedPieceworkRule(targetType, role);
+      })
+      .map((rule) => [toKey(rule.targetType as PieceworkTargetType, rule.targetId, rule.role as PieceworkRole), rule])
+  );
+
+  return groups.map((group) => {
+    const targetType: PieceworkTargetType = group.kind === "service" ? "service_group" : "product_group";
+    const role: PieceworkRole = group.kind === "service" ? "master" : "admin";
+    const saved = savedByKey.get(toKey(targetType, group.id, role));
+    return {
       targetType,
-      targetId: row.targetId,
-      targetName: row.targetName,
+      targetId: group.id,
+      targetName: group.name,
       role,
-      mode: row.mode as PieceworkMode,
-      fixedCents: row.fixedCents,
-      percentBasisPoints: row.percentBasisPoints,
+      mode: saved ? (saved.mode === "fixed" ? "fixed" : "percent") : group.kind === "service" ? "fixed" : "percent",
+      fixedCents: saved?.fixedCents ?? null,
+      percentBasisPoints: saved?.percentBasisPoints ?? null,
+      isConfigured: Boolean(saved),
       isDefault: false,
-    });
-  }
-
-  return Array.from(merged.values()).sort((a, b) => {
-    if (a.targetType !== b.targetType) return a.targetType.localeCompare(b.targetType);
-    if (a.targetName !== b.targetName) return a.targetName.localeCompare(b.targetName, "ru");
-    return a.role.localeCompare(b.role, "ru");
+    };
   });
 }
 
+/** Only configured ID-bound rules can take part in a payroll calculation. */
 export async function getPieceworkRuleMap(branchId?: string): Promise<Map<string, PieceworkRuleView>> {
   const rules = await listPieceworkRules(branchId);
-  return new Map(rules.map((rule) => [toKey(rule.targetType, rule.targetId, rule.role), rule]));
+  return new Map(
+    rules
+      .filter((rule) => rule.isConfigured)
+      .map((rule) => [toKey(rule.targetType, rule.targetId, rule.role), rule])
+  );
 }
 
-export function resolveServicePieceworkRule(params: {
+export function resolveGroupPieceworkRule(params: {
   ruleMap: Map<string, PieceworkRuleView>;
-  serviceId: string;
-  serviceName: string;
+  groupId?: string | null;
+  targetType: PieceworkTargetType;
   role: PieceworkRole;
 }): PieceworkRuleView | undefined {
-  const { ruleMap, serviceId, serviceName, role } = params;
-  const exact = ruleMap.get(toKey("service", serviceId, role));
-  if (exact) return exact;
-
-  const normalizedServiceName = normalizeText(serviceName);
-  for (const rule of ruleMap.values()) {
-    if (rule.targetType !== "service" || rule.role !== role) continue;
-    if (normalizeText(rule.targetName) === normalizedServiceName) return rule;
-  }
-  return undefined;
+  const { ruleMap, groupId, targetType, role } = params;
+  if (!groupId || !isAllowedPieceworkRule(targetType, role)) return undefined;
+  return ruleMap.get(toKey(targetType, groupId, role));
 }
 
 export function getPieceworkRuleKey(

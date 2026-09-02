@@ -402,8 +402,8 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
           meta,
           cell: stock?.slotName ?? product.cell ?? getCellFromAttributes(product.attributes),
           imageHref: product.imageHref ?? undefined,
-          buyPriceCents: stock?.buyPriceCents ?? product.buyPriceCents ?? undefined,
-          cost: (stock?.buyPriceCents ?? product.buyPriceCents) != null ? (stock?.buyPriceCents ?? product.buyPriceCents ?? 0) / 100 : undefined,
+          buyPriceCents: stock?.buyPriceCents ?? undefined,
+          cost: stock?.buyPriceCents != null ? stock.buyPriceCents / 100 : undefined,
           stockQuantity: quantity,
           reserveQuantity: reserve,
           availableQuantity: available,
@@ -525,8 +525,8 @@ export async function loadLocalStockByAssortment(params: {
       quantity: decimalToNumber(balance?.quantity),
       reserve: decimalToNumber(balance?.reserve),
       available: decimalToNumber(balance?.available),
-      cost: balance?.buyPriceCents != null ? balance.buyPriceCents / 100 : product?.buyPriceCents != null ? product.buyPriceCents / 100 : undefined,
-      buyPriceCents: balance?.buyPriceCents ?? product?.buyPriceCents ?? undefined,
+      cost: balance?.buyPriceCents != null ? balance.buyPriceCents / 100 : undefined,
+      buyPriceCents: balance?.buyPriceCents ?? undefined,
       slotName: balance?.slotName ?? undefined,
     };
   }
@@ -633,6 +633,7 @@ function demandSearchText(row: {
     searchText?: string | null;
   } | null;
   attributes?: unknown;
+  positions?: Array<{ name?: string | null; raw?: unknown }>;
 }): string {
   return [
     row.name,
@@ -644,6 +645,7 @@ function demandSearchText(row: {
     phonesRawArray(row.counterparty?.phonesRaw).join(" "),
     row.counterparty?.searchText ?? "",
     demandAttributesText(row.attributes),
+    ...(row.positions ?? []).flatMap((position) => [position.name ?? "", JSON.stringify(position.raw ?? {})]),
   ].join(" ").toLowerCase();
 }
 
@@ -769,7 +771,12 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
 
   const rows = await prisma.localDemand.findMany({
     where,
-    include: { counterparty: true, store: true, _count: { select: { positions: true } } },
+    include: {
+      counterparty: true,
+      store: true,
+      positions: { select: { name: true, raw: true } },
+      _count: { select: { positions: true } },
+    },
     orderBy: [{ momentAt: "desc" }],
   });
 

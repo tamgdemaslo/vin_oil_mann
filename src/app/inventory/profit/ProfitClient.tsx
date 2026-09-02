@@ -132,10 +132,10 @@ type FinanceResponse = {
     date: string;
     revenue: number;
     cost: number;
-    profit: number;
+    profit: number | null;
     marginPercent: number | null;
-    writeoffLoss: number;
-    operationalProfit: number;
+    writeoffLoss: number | null;
+    operationalProfit: number | null;
   }[];
   issues: FinanceIssue[];
   rows: FinanceRow[];
@@ -1064,7 +1064,8 @@ function RowsTable({ title, subtitle, rows }: { title: string; subtitle: string;
                     ) : (
                       <strong>{row.productName}</strong>
                     )}
-                    <span>{[row.productArticle ? `арт. ${row.productArticle}` : "", row.productBrand].filter(Boolean).join(" · ") || row.costSource}</span>
+                    <span>{[row.productArticle ? `арт. ${row.productArticle}` : "", row.productBrand].filter(Boolean).join(" · ") || "без артикула и бренда"}</span>
+                    <span>Источник: {row.costSource}</span>
                   </td>
                   <td className="is-number">{formatQty(row.quantity)}</td>
                   <td className="is-number">{row.unitSalePrice == null ? "—" : formatMoney(row.unitSalePrice)}</td>
@@ -1073,9 +1074,9 @@ function RowsTable({ title, subtitle, rows }: { title: string; subtitle: string;
                   <td className={`is-number is-profit ${Number(row.profit ?? 0) < 0 ? "is-danger" : ""}`}>{row.profit == null ? "—" : formatMoney(row.profit)}</td>
                   <td>
                     <span className={`eco-finance-status is-${status.tone}`}>{status.label}</span>
-                    {row.status === "missing_cost" && row.productId && (
-                      <Link href={productEditHref(row.productId)} className="eco-finance-row-action">
-                        Исправить себестоимость
+                    {row.status === "missing_cost" && (
+                      <Link href={row.documentHref} className="eco-finance-row-action">
+                        Открыть документ
                       </Link>
                     )}
                   </td>
@@ -1164,7 +1165,7 @@ function ProblemsPanel({ issues, missingRows }: { issues: FinanceIssue[]; missin
         <div className="eco-finance-section-head">
           <div>
             <h3>Строки без себестоимости</h3>
-            <p>Проверьте текущую закупочную цену товара или откройте документ.</p>
+            <p>В проведённой строке нет подтверждённого снимка себестоимости. Последняя цена прихода показана только справочно и не подменяет историю.</p>
           </div>
         </div>
         <div className="eco-finance-table-wrap">
@@ -1176,7 +1177,7 @@ function ProblemsPanel({ issues, missingRows }: { issues: FinanceIssue[]; missin
                 <th>Дата</th>
                 <th className="is-number">Цена продажи</th>
                 <th className="is-number">Кол-во</th>
-                <th className="is-number">Текущая закупочная цена</th>
+                <th className="is-number">Последняя цена прихода (справочно)</th>
                 <th>Действие</th>
               </tr>
             </thead>
@@ -1200,7 +1201,7 @@ function ProblemsPanel({ issues, missingRows }: { issues: FinanceIssue[]; missin
                   <td className="is-number">{row.currentBuyPrice == null ? "—" : formatMoney(row.currentBuyPrice)}</td>
                   <td>
                     {row.productId
-                      ? <Link className="eco-btn eco-btn--sm eco-btn--primary" href={productEditHref(row.productId)}>Исправить закупочную цену</Link>
+                      ? <Link className="eco-btn eco-btn--sm eco-btn--primary" href={productEditHref(row.productId)}>Открыть карточку</Link>
                       : <Link className="eco-btn eco-btn--sm" href={row.documentHref}>Открыть документ</Link>}
                   </td>
                 </tr>
@@ -1270,7 +1271,7 @@ function FinanceChart({ data }: { data: FinanceResponse["daily"] }) {
   const width = 860;
   const height = 260;
   const padding = 34;
-  const maxValue = Math.max(1, ...data.flatMap((row) => [row.revenue, Math.abs(row.profit), row.writeoffLoss]));
+  const maxValue = Math.max(1, ...data.flatMap((row) => [row.revenue, Math.abs(row.profit ?? 0), row.writeoffLoss ?? 0]));
   const slot = data.length > 0 ? (width - padding * 2) / data.length : 0;
   const barWidth = Math.max(8, Math.min(22, slot * 0.28));
   const points = data
@@ -1293,7 +1294,7 @@ function FinanceChart({ data }: { data: FinanceResponse["daily"] }) {
         {data.map((row, index) => {
           const x = padding + slot * index + slot / 2;
           const revenueHeight = (row.revenue / maxValue) * (height - padding * 2);
-          const profitHeight = (Math.max(0, row.profit) / maxValue) * (height - padding * 2);
+          const profitHeight = (Math.max(0, row.profit ?? 0) / maxValue) * (height - padding * 2);
           return (
             <g key={row.date}>
               <rect className="is-revenue" x={x - barWidth - 2} y={height - padding - revenueHeight} width={barWidth} height={revenueHeight} rx="3" />
@@ -1394,10 +1395,10 @@ function ProductDrawer({
         {missingRows.length > 0 && (
           <section className="is-warning">
             <h3>Строки без себестоимости</h3>
-            <p>У товара есть строки, которые требуют закупочной цены.</p>
+            <p>У товара есть проведённые строки без подтверждённого снимка себестоимости.</p>
             {product.productId && (
               <Link className="eco-btn eco-btn--primary" href={productEditHref(product.productId)}>
-                Исправить закупочную цену
+                Открыть карточку товара
               </Link>
             )}
           </section>

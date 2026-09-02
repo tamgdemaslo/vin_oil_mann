@@ -161,7 +161,8 @@ function buildParams(filters: Filters, refresh = false) {
 }
 
 function formatMoney(value: number | null | undefined) {
-  return `${Number(value ?? 0).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽`;
+  if (value == null) return "—";
+  return `${Number(value).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽`;
 }
 
 function formatMoneyExact(value: number | null | undefined) {

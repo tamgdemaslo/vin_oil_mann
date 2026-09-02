@@ -3,20 +3,22 @@ import { getShiftRateCents } from "@/lib/shift-rates";
 import { canonicalizeLogin, getLoginVariants, getUsersFromEnv } from "@/lib/auth";
 import { listPayrollAdjustments, listPayrollPayments } from "@/lib/payroll-settlements";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
+import { calculateLineFinancials } from "@/lib/inventory-costing";
 import {
   calculatePieceworkAmountCents,
   extractLocalEntityId,
   getPieceworkRuleMap,
-  normalizeText,
-  resolveProductGroupPieceworkRule,
-  resolveProductGroupTargetId,
-  resolveServicePieceworkRule,
+  resolveGroupPieceworkRule,
 } from "@/lib/piecework-rules";
 
 const payrollCache = new Map<
   string,
   { promise?: Promise<PayrollSummary> }
 >();
+
+export function invalidatePayrollCache() {
+  payrollCache.clear();
+}
 
 function normalizeLogin(login: string): string {
   return canonicalizeLogin(login).trim().toLowerCase();
@@ -56,11 +58,14 @@ type PositionRow = {
     meta: { href: string; type: string };
     name?: string;
     pathName?: string;
+    /** Immutable group snapshot from the shipment position. */
+    groupId?: string;
     buyPrice?: { value?: number };
     salePrices?: { value?: number }[];
   };
   quantity: number;
   price: number;
+  discount: number;
 };
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -73,14 +78,10 @@ function textValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function productNameKey(value: string) {
-  return normalizeText(value).replace(/[^\p{L}\p{N}]+/gu, "");
-}
-
 /**
  * Imported shipment rows may not have productId in the relational column, but
- * still retain the local product href/id inside `raw`. It is a stronger link
- * than the display name and lets payroll restore the product group safely.
+ * still retain the local product href/id inside `raw`. That id is a valid
+ * legacy recovery key; a display name is deliberately never used for payroll.
  */
 function positionProductReferenceIds(position: { productId: string | null; raw: unknown }) {
   const ids = new Set<string>();
@@ -209,54 +210,40 @@ async function fetchLocalDemandsWithPositions(
     },
     include: {
       counterparty: true,
-      positions: { include: { product: true }, orderBy: { id: "asc" } },
+      positions: { include: { product: true, groupSnapshot: true }, orderBy: { id: "asc" } },
     },
     orderBy: { momentAt: "asc" },
   });
 
-  // Old imported positions can lose their relational product link. Resolve a
-  // current product first from the saved local id/href, then by name only when
-  // every matching candidate belongs to one payroll group.
+  // Old imported positions can lose their relational product link. Their raw
+  // local product id/href remains a safe recovery key. Names are not used: two
+  // identical captions must never cause payroll to select a group by text.
   const unresolvedPositions = demands.flatMap((demand) => demand.positions)
     .filter((position) =>
-      position.assortmentType !== "service" &&
-      !resolveProductGroupTargetId(position.product?.groupPath ?? "")
+      position.assortmentType !== "nonstock_product" &&
+      !position.groupIdSnapshot &&
+      !position.product?.groupId
     );
-  const unresolvedProductNames = [...new Set(
-    unresolvedPositions.map((position) => position.name.trim()).filter(Boolean)
-  )];
   const unresolvedProductIds = [...new Set(
     unresolvedPositions.flatMap((position) => positionProductReferenceIds(position))
   )];
-  const fallbackProducts = (unresolvedProductNames.length || unresolvedProductIds.length)
+  const fallbackProducts = unresolvedProductIds.length
     ? await prisma.localProduct.findMany({
         where: {
           branchId,
           archived: false,
-          OR: [
-            ...(unresolvedProductIds.length ? [{ id: { in: unresolvedProductIds } }] : []),
-            ...unresolvedProductNames.map((name) => ({
-              name: { equals: name, mode: "insensitive" as const },
-            })),
-          ],
+          id: { in: unresolvedProductIds },
         },
         select: {
           id: true,
           entityType: true,
-          name: true,
           groupPath: true,
+          groupId: true,
           buyPriceCents: true,
         },
       })
     : [];
   const fallbackProductsById = new Map(fallbackProducts.map((product) => [product.id, product]));
-  const fallbackProductsByName = new Map<string, (typeof fallbackProducts)[number][]>();
-  for (const product of fallbackProducts) {
-    const key = productNameKey(product.name);
-    const items = fallbackProductsByName.get(key) ?? [];
-    items.push(product);
-    fallbackProductsByName.set(key, items);
-  }
 
   return demands.map((demand) => ({
     demand: {
@@ -267,31 +254,28 @@ async function fetchLocalDemandsWithPositions(
       agent: { name: demand.counterparty?.name ?? demand.agentNameSnapshot ?? "" },
     },
     positions: demand.positions.map((position) => {
+      const raw = recordValue(position.raw);
+      const oneOffProduct = recordValue(raw?.oneOffProduct);
+      const oneOffGroupLabel = textValue(oneOffProduct?.groupLabel);
       const linkedProduct = position.product;
       const candidates = [
         ...positionProductReferenceIds(position)
           .map((id) => fallbackProductsById.get(id))
           .filter((candidate): candidate is (typeof fallbackProducts)[number] => Boolean(candidate)),
-        ...(fallbackProductsByName.get(productNameKey(position.name)) ?? []),
-      ].filter((candidate, index, all) =>
-        all.findIndex((other) => other.id === candidate.id) === index &&
-        Boolean(resolveProductGroupTargetId(candidate.groupPath ?? ""))
-      );
-      const candidateGroupIds = new Set(
-        candidates
-          .map((candidate) => resolveProductGroupTargetId(candidate.groupPath ?? ""))
-          .filter((targetId): targetId is string => Boolean(targetId))
-      );
-      // Prefer the linked product when it already maps to a payroll group. If
-      // it does not (or the legacy row is unlinked), use one unambiguous current
-      // product group recovered from its id/href or name.
-      const product = resolveProductGroupTargetId(linkedProduct?.groupPath ?? "")
+      ].filter((candidate, index, all) => all.findIndex((other) => other.id === candidate.id) === index && Boolean(candidate.groupId));
+      const candidateGroupIds = new Set(candidates.map((candidate) => candidate.groupId).filter((groupId): groupId is string => Boolean(groupId)));
+      // Prefer an immutable shipment snapshot. For old rows only, recover a
+      // group from one unambiguous saved product id — never from a name.
+      const product = position.assortmentType === "nonstock_product"
+        ? undefined
+        : linkedProduct?.groupId
         ? linkedProduct
         : candidateGroupIds.size === 1
           ? candidates[0]
           : linkedProduct;
-      const assortmentType = product?.entityType ?? position.assortmentType ?? "";
+      const assortmentType = position.assortmentType ?? product?.entityType ?? "";
       const assortmentId = product?.id ?? position.productId ?? position.id;
+      const groupId = position.groupIdSnapshot ?? product?.groupId ?? undefined;
       return {
         assortment: {
           meta: {
@@ -299,13 +283,15 @@ async function fetchLocalDemandsWithPositions(
             type: assortmentType,
           },
           name: position.name,
-          pathName: product?.groupPath ?? undefined,
+          pathName: position.groupSnapshot?.name ?? product?.groupPath ?? oneOffGroupLabel ?? undefined,
+          groupId,
           buyPrice: {
-            value: position.buyPriceCentsPerUnit ?? product?.buyPriceCents ?? 0,
+            value: assortmentType === "service" ? 0 : position.buyPriceCentsPerUnit ?? undefined,
           },
         },
         quantity: position.quantity.toNumber(),
         price: position.priceCentsPerUnit,
+        discount: position.discount.toNumber(),
       };
     }),
   }));
@@ -447,7 +433,8 @@ export type VehicleRecord = {
       | "multiple_masters"
       | "missing_admin"
       | "multiple_admins"
-      | "missing_rule";
+      | "missing_rule"
+      | "missing_cost";
     logins?: string[];
     groupPath?: string;
     ruleTargetId?: string;
@@ -593,14 +580,22 @@ export async function computePayroll(params: {
     for (const p of positions) {
       const name = p.assortment?.name ?? "";
       const pathName = p.assortment?.pathName ?? "";
+      const groupId = p.assortment?.groupId ?? null;
       const qty = p.quantity ?? 1;
       const priceCents = Math.round(p.price ?? 0); // цена за единицу в копейках
-      const saleCents = priceCents * qty;
-      const buyPriceCents = Math.round(p.assortment?.buyPrice?.value ?? 0) * qty;
+      const unitBuyPriceCents = p.assortment?.buyPrice?.value;
       const type = p.assortment?.meta?.type ?? "";
+      const lineFinancials = calculateLineFinancials({
+        quantity: qty,
+        salePriceCents: priceCents,
+        discountPercent: p.discount ?? 0,
+        assortmentType: type,
+        snapshotCents: unitBuyPriceCents,
+      });
+      const saleCents = lineFinancials.revenueCents;
+      const buyPriceCents = lineFinancials.costCents;
 
       if (type === "service") {
-        const serviceId = extractLocalEntityId(p.assortment?.meta?.href);
         works.push({ name, quantity: qty, priceCents: saleCents });
         if (!master) {
           addUnallocatedPiecework({
@@ -613,20 +608,21 @@ export async function computePayroll(params: {
           });
           continue;
         }
-        if (!serviceId) {
+        if (!groupId) {
           addUnallocatedPiecework({
             category: "work",
             label: name,
             quantity: qty,
             baseCents: saleCents,
             reason: "missing_rule",
+            diagnostic: "У услуги отсутствует сохранённый ID группы. Назначьте группе услуг ID в карточке услуги и повторите расчёт.",
           });
           continue;
         }
-        const rule = resolveServicePieceworkRule({
+        const rule = resolveGroupPieceworkRule({
           ruleMap: pieceworkRuleMap,
-          serviceId,
-          serviceName: name,
+          groupId,
+          targetType: "service_group",
           role: "master",
         });
         if (!rule) {
@@ -636,6 +632,9 @@ export async function computePayroll(params: {
             quantity: qty,
             baseCents: saleCents,
             reason: "missing_rule",
+            groupPath: pathName || undefined,
+            ruleTargetId: groupId,
+            diagnostic: `Для группы услуг «${pathName || groupId}» (ID ${groupId}) не настроено правило мастера.`,
           });
           continue;
         }
@@ -659,12 +658,19 @@ export async function computePayroll(params: {
           priceCents: saleCents,
         });
 
-        const { targetId: productGroupTargetId, rule } = resolveProductGroupPieceworkRule({
-          ruleMap: pieceworkRuleMap,
-          groupPath: pathName,
-          role: "admin",
-        });
-        const profitCents = Math.max(0, saleCents - buyPriceCents);
+        if (buyPriceCents == null) {
+          addUnallocatedPiecework({
+            category: "product",
+            label: name,
+            quantity: qty,
+            baseCents: 0,
+            reason: "missing_cost",
+            groupPath: pathName || undefined,
+            diagnostic: "В проведённой строке нет подтверждённого снимка себестоимости; текущая цена карточки не используется.",
+          });
+          continue;
+        }
+        const profitCents = Math.max(0, lineFinancials.profitCents ?? 0);
         if (!admin) {
           addUnallocatedPiecework({
             category: "product",
@@ -676,7 +682,7 @@ export async function computePayroll(params: {
           });
           continue;
         }
-        if (!productGroupTargetId) {
+        if (!groupId) {
           addUnallocatedPiecework({
             category: "product",
             label: name,
@@ -684,12 +690,16 @@ export async function computePayroll(params: {
             baseCents: profitCents,
             reason: "missing_rule",
             groupPath: pathName || undefined,
-            diagnostic: pathName
-              ? `Группа «${pathName}» не сопоставлена ни с одним правилом начисления.`
-              : "В строке отгрузки не найден товар с назначенной группой.",
+            diagnostic: "В позиции отсутствует сохранённый ID группы товара. Назначьте группу в карточке товара и повторите расчёт.",
           });
           continue;
         }
+        const rule = resolveGroupPieceworkRule({
+          ruleMap: pieceworkRuleMap,
+          groupId,
+          targetType: "product_group",
+          role: "admin",
+        });
         if (!rule) {
           addUnallocatedPiecework({
             category: "product",
@@ -698,8 +708,8 @@ export async function computePayroll(params: {
             baseCents: profitCents,
             reason: "missing_rule",
             groupPath: pathName || undefined,
-            ruleTargetId: productGroupTargetId,
-            diagnostic: `Группа «${pathName || productGroupTargetId}» распознана, но для неё нет правила администратора.`,
+            ruleTargetId: groupId,
+            diagnostic: `Для группы товаров «${pathName || groupId}» (ID ${groupId}) не настроено правило администратора.`,
           });
           continue;
         }

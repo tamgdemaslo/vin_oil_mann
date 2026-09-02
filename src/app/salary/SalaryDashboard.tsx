@@ -105,7 +105,7 @@ type VehicleRecord = {
     label: string;
     quantity: number;
     baseCents: number;
-    reason: "missing_master" | "multiple_masters" | "missing_admin" | "multiple_admins" | "missing_rule";
+    reason: "missing_master" | "multiple_masters" | "missing_admin" | "multiple_admins" | "missing_rule" | "missing_cost";
     logins?: string[];
     groupPath?: string;
     ruleTargetId?: string;
@@ -190,13 +190,14 @@ type PayrollShiftItem = {
 };
 
 type PieceworkRuleItem = {
-  targetType: "service" | "product_group";
+  targetType: "service_group" | "product_group";
   targetId: string;
   targetName: string;
   role: "master" | "admin";
   mode: "fixed" | "percent";
   fixedCents: number | null;
   percentBasisPoints: number | null;
+  isConfigured: boolean;
   isDefault: boolean;
 };
 
@@ -691,12 +692,12 @@ function makeRuleDraft(rule: PieceworkRuleItem): DraftRule {
 }
 
 function targetTypeLabel(targetType: PieceworkRuleItem["targetType"]) {
-  return targetType === "service" ? "Услуга" : "Группа товаров";
+  return targetType === "service_group" ? "Группа услуг" : "Группа товаров";
 }
 
 function ruleBasisLabel(rule: Pick<PieceworkRuleItem, "targetType">, mode: DraftRule["mode"]) {
-  if (mode === "fixed") return rule.targetType === "service" ? "за услугу" : "за единицу";
-  return rule.targetType === "service" ? "от суммы продажи" : "от чистой прибыли";
+  if (mode === "fixed") return rule.targetType === "service_group" ? "за услугу" : "за единицу";
+  return rule.targetType === "service_group" ? "от суммы продажи" : "от чистой прибыли";
 }
 
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
@@ -1696,7 +1697,7 @@ export default function SalaryDashboard({
       const role = problem.sample.category === "work" ? "master" : "admin";
       const roleLabel = role === "master" ? "мастера" : "администратора";
       const example = `${problem.sample.demandName} · ${formatDate(problem.sample.date)}`;
-      const isMissingRule = reason === "missing_rule";
+      const isMissingRule = reason === "missing_rule" || reason === "missing_cost";
       const isMultiple = reason === "multiple_masters" || reason === "multiple_admins";
       next.push({
         id: `unallocated:${reason}`,
@@ -2272,6 +2273,7 @@ export default function SalaryDashboard({
     const original = makeRuleDraft(rule);
     const numericValue = Number(draft.value.replace(",", "."));
     if (draft.mode !== original.mode || draft.value !== original.value) return "changed";
+    if (!rule.isConfigured) return "missing";
     if (!draft.value.trim() || Number.isNaN(numericValue)) return "missing";
     if (numericValue === 0) return "disabled";
     return rule.isDefault ? "default" : "custom";
@@ -2313,7 +2315,6 @@ export default function SalaryDashboard({
           body: JSON.stringify({
             targetType: rule.targetType,
             targetId: rule.targetId,
-            targetName: rule.targetName,
             role: rule.role,
             mode: draft.mode,
             fixedCents: draft.mode === "fixed" ? Math.round(value * 100) : null,
@@ -2560,9 +2561,9 @@ export default function SalaryDashboard({
 
   const ruleSections = [
     {
-      id: "service",
-      title: "Услуги",
-      rows: filteredRules.filter((rule) => rule.targetType === "service"),
+      id: "service_group",
+      title: "Группы услуг",
+      rows: filteredRules.filter((rule) => rule.targetType === "service_group"),
     },
     {
       id: "product_group",
@@ -3327,13 +3328,13 @@ export default function SalaryDashboard({
           <div className="eco-payroll-toolbar">
             <div>
               <div className="eco-page-kicker">Правила сдельной части</div>
-              <p>Проценты и фиксированные начисления по услугам и товарным группам.</p>
+              <p>Проценты и фиксированные начисления по ID групп услуг и товаров.</p>
             </div>
             <div className="eco-payroll-rule-summary">
-              <span>Услуги · {rules.filter((rule) => rule.targetType === "service").length}</span>
+              <span>Группы услуг · {rules.filter((rule) => rule.targetType === "service_group").length}</span>
               <span>Группы товаров · {rules.filter((rule) => rule.targetType === "product_group").length}</span>
-              <span>Индивидуальные · 0</span>
-              <span>Дефолтные · {rules.filter((rule) => rule.isDefault).length}</span>
+              <span>Настроено · {rules.filter((rule) => rule.isConfigured).length}</span>
+              <span>Требуют настройки · {rules.filter((rule) => !rule.isConfigured).length}</span>
             </div>
           </div>
 
@@ -3359,7 +3360,7 @@ export default function SalaryDashboard({
             <EcoSelect value={ruleStatusFilter} onChange={(event) => setRuleStatusFilter(event.target.value)}>
               <option value="all">Все статусы</option>
               <option value="changed">Изменённые</option>
-              <option value="default">Дефолтные</option>
+              <option value="custom">Настроенные</option>
               <option value="missing">Без правила</option>
               <option value="disabled">Отключено</option>
             </EcoSelect>
@@ -3455,8 +3456,7 @@ export default function SalaryDashboard({
                                 <td>{ruleBasisLabel(rule, draft.mode)}</td>
                                 <td>
                                   {status === "changed" && <EcoBadge tone="rust">Есть изменения</EcoBadge>}
-                                  {status === "default" && <EcoBadge tone="neutral">Дефолт</EcoBadge>}
-                                  {status === "custom" && <EcoBadge tone="rust">Изменено</EcoBadge>}
+                                  {status === "custom" && <EcoBadge tone="rust">Настроено</EcoBadge>}
                                   {status === "missing" && <EcoBadge tone="warning">Не настроено</EcoBadge>}
                                   {status === "disabled" && <EcoBadge tone="neutral">Отключено</EcoBadge>}
                                 </td>
@@ -4324,7 +4324,7 @@ export default function SalaryDashboard({
             <div className="eco-payroll-drawer__head">
               <div>
                 <span className="eco-page-kicker">Проверка начислений</span>
-                <h2>{unallocatedDrawerReason === "missing_rule" ? "Позиции без правила" : "Позиции без рабочей команды"}</h2>
+                <h2>{unallocatedDrawerReason === "missing_cost" ? "Позиции без себестоимости" : unallocatedDrawerReason === "missing_rule" ? "Позиции без правила" : "Позиции без рабочей команды"}</h2>
                 <p>
                   {unallocatedDrawerItems.length} поз. за период {formatDate(dateFrom)} — {formatDate(dateTo)}
                 </p>
@@ -4338,7 +4338,9 @@ export default function SalaryDashboard({
               <span>Требуют настройки</span>
               <strong>{unallocatedDrawerItems.length} поз.</strong>
               <p>
-                {unallocatedDrawerReason === "missing_rule"
+                {unallocatedDrawerReason === "missing_cost"
+                  ? "Начисление заблокировано: в проведённой товарной строке нет подтверждённого cost snapshot."
+                  : unallocatedDrawerReason === "missing_rule"
                   ? "Для этих товаров или услуг нет правила начисления."
                   : "Для этих позиций нужно назначить рабочую команду на дату отгрузки."}
               </p>
@@ -4368,7 +4370,7 @@ export default function SalaryDashboard({
                           {item.diagnostic}
                         </p>
                       )}
-                      {unallocatedDrawerReason !== "missing_rule" && (
+                      {unallocatedDrawerReason !== "missing_rule" && unallocatedDrawerReason !== "missing_cost" && (
                         <EcoButton
                           type="button"
                           size="sm"
