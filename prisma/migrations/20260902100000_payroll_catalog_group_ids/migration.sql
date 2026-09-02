@@ -1,6 +1,8 @@
 -- Payroll groups are first-class branch data.  Runtime payroll never compares
 -- group captions: every product/service position uses a stable group id.
 
+BEGIN;
+
 CREATE OR REPLACE FUNCTION local_catalog_group_normalized(value TEXT)
 RETURNS TEXT
 LANGUAGE sql
@@ -34,14 +36,13 @@ ALTER TABLE local_demand_positions
 -- Backfill one canonical group for each existing text category.  Text is used
 -- here only to migrate legacy records; it is not part of later calculation.
 WITH source_groups AS (
-  SELECT
+  SELECT DISTINCT
     branch_id,
     CASE WHEN entity_type = 'service' THEN 'service' ELSE 'product' END AS kind,
     btrim(group_path) AS name,
     local_catalog_group_normalized(group_path) AS normalized_name
   FROM local_products
   WHERE NULLIF(btrim(COALESCE(group_path, '')), '') IS NOT NULL
-  GROUP BY branch_id, CASE WHEN entity_type = 'service' THEN 'service' ELSE 'product' END, btrim(group_path)
 )
 INSERT INTO local_catalog_groups (id, branch_id, kind, name, normalized_name)
 SELECT
@@ -223,7 +224,9 @@ INSERT INTO piecework_rules (
   role,
   mode,
   fixed_cents,
-  percent_basis_points
+  percent_basis_points,
+  created_at,
+  updated_at
 )
 SELECT
   'pwr_' || md5(groups.branch_id || ':product_group:' || groups.id || ':admin'),
@@ -234,8 +237,12 @@ SELECT
   'admin',
   'percent',
   NULL,
-  2000
+  2000,
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
 FROM local_catalog_groups AS groups
 JOIN legacy_defaults AS legacy ON legacy.normalized_name = groups.normalized_name
 WHERE groups.kind = 'product'
 ON CONFLICT (branch_id, target_type, target_id, role) DO NOTHING;
+
+COMMIT;
