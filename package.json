@@ -43,6 +43,8 @@
     "audit:fluid-capacity-parser": "node scripts/audit-fluid-capacity-parser.mjs",
     "preview:mann-technical-catalog": "node scripts/materialize-mann-technical-catalog-preview.mjs",
     "verify:mann-technical-preview": "node scripts/verify-mann-technical-preview.mjs",
+    "preview:mann-primary-source-verified": "node scripts/build-mann-primary-source-verified-preview.mjs",
+    "test:mann-primary-source-verified": "node scripts/test-mann-primary-source-verified-preview.mjs",
     "test:ai-vehicle-resolution": "node scripts/test-ai-vehicle-resolution.mjs",
     "test:ai-material-selection": "node scripts/test-ai-material-selection.mjs",
     "test:ai-quote-and-tech-card": "node scripts/test-ai-quote-and-tech-card.mjs",

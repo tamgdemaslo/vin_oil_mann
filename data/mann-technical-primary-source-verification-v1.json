@@ -1,0 +1,156 @@
+{
+  "version": "mann-technical-primary-source-verification-v1",
+  "createdAt": "2026-09-02T00:00:00.000Z",
+  "reviewerType": "CODEX_PRIMARY_SOURCE_AUDIT",
+  "effect": "VERIFIED_SUBSET_PREVIEW_ONLY",
+  "independentHumanSignoff": false,
+  "productionApplyAuthorized": false,
+  "verificationScope": [
+    "vehicleContext.make",
+    "vehicleContext.model",
+    "vehicleContext.engineCode",
+    "systemCode",
+    "technical.capacity"
+  ],
+  "sourcePreview": {
+    "artifactKind": "MANN_TECHNICAL_MATERIALIZATION_DRY_RUN",
+    "writeMode": "DRY_RUN_ONLY",
+    "commit": "d93a51edaf1222c19bd939da8db36b83b997529b",
+    "matcher": "mann-fluid-matcher-v8",
+    "capacityParser": "capacity-parser-v5",
+    "backupSha256": "44d907b23ea2a30ec20a1a41147f7ba0bc437c3815eaeff18a6026e4bddaa679"
+  },
+  "documents": [
+    {
+      "id": "haval-dargo-2022-2025",
+      "publisher": "HAVAL",
+      "title": "Руководство пользователя HAVAL DARGO (2022–2025)",
+      "officialIndexUrl": "https://haval.ru/owners/instructions/",
+      "url": "https://cdn.perxis.ru/originals/d87f87obeucc73ceoo40/original",
+      "sha256": "733e8e2442c247ec97939e05026482dae343bbcf38de52eb4b5ea83527742a64"
+    },
+    {
+      "id": "haval-jolion-2021-2024",
+      "publisher": "HAVAL",
+      "title": "Руководство пользователя HAVAL JOLION (2021–2024)",
+      "officialIndexUrl": "https://haval.ru/owners/instructions/",
+      "url": "https://cdn.perxis.ru/originals/d0s1reobeucc73eqo940/original",
+      "sha256": "9b630ae0ae19c12e66a871d4865f009459951d06ee69b4fb5f43085935515c1e"
+    },
+    {
+      "id": "opel-corsa-d-2009-08-en",
+      "publisher": "Opel",
+      "title": "Corsa Owner's Manual, Corsa_D, August 2009, en-GB",
+      "officialIndexUrl": "https://public-servicebox.opel.com/",
+      "url": "https://public-servicebox.opel.com/OVddb/OV/en_GB/Corsa_D/2004_2009/2009_08/manual_user/Corsa_03_en.pdf",
+      "sha256": "a35bcea847084754f0e228387e246cdf1909f07aa18b043949360d3132f8a116"
+    }
+  ],
+  "associations": [
+    {
+      "associationFingerprint": "ad532871a0c2caccdf6f9473e2ba5b6ae01e6b124dd2a6786f6cc12f7554b89b",
+      "requirementId": "2bf5e9cfdad357d8180eb8d36238b33fb0ad064b71cea0c5fabcd6d22c9a5d8d",
+      "systemCode": "ENGINE_COOLANT",
+      "vehicle": {
+        "make": "haval",
+        "model": "dargo",
+        "engineCode": "GW4N20"
+      },
+      "capacity": {
+        "nominalLiters": 10.3,
+        "toleranceLiters": 0.5,
+        "serviceContext": "SYSTEM_CAPACITY"
+      },
+      "evidence": {
+        "documentId": "haval-dargo-2022-2025",
+        "pdfPage": 260,
+        "printedPage": 259,
+        "summary": "GW4N20 cooling system capacity: 10.3 ± 0.5 L."
+      }
+    },
+    {
+      "associationFingerprint": "591be46fd95e0925ed4013f3f6a7f7210d7bb13b3fec497827034b812fcb2dd3",
+      "requirementId": "eeb96e1b16f90b3a419a1f29752778b4e386374fc80392f7998885955118bfeb",
+      "systemCode": "ENGINE_OIL",
+      "vehicle": {
+        "make": "haval",
+        "model": "dargo",
+        "engineCode": "GW4N20"
+      },
+      "capacity": {
+        "nominalLiters": 5,
+        "toleranceLiters": 0.1,
+        "serviceContext": "WITH_FILTER"
+      },
+      "evidence": {
+        "documentId": "haval-dargo-2022-2025",
+        "pdfPage": 260,
+        "printedPage": 259,
+        "summary": "GW4N20 oil capacity with oil filter: 5.0 ± 0.1 L."
+      }
+    },
+    {
+      "associationFingerprint": "c10f39ba6ab73fa37012b777a99063844e3907e87057287b6372ab81e67859f2",
+      "requirementId": "5d6e40800d7e3a23318abbf7707fa093e12cd3614171b9ce26b8946dc6cae9ee",
+      "systemCode": "ENGINE_OIL",
+      "vehicle": {
+        "make": "haval",
+        "model": "jolion",
+        "engineCode": "GW4G15K"
+      },
+      "capacity": {
+        "nominalLiters": 3.8,
+        "toleranceLiters": 0.1,
+        "serviceContext": "WITH_FILTER"
+      },
+      "evidence": {
+        "documentId": "haval-jolion-2021-2024",
+        "pdfPage": 253,
+        "printedPage": 252,
+        "summary": "GW4G15K oil capacity with oil filter: 3.8 ± 0.1 L."
+      }
+    },
+    {
+      "associationFingerprint": "794edf7abaced7f27e00e723d23dc9e69a7b13a627da40e5addfbe8d59694a2d",
+      "requirementId": "3cfa5d55d34a36b677ad72705fee01df2f9f97f2473057a034248c091408f793",
+      "systemCode": "ENGINE_OIL",
+      "vehicle": {
+        "make": "opel",
+        "model": "corsa",
+        "engineCode": "Z10XEP"
+      },
+      "capacity": {
+        "nominalLiters": 3,
+        "toleranceLiters": 0,
+        "serviceContext": "WITH_FILTER"
+      },
+      "evidence": {
+        "documentId": "opel-corsa-d-2009-08-en",
+        "pdfPage": 199,
+        "printedPage": 199,
+        "summary": "Z10XEP engine oil capacity including filter: 3.0 L."
+      }
+    },
+    {
+      "associationFingerprint": "aef8ea690f6c51c0942c5eb8d247e6340f913c7f5ceabebc79843713ba892baf",
+      "requirementId": "8843516dd7ea72d8a93311d324f7aae1e1784b54ce2ceda98c69f5f75331d210",
+      "systemCode": "ENGINE_OIL",
+      "vehicle": {
+        "make": "opel",
+        "model": "corsa",
+        "engineCode": "Z12XEP"
+      },
+      "capacity": {
+        "nominalLiters": 3.5,
+        "toleranceLiters": 0,
+        "serviceContext": "WITH_FILTER"
+      },
+      "evidence": {
+        "documentId": "opel-corsa-d-2009-08-en",
+        "pdfPage": 199,
+        "printedPage": 199,
+        "summary": "Z12XEP engine oil capacity including filter: 3.5 L."
+      }
+    }
+  ]
+}
