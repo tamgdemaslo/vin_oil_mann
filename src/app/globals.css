@@ -20769,6 +20769,35 @@ select.eco-input::-ms-expand,
   width: min(100%, 230px);
 }
 
+.eco-payroll-rule-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: var(--eco-ink-2);
+  background: var(--eco-surface-sunk);
+  border: 1px solid var(--eco-line);
+  border-radius: 6px;
+}
+
+.eco-payroll-rule-context > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.eco-payroll-rule-context strong {
+  color: var(--eco-ink);
+  font-size: 12px;
+}
+
+.eco-payroll-rule-context span {
+  color: var(--eco-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .eco-payroll-search {
   position: relative;
   display: flex;
@@ -20840,6 +20869,11 @@ select.eco-input::-ms-expand,
   margin-top: 4px;
   color: var(--eco-danger);
   font-size: 11px;
+}
+
+.eco-payroll-rule-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .eco-payroll-rules-footer {
@@ -21747,6 +21781,7 @@ select.eco-input::-ms-expand,
   .eco-payroll-toolbar,
   .eco-payroll-close-row,
   .eco-payroll-calendar-topline,
+  .eco-payroll-rule-context,
   .eco-payroll-rules-footer {
     align-items: stretch;
     flex-direction: column;

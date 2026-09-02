@@ -684,6 +684,10 @@ function ruleKey(rule: Pick<PieceworkRuleItem, "targetType" | "targetId" | "role
   return `${rule.targetType}:${rule.targetId}:${rule.role}`;
 }
 
+function ruleValueInputId(rule: Pick<PieceworkRuleItem, "targetType" | "targetId" | "role">) {
+  return `piecework-rule-value-${ruleKey(rule)}`;
+}
+
 function makeRuleDraft(rule: PieceworkRuleItem): DraftRule {
   return {
     mode: rule.mode,
@@ -2267,6 +2271,12 @@ export default function SalaryDashboard({
     });
   }
 
+  function focusRuleValue(rule: PieceworkRuleItem) {
+    window.requestAnimationFrame(() => {
+      document.getElementById(ruleValueInputId(rule))?.focus();
+    });
+  }
+
   function getRuleStatus(rule: PieceworkRuleItem) {
     const key = ruleKey(rule);
     const draft = draftRules[key] ?? makeRuleDraft(rule);
@@ -2547,6 +2557,9 @@ export default function SalaryDashboard({
   }
 
   const changedRulesCount = rules.filter((rule) => getRuleStatus(rule) === "changed").length;
+  const missingRulesCount = rules.filter((rule) => !rule.isConfigured).length;
+  const hiddenByRoleRulesCount =
+    ruleRoleFilter === "all" ? 0 : rules.filter((rule) => rule.role !== ruleRoleFilter).length;
   const filteredRules = rules.filter((rule) => {
     const key = ruleKey(rule);
     const draft = draftRules[key] ?? makeRuleDraft(rule);
@@ -2563,11 +2576,13 @@ export default function SalaryDashboard({
     {
       id: "service_group",
       title: "Группы услуг",
+      allRows: rules.filter((rule) => rule.targetType === "service_group"),
       rows: filteredRules.filter((rule) => rule.targetType === "service_group"),
     },
     {
       id: "product_group",
       title: "Группы товаров",
+      allRows: rules.filter((rule) => rule.targetType === "product_group"),
       rows: filteredRules.filter((rule) => rule.targetType === "product_group"),
     },
   ] as const;
@@ -3334,7 +3349,7 @@ export default function SalaryDashboard({
               <span>Группы услуг · {rules.filter((rule) => rule.targetType === "service_group").length}</span>
               <span>Группы товаров · {rules.filter((rule) => rule.targetType === "product_group").length}</span>
               <span>Настроено · {rules.filter((rule) => rule.isConfigured).length}</span>
-              <span>Требуют настройки · {rules.filter((rule) => !rule.isConfigured).length}</span>
+              <span>Требуют настройки · {missingRulesCount}</span>
             </div>
           </div>
 
@@ -3366,6 +3381,23 @@ export default function SalaryDashboard({
             </EcoSelect>
           </div>
 
+          <div className="eco-payroll-rule-context" role="status">
+            <div>
+              <strong>Как настроить правило</strong>
+              <span>
+                Нажмите «Настроить», укажите сумму или процент в строке и сохраните изменения.
+                {hiddenByRoleRulesCount > 0
+                  ? ` Сейчас скрыто правил другой роли: ${hiddenByRoleRulesCount}.`
+                  : ""}
+              </span>
+            </div>
+            {hiddenByRoleRulesCount > 0 && (
+              <EcoButton type="button" size="sm" onClick={() => setRuleRoleFilter("all")}>
+                Показать все группы
+              </EcoButton>
+            )}
+          </div>
+
           {rulesLoading ? (
             <SkeletonRows rows={6} />
           ) : rules.length === 0 ? (
@@ -3382,7 +3414,18 @@ export default function SalaryDashboard({
                     <span>{section.rows.length}</span>
                   </div>
                   {section.rows.length === 0 ? (
-                    <EmptyState title="Нет правил в этой группе" text="Измените поиск или фильтры." />
+                    <EmptyState
+                      title={
+                        ruleRoleFilter !== "all" && section.allRows.some((rule) => rule.role !== ruleRoleFilter)
+                          ? `${section.title} скрыты фильтром роли`
+                          : "Нет правил в этой группе"
+                      }
+                      text={
+                        ruleRoleFilter !== "all" && section.allRows.some((rule) => rule.role !== ruleRoleFilter)
+                          ? "Покажите все роли, чтобы увидеть и настроить эти группы."
+                          : "Измените поиск или фильтры."
+                      }
+                    />
                   ) : (
                     <div className="eco-table-wrap eco-payroll-rules-table-wrap">
                       <table className="eco-table eco-payroll-rules-table">
@@ -3401,6 +3444,7 @@ export default function SalaryDashboard({
                         <tbody>
                           {section.rows.map((rule) => {
                             const key = ruleKey(rule);
+                            const inputId = ruleValueInputId(rule);
                             const draft = draftRules[key] ?? makeRuleDraft(rule);
                             const status = getRuleStatus(rule);
                             const error = ruleErrors[key];
@@ -3434,19 +3478,23 @@ export default function SalaryDashboard({
                                   <div className="eco-payroll-value-field">
                                     {draft.mode === "fixed" ? (
                                       <MoneyInput
+                                        id={inputId}
                                         value={draft.value}
                                         onValueChange={(value, valueDraft) =>
                                           updateRuleDraft(key, { value: valueDraft ? String(value) : "" })
                                         }
                                         className="eco-input"
-                                        placeholder="0"
+                                        placeholder={rule.isConfigured ? "0" : "Укажите сумму"}
+                                        aria-label={`Значение правила «${rule.targetName}»`}
                                       />
                                     ) : (
                                       <EcoInput
+                                        id={inputId}
                                         inputMode="decimal"
                                         value={draft.value}
                                         onChange={(event) => updateRuleDraft(key, { value: event.target.value })}
-                                        placeholder="0"
+                                        placeholder={rule.isConfigured ? "0" : "Укажите процент"}
+                                        aria-label={`Значение правила «${rule.targetName}»`}
                                       />
                                     )}
                                     <span>{draft.mode === "fixed" ? "₽" : "%"}</span>
@@ -3461,17 +3509,28 @@ export default function SalaryDashboard({
                                   {status === "disabled" && <EcoBadge tone="neutral">Отключено</EcoBadge>}
                                 </td>
                                 <td>
-                                  <button
-                                    type="button"
-                                    className="eco-icon-btn"
-                                    title="Отменить изменение строки"
-                                    onClick={() =>
-                                      setDraftRules((prev) => ({ ...prev, [key]: makeRuleDraft(rule) }))
-                                    }
-                                    disabled={status !== "changed"}
-                                  >
-                                    <X size={14} />
-                                  </button>
+                                  <div className="eco-payroll-rule-actions">
+                                    {status === "changed" ? (
+                                      <EcoButton
+                                        type="button"
+                                        size="sm"
+                                        onClick={() =>
+                                          setDraftRules((prev) => ({ ...prev, [key]: makeRuleDraft(rule) }))
+                                        }
+                                      >
+                                        Отменить
+                                      </EcoButton>
+                                    ) : (
+                                      <EcoButton
+                                        type="button"
+                                        size="sm"
+                                        variant={status === "missing" ? "primary" : "secondary"}
+                                        onClick={() => focusRuleValue(rule)}
+                                      >
+                                        {status === "missing" ? "Настроить" : "Изменить"}
+                                      </EcoButton>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -3487,8 +3546,19 @@ export default function SalaryDashboard({
 
           <div className="eco-payroll-rules-footer">
             <div>
-              <strong>{changedRulesCount > 0 ? `${changedRulesCount} правил изменено` : "Нет несохранённых изменений"}</strong>
-              <span>{rulesMessage ?? "Изменённые строки сохраняются одной кнопкой."}</span>
+              <strong>
+                {changedRulesCount > 0
+                  ? `${changedRulesCount} правил изменено`
+                  : missingRulesCount > 0
+                    ? `Требуют настройки: ${missingRulesCount}`
+                    : "Нет несохранённых изменений"}
+              </strong>
+              <span>
+                {rulesMessage ??
+                  (changedRulesCount > 0
+                    ? "Сохраните изменения, чтобы правило начало участвовать в расчёте."
+                    : "Выберите «Настроить» в нужной строке, затем введите значение.")}
+              </span>
             </div>
             <EcoButton type="button" onClick={resetRuleDrafts} disabled={!hasUnsavedRuleChanges || rulesSaving}>
               Отменить изменения
