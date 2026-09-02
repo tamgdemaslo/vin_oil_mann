@@ -1152,7 +1152,8 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       const lines = (Array.isArray(quote.lines) ? quote.lines as Array<Record<string, unknown>> : []).map((line) => {
         const role = ["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "labor", "rounding"].includes(text(line.role, 40)) ? text(line.role, 40) as "fluid" | "external_filter" | "pan" | "hardware" | "consumable" | "internal_filter" | "labor" | "rounding" : "unknown" as const;
         const catalogName = text(line.name, 220) || "Позиция";
-        const customerDisplayName = role === "labor" || text(line.type, 80) === "labor" ? "Работа" : role === "rounding" || text(line.type, 80) === "rounding" ? "Округление" : customerMaterialDisplayName(catalogName);
+        const supplierFallback = text(line.source, 80) === "rossko";
+        const customerDisplayName = role === "labor" || text(line.type, 80) === "labor" ? "Работа" : role === "rounding" || text(line.type, 80) === "rounding" ? "Округление" : customerMaterialDisplayName(catalogName, input.service.requiredFluidSpec, supplierFallback);
         return {
           source: text(line.source, 80) === "local" ? "local_catalog" : text(line.source, 80) === "rossko" ? "supplier" : text(line.source, 80) || undefined,
           type: text(line.type, 80) || null,
@@ -1175,7 +1176,11 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       const automatic = object(quote.automaticMaterialDecision);
       const primaryFluid = lines.find((line) => line.role === "fluid");
       if (!selectedMaterial && primaryFluid) selectedMaterial = { name: primaryFluid.customerDisplayName, catalogName: primaryFluid.catalogName, customerDisplayName: primaryFluid.customerDisplayName, specification: text(input.service.requiredFluidSpec, 160) || null, quantity: primaryFluid.quantity, compatibilityEvidence: text(automatic.compatibilityEvidence, 700) || null };
-      const status = blockers.length ? "blocked" : plan.quoteWarnings.length ? "preliminary" : "ready";
+      const supplierFluidWarning = lines.some((line) => line.role === "fluid" && line.source === "supplier")
+        ? "Цена жидкости получена от поставщика: подтвердить наличие и срок поставки перед записью."
+        : null;
+      const optionWarnings = uniqueWarnings([...plan.quoteWarnings, ...(supplierFluidWarning ? [supplierFluidWarning] : [])]);
+      const status = blockers.length ? "blocked" : optionWarnings.length ? "preliminary" : "ready";
       const maximum = object(quote.maximum);
       const selectionTrace = materialSelectionTrace(quote.materialSelectionTrace, lines);
       const quoteOption: QuoteAndTechCardQuoteOption = {
@@ -1193,7 +1198,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         maximumTotalCents: status !== "blocked" && number(maximum.totalCents) > number(quote.totalCents) ? Math.round(number(maximum.totalCents)) : null,
         validUntil: text(quote.validUntil, 100) || null,
         blockers,
-        warnings: uniqueWarnings(plan.quoteWarnings),
+        warnings: optionWarnings,
       };
       assertLocalFirstInvariant(selectionTrace, object(quote.materialSelectionTrace).originalOnlyOverride === true);
       if (status !== "blocked") {

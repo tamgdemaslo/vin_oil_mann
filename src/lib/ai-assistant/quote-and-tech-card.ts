@@ -341,8 +341,17 @@ export function servicePackageForOption(input: { service: Pick<QuoteAndTechCardI
   };
 }
 
-export function customerMaterialDisplayName(catalogName: string) {
+export function customerMaterialDisplayName(catalogName: string, requiredSpecification?: string | null, supplierFallback = false) {
   const source = text(catalogName, 220);
+  // ROSSKO may return an otherwise valid priced offer without the supplier's
+  // product name. Do not expose the synthetic "Запчасть <article>" fallback
+  // to a customer as if it were a material name. The verified specification
+  // remains the honest, useful description; the raw article stays in the
+  // internal quote line for audit and ordering.
+  if (supplierFallback && /^(?:запчасть|деталь|товар)(?:\s|$)/iu.test(source)) {
+    const specification = text(requiredSpecification, 160);
+    return specification ? `Жидкость ${specification} (поставщик)` : "Жидкость по допуску (поставщик)";
+  }
   if (/\bvalvoline\b/iu.test(source)) return "Valvoline ATF";
   const cleaned = source
     .replace(/масло\s+трансмиссионное/iu, "")

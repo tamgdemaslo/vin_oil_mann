@@ -11,6 +11,7 @@ const {
   buildQuoteAndTechCardBundleCustomerMessage,
   buildQuoteAndTechCardCustomerMessage,
   createQuoteAndTechCardPlan,
+  customerMaterialDisplayName,
   customerMoneyFromCents,
   normalizeQuoteAndTechCardInput,
   parseQuoteAndTechCardInput,
@@ -83,6 +84,7 @@ assert.equal(toolService.properties.procedures.items.type, "string", "tool intak
 assert.equal(toolEvidence.properties.status.type, "string", "tool intake accepts observed evidence statuses before normalization");
 assert.equal(QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS.properties.inputs.maxItems, 6, "a complex visit can retain up to six independent aggregates");
 assert.equal(normalized.service.type, "automatic_transmission", "transmission_fluid normalizes to automatic_transmission");
+assert.equal(customerMaterialDisplayName("Запчасть BMW 83222355599", "BMW ATF 6", true), "Жидкость BMW ATF 6 (поставщик)", "a nameless supplier offer is shown by its verified fluid specification, not as a synthetic part name");
 assert.deepEqual(normalized.requestedProcedures, ["machine", "partial"], "requested procedures survive separately from a single scenario procedure");
 assert.equal(normalized.requestedDates, "29–30 августа", "requested dates stay in the normalized scenario input");
 const parsedInput = parseQuoteAndTechCardInput(runtimeInput);
