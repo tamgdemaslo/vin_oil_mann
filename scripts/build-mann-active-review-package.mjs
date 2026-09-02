@@ -52,11 +52,16 @@ function sourceYears(association) {
 
 function reviewFlags(association, candidate) {
   const matched = new Set(association.independentValidation.matchedFields);
+  const sourceEngineCodes = association.vehicleContext.engineCodes?.filter(Boolean) ?? [];
+  const sourceHasChassisIdentity = Boolean(
+    association.vehicleContext.generation
+    || association.vehicleContext.bodyCodes?.length,
+  );
   const flags = [];
   if (association.matchScore < 60) flags.push("LOW_MATCH_SCORE");
-  if (!matched.has("точный код двигателя") && association.systemCode !== "BRAKE_FLUID") flags.push("NO_EXACT_ENGINE_MATCH");
-  if (!matched.has("поколение") && !matched.has("код кузова")) flags.push("NO_CHASSIS_IDENTITY_MATCH");
-  if ((association.vehicleContext.engineCodes?.length ?? 0) >= 5) flags.push("BROAD_SOURCE_ENGINE_GROUP");
+  if (sourceEngineCodes.length > 0 && !matched.has("точный код двигателя")) flags.push("NO_EXACT_ENGINE_MATCH");
+  if (sourceHasChassisIdentity && !matched.has("поколение") && !matched.has("код кузова")) flags.push("NO_CHASSIS_IDENTITY_MATCH");
+  if (sourceEngineCodes.length >= 5) flags.push("BROAD_SOURCE_ENGINE_GROUP");
   if ((association.technical.capacities?.length ?? 0) > 1) flags.push("MULTIPLE_CAPACITY_FACTS");
   if ((association.technical.capacities?.length ?? 0) === 0) flags.push("NO_STRUCTURED_CAPACITY");
   if (association.technical.capacities?.some((capacity) => capacity.qualifier === "RANGE" || capacity.qualifier === "APPROXIMATE")) flags.push("NON_EXACT_CAPACITY");

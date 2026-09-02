@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { once } from "node:events";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,7 @@ const maxArgument = process.argv.find((argument) => argument.startsWith("--max-r
 const snapshotIdArgument = process.argv.find((argument) => argument.startsWith("--snapshot-id="));
 const snapshotCreatedAtArgument = process.argv.find((argument) => argument.startsWith("--snapshot-created-at="));
 const snapshotSha256Argument = process.argv.find((argument) => argument.startsWith("--snapshot-sha256="));
+const associationDenylistArgument = process.argv.find((argument) => argument.startsWith("--association-denylist="));
 const currentTimewebSnapshot = process.argv.includes("--current-timeweb-snapshot");
 const outputDir = resolve(
   workspaceRoot,
@@ -26,6 +27,11 @@ const snapshotId = snapshotIdArgument?.slice("--snapshot-id=".length)
   || "railway-final-frozen-backup-2026-08-02-codex-019fb41a";
 const snapshotCreatedAt = snapshotCreatedAtArgument?.slice("--snapshot-created-at=".length) || null;
 const snapshotSha256 = snapshotSha256Argument?.slice("--snapshot-sha256=".length) || null;
+const associationDenylistPath = resolve(
+  workspaceRoot,
+  associationDenylistArgument?.slice("--association-denylist=".length)
+    || "data/mann-technical-association-denylist-v1.json",
+);
 if (process.argv.some((argument) => ["--apply", "--write-db", "--materialize"].includes(argument))) {
   throw new Error("This command is permanently dry-run-only; database write flags are forbidden");
 }
@@ -56,9 +62,15 @@ const { FLUID_CAPACITY_PARSER_VERSION, parseFluidCapacities } = await jiti.impor
 const { MANN_FLUID_MATCHER_VERSION, fluidSystemFamily, matchFluidRequirementToMann } = await jiti.import(
   "../src/lib/mann-fluid-matcher-v2.ts",
 );
+const { parseMannTechnicalAssociationDenylist, partitionMannTechnicalAssociations } = await jiti.import(
+  "../src/lib/mann-technical-association-policy.ts",
+);
 const { mannMakeFormsForTest } = await jiti.import("../src/lib/mann-vehicle-resolver.ts");
 const { normalizeVehicleMake } = await jiti.import("../src/lib/vehicle-normalization.ts");
 const { normalizeMannText } = await jiti.import("../src/lib/mann-catalog.ts");
+const associationDenylist = parseMannTechnicalAssociationDenylist(
+  JSON.parse(await readFile(associationDenylistPath, "utf8")),
+);
 
 const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
 const generatedAt = new Date().toISOString();
@@ -385,6 +397,7 @@ try {
       oldLinks,
       finalStatus: match.status,
       parserNeedsReview: capacityParsed.needsReview,
+      policyConflictTypes: [],
     };
     compactDecisions.push(compact);
     if (["CONFIRMED_SINGLE", "CONFIRMED_MULTI_APPLICABILITY"].includes(match.status)) {
@@ -421,6 +434,7 @@ try {
             make: requirement.make,
             model: requirement.model,
             generation: requirement.generation,
+            bodyCodes: Array.isArray(requirement.bodyCodesJson) ? requirement.bodyCodesJson.map(String) : [],
             yearFrom: requirement.yearFrom,
             yearTo: requirement.yearTo,
             engineCode: requirement.engineCodeNormalized,
@@ -476,7 +490,26 @@ try {
     current.sourceRowIds = unique([...current.sourceRowIds, ...association.sourceRowIds]);
     current.duplicateCount += 1;
   }
-  const associations = [...deduplicated.values()];
+  const partitionedAssociations = partitionMannTechnicalAssociations([...deduplicated.values()], associationDenylist);
+  const associations = partitionedAssociations.eligible;
+  const policyRejectedAssociations = partitionedAssociations.rejected.map((association) => ({
+    ...association,
+    proposedState: "REJECTED",
+    conflictTypes: unique([...association.conflictTypes, "AUDITED_ASSOCIATION_REJECTED"]),
+  }));
+
+  for (const association of policyRejectedAssociations) {
+    for (const requirementId of association.sourceRequirementIds) {
+      const decision = compactDecisionsById.get(requirementId);
+      if (!decision) continue;
+      decision.finalStatus = "REVIEW_REQUIRED";
+      decision.policyConflictTypes = unique([...decision.policyConflictTypes, "AUDITED_ASSOCIATION_REJECTED"]);
+      decision.match.reviewReasons = unique([
+        ...decision.match.reviewReasons,
+        "association fingerprint отклонён техническим аудитом и исключён из materialization",
+      ]);
+    }
+  }
 
   for (const association of associations.filter((item) => item.proposedState === "REVIEW")) {
     for (const requirementId of association.sourceRequirementIds) {
@@ -579,7 +612,11 @@ try {
       candidateVariantIds: decision.match.topCandidates.slice(0, 5).flatMap((candidate) => candidate.variantIds),
       topCandidates: decision.match.topCandidates.slice(0, 5),
       reviewReasons: decision.match.reviewReasons,
-      conflictTypes: unique([...decision.match.conflictTypes, ...(decision.finalStatus === "CONFLICT" ? ["MATERIALIZATION_CONFLICT_OR_MATCH_CONTRADICTION"] : [])]),
+      conflictTypes: unique([
+        ...decision.match.conflictTypes,
+        ...decision.policyConflictTypes,
+        ...(decision.finalStatus === "CONFLICT" ? ["MATERIALIZATION_CONFLICT_OR_MATCH_CONTRADICTION"] : []),
+      ]),
       parserNeedsReview: decision.parserNeedsReview,
       hasCapacity: decision.capacity.capacities.length > 0,
       hasSpecification: Boolean(decision.requirement.specificationText),
@@ -674,6 +711,14 @@ try {
       currentTimewebSnapshot,
       transactionReadOnly: true,
     },
+    associationDenylist: {
+      version: associationDenylist.version,
+      path: associationDenylistPath,
+      reviewedAt: associationDenylist.reviewedAt,
+      independentHumanSignoff: associationDenylist.independentHumanSignoff,
+      configuredFingerprints: associationDenylist.rejectedAssociationFingerprints.length,
+      rejectedInThisDryRun: policyRejectedAssociations.length,
+    },
     proposedAssociations: associations,
   };
   const summary = {
@@ -691,10 +736,12 @@ try {
     systemClassification: systemStatusCounts,
     materialization: {
       proposedBeforeSemanticDedupe: proposedAssociations.length,
+      afterSemanticDedupeBeforePolicy: deduplicated.size,
       afterSemanticDedupe: associations.length,
       activeAssociations: activeAssociations.length,
       reviewAssociations: associations.length - activeAssociations.length,
-      exactDuplicateAssociationsCollapsed: proposedAssociations.length - associations.length,
+      auditedRejectedAssociations: policyRejectedAssociations.length,
+      exactDuplicateAssociationsCollapsed: proposedAssociations.length - deduplicated.size,
       capacityConflictGroups,
       conditionalAlternativeGroups,
       parserReviewAssociations: associations.filter((association) => association.conflictTypes.includes("CAPACITY_PARSER_REVIEW_REQUIRED")).length,
@@ -739,6 +786,7 @@ try {
     writeFile(resolve(outputDir, "review-queue.csv"), toCsv(reviewGroups, reviewCsvColumns), "utf8"),
     writeFile(resolve(outputDir, "active-association-sample-200.json"), `${JSON.stringify({ status: "PENDING_HUMAN_REVIEW", sample: activeSample }, null, 2)}\n`, "utf8"),
     writeFile(resolve(outputDir, "dangerous-systems-review.json"), `${JSON.stringify({ status: "PENDING_HUMAN_REVIEW", population: dangerousActive.length, sample: dangerousSample }, null, 2)}\n`, "utf8"),
+    writeFile(resolve(outputDir, "mann-technical-policy-rejections.json"), `${JSON.stringify({ denylist: preview.associationDenylist, associations: policyRejectedAssociations }, null, 2)}\n`, "utf8"),
     writeFile(resolve(outputDir, "retrieval-legacy-proxy.json"), `${JSON.stringify({ metrics: retrievalProxy, cases: proxySample.map((decision) => ({ requirementId: decision.id, expectedLegacyVariant: unique(decision.oldLinks.filter((link) => link.status === "auto_matched" && link.confidence === "high").map((link) => link.mannVariantKey))[0], topCandidates: decision.match.topCandidates })) }, null, 2)}\n`, "utf8"),
   ]);
 

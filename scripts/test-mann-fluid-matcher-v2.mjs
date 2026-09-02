@@ -61,7 +61,7 @@ function requirement(overrides = {}) {
   };
 }
 
-assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v5");
+assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v7");
 
 const single = matchFluidRequirementToMann(requirement(), [row({})]);
 assert.equal(single.status, "CONFIRMED_SINGLE");
@@ -132,11 +132,55 @@ const missingChassisIdentity = matchFluidRequirementToMann(requirement({ bodyCod
 ]);
 assert.equal(missingChassisIdentity.status, "REVIEW_REQUIRED");
 
+const engineScopedBrakeFluid = matchFluidRequirementToMann(requirement({
+  systemCode: "BRAKE_FLUID",
+  systemNameRaw: "Тормозная жидкость",
+  transmissionType: null,
+  componentModel: null,
+}), [
+  row({ vehicleVariantKey: "variant-a" }),
+  row({ vehicleVariantKey: "variant-b", engineCode: "1AZ-FE", engineCodeNormalized: "1AZFE", kw: "112", hp: "152" }),
+]);
+assert.equal(engineScopedBrakeFluid.status, "CONFIRMED_SINGLE");
+assert.deepEqual(engineScopedBrakeFluid.targets.map((target) => target.vehicleVariantKey), ["variant-a"]);
+
+const familyOnlyBrakeFluid = matchFluidRequirementToMann(requirement({
+  systemCode: "BRAKE_FLUID",
+  systemNameRaw: "Тормозная жидкость",
+  engineCodeNormalized: "2AZ",
+  engineCodesJson: ["2AZ"],
+}), [row({})]);
+assert.equal(familyOnlyBrakeFluid.status, "REVIEW_REQUIRED");
+assert.ok(familyOnlyBrakeFluid.topCandidates[0]?.reviewBlockers.includes("для этой технической системы не подтверждён точный код двигателя"));
+
+const broadBrakeFluidGroup = matchFluidRequirementToMann(requirement({
+  systemCode: "BRAKE_FLUID",
+  systemNameRaw: "Тормозная жидкость",
+  engineCodesJson: ["2AZ-FE", "2AZ-FXE", "1AZ-FE", "1AZ-FSE", "3ZR-FE"],
+}), [row({})]);
+assert.equal(broadBrakeFluidGroup.status, "REVIEW_REQUIRED");
+assert.ok(broadBrakeFluidGroup.topCandidates[0]?.reviewBlockers.includes("source requirement объединяет слишком много кодов двигателя"));
+
+const familyOnlyAcRefrigerant = matchFluidRequirementToMann(requirement({
+  systemCode: "AC_REFRIGERANT",
+  systemNameRaw: "Хладагент кондиционера",
+  engineCodeNormalized: "2AZ",
+  engineCodesJson: ["2AZ"],
+}), [row({})]);
+assert.equal(familyOnlyAcRefrigerant.status, "REVIEW_REQUIRED");
+assert.ok(familyOnlyAcRefrigerant.topCandidates[0]?.reviewBlockers.includes("для этой технической системы не подтверждён точный код двигателя"));
+
 const modelLevelBrakeFluid = matchFluidRequirementToMann(requirement({
   systemCode: "BRAKE_FLUID",
   systemNameRaw: "Тормозная жидкость",
   transmissionType: null,
   componentModel: null,
+  engineCodeNormalized: null,
+  engineCodesJson: [],
+  engineVolumeCc: null,
+  powerKw: null,
+  powerHp: null,
+  fuelType: null,
 }), [
   row({ vehicleVariantKey: "variant-a" }),
   row({ vehicleVariantKey: "variant-b", engineCode: "1AZ-FE", engineCodeNormalized: "1AZFE", kw: "112", hp: "152" }),
@@ -187,4 +231,4 @@ const contaminatedMannRow = matchFluidRequirementToMann(requirement(), [row({
 assert.equal(contaminatedMannRow.status, "REVIEW_REQUIRED");
 assert.ok(contaminatedMannRow.topCandidates[0]?.reviewBlockers.includes("строка MANN содержит признаки загрязнения текстом PDF"));
 
-console.log("MANN fluid matcher v5 system-aware policy tests — passed");
+console.log("MANN fluid matcher v7 source-engine-preserving policy tests — passed");

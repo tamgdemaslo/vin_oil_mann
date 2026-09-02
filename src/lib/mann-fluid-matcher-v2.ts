@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { MANN_MIN_PRESENTABLE_SCORE, diagnoseMannCandidatesForTest, evaluateMannCandidate, mannMakeFormsForTest, normalizeDecodedVehicleForTest, type MannResolverTestRow, type MannVehicleCandidate, type NormalizedMannVehicle } from "@/lib/mann-vehicle-resolver";
 import { normalizeMannSearchText, normalizeMannText } from "@/lib/mann-catalog";
 
-export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v5" as const;
+export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v7" as const;
 
 export type MannFluidMatchStatus =
   | "CONFIRMED_SINGLE"
@@ -123,7 +123,6 @@ const DRIVETRAIN_SYSTEMS = new Set([
   "TRANSFER_CASE", "FRONT_DIFFERENTIAL", "REAR_DIFFERENTIAL",
   "DIFFERENTIAL_GENERIC", "AWD_COUPLING", "PTO", "RETARDER",
 ]);
-const MODEL_LEVEL_SYSTEMS = new Set(["BRAKE_FLUID"]);
 const AWD_ONLY_SYSTEMS = new Set(["TRANSFER_CASE", "AWD_COUPLING"]);
 const DRIVE_EVIDENCE_REQUIRED_SYSTEMS = new Set([
   "TRANSFER_CASE", "FRONT_DIFFERENTIAL", "REAR_DIFFERENTIAL", "DIFFERENTIAL_GENERIC", "AWD_COUPLING",
@@ -131,6 +130,7 @@ const DRIVE_EVIDENCE_REQUIRED_SYSTEMS = new Set([
 const SYSTEM_TYPE_EVIDENCE_REQUIRED = new Set(["POWER_STEERING", "SUSPENSION_HYDRAULIC", "HYDRAULIC_SYSTEM"]);
 const EXACT_ENGINE_REQUIRED_SYSTEMS = new Set([
   "ENGINE_OIL", "ENGINE_COOLANT", "INTERCOOLER_COOLANT", "INVERTER_COOLANT", "SPARK_PLUG", "GENERATOR_OIL",
+  "BRAKE_FLUID", "AC_REFRIGERANT",
 ]);
 
 function unique(values: Array<string | null | undefined>): string[] {
@@ -142,8 +142,12 @@ function strings(value: unknown): string[] {
 }
 
 function sourceEngineCodes(requirement: MannFluidRequirementForMatch): string[] {
-  if (MODEL_LEVEL_SYSTEMS.has(requirement.systemCode)) return [];
   return unique([requirement.engineCodeNormalized, ...strings(requirement.engineCodesJson)]);
+}
+
+function hasSourceEngineIdentity(requirement: MannFluidRequirementForMatch): boolean {
+  return sourceEngineCodes(requirement).length > 0
+    || Boolean(requirement.engineVolumeCc || requirement.powerKw || requirement.powerHp || requirement.fuelType);
 }
 
 function meaningfulComponentModel(value?: string | null): string | null {
@@ -255,7 +259,6 @@ function representativeYear(requirement: MannFluidRequirementForMatch): number |
 
 export function normalizeFluidRequirementVehicle(requirement: MannFluidRequirementForMatch): NormalizedMannVehicle | null {
   const engineCodes = sourceEngineCodes(requirement);
-  const engineIndependent = MODEL_LEVEL_SYSTEMS.has(requirement.systemCode);
   const bodyCodes = strings(requirement.bodyCodesJson);
   return normalizeDecodedVehicleForTest({
     makeRaw: requirement.make,
@@ -270,10 +273,10 @@ export function normalizeFluidRequirementVehicle(requirement: MannFluidRequireme
     modelYearTo: requirement.yearTo ?? undefined,
     engineCode: engineCodes[0],
     engineSeries: engineCodes[1],
-    engineVolumeCc: engineIndependent ? undefined : requirement.engineVolumeCc ?? undefined,
-    powerKw: engineIndependent ? undefined : requirement.powerKw ?? undefined,
-    powerHp: engineIndependent ? undefined : requirement.powerHp ?? undefined,
-    fuelType: engineIndependent ? undefined : requirement.fuelType ?? undefined,
+    engineVolumeCc: requirement.engineVolumeCc ?? undefined,
+    powerKw: requirement.powerKw ?? undefined,
+    powerHp: requirement.powerHp ?? undefined,
+    fuelType: requirement.fuelType ?? undefined,
     transmissionType: requirement.transmissionType ?? undefined,
     driveType: requirement.driveType ?? undefined,
     sourceMethods: ["manual"],
@@ -480,7 +483,7 @@ function equivalentMultiApplicability(
   const signatures = new Set(assessments.map((assessment) => candidateSemanticSignature(
     assessment.candidate,
     family,
-    !MODEL_LEVEL_SYSTEMS.has(requirement.systemCode),
+    hasSourceEngineIdentity(requirement),
   )));
   return signatures.size === 1;
 }

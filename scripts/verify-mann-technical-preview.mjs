@@ -11,12 +11,13 @@ const outputDir = resolve(outputArgument?.slice("--output-dir=".length) || "outp
 const expectCurrentTimeweb = process.argv.includes("--expect-current-timeweb");
 const readJson = async (name) => JSON.parse(await readFile(resolve(outputDir, name), "utf8"));
 
-const [summary, preview, activeSample, dangerousReview, capacityAudit] = await Promise.all([
+const [summary, preview, activeSample, dangerousReview, capacityAudit, policyRejections] = await Promise.all([
   readJson("mann-technical-materialization-summary.json"),
   readJson("mann-technical-materialization-preview.json"),
   readJson("active-association-sample-200.json"),
   readJson("dangerous-systems-review.json"),
   readJson("capacity-parser-audit.json"),
+  readJson("mann-technical-policy-rejections.json"),
 ]);
 const golden = JSON.parse(await readFile(resolve("benchmarks/fluid-capacity-golden-v2.json"), "utf8"));
 
@@ -43,6 +44,15 @@ const checks = {
     && association.independentValidation.reviewBlockers.length === 0
   )),
   noParserReviewAssociationActive: activeAssociations.every((association) => !association.conflictTypes.includes("CAPACITY_PARSER_REVIEW_REQUIRED")),
+  auditedRejectionsExcluded: policyRejections.associations.length === summary.materialization.auditedRejectedAssociations
+    && policyRejections.associations.every((rejected) => (
+      rejected.proposedState === "REJECTED"
+      && rejected.conflictTypes.includes("AUDITED_ASSOCIATION_REJECTED")
+      && !preview.proposedAssociations.some((candidate) => candidate.associationFingerprint === rejected.associationFingerprint)
+    )),
+  denylistSafetyMetadataPreserved: preview.associationDenylist.independentHumanSignoff === false
+    && preview.associationDenylist.configuredFingerprints === 33
+    && preview.associationDenylist.rejectedInThisDryRun === policyRejections.associations.length,
   activeSampleHas200DistinctActiveRows: activeSample.sample.length === 200
     && new Set(activeSample.sample.map((association) => association.associationFingerprint)).size === 200
     && activeSample.sample.every((association) => activeFingerprints.has(association.associationFingerprint) && association.proposedState === "ACTIVE"),
@@ -83,6 +93,7 @@ const report = {
     proposedAssociations: preview.proposedAssociations.length,
     activeAssociations: activeAssociations.length,
     reviewAssociations: reviewAssociations.length,
+    auditedRejectedAssociations: policyRejections.associations.length,
     activeSample: activeSample.sample.length,
     dangerousSample: dangerousReview.sample.length,
     goldenCases: golden.cases.length,
