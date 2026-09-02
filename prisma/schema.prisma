@@ -2371,6 +2371,8 @@ model LocalStore {
   inventorySessions      InventorySession[]
   inventoryLines         InventoryLine[]
   inventoryLocks         InventoryLock[]
+  storageCells           StorageCell[]
+  storageAssignments     ProductStorageAssignment[]
 
   @@unique([branchId, id])
   @@index([name])
@@ -2469,6 +2471,7 @@ model LocalProduct {
   mannLinks                  ProductMannLink[]
   mannPomanMigrationAudits   ProductMannPomanMigrationAudit[]
   oemBatchItems              ProductOemBatchItem[]
+  storageAssignments         ProductStorageAssignment[]
   group                      LocalCatalogGroup?               @relation("CatalogGroupProducts", fields: [branchId, groupId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   supplierCounterparty       LocalCounterparty?               @relation("ProductSupplierCounterparty", fields: [branchId, supplierCounterpartyId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
 
@@ -3024,6 +3027,55 @@ model LocalStockBalance {
   @@index([storeId])
   @@index([available])
   @@map("local_stock_balances")
+}
+
+/// Управляемый справочник складских ячеек. Код уникален только внутри склада.
+model StorageCell {
+  id             String     @id @default(cuid())
+  branchId       String     @default("branch-main") @map("branch_id")
+  storeId        String     @map("store_id")
+  store          LocalStore @relation(fields: [branchId, storeId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
+  code           String
+  normalizedCode String     @map("normalized_code")
+  name           String?
+  zone           String?
+  comment        String?    @db.Text
+  archived       Boolean    @default(false)
+  archivedAt     DateTime?  @map("archived_at")
+  archivedById   String?    @map("archived_by_id")
+  createdById    String?    @map("created_by_id")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  assignments      ProductStorageAssignment[]
+  documentPositions LocalInventoryDocumentPosition[]
+
+  @@unique([branchId, id])
+  @@unique([branchId, storeId, id])
+  @@unique([branchId, storeId, normalizedCode])
+  @@index([branchId, storeId, archived])
+  @@index([branchId, storeId, code])
+  @@map("storage_cells")
+}
+
+/// Единственное текущее назначение места хранения товара внутри склада.
+model ProductStorageAssignment {
+  id           String       @id @default(cuid())
+  branchId     String       @default("branch-main") @map("branch_id")
+  productId    String       @map("product_id")
+  product      LocalProduct @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
+  storeId      String       @map("store_id")
+  store        LocalStore   @relation(fields: [branchId, storeId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
+  cellId       String       @map("cell_id")
+  cell         StorageCell  @relation(fields: [branchId, storeId, cellId], references: [branchId, storeId, id], onDelete: Restrict, onUpdate: Cascade)
+  assignedAt   DateTime     @default(now()) @map("assigned_at")
+  assignedById String?      @map("assigned_by_id")
+
+  @@unique([branchId, id])
+  @@unique([branchId, productId, storeId])
+  @@index([branchId, storeId, cellId])
+  @@index([branchId, productId])
+  @@map("product_storage_assignments")
 }
 
 /// Локальный справочник контрагентов.
@@ -3860,6 +3912,8 @@ model LocalInventoryDocumentPosition {
   quantity          Decimal                @default(0) @db.Decimal(14, 3)
   priceCentsPerUnit Int                    @default(0) @map("price_cents_per_unit")
   slotName          String?                @map("slot_name")
+  selectedCellId    String?                @map("selected_cell_id")
+  selectedCell      StorageCell?           @relation(fields: [branchId, selectedCellId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   raw               Json?
   source            String                 @default("local")
   externalCode      String?                @map("external_code")
@@ -3869,6 +3923,7 @@ model LocalInventoryDocumentPosition {
 
   @@index([documentId])
   @@index([productId])
+  @@index([branchId, selectedCellId])
   @@index([source])
   @@index([externalCode])
   @@index([syncedAt])

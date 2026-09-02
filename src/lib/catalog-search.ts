@@ -29,6 +29,7 @@ export type CatalogSearchParams = {
   warehouseId?: string;
   storeId?: string;
   storeName?: string;
+  storageCell?: string;
   type?: CatalogSearchType;
   entityType?: string;
   categoryId?: string;
@@ -79,6 +80,12 @@ type CatalogProduct = Prisma.LocalProductGetPayload<{
     };
     supplierCounterparty: {
       select: { name: true; displayName: true };
+    };
+    storageAssignments: {
+      include: {
+        cell: true;
+        store: { select: { id: true; name: true; isMain: true; archived: true } };
+      };
     };
   };
 }>;
@@ -169,6 +176,17 @@ export type CatalogSearchItem = {
   oemPartsCount: number;
   oemPartsPreview: string[];
   cell: string;
+  storageAssignments: Array<{
+    storeId: string;
+    storeName: string;
+    storeIsMain: boolean;
+    storeArchived: boolean;
+    cellId: string;
+    cellCode: string;
+    cellName: string;
+    cellZone: string;
+    cellArchived: boolean;
+  }>;
   mannCharacteristicName: string;
   imageHref: string;
   archived: boolean;
@@ -989,6 +1007,17 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     oemPartsCount: normalizedOemParts.length,
     oemPartsPreview: normalizedOemParts.slice(0, 8),
     cell: firstStock?.slotName || product.cell || getCellFromAttributes(product.attributes) || "",
+    storageAssignments: product.storageAssignments.map((assignment) => ({
+      storeId: assignment.storeId,
+      storeName: assignment.store.name,
+      storeIsMain: assignment.store.isMain,
+      storeArchived: assignment.store.archived,
+      cellId: assignment.cellId,
+      cellCode: assignment.cell.code,
+      cellName: assignment.cell.name ?? "",
+      cellZone: assignment.cell.zone ?? "",
+      cellArchived: assignment.cell.archived,
+    })),
     mannCharacteristicName: product.mannCharacteristicName ?? "",
     imageHref: product.imageHref ?? "",
     archived: product.archived,
@@ -1079,6 +1108,14 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     oemParts: normalizeOemPartsFilter(params.oemParts),
   };
   const storeId = await resolveStoreId(params);
+  const storageCell = params.storageCell?.trim() ?? "";
+  const storageAssignmentFilter: Prisma.LocalProductWhereInput = !storageCell || storageCell === "all"
+    ? {}
+    : storageCell === "unassigned"
+      ? { storageAssignments: { none: storeId ? { storeId } : {} } }
+      : storageCell === "assigned"
+        ? { storageAssignments: { some: storeId ? { storeId } : {} } }
+        : { storageAssignments: { some: { ...(storeId ? { storeId } : {}), cellId: storageCell } } };
   const strictNameOem = params.strictNameOem === true && Boolean(params.q?.trim());
   if (strictNameOem) {
     const strictCandidateIds = await findStrictNameOemCandidateIds(params.q);
@@ -1090,6 +1127,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
             ...(params.origin && params.origin !== "all" ? { origin: params.origin } : {}),
             ...(params.copyBatchId ? { copyBatchId: params.copyBatchId } : {}),
             ...(params.priceMissing ? { priceNeedsSetup: true } : {}),
+            ...storageAssignmentFilter,
             ...oemEnrichmentStatusFilter(params),
             id: { in: strictCandidateIds },
           },
@@ -1105,6 +1143,9 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
               orderBy: { createdAt: "asc" },
             },
             supplierCounterparty: { select: { name: true, displayName: true } },
+            storageAssignments: {
+              include: { cell: true, store: { select: { id: true, name: true, isMain: true, archived: true } } },
+            },
           },
           orderBy: [{ name: "asc" }],
           take: params.internalLimit != null || filters.oemParts !== "all"
@@ -1159,6 +1200,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     ...(params.origin && params.origin !== "all" ? { origin: params.origin } : {}),
     ...(params.copyBatchId ? { copyBatchId: params.copyBatchId } : {}),
     ...(params.priceMissing ? { priceNeedsSetup: true } : {}),
+    ...storageAssignmentFilter,
     ...oemEnrichmentStatusFilter(params),
     ...mergeSearchCandidateWhere(searchCandidateWhere(tokens, params), normalizedCandidateIds),
   };
@@ -1181,6 +1223,9 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
         orderBy: { createdAt: "asc" },
       },
       supplierCounterparty: { select: { name: true, displayName: true } },
+      storageAssignments: {
+        include: { cell: true, store: { select: { id: true, name: true, isMain: true, archived: true } } },
+      },
     },
     orderBy: [{ name: "asc" }],
     ...(candidateTake === undefined ? {} : { take: candidateTake }),
@@ -1260,6 +1305,7 @@ export function normalizeCatalogProductSelectionSnapshot(value: unknown): Catalo
     warehouseId: selectionString(input.warehouseId),
     storeId: selectionString(input.storeId),
     storeName: selectionString(input.storeName),
+    storageCell: selectionString(input.storageCell),
     type,
     entityType: selectionString(input.entityType, 40),
     categoryId: selectionString(input.categoryId),

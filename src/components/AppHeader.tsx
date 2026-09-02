@@ -138,6 +138,12 @@ export default function AppHeader() {
               disabled: locked,
             },
             {
+              href: "/inventory/cells",
+              label: "Ячейки",
+              description: "Места хранения товаров по складам.",
+              disabled: locked,
+            },
+            {
               href: "/warehouse/inventory",
               label: "Инвентаризация",
               description: "Сверка фактических остатков с учётными.",

@@ -71,6 +71,7 @@
     "rebuild:inventory-costs:dry-run": "node scripts/rebuild-inventory-costs-dry-run.mjs",
     "rebuild:inventory-cost-history": "node scripts/rebuild-inventory-costs-dry-run.mjs",
     "audit:storage-cells": "node scripts/audit-storage-cells.mjs",
+    "test:storage-cells": "node scripts/test-storage-cells.mjs",
     "audit:branch-models": "node scripts/generate-branch-model-classification.mjs",
     "audit:branch-raw-sql": "node scripts/audit-branch-raw-sql.mjs --strict",
     "audit:branch-unique": "node scripts/audit-branch-unique.mjs",

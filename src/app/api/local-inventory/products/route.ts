@@ -37,6 +37,8 @@ export async function GET(request: NextRequest) {
   const acea = readFilterValues(request, "acea");
   const packageVolume = readFilterValues(request, "packageVolume");
   const stock = request.nextUrl.searchParams.get("stock") ?? "";
+  const storeId = request.nextUrl.searchParams.get("storeId") ?? "";
+  const storageCell = request.nextUrl.searchParams.get("storageCell") ?? "";
   const markingProblems =
     request.nextUrl.searchParams.get("markingProblems") === "1" ||
     request.nextUrl.searchParams.get("markingProblems") === "true";
@@ -58,6 +60,8 @@ export async function GET(request: NextRequest) {
     acea,
     packageVolume,
     stock,
+    storeId,
+    storageCell,
     markingProblems,
   }));
 }

@@ -37,6 +37,7 @@ import {
 import { lockInventoryCostKeys } from "@/lib/inventory-costing-db";
 import { invalidateWarehouseProductAnalyticsCache } from "@/lib/warehouse-product-analytics";
 import { invalidatePayrollCache } from "@/lib/payroll";
+import { applyProductStorageCellTx, StorageCellError } from "@/lib/storage-cells";
 
 export type LocalStockDocumentType = "receipt" | "writeoff";
 type LocalAdjustmentType = "technical" | "expense";
@@ -122,6 +123,13 @@ type ProductInput = {
 
 const productWithStockInclude = {
   stockBalances: { include: { store: true }, orderBy: { store: { name: "asc" as const } } },
+  storageAssignments: {
+    include: {
+      cell: true,
+      store: { select: { id: true, name: true, isMain: true, archived: true } },
+    },
+    orderBy: [{ store: { isMain: "desc" as const } }, { store: { name: "asc" as const } }],
+  },
   supplierCounterparty: {
     select: { id: true, name: true, displayName: true, inn: true, legalForm: true, archived: true, status: true },
   },
@@ -247,6 +255,7 @@ type StockDocumentInput = {
     price?: number;
     salePrice?: number;
     slotName?: string;
+    selectedCellId?: string;
     makeDefaultCell?: boolean;
   }[];
   invoice?: {
@@ -965,6 +974,17 @@ function mapProduct(product: ProductWithStock) {
     supplierAttribute: product.supplierAttribute ?? "",
     oemParts: product.oemParts ?? "",
     cell: product.cell ?? "",
+    storageAssignments: product.storageAssignments.map((assignment) => ({
+      storeId: assignment.storeId,
+      storeName: assignment.store.name,
+      storeIsMain: assignment.store.isMain,
+      storeArchived: assignment.store.archived,
+      cellId: assignment.cellId,
+      cellCode: assignment.cell.code,
+      cellName: assignment.cell.name ?? "",
+      cellZone: assignment.cell.zone ?? "",
+      cellArchived: assignment.cell.archived,
+    })),
     mannCharacteristicName: product.mannCharacteristicName ?? "",
     markingEnabled: product.markingEnabled,
     markingMode: normalizeProductMarkingMode(product.markingMode),
@@ -1194,6 +1214,8 @@ type ProductFilterParams = {
   acea?: MultiProductFilterValue;
   packageVolume?: MultiProductFilterValue;
   stock?: string;
+  storeId?: string;
+  storageCell?: string;
   markingProblems?: boolean;
 };
 type ProductFilterOptions = {
@@ -2491,6 +2513,8 @@ export async function listLocalAdminProducts(params: {
   acea?: MultiProductFilterValue;
   packageVolume?: MultiProductFilterValue;
   stock?: string;
+  storeId?: string;
+  storageCell?: string;
   markingProblems?: boolean;
 }) {
   const searchQuery = parseSearchQuery(params.search);
@@ -2511,7 +2535,27 @@ export async function listLocalAdminProducts(params: {
     markingProblems: params.markingProblems === true,
   };
   const allRows = await getProductRowsForAdmin(params.branchId, params.includeArchived);
-  const searchRows = allRows.filter((row) => rowMatchesSearch(row, searchQuery));
+  const storageCell = params.storageCell?.trim() ?? "";
+  const storageStoreId = params.storeId?.trim() ?? "";
+  let allowedStorageProductIds: Set<string> | null = null;
+  if (storageCell && storageCell !== "all") {
+    const assignmentWhere = storageStoreId ? { storeId: storageStoreId } : {};
+    const storageProducts = await prisma.localProduct.findMany({
+      where: {
+        branchId: params.branchId,
+        ...(storageCell === "unassigned"
+          ? { storageAssignments: { none: assignmentWhere } }
+          : storageCell === "assigned"
+            ? { storageAssignments: { some: assignmentWhere } }
+            : { storageAssignments: { some: { ...assignmentWhere, cellId: storageCell } } }),
+      },
+      select: { id: true },
+    });
+    allowedStorageProductIds = new Set(storageProducts.map((product) => product.id));
+  }
+  const searchRows = allRows.filter((row) =>
+    rowMatchesSearch(row, searchQuery) && (!allowedStorageProductIds || allowedStorageProductIds.has(row.id))
+  );
   const facets = buildProductFacets(searchRows, filterParams);
   const filteredProducts = searchRows
     .filter((row) => rowMatchesProductFilters(row, filterParams))
@@ -2560,6 +2604,8 @@ export async function listLocalAdminProducts(params: {
         acea: cleanFilterValues(params.acea),
         packageVolume: cleanFilterValues(params.packageVolume),
         stock: normalizeStockFilter(params.stock),
+        storeId: storageStoreId,
+        storageCell: storageCell || "all",
         markingProblems: params.markingProblems === true,
       },
       filterOptions,
@@ -3899,6 +3945,7 @@ function stockDocumentSnapshot(document: {
     quantity: Prisma.Decimal | number;
     priceCentsPerUnit: number;
     slotName?: string | null;
+    selectedCellId?: string | null;
   }>;
   supplierInvoice?: {
     id: string;
@@ -3938,6 +3985,7 @@ function stockDocumentSnapshot(document: {
       quantity: decimalToNumber(position.quantity),
       priceCentsPerUnit: position.priceCentsPerUnit,
       slotName: position.slotName ?? "",
+      selectedCellId: position.selectedCellId ?? null,
     })),
   };
 }
@@ -4490,6 +4538,7 @@ type CostedStockDocumentPosition = {
   quantity: Prisma.Decimal;
   priceCents: number;
   slotName: string | null;
+  selectedCellId: string | null;
   makeDefaultCell: boolean;
 };
 
@@ -4545,6 +4594,25 @@ async function applyPostedStockDocumentMovements<T extends CostedStockDocumentPo
     productIds: input.positions.map((position) => position.product.id),
   });
   for (const [positionIndex, position] of input.positions.entries()) {
+    const selectedCell = input.type === "receipt" && position.selectedCellId
+      ? await tx.storageCell.findFirst({
+          where: {
+            id: position.selectedCellId,
+            branchId: input.branchId,
+            storeId: input.store.id,
+            archived: false,
+          },
+          select: { id: true, code: true },
+        })
+      : null;
+    if (input.type === "receipt" && position.selectedCellId && !selectedCell) {
+      throw new StorageCellError(
+        `Ячейка для товара «${position.product.name}» не относится к выбранному складу или архивирована`,
+        409,
+        "STORAGE_CELL_SCOPE_INVALID",
+      );
+    }
+    const effectiveSlotName = selectedCell?.code ?? position.slotName;
     const quantity = position.quantity.toNumber();
     if (quantity <= 0) throw new Error(`Количество товара «${position.product.name}» должно быть больше нуля`);
     const current = await tx.localStockBalance.findUnique({
@@ -4591,7 +4659,7 @@ async function applyPostedStockDocumentMovements<T extends CostedStockDocumentPo
           quantity: new Prisma.Decimal(nextQuantity),
           available: new Prisma.Decimal(nextAvailable),
           buyPriceCents: nextAverageCost,
-          slotName: position.slotName ?? current.slotName,
+          slotName: effectiveSlotName ?? current.slotName,
           syncedAt: new Date(),
         },
       });
@@ -4605,7 +4673,7 @@ async function applyPostedStockDocumentMovements<T extends CostedStockDocumentPo
           reserve: new Prisma.Decimal(0),
           available: new Prisma.Decimal(nextAvailable),
           buyPriceCents: nextAverageCost,
-          slotName: position.slotName,
+          slotName: effectiveSlotName,
           syncedAt: new Date(),
         },
       });
@@ -4616,8 +4684,18 @@ async function applyPostedStockDocumentMovements<T extends CostedStockDocumentPo
         buyPriceCents: position.priceCents,
         syncedAt: new Date(),
       };
-      if (position.makeDefaultCell && position.slotName) productUpdate.cell = position.slotName;
       await tx.localProduct.update({ where: { id: position.product.id }, data: productUpdate });
+      if (selectedCell) {
+        await applyProductStorageCellTx(tx, {
+          branchId: input.branchId,
+          productId: position.product.id,
+          storeId: input.store.id,
+          cellId: selectedCell.id,
+          actorId: input.user?.login ?? null,
+          sourceDocumentId: input.documentId,
+          quantity,
+        });
+      }
     }
 
     await tx.inventoryLedgerEntry.create({
@@ -4705,6 +4783,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
       priceCents,
       salePriceCents,
       slotName: position.slotName?.trim() || null,
+      selectedCellId: position.selectedCellId?.trim() || null,
       makeDefaultCell: position.makeDefaultCell === true,
       raw: position,
       sourceMetadata: options?.sourceMetadata?.positions[index] ?? null,
@@ -4717,6 +4796,24 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
   const validPositions = positions.filter(
     (position): position is Exclude<(typeof positions)[number], { error: string }> => !("error" in position)
   );
+  if (validPositions.some((position) => position.selectedCellId) && !store) {
+    return { ok: false as const, error: "Выберите склад перед назначением ячейки" };
+  }
+  if (store) {
+    const selectedCellIds = [...new Set(validPositions.map((position) => position.selectedCellId).filter(Boolean))] as string[];
+    if (selectedCellIds.length) {
+      const cells = await client.storageCell.findMany({
+        where: { branchId, storeId: store.id, id: { in: selectedCellIds }, archived: false },
+        select: { id: true, code: true },
+      });
+      const cellById = new Map(cells.map((cell) => [cell.id, cell]));
+      const invalid = validPositions.find((position) => position.selectedCellId && !cellById.has(position.selectedCellId));
+      if (invalid) return { ok: false as const, error: `Ячейка для товара «${invalid.product.name}» не относится к выбранному складу или архивирована` };
+      for (const position of validPositions) {
+        if (position.selectedCellId) position.slotName = cellById.get(position.selectedCellId)!.code;
+      }
+    }
+  }
 
   const counterpartyId = body.counterpartyId?.trim();
   const supplierSnapshotName = supplierSnapshotNameFromId(counterpartyId);
@@ -4797,6 +4894,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
           quantity: position.quantity,
           priceCentsPerUnit: position.priceCents,
           slotName: position.slotName,
+          selectedCellId: position.selectedCellId,
           source: position.sourceMetadata?.source ?? "local",
           externalCode: position.sourceMetadata?.externalCode ?? null,
           raw: toJson(position.sourceMetadata?.raw ?? position.raw),
@@ -4998,6 +5096,9 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
       priceCents,
       salePriceCents,
       slotName: position.slotName?.trim() || null,
+      selectedCellId: position.selectedCellId === undefined
+        ? sourcePosition?.selectedCellId ?? null
+        : position.selectedCellId.trim() || null,
       makeDefaultCell: position.makeDefaultCell === true,
       raw: position,
       sourcePosition,
@@ -5010,6 +5111,24 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
   const validPositions = positions.filter(
     (position): position is Exclude<(typeof positions)[number], { error: string }> => !("error" in position)
   );
+  if (validPositions.some((position) => position.selectedCellId) && !store) {
+    return { ok: false as const, error: "Выберите склад перед назначением ячейки" };
+  }
+  if (store) {
+    const selectedCellIds = [...new Set(validPositions.map((position) => position.selectedCellId).filter(Boolean))] as string[];
+    if (selectedCellIds.length) {
+      const cells = await prisma.storageCell.findMany({
+        where: { branchId, storeId: store.id, id: { in: selectedCellIds }, archived: false },
+        select: { id: true, code: true },
+      });
+      const cellById = new Map(cells.map((cell) => [cell.id, cell]));
+      const invalid = validPositions.find((position) => position.selectedCellId && !cellById.has(position.selectedCellId));
+      if (invalid) return { ok: false as const, error: `Ячейка для товара «${invalid.product.name}» не относится к выбранному складу или архивирована` };
+      for (const position of validPositions) {
+        if (position.selectedCellId) position.slotName = cellById.get(position.selectedCellId)!.code;
+      }
+    }
+  }
 
   const counterpartyId = body.counterpartyId?.trim();
   const supplierSnapshotName = supplierSnapshotNameFromId(counterpartyId);
@@ -5105,6 +5224,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
           quantity: position.quantity,
           priceCentsPerUnit: position.priceCents,
           slotName: position.slotName,
+          selectedCellId: position.selectedCellId,
           source: position.sourcePosition?.source ?? "local",
           externalCode: position.sourcePosition?.externalCode ?? null,
           raw: position.sourcePosition
@@ -5191,6 +5311,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
               quantity: position.quantity,
               priceCentsPerUnit: position.priceCents,
               slotName: position.slotName,
+              selectedCellId: position.selectedCellId,
             };
           }),
           supplierInvoice: invoiceRequested
@@ -5657,6 +5778,7 @@ async function postDraftReceiptStock(
     quantity: position.quantity,
     priceCents: position.priceCentsPerUnit,
     slotName: position.slotName,
+    selectedCellId: position.selectedCellId,
     makeDefaultCell: jsonRecord(position.raw).makeDefaultCell === true,
   }));
   const effectivePositions = await preparePostedStockDocumentCosts(tx, {
@@ -6027,6 +6149,12 @@ export async function listLocalStockDocuments(params: {
             product: {
               include: {
                 stockBalances: { include: { store: true }, orderBy: { store: { name: "asc" } } },
+                storageAssignments: {
+                  include: {
+                    cell: true,
+                    store: { select: { id: true, name: true } },
+                  },
+                },
               },
             },
           },
@@ -6080,14 +6208,14 @@ export async function listLocalStockDocuments(params: {
         : null,
       positions: document.positions.map((position) => {
         const raw = jsonRecord(position.raw);
-        const knownCells = position.product?.stockBalances
-          .map((balance) => ({
-            storeId: balance.storeId,
-            storeName: balance.store?.name ?? "",
-            available: balance.available.toNumber(),
-            slotName: balance.slotName ?? "",
-          }))
-          .filter((balance) => balance.slotName) ?? [];
+        const balanceByStore = new Map(position.product?.stockBalances.map((balance) => [balance.storeId, balance]) ?? []);
+        const knownCells = position.product?.storageAssignments.map((assignment) => ({
+          cellId: assignment.cellId,
+          storeId: assignment.storeId,
+          storeName: assignment.store.name,
+          available: balanceByStore.get(assignment.storeId)?.available.toNumber() ?? 0,
+          slotName: assignment.cell.code,
+        })) ?? [];
         const slotStoreId = position.slotName && document.storeId && knownCells.some(
           (cell) => cell.storeId === document.storeId && cell.slotName === position.slotName
         )
@@ -6109,6 +6237,7 @@ export async function listLocalStockDocuments(params: {
             ? Number(raw.salePrice)
             : (position.product?.salePriceCents ?? 0) / 100,
           slotName: position.slotName ?? "",
+          selectedCellId: position.selectedCellId ?? "",
           defaultCell: position.product?.cell ?? "",
           slotStoreId,
           knownCells,

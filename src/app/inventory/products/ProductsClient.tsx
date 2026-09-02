@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   AlertCircle,
   Archive,
@@ -64,6 +65,21 @@ type StockRow = {
   slotName: string;
 };
 
+type ProductStorageAssignment = {
+  storeId: string;
+  storeName: string;
+  storeIsMain: boolean;
+  storeArchived: boolean;
+  cellId: string;
+  cellCode: string;
+  cellName: string;
+  cellZone: string;
+  cellArchived: boolean;
+};
+
+type ProductStoreOption = { id: string; name: string; isMain?: boolean; archived?: boolean };
+type ProductCellOption = { id: string; code: string; name: string; zone: string; productCount: number };
+
 type ProductPhoto = {
   id: string;
   fileName: string;
@@ -122,6 +138,7 @@ type ProductRow = {
   oemPartsCount?: number;
   oemPartsPreview?: string[];
   cell: string;
+  storageAssignments: ProductStorageAssignment[];
   mannCharacteristicName: string;
   imageHref: string;
   photos: ProductPhoto[];
@@ -747,6 +764,34 @@ async function readJson<T>(res: Response): Promise<T | null> {
   } catch {
     return null;
   }
+}
+
+async function loadAllStorageCells(storeId: string) {
+  const cells: ProductCellOption[] = [];
+  let offset = 0;
+  let total = Number.POSITIVE_INFINITY;
+
+  while (offset < total) {
+    const params = new URLSearchParams({ status: "all", limit: "100", offset: String(offset), sort: "code" });
+    const response = await fetch(
+      `/api/local-inventory/stores/${encodeURIComponent(storeId)}/cells?${params}`,
+      { cache: "no-store" },
+    );
+    const data = await readJson<{
+      cells?: ProductCellOption[];
+      meta?: { total: number };
+      error?: string;
+    }>(response);
+    if (!response.ok || !data) throw new Error(data?.error || "Не удалось загрузить ячейки");
+
+    const pageCells = data.cells ?? [];
+    cells.push(...pageCells);
+    total = data.meta?.total ?? cells.length;
+    if (!pageCells.length) break;
+    offset += pageCells.length;
+  }
+
+  return cells;
 }
 
 function clampNumber(value: number, min: number, max: number) {
@@ -1549,6 +1594,8 @@ export default function ProductsClient() {
     ? searchParams.get("oemParts") as OemPartsFilter
     : "all";
   const initialOemBatchId = searchParams.get("oemBatchId")?.trim() ?? "";
+  const initialStorageStoreId = searchParams.get("storeId")?.trim() ?? "";
+  const initialStorageCell = searchParams.get("storageCell")?.trim() ?? "all";
   const initialOemResultValue = searchParams.get("oemEnrichmentResult")?.trim() ?? "";
   const initialOemResult: OemEnrichmentResultState = initialOemBatchId && ["remaining", "error", "no_results", "missing_source"].includes(initialOemResultValue)
     ? { batchId: initialOemBatchId, result: initialOemResultValue as OemEnrichmentResultFilter }
@@ -1558,6 +1605,18 @@ export default function ProductsClient() {
   const [matchedOutsideFilters, setMatchedOutsideFilters] = useState(0);
   const [search, setSearch] = useState(initialSearch);
   const [filters, setFilters] = useState<ProductFilters>({ ...emptyFilters, oemParts: initialOemParts });
+  const [storageStores, setStorageStores] = useState<ProductStoreOption[]>([]);
+  const [storageStoreId, setStorageStoreId] = useState(initialStorageStoreId);
+  const [storageCells, setStorageCells] = useState<ProductCellOption[]>([]);
+  const [storageCellFilter, setStorageCellFilter] = useState(initialStorageCell);
+  const [storageOptionsLoading, setStorageOptionsLoading] = useState(false);
+  const [editorCellStoreId, setEditorCellStoreId] = useState("");
+  const [editorCellId, setEditorCellId] = useState("");
+  const [editorStorageCells, setEditorStorageCells] = useState<ProductCellOption[]>([]);
+  const [editorCellSaving, setEditorCellSaving] = useState(false);
+  const [editorCellWarning, setEditorCellWarning] = useState("");
+  const [editorNewCellCode, setEditorNewCellCode] = useState("");
+  const [editorNewCellName, setEditorNewCellName] = useState("");
   const [originFilter, setOriginFilter] = useState<ProductOriginFilter>(initialOrigin);
   const [copyBatchId, setCopyBatchId] = useState(initialCopyBatchId);
   const [sort, setSort] = useState<ProductSortKey>("name");
@@ -1804,8 +1863,8 @@ export default function ProductsClient() {
       if (key === "oemParts") return count + (value !== "all" ? 1 : 0);
       if (key === "markingProblems" || key === "priceMissing") return count + (value === true ? 1 : 0);
       return count + (Array.isArray(value) ? value.length : 0);
-    }, 0),
-    [filters]
+    }, storageCellFilter !== "all" ? 1 : 0),
+    [filters, storageCellFilter]
   );
   const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0 || originFilter !== "all" || Boolean(copyBatchId) || Boolean(oemEnrichmentResult) || rosskoLastImportVisible;
   const selectedProductsCount = allFilteredProductsSelected ? (meta?.total ?? rows.length) : selectedProductIds.length;
@@ -1832,6 +1891,72 @@ export default function ProductsClient() {
   }, []);
 
   useEffect(() => { void loadKnownOemBatch(); }, [loadKnownOemBatch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/local-inventory/stores", { cache: "no-store" });
+        const data = await readJson<{ stores?: ProductStoreOption[]; error?: string }>(response);
+        if (!response.ok || !data) throw new Error(data?.error || "Не удалось загрузить склады");
+        if (cancelled) return;
+        const activeStores = (data.stores ?? []).filter((store) => !store.archived);
+        setStorageStores(activeStores);
+        setStorageStoreId((current) => current || activeStores.find((store) => store.isMain)?.id || activeStores[0]?.id || "");
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Не удалось загрузить склады");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!storageStoreId) {
+      setStorageCells([]);
+      return;
+    }
+    let cancelled = false;
+    setStorageOptionsLoading(true);
+    void (async () => {
+      try {
+        const cells = await loadAllStorageCells(storageStoreId);
+        if (!cancelled) setStorageCells(cells);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Не удалось загрузить ячейки");
+      } finally {
+        if (!cancelled) setStorageOptionsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [storageStoreId]);
+
+  useEffect(() => {
+    if (!editingProduct || !storageStores.length) return;
+    const defaultStoreId = editorCellStoreId || storageStores.find((store) => store.isMain)?.id || storageStores[0]?.id || "";
+    const assignment = editingProduct.storageAssignments?.find((item) => item.storeId === defaultStoreId);
+    setEditorCellStoreId(defaultStoreId);
+    setEditorCellId(assignment?.cellId ?? "");
+    setEditorCellWarning("");
+    // Only reset when another product is opened; store changes are handled by the selector.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingProduct?.id, storageStores]);
+
+  useEffect(() => {
+    if (!editorCellStoreId || !formOpen) {
+      setEditorStorageCells([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const cells = await loadAllStorageCells(editorCellStoreId);
+        if (!cancelled) setEditorStorageCells(cells);
+      } catch (cause) {
+        if (!cancelled) setEditorCellWarning(cause instanceof Error ? cause.message : "Не удалось загрузить ячейки");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editorCellStoreId, formOpen]);
 
   useEffect(() => {
     if (!knownOemBatch || !["QUEUED", "RUNNING"].includes(knownOemBatch.status)) return;
@@ -1933,11 +2058,11 @@ export default function ProductsClient() {
       items.push(
         { label: "Артикул", ok: Boolean(form.article.trim()) },
         { label: "OEM Parts / аналоги", ok: Boolean(form.oemParts.trim() || form.oem.trim()) },
-        { label: "Ячейка", ok: Boolean(form.cell.trim()) }
+        { label: "Ячейка", ok: Boolean(editingProduct?.storageAssignments?.some((assignment) => !assignment.cellArchived)) }
       );
     }
     return items;
-  }, [form, groupKind]);
+  }, [editingProduct?.storageAssignments, form, groupKind]);
   const missingCompletionCount = completionItems.filter((item) => !item.ok).length;
 
   function buildListParams(
@@ -1966,6 +2091,8 @@ export default function ProductsClient() {
         value.filter(Boolean).forEach((item) => params.append(key, item));
       }
     }
+    if (storageStoreId) params.set("storeId", storageStoreId);
+    if (storageCellFilter !== "all") params.set("storageCell", storageCellFilter);
     if (originFilter !== "all") params.set("origin", originFilter);
     if (copyBatchId) params.set("copyBatchId", copyBatchId);
     if (oemEnrichmentResult) {
@@ -1983,6 +2110,8 @@ export default function ProductsClient() {
       copyBatchId,
       oemBatchId: oemEnrichmentResult?.batchId ?? "",
       oemEnrichmentResult: oemEnrichmentResult?.result ?? "all",
+      storeId: storageStoreId,
+      storageCell: storageCellFilter,
       sort,
       direction,
     };
@@ -2284,12 +2413,12 @@ export default function ProductsClient() {
     }, delay);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult, listViewRevision]);
+  }, [search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult, storageStoreId, storageCellFilter, listViewRevision]);
 
   useEffect(() => {
     setSelectedProductIds([]);
     setAllFilteredProductsSelected(false);
-  }, [search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult]);
+  }, [search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult, storageStoreId, storageCellFilter]);
 
   useEffect(() => {
     if (!initialProductId) return;
@@ -2587,6 +2716,7 @@ export default function ProductsClient() {
 
   function resetFilters() {
     setFilters(emptyFilters);
+    setStorageCellFilter("all");
     setOriginFilter("all");
     setCopyBatchId("");
     clearOemEnrichmentResultFilter();
@@ -2600,6 +2730,7 @@ export default function ProductsClient() {
   function resetAll() {
     setSearch("");
     setFilters(emptyFilters);
+    setStorageCellFilter("all");
     setOriginFilter("all");
     setCopyBatchId("");
     clearOemEnrichmentResultFilter();
@@ -3076,6 +3207,18 @@ export default function ProductsClient() {
         onRemove: () => changeOemPartsFilter("all"),
       });
     }
+    if (storageCellFilter !== "all") {
+      const selectedCell = storageCells.find((cell) => cell.id === storageCellFilter);
+      chips.push({
+        key: "storageCell",
+        label: storageCellFilter === "unassigned"
+          ? "Ячейка: не назначена"
+          : storageCellFilter === "assigned"
+            ? "Ячейка: назначена"
+            : `Ячейка: ${selectedCell?.code ?? storageCellFilter}`,
+        onRemove: () => setStorageCellFilter("all"),
+      });
+    }
     if (oemEnrichmentResult) {
       const resultLabels: Record<OemEnrichmentResultFilter, string> = {
         remaining: "Оставшиеся без OEM",
@@ -3445,7 +3588,6 @@ export default function ProductsClient() {
         rosskoMin: form.rosskoMin.trim() || undefined,
         supplierAttribute: form.supplierAttribute.trim() || undefined,
         oemParts: form.oemParts.trim() || undefined,
-        cell: form.cell.trim() || undefined,
         mannCharacteristicName: form.mannCharacteristicName.trim() || undefined,
         markingEnabled: isMarkingEnabled(form),
         markingMode: formMarkingMode(form),
@@ -4052,6 +4194,125 @@ export default function ProductsClient() {
           Очистить скрытые поля
         </button>
       </div>
+    );
+  }
+
+  async function createEditorStorageCell() {
+    const code = editorNewCellCode.trim();
+    if (!editorCellStoreId || !code) {
+      setEditorCellWarning("Укажите код новой ячейки");
+      return;
+    }
+    setEditorCellSaving(true);
+    setEditorCellWarning("");
+    try {
+      const response = await fetch(`/api/local-inventory/stores/${encodeURIComponent(editorCellStoreId)}/cells`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, name: editorNewCellName.trim() || undefined }),
+      });
+      const result = await readJson<{ cell?: ProductCellOption; created?: boolean; error?: string }>(response);
+      if (!response.ok || !result?.cell) throw new Error(result?.error || "Не удалось создать ячейку");
+      setEditorStorageCells((current) => [...current.filter((cell) => cell.id !== result.cell!.id), result.cell!].sort((a, b) => a.code.localeCompare(b.code, "ru")));
+      setEditorCellId(result.cell.id);
+      setEditorNewCellCode("");
+      setEditorNewCellName("");
+      setEditorCellWarning(result.created === false ? `Ячейка ${result.cell.code} уже существовала и выбрана` : `Ячейка ${result.cell.code} создана и выбрана`);
+    } catch (cause) {
+      setEditorCellWarning(cause instanceof Error ? cause.message : "Не удалось создать ячейку");
+    } finally {
+      setEditorCellSaving(false);
+    }
+  }
+
+  async function saveProductStorageAssignment(nextCellId = editorCellId) {
+    if (!editingId || !editorCellStoreId) return;
+    setEditorCellSaving(true);
+    setEditorCellWarning("");
+    try {
+      const response = await fetch(`/api/local-inventory/products/${encodeURIComponent(editingId)}/storage-cell`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId: editorCellStoreId, cellId: nextCellId || null }),
+      });
+      const result = await readJson<{ warning?: string | null; error?: string }>(response);
+      if (!response.ok) throw new Error(result?.error || "Не удалось изменить ячейку товара");
+      const productResponse = await fetch(`/api/local-inventory/products/${encodeURIComponent(editingId)}`, { cache: "no-store" });
+      const product = await readJson<ProductRow & { error?: string }>(productResponse);
+      if (!productResponse.ok || !product) throw new Error(product?.error || "Не удалось обновить карточку товара");
+      setRows((current) => [product, ...current.filter((row) => row.id !== product.id)]);
+      setActiveProduct(product);
+      const nextForm = formFromProduct(product);
+      setForm(nextForm);
+      setFormBaseline(nextForm);
+      setEditorCellId(nextCellId);
+      setEditorCellWarning(result?.warning || (nextCellId ? "Ячейка товара обновлена" : "Ячейка товара очищена"));
+    } catch (cause) {
+      setEditorCellWarning(cause instanceof Error ? cause.message : "Не удалось изменить ячейку товара");
+    } finally {
+      setEditorCellSaving(false);
+    }
+  }
+
+  function renderStorageAssignmentSection() {
+    const current = editingProduct?.storageAssignments?.find((assignment) => assignment.storeId === editorCellStoreId && !assignment.cellArchived) ?? null;
+    const stock = editingProduct?.stock.find((row) => row.storeId === editorCellStoreId);
+    const changed = (current?.cellId ?? "") !== editorCellId;
+    return (
+      <section className="product-editor-section">
+        <div className="product-editor-section-head">
+          <div>
+            <h3>Место хранения</h3>
+            <p>Одна текущая ячейка товара на выбранном складе</p>
+          </div>
+          {current ? <span className="product-editor-type-badge">{current.cellCode}</span> : <span className="product-editor-type-badge">Не назначена</span>}
+        </div>
+        {!editingId ? (
+          <div className="product-editor-empty-note">Сначала сохраните новую карточку товара, затем назначьте ей ячейку.</div>
+        ) : (
+          <div className="product-editor-grid">
+            <label className="product-editor-field">
+              <span className="product-editor-label"><span>Склад</span></span>
+              <select
+                className="eco-input product-editor-input"
+                value={editorCellStoreId}
+                onChange={(event) => {
+                  const nextStoreId = event.target.value;
+                  setEditorCellStoreId(nextStoreId);
+                  setEditorCellId(editingProduct?.storageAssignments?.find((assignment) => assignment.storeId === nextStoreId && !assignment.cellArchived)?.cellId ?? "");
+                  setEditorCellWarning("");
+                }}
+              >
+                {storageStores.map((store) => <option key={store.id} value={store.id}>{store.name}{store.isMain ? " · основной" : ""}</option>)}
+              </select>
+            </label>
+            <label className="product-editor-field">
+              <span className="product-editor-label"><span>Ячейка</span></span>
+              <select className="eco-input product-editor-input" value={editorCellId} onChange={(event) => { setEditorCellId(event.target.value); setEditorCellWarning(""); }}>
+                <option value="">Не назначена</option>
+                {editorStorageCells.map((cell) => <option key={cell.id} value={cell.id}>{cell.code}{cell.name ? ` · ${cell.name}` : ""}{cell.zone ? ` · ${cell.zone}` : ""}</option>)}
+              </select>
+            </label>
+            <details className="product-editor-extra-details is-wide">
+              <summary><span><b>Создать новую ячейку</b><em>Не покидая карточку товара</em></span></summary>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <input className="eco-input" value={editorNewCellCode} onChange={(event) => setEditorNewCellCode(event.target.value)} placeholder="Код, например A-12" />
+                <input className="eco-input" value={editorNewCellName} onChange={(event) => setEditorNewCellName(event.target.value)} placeholder="Название / зона" />
+              </div>
+              <button type="button" className="eco-btn eco-btn--sm mt-2" onClick={() => void createEditorStorageCell()} disabled={editorCellSaving || !editorNewCellCode.trim()}><Plus aria-hidden className="eco-icon" />Создать и выбрать</button>
+            </details>
+            <div className="product-editor-field is-wide">
+              {changed && current ? <div className="product-editor-alert is-warning"><AlertCircle aria-hidden className="eco-icon" /><span>Текущая ячейка {current.cellCode} будет заменена.</span></div> : null}
+              {changed && !editorCellId && Number(stock?.quantity ?? 0) > 0 ? <div className="product-editor-alert is-warning"><AlertCircle aria-hidden className="eco-icon" /><span>На складе есть остаток {formatQty(stock?.quantity ?? 0)}. После очистки место хранения не будет указано.</span></div> : null}
+              {editorCellWarning ? <div className="product-editor-alert"><span>{editorCellWarning}</span></div> : null}
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="eco-btn eco-btn--primary eco-btn--sm" onClick={() => void saveProductStorageAssignment()} disabled={!changed || editorCellSaving}>{editorCellSaving ? "Сохранение…" : "Сохранить ячейку"}</button>
+                <Link href="/inventory/cells" className="eco-btn eco-btn--sm">Открыть справочник</Link>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
     );
   }
 
@@ -4772,7 +5033,6 @@ export default function ProductsClient() {
                           supplierName: supplier?.displayName ?? "",
                         })}
                       />
-                      {renderField("cell", "Основная ячейка", { placeholder: "A-12" })}
                       {renderField("minimumBalance", "Неснижаемый остаток", { type: "number", placeholder: "0" })}
                     </div>
                   </section>
@@ -4791,21 +5051,26 @@ export default function ProductsClient() {
                     </div>
                     {editingProduct?.stock.length ? (
                       <div className="product-editor-stock-list">
-                        {editingProduct.stock.map((stockRow) => (
-                          <div key={stockRow.storeId}>
-                            <span>{stockRow.storeName || "Склад"}</span>
-                            <b>{formatQty(stockRow.available)}</b>
-                            <em>{stockRow.averageCost == null ? "себестоимость не задана" : `ср. ${formatMoneyWhole(stockRow.averageCost)} ₽`} · {stockRow.slotName || "без ячейки"}</em>
-                          </div>
-                        ))}
+                        {editingProduct.stock.map((stockRow) => {
+                          const assignment = editingProduct.storageAssignments?.find((item) => item.storeId === stockRow.storeId && !item.cellArchived);
+                          return (
+                            <div key={stockRow.storeId}>
+                              <span>{stockRow.storeName || "Склад"}</span>
+                              <b>{formatQty(stockRow.available)}</b>
+                              <em>{stockRow.averageCost == null ? "себестоимость не задана" : `ср. ${formatMoneyWhole(stockRow.averageCost)} ₽`} · {assignment?.cellCode || "без ячейки"}</em>
+                            </div>
+                          );
+                        })}
                       </div>
                     ) : null}
                     <div className="product-editor-summary-grid product-editor-stock-summary">
-                      <span><em>Основная ячейка</em><b>{compactHeaderValue(form.cell, "не указана")}</b></span>
+                      <span><em>Ячеек назначено</em><b>{editingProduct?.storageAssignments?.filter((assignment) => !assignment.cellArchived).length ?? 0}</b></span>
                       <span><em>Минимальный остаток</em><b>{compactHeaderValue(form.minimumBalance, "не задан")}</b></span>
                       <span><em>Поставщик</em><b>{compactHeaderValue(form.supplierName, "не указан")}</b></span>
                     </div>
                   </section>
+
+                  {renderStorageAssignmentSection()}
 
                   {renderMarkingSection()}
 
@@ -5284,6 +5549,34 @@ export default function ProductsClient() {
             </div>
 
             <div className="eco-filter-group">
+              <div className="eco-filter-title">Ячейка хранения</div>
+              <select
+                className="eco-input"
+                value={storageStoreId}
+                onChange={(event) => {
+                  setStorageStoreId(event.target.value);
+                  setStorageCellFilter("all");
+                }}
+                aria-label="Склад для фильтра по ячейке"
+              >
+                {storageStores.map((store) => <option key={store.id} value={store.id}>{store.name}{store.isMain ? " · основной" : ""}</option>)}
+              </select>
+              <select
+                className="eco-input mt-2"
+                value={storageCellFilter}
+                onChange={(event) => setStorageCellFilter(event.target.value)}
+                aria-label="Фильтр по ячейке"
+                disabled={!storageStoreId || storageOptionsLoading}
+              >
+                <option value="all">Все ячейки</option>
+                <option value="assigned">Ячейка назначена</option>
+                <option value="unassigned">Без ячейки</option>
+                {storageCells.map((cell) => <option key={cell.id} value={cell.id}>{cell.code}{cell.name ? ` · ${cell.name}` : ""}</option>)}
+              </select>
+              <Link href="/inventory/cells" className="mt-2 inline-flex text-xs font-semibold text-[var(--eco-rust)] hover:underline">Управление ячейками</Link>
+            </div>
+
+            <div className="eco-filter-group">
               <div className="eco-filter-title">Маркировка</div>
               <button
                 type="button"
@@ -5490,6 +5783,9 @@ export default function ProductsClient() {
               {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.map((row) => {
                 const markingBadge = productMarkingListBadge(row);
                 const normalizedOemParts = splitProductCrossReferences(row.oemParts);
+                const storageAssignment = row.storageAssignments?.find((assignment) => assignment.storeId === storageStoreId && !assignment.cellArchived)
+                  ?? row.storageAssignments?.find((assignment) => assignment.storeIsMain && !assignment.cellArchived)
+                  ?? null;
                 return (
                 <tr key={row.id} className={row.archived ? "is-archived" : ""}>
                   <td>
@@ -5518,7 +5814,18 @@ export default function ProductsClient() {
                       {row.priceNeedsSetup ? <span className="eco-product-marking-badge is-warning">Настроить цену</span> : null}
                     </div>
                   </td>
-                  <td className="eco-product-cell">{row.cell || "—"}</td>
+                  <td className="eco-product-cell">
+                    {storageAssignment ? (
+                      <button
+                        type="button"
+                        className="font-semibold hover:underline"
+                        title={[storageAssignment.storeName, storageAssignment.cellName, storageAssignment.cellZone].filter(Boolean).join(" · ")}
+                        onClick={() => openProductEditor(row)}
+                      >
+                        {storageAssignment.cellCode}
+                      </button>
+                    ) : <span title="Ячейка не назначена">—</span>}
+                  </td>
                   <td className="eco-product-oem-cell">
                     {normalizedOemParts.length ? <button type="button" onClick={() => setOemDetailsProduct(row)} aria-label={`Показать ${normalizedOemParts.length} OEM для ${row.name}`}>{normalizedOemParts.length} OEM</button> : <span title="OEM Parts не заполнены">—</span>}
                   </td>

@@ -69,9 +69,19 @@ type ProductOption = {
   buyPrice: number | null;
   totalAvailable: number;
   stock: { storeId: string; storeName: string; available: number; averageCost: number | null; slotName: string }[];
+  storageAssignments?: {
+    storeId: string;
+    storeName: string;
+    cellId: string;
+    cellCode: string;
+    cellName: string;
+    cellZone: string;
+    cellArchived: boolean;
+  }[];
 };
 
-type KnownCell = { storeId: string; storeName: string; slotName: string; available: number };
+type KnownCell = { cellId: string; storeId: string; storeName: string; slotName: string; available: number };
+type StorageCellOption = KnownCell & { name: string; zone: string; productCount: number };
 
 type Position = {
   localId: string;
@@ -86,9 +96,9 @@ type Position = {
   price: number;
   salePrice: number;
   slotName: string;
+  selectedCellId: string;
+  assignedCellId: string;
   slotStoreId: string;
-  defaultCell: string;
-  makeDefaultCell: boolean;
   knownCells: KnownCell[];
   available: number;
   availableKnown: boolean;
@@ -140,10 +150,9 @@ type MovementRow = {
     price: number;
     salePrice: number;
     slotName: string;
-    defaultCell?: string;
+    selectedCellId?: string;
     slotStoreId?: string;
     knownCells?: KnownCell[];
-    makeDefaultCell?: boolean;
   }[];
 };
 
@@ -190,10 +199,10 @@ type ReceiptDialogState =
 type CellEditorState = {
   mode: "single" | "bulk";
   localId?: string;
-  selectedCell: string;
+  selectedCellId: string;
   search: string;
   createName: string;
-  makeDefaultCell: boolean;
+  createLabel: string;
 };
 
 const technicalAdjustmentReasons = [
@@ -340,22 +349,17 @@ function productHref(productId: string) {
   return `/inventory/products?product=${encodeURIComponent(productId)}`;
 }
 
-function knownCellsFromProduct(product: Pick<ProductOption, "stock" | "cell">) {
-  const rows = product.stock
-    .map((row) => ({
-      storeId: row.storeId,
-      storeName: row.storeName,
-      slotName: cleanCell(row.slotName),
-      available: Number(row.available) || 0,
-    }))
-    .filter((row) => row.slotName);
-  const defaultCell = cleanCell(product.cell);
-  if (!defaultCell) return rows;
-  if (rows.some((row) => row.slotName.toLowerCase() === defaultCell.toLowerCase())) return rows;
-  return [
-    ...rows,
-    { storeId: "", storeName: "Основная ячейка товара", slotName: defaultCell, available: 0 },
-  ];
+function knownCellsFromProduct(product: Pick<ProductOption, "stock" | "storageAssignments">) {
+  const balanceByStore = new Map(product.stock.map((row) => [row.storeId, row]));
+  return (product.storageAssignments ?? [])
+    .filter((assignment) => !assignment.cellArchived)
+    .map((assignment) => ({
+      cellId: assignment.cellId,
+      storeId: assignment.storeId,
+      storeName: assignment.storeName,
+      slotName: assignment.cellCode,
+      available: Number(balanceByStore.get(assignment.storeId)?.available) || 0,
+    }));
 }
 
 function displayCells(cells: KnownCell[]) {
@@ -393,6 +397,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [positions, setPositions] = useState<Position[]>([]);
   const [selectedPositionIds, setSelectedPositionIds] = useState<string[]>([]);
   const [cellEditor, setCellEditor] = useState<CellEditorState | null>(null);
+  const [warehouseCellOptions, setWarehouseCellOptions] = useState<StorageCellOption[]>([]);
+  const [warehouseCellsLoading, setWarehouseCellsLoading] = useState(false);
 
   const [documentDate, setDocumentDate] = useState(todayInput());
   const [createInvoice, setCreateInvoice] = useState(false);
@@ -447,29 +453,6 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     () => stores.find((store) => store.id === selectedStoreId)?.name ?? "",
     [selectedStoreId, stores]
   );
-  const warehouseCellOptions = useMemo(() => {
-    const map = new Map<string, KnownCell>();
-    const add = (cell: KnownCell) => {
-      const slotName = cleanCell(cell.slotName);
-      if (!slotName) return;
-      const key = slotName.toLowerCase();
-      if (!map.has(key)) map.set(key, { ...cell, slotName });
-    };
-    for (const product of products) {
-      for (const cell of knownCellsFromProduct(product)) {
-        if (!selectedStoreId || !cell.storeId || cell.storeId === selectedStoreId) add(cell);
-      }
-    }
-    for (const position of positions) {
-      for (const cell of position.knownCells) {
-        if (!selectedStoreId || !cell.storeId || cell.storeId === selectedStoreId) add(cell);
-      }
-      if (position.slotName && (!selectedStoreId || !position.slotStoreId || position.slotStoreId === selectedStoreId)) {
-        add({ storeId: position.slotStoreId, storeName: selectedStoreName, slotName: position.slotName, available: position.available });
-      }
-    }
-    return [...map.values()].sort((a, b) => a.slotName.localeCompare(b.slotName, "ru"));
-  }, [positions, products, selectedStoreId, selectedStoreName]);
   const lastDocument = documents[0] ?? null;
   const documentPageCount = Math.max(1, Math.ceil(documentsMeta.total / DOCUMENT_PAGE_SIZE));
   const documentsDisplayStart = documentsMeta.total === 0 ? 0 : documentsMeta.offset + 1;
@@ -569,26 +552,40 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     const today = todayInput();
     setEditingDocument(document);
     setFormMode(mode);
-    setPositions(document.positions.map((position) => ({
-      localId: makeLocalId(),
-      documentPositionId: position.id,
-      productId: position.productId ?? "",
-      entityType: position.entityType,
-      name: position.name,
-      article: position.article || position.code,
-      code: position.code,
-      brand: position.brand,
-      quantity: position.quantity,
-      price: position.price,
-      salePrice: position.salePrice,
-      slotName: position.slotName,
-      slotStoreId: position.slotStoreId || (position.slotName ? document.storeId : ""),
-      defaultCell: position.defaultCell || "",
-      makeDefaultCell: Boolean(position.makeDefaultCell),
-      knownCells: position.knownCells ?? [],
-      available: 0,
-      availableKnown: false,
-    })));
+    setPositions(document.positions.map((position) => {
+      const selectedCellId = position.selectedCellId ?? "";
+      const baseKnownCells = position.knownCells ?? [];
+      const knownCells = selectedCellId && position.slotName && !baseKnownCells.some((cell) => cell.cellId === selectedCellId)
+        ? [...baseKnownCells, {
+            cellId: selectedCellId,
+            storeId: document.storeId,
+            storeName: document.storeName,
+            slotName: position.slotName,
+            available: 0,
+          }]
+        : baseKnownCells;
+      const currentAssignment = knownCells.find((cell) => cell.storeId === document.storeId);
+      return {
+        localId: makeLocalId(),
+        documentPositionId: position.id,
+        productId: position.productId ?? "",
+        entityType: position.entityType,
+        name: position.name,
+        article: position.article || position.code,
+        code: position.code,
+        brand: position.brand,
+        quantity: position.quantity,
+        price: position.price,
+        salePrice: position.salePrice,
+        slotName: position.slotName,
+        selectedCellId,
+        assignedCellId: currentAssignment?.cellId ?? "",
+        slotStoreId: position.slotStoreId || (position.slotName ? document.storeId : ""),
+        knownCells,
+        available: 0,
+        availableKnown: false,
+      };
+    }));
     setSelectedPositionIds([]);
     setCellEditor(null);
     setDescription(document.description || "");
@@ -760,15 +757,72 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setPositions((prev) =>
       prev.map((position) => {
         const storeCell = position.knownCells.find((cell) => cell.storeId === selectedStoreId);
-        if (!storeCell) return { ...position, available: 0, availableKnown: true };
+        const storeChanged = Boolean(position.slotStoreId && position.slotStoreId !== selectedStoreId);
+        if (!storeCell) return {
+          ...position,
+          available: 0,
+          availableKnown: true,
+          ...(storeChanged ? { slotName: "", selectedCellId: "", assignedCellId: "", slotStoreId: "" } : {}),
+        };
         return {
           ...position,
           available: storeCell.available,
           availableKnown: true,
+          ...(storeChanged ? {
+            slotName: storeCell.slotName,
+            selectedCellId: storeCell.cellId,
+            assignedCellId: storeCell.cellId,
+            slotStoreId: selectedStoreId,
+          } : {}),
         };
       })
     );
   }, [selectedStoreId]);
+
+  useEffect(() => {
+    if (!isReceipt || !selectedStoreId) {
+      setWarehouseCellOptions([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setWarehouseCellsLoading(true);
+      try {
+        const params = new URLSearchParams({ status: "all", limit: "100", sort: "code" });
+        const query = cellEditor?.search.trim();
+        if (query) params.set("search", query);
+        const response = await fetch(`/api/local-inventory/stores/${encodeURIComponent(selectedStoreId)}/cells?${params}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const result = await readJson<{
+          cells?: Array<{ id: string; code: string; name: string; zone: string; productCount: number }>;
+          error?: string;
+        }>(response);
+        if (!response.ok || !result) throw new Error(result?.error || "Не удалось загрузить ячейки");
+        setWarehouseCellOptions((result.cells ?? []).map((cell) => ({
+          cellId: cell.id,
+          storeId: selectedStoreId,
+          storeName: selectedStoreName,
+          slotName: cell.code,
+          available: 0,
+          name: cell.name,
+          zone: cell.zone,
+          productCount: cell.productCount,
+        })));
+      } catch (cause) {
+        if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+          setFormError(cause instanceof Error ? cause.message : "Не удалось загрузить ячейки");
+        }
+      } finally {
+        if (!controller.signal.aborted) setWarehouseCellsLoading(false);
+      }
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [cellEditor?.search, isReceipt, selectedStoreId, selectedStoreName]);
 
   useEffect(() => {
     const query = productSearch.trim();
@@ -845,18 +899,14 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     return product.stock.find((row) => row.storeId === selectedStoreId)?.available ?? 0;
   }
 
-  function stockRowForSelectedStore(product: ProductOption) {
-    return selectedStoreId ? product.stock.find((row) => row.storeId === selectedStoreId) : null;
-  }
-
   function slotForStore(product: ProductOption) {
-    const warehouseCell = cleanCell(stockRowForSelectedStore(product)?.slotName);
-    return warehouseCell || cleanCell(product.cell);
+    return product.storageAssignments?.find((assignment) => assignment.storeId === selectedStoreId && !assignment.cellArchived)?.cellCode ?? "";
   }
 
   function slotStoreForProduct(product: ProductOption) {
-    const row = stockRowForSelectedStore(product);
-    return cleanCell(row?.slotName) ? row?.storeId ?? "" : "";
+    return product.storageAssignments?.some((assignment) => assignment.storeId === selectedStoreId && !assignment.cellArchived)
+      ? selectedStoreId
+      : "";
   }
 
   function productSearchCellLabel(product: ProductOption) {
@@ -886,7 +936,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     if (readOnly) return;
     const quantityToAdd = Math.max(1, Math.floor(Number(requestedQuantity) || 1));
     const slotName = slotForStore(product);
-    const defaultCell = cleanCell(product.cell);
+    const assignment = product.storageAssignments?.find((item) => item.storeId === selectedStoreId && !item.cellArchived);
     const storeAverageCost = product.stock.find((row) => row.storeId === selectedStoreId)?.averageCost ?? null;
     setPositions((prev) => {
       const existing = prev.find((position) => position.productId === product.id);
@@ -911,9 +961,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           price: isReceipt ? product.buyPrice ?? 0 : storeAverageCost ?? 0,
           salePrice: product.salePrice ?? 0,
           slotName,
+          selectedCellId: assignment?.cellId ?? "",
+          assignedCellId: assignment?.cellId ?? "",
           slotStoreId: slotStoreForProduct(product),
-          defaultCell,
-          makeDefaultCell: !defaultCell && Boolean(slotName),
           knownCells: knownCellsFromProduct(product),
           available: availableForStore(product),
           availableKnown: true,
@@ -957,10 +1007,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setCellEditor({
       mode: "single",
       localId: position.localId,
-      selectedCell: position.slotName,
+      selectedCellId: position.selectedCellId,
       search: "",
       createName: "",
-      makeDefaultCell: position.makeDefaultCell || (!position.defaultCell && Boolean(position.slotName)),
+      createLabel: "",
     });
   }
 
@@ -969,24 +1019,17 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setFormError(null);
     setCellEditor({
       mode: "bulk",
-      selectedCell: "",
+      selectedCellId: "",
       search: "",
       createName: "",
-      makeDefaultCell: false,
+      createLabel: "",
     });
   }
 
-  function saveCellEditor() {
+  async function saveCellEditor() {
     if (!cellEditor || readOnly) return;
-    const requestedCell = cleanCell(cellEditor.selectedCell || cellEditor.createName);
-    const existingCell = warehouseCellOptions.find((cell) => cell.slotName.toLowerCase() === requestedCell.toLowerCase());
-    const nextCell = existingCell?.slotName ?? requestedCell;
     if (!selectedStoreId) {
       setFormError("Выберите склад перед назначением ячейки");
-      return;
-    }
-    if (!nextCell) {
-      setFormError("Укажите ячейку");
       return;
     }
     const targetIds = cellEditor.mode === "bulk" ? selectedPositionIds : [cellEditor.localId].filter(Boolean) as string[];
@@ -994,40 +1037,76 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       setFormError("Выберите строки для назначения ячейки");
       return;
     }
+    let selected = warehouseCellOptions.find((cell) => cell.cellId === cellEditor.selectedCellId) ?? null;
+    const createCode = cleanCell(cellEditor.createName);
+    if (!selected && createCode) {
+      selected = warehouseCellOptions.find((cell) => cell.slotName.toLocaleLowerCase("ru-RU") === createCode.toLocaleLowerCase("ru-RU")) ?? null;
+      if (!selected) {
+        try {
+          const response = await fetch(`/api/local-inventory/stores/${encodeURIComponent(selectedStoreId)}/cells`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: createCode, name: cellEditor.createLabel.trim() || undefined }),
+          });
+          const result = await readJson<{ cell?: { id: string; code: string; name: string; zone: string; productCount: number }; error?: string }>(response);
+          if (!response.ok || !result?.cell) throw new Error(result?.error || "Не удалось создать ячейку");
+          selected = {
+            cellId: result.cell.id,
+            storeId: selectedStoreId,
+            storeName: selectedStoreName,
+            slotName: result.cell.code,
+            available: 0,
+            name: result.cell.name,
+            zone: result.cell.zone,
+            productCount: result.cell.productCount,
+          };
+          setWarehouseCellOptions((current) => [...current.filter((cell) => cell.cellId !== selected!.cellId), selected!].sort((a, b) => a.slotName.localeCompare(b.slotName, "ru")));
+        } catch (cause) {
+          setFormError(cause instanceof Error ? cause.message : "Не удалось создать ячейку");
+          return;
+        }
+      }
+    }
+    if (!selected) {
+      setFormError("Выберите существующую ячейку или создайте новую");
+      return;
+    }
+    const nextCell = selected.slotName;
+    const nextCellId = selected.cellId;
     setPositions((prev) =>
       prev.map((position) => {
         if (!targetIds.includes(position.localId)) return position;
-        const nextKnown = position.knownCells.some(
-          (cell) => cell.storeId === selectedStoreId && cell.slotName.toLowerCase() === nextCell.toLowerCase()
-        )
-          ? position.knownCells
-          : [
-              ...position.knownCells,
-              { storeId: selectedStoreId, storeName: selectedStoreName, slotName: nextCell, available: position.available },
-            ];
+        const nextKnown = [
+          ...position.knownCells.filter((cell) => cell.storeId !== selectedStoreId),
+          { cellId: nextCellId, storeId: selectedStoreId, storeName: selectedStoreName, slotName: nextCell, available: position.available },
+        ];
         return {
           ...position,
           slotName: nextCell,
+          selectedCellId: nextCellId,
           slotStoreId: selectedStoreId,
           knownCells: nextKnown,
-          makeDefaultCell: cellEditor.mode === "single"
-            ? cellEditor.makeDefaultCell
-            : cellEditor.makeDefaultCell || (!position.defaultCell && Boolean(nextCell)),
         };
       })
     );
-    setInfo(targetIds.length > 1 ? `Ячейка ${nextCell} назначена для ${targetIds.length} строк.` : "Ячейка назначена.");
+    setInfo(targetIds.length > 1
+      ? `Ячейка ${nextCell} выбрана для ${targetIds.length} строк. Фактическое место изменится при проведении приёмки.`
+      : `Ячейка ${nextCell} выбрана. Фактическое место изменится при проведении приёмки.`);
     setFormError(null);
     setCellEditor(null);
   }
 
   function renderCellEditor(targetPosition?: Position) {
     if (!cellEditor) return null;
-    const query = cellEditor.search.trim().toLowerCase();
-    const options = warehouseCellOptions.filter((cell) => !query || cell.slotName.toLowerCase().includes(query));
-    const selectedCell = cleanCell(cellEditor.selectedCell || cellEditor.createName);
-    const defaultCell = targetPosition?.defaultCell ?? "";
-    const defaultWarning = cellEditor.mode === "single" && cellEditor.makeDefaultCell && defaultCell && selectedCell && defaultCell !== selectedCell;
+    const query = cellEditor.search.trim().toLocaleLowerCase("ru-RU");
+    const options = warehouseCellOptions.filter((cell) =>
+      !query || [cell.slotName, cell.name, cell.zone].some((value) => value.toLocaleLowerCase("ru-RU").includes(query))
+    );
+    const selectedCell = warehouseCellOptions.find((cell) => cell.cellId === cellEditor.selectedCellId) ?? null;
+    const assignmentWillChange = cellEditor.mode === "single" && Boolean(
+      targetPosition?.assignedCellId && selectedCell && targetPosition.assignedCellId !== selectedCell.cellId
+    );
+    const previousAssignedCell = targetPosition?.knownCells.find((cell) => cell.cellId === targetPosition.assignedCellId) ?? null;
     const exactExisting = warehouseCellOptions.find((cell) => cell.slotName.toLowerCase() === cleanCell(cellEditor.createName).toLowerCase());
     return (
       <div className="eco-receipt-cell-popover" role="dialog" aria-label="Назначение ячейки">
@@ -1049,50 +1128,53 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           />
         </label>
         <div className="eco-receipt-cell-options">
-          {options.length === 0 ? (
-            <span>На выбранном складе известных ячеек пока нет.</span>
+          {warehouseCellsLoading ? (
+            <span>Поиск ячеек…</span>
+          ) : options.length === 0 ? (
+            <span>На выбранном складе подходящих ячеек нет.</span>
           ) : options.slice(0, 8).map((cell) => (
             <button
-              key={`${cell.storeId}-${cell.slotName}`}
+              key={cell.cellId}
               type="button"
-              className={selectedCell === cell.slotName ? "is-active" : ""}
-              onClick={() => setCellEditor({ ...cellEditor, selectedCell: cell.slotName, createName: "" })}
+              className={selectedCell?.cellId === cell.cellId ? "is-active" : ""}
+              onClick={() => setCellEditor({ ...cellEditor, selectedCellId: cell.cellId, createName: "", createLabel: "" })}
             >
               <MapPin size={14} />
-              <strong>{cell.slotName}</strong>
-              <em>{formatQty(cell.available)} шт.</em>
+              <strong>{cell.slotName}{cell.name ? ` · ${cell.name}` : ""}</strong>
+              <em>{cell.zone || `${cell.productCount} тов.`}</em>
             </button>
           ))}
         </div>
         <label className="eco-receipt-cell-create">
-          <span>Создать ячейку</span>
+          <span>Создать новую ячейку · код</span>
           <input
             value={cellEditor.createName}
-            onChange={(event) => setCellEditor({ ...cellEditor, createName: event.target.value, selectedCell: "" })}
+            onChange={(event) => setCellEditor({ ...cellEditor, createName: event.target.value, selectedCellId: "" })}
             placeholder="Например A-12"
           />
         </label>
+        {cellEditor.createName ? (
+          <label className="eco-receipt-cell-create">
+            <span>Название / зона</span>
+            <input
+              value={cellEditor.createLabel}
+              onChange={(event) => setCellEditor({ ...cellEditor, createLabel: event.target.value })}
+              placeholder="Например Масляные фильтры"
+            />
+          </label>
+        ) : null}
         {exactExisting && cellEditor.createName && (
           <div className="eco-receipt-cell-warning">Такая ячейка уже есть. Будет использована существующая ячейка {exactExisting.slotName}.</div>
         )}
-        {cellEditor.mode === "single" && (
-          <label className="eco-receipt-cell-checkbox">
-            <input
-              type="checkbox"
-              checked={cellEditor.makeDefaultCell}
-              onChange={(event) => setCellEditor({ ...cellEditor, makeDefaultCell: event.target.checked })}
-            />
-            <span>Сделать основной ячейкой товара</span>
-          </label>
-        )}
-        {defaultWarning && (
+        {assignmentWillChange && (
           <div className="eco-receipt-cell-warning">
-            У товара уже указана ячейка {defaultCell}. Сделать {selectedCell} основной ячейкой товара?
+            У товара уже назначена ячейка {previousAssignedCell?.slotName}. После проведения она будет заменена на {selectedCell?.slotName} — это станет единственным местом хранения всего остатка на складе.
           </div>
         )}
+        <div className="eco-receipt-cell-warning">До проведения документа выбранная ячейка остаётся только планом приёмки.</div>
         <div className="eco-receipt-cell-actions">
           <button type="button" onClick={() => setCellEditor(null)}>Отмена</button>
-          <button type="button" className="is-primary" onClick={saveCellEditor}>Сохранить</button>
+          <button type="button" className="is-primary" onClick={() => void saveCellEditor()}>{assignmentWillChange ? "Изменить ячейку" : "Сохранить"}</button>
         </div>
       </div>
     );
@@ -1204,10 +1286,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         price: position.price,
         salePrice: position.salePrice,
         slotName: position.slotName,
-        defaultCell: position.defaultCell,
+        selectedCellId: position.selectedCellId,
         slotStoreId: position.slotStoreId,
         knownCells: position.knownCells,
-        makeDefaultCell: position.makeDefaultCell,
       })),
     };
   }
@@ -1280,7 +1361,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
               price: Number(position.price) || 0,
               salePrice: isReceipt ? Math.max(0, Number(position.salePrice) || 0) : undefined,
               slotName: position.slotName || undefined,
-              makeDefaultCell: position.makeDefaultCell,
+              selectedCellId: isReceipt ? position.selectedCellId || undefined : undefined,
             })),
           }),
         }
@@ -2297,12 +2378,6 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                       <tbody>
                         {positions.map((position) => {
                           const issue = cellIssue(position);
-                          const sameStoreCells = selectedStoreId
-                            ? position.knownCells.filter((cell) => cell.storeId === selectedStoreId)
-                            : position.knownCells;
-                          const extraCells = position.slotName
-                            ? sameStoreCells.filter((cell) => cell.slotName.toLowerCase() !== position.slotName.toLowerCase()).length
-                            : 0;
                           const selected = selectedPositionIds.includes(position.localId);
                           const profit = receiptProfit(position);
                           return (
@@ -2383,12 +2458,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                 >
                                   <MapPin size={13} />
                                   <span>{position.slotName || "Не указана"}</span>
-                                  {extraCells > 0 && <em>+ ещё {extraCells}</em>}
                                 </button>
-                                {position.defaultCell && position.defaultCell !== position.slotName && (
-                                  <small>осн. {position.defaultCell}</small>
-                                )}
                                 {issue === "wrong-store" && <small className="is-danger">другой склад</small>}
+                                {!position.slotName && <small>Для товара ещё не назначено место хранения.</small>}
                               </div>
                             </td>
                             <td>

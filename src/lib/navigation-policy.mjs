@@ -112,6 +112,7 @@ export function resolveNavigationForUser({
   if (canViewWarehouse) {
     const warehouseItems = [branchOnly("/inventory/products", "Товары", "Карточки и доступные остатки.")];
     if (effectiveRole !== "mechanic") {
+      warehouseItems.push(branchOnly("/inventory/cells", "Ячейки", "Места хранения товаров по складам."));
       warehouseItems.push(branchOnly("/inventory/receipts", "Приёмка товара", "Поступления на склад."));
       warehouseItems.push(branchOnly("/inventory/writeoffs", "Корректировки", "Списания и технические изменения."));
       warehouseItems.push(branchOnly("/warehouse/inventory", "Инвентаризации", "Сверка фактических остатков."));

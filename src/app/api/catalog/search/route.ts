@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     warehouseId: sp.get("warehouseId") ?? undefined,
     storeId: sp.get("storeId") ?? undefined,
     storeName: sp.get("storeName") ?? undefined,
+    storageCell: sp.get("storageCell") ?? undefined,
     type: sp.get("type") === "service" || sp.get("type") === "product" || sp.get("type") === "all" ? (sp.get("type") as CatalogSearchParams["type"]) : undefined,
     entityType: sp.get("entityType") ?? undefined,
     categoryId: sp.get("categoryId") ?? undefined,
