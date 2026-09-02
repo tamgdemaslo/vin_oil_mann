@@ -2955,6 +2955,129 @@ model MannFluidRequirementLink {
   @@map("mann_fluid_requirement_links")
 }
 
+/// Каноническая MANN-модификация. На expand-этапе таблица создаётся пустой:
+/// backfill из MannFilterApplication выполняется отдельной одобренной операцией.
+model MannVehicleVariant {
+  key                   String   @id @map("variant_key")
+  make                  String
+  makeNormalized        String   @map("make_normalized")
+  model                 String
+  modelNormalized       String   @map("model_normalized")
+  generation            String?
+  bodyCodesJson         Json     @default("[]") @map("body_codes_json")
+  modelYears            String?  @map("model_years")
+  yearFrom              Int?     @map("year_from")
+  yearTo                Int?     @map("year_to")
+  vehicleText           String?  @map("vehicle_text") @db.Text
+  engineCode            String?  @map("engine_code")
+  engineCodeNormalized  String?  @map("engine_code_normalized")
+  engineCodesJson       Json     @default("[]") @map("engine_codes_json")
+  engineVolumeCc        Int?     @map("engine_volume_cc")
+  powerKw               Int?     @map("power_kw")
+  powerHp               Int?     @map("power_hp")
+  fuelType              String?  @map("fuel_type")
+  driveType             String?  @map("drive_type")
+  transmissionType      String?  @map("transmission_type")
+  conditionText         String?  @map("condition_text") @db.Text
+  canonicalPayloadHash  String   @map("canonical_payload_hash")
+  sourceHashesJson      Json     @default("[]") @map("source_hashes_json")
+  firstSeenAt           DateTime @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt            DateTime @map("last_seen_at") @db.Timestamptz(6)
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  technicalRevisions MannTechnicalAssociationRevision[]
+
+  @@index([makeNormalized, modelNormalized], map: "mann_vehicle_variants_make_model_idx")
+  @@index([engineCodeNormalized], map: "mann_vehicle_variants_engine_code_idx")
+  @@index([yearFrom, yearTo], map: "mann_vehicle_variants_year_range_idx")
+  @@map("mann_vehicle_variants")
+}
+
+/// Append-only описание одного запуска materialization. Само наличие записи
+/// STAGING/DRY_RUN не разрешает запись ACTIVE-ревизий или production cutover.
+model MannTechnicalMaterializationRun {
+  id                         String   @id
+  status                     String   @default("PLANNED")
+  mode                       String   @default("DRY_RUN")
+  matcherVersion             String   @map("matcher_version")
+  capacityParserVersion      String   @map("capacity_parser_version")
+  gitCommit                  String   @map("git_commit")
+  verificationSetVersion     String?  @map("verification_set_version")
+  sourceSnapshotJson         Json     @default("{}") @map("source_snapshot_json")
+  sourceCountsJson           Json     @default("{}") @map("source_counts_json")
+  gatesJson                  Json     @default("{}") @map("gates_json")
+  approvalJson               Json     @default("{}") @map("approval_json")
+  independentHumanSignoff    Boolean  @default(false) @map("independent_human_signoff")
+  productionApplyAuthorized  Boolean  @default(false) @map("production_apply_authorized")
+  startedAt                  DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt                DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  revisions MannTechnicalAssociationRevision[]
+
+  @@index([status, createdAt], map: "mann_tech_runs_status_created_idx")
+  @@index([mode, createdAt], map: "mann_tech_runs_mode_created_idx")
+  @@map("mann_technical_materialization_runs")
+}
+
+/// Неизменяемая техническая ревизия. Source requirement хранится логическим ID,
+/// а не FK: очистка staging-импорта не должна удалять canonical audit history.
+model MannTechnicalAssociationRevision {
+  id                    String                          @id
+  runId                 String                          @map("run_id")
+  run                   MannTechnicalMaterializationRun @relation(fields: [runId], references: [id], onDelete: Restrict, map: "mann_tech_revision_run_fkey")
+  vehicleVariantKey     String                          @map("vehicle_variant_key")
+  vehicleVariant        MannVehicleVariant              @relation(fields: [vehicleVariantKey], references: [key], onDelete: Restrict, map: "mann_tech_revision_vehicle_fkey")
+  sourceRequirementId   String                          @map("source_requirement_id")
+  systemCode            String                          @map("system_code")
+  componentModel        String?                         @map("component_model")
+  applicabilityJson     Json                            @default("{}") @map("applicability_json")
+  verifiedFieldsJson    Json                            @default("[]") @map("verified_fields_json")
+  technicalDataJson     Json                            @default("{}") @map("technical_data_json")
+  fieldConfidenceJson   Json                            @default("{}") @map("field_confidence_json")
+  evidenceJson          Json                            @default("[]") @map("evidence_json")
+  provenanceJson        Json                            @default("{}") @map("provenance_json")
+  matchClass            String                          @map("match_class")
+  matchScore            Int                             @map("match_score")
+  semanticFingerprint   String                          @map("semantic_fingerprint")
+  state                 String                          @default("STAGED")
+  verificationStatus    String                          @default("UNVERIFIED") @map("verification_status")
+  applyEligible         Boolean                         @default(false) @map("apply_eligible")
+  supersedesRevisionId  String?                         @unique(map: "mann_tech_revision_supersedes_key") @map("supersedes_revision_id")
+  supersedesRevision    MannTechnicalAssociationRevision? @relation("MannTechnicalRevisionSupersession", fields: [supersedesRevisionId], references: [id], onDelete: Restrict, map: "mann_tech_revision_supersedes_fkey")
+  supersededBy          MannTechnicalAssociationRevision[] @relation("MannTechnicalRevisionSupersession")
+  createdAt             DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  reviewDecisions MannTechnicalReviewDecision[]
+
+  @@unique([runId, semanticFingerprint], map: "mann_tech_revision_run_fingerprint_key")
+  @@index([vehicleVariantKey, state, systemCode], map: "mann_tech_revision_vehicle_state_system_idx")
+  @@index([sourceRequirementId, createdAt], map: "mann_tech_revision_requirement_created_idx")
+  @@index([semanticFingerprint, createdAt], map: "mann_tech_revision_fingerprint_created_idx")
+  @@map("mann_technical_association_revisions")
+}
+
+/// Ручное решение добавляется отдельной строкой и никогда не переписывает
+/// исходный requirement или существующую technical revision.
+model MannTechnicalReviewDecision {
+  id                 String                           @id
+  revisionId         String                           @map("revision_id")
+  revision           MannTechnicalAssociationRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict, map: "mann_tech_review_revision_fkey")
+  decision           String
+  actorType          String                           @map("actor_type")
+  actorId            String?                          @map("actor_id")
+  reason             String                           @db.Text
+  evidenceJson       Json                             @default("[]") @map("evidence_json")
+  correctionJson     Json                             @default("{}") @map("correction_json")
+  createdAt          DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([revisionId, createdAt], map: "mann_tech_review_revision_created_idx")
+  @@index([decision, createdAt], map: "mann_tech_review_decision_created_idx")
+  @@map("mann_technical_review_decisions")
+}
+
 model ProductMarkingAuditLog {
   branchId         String       @default("branch-main") @map("branch_id")
   id               String       @id @default(cuid())

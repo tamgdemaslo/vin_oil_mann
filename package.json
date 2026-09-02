@@ -45,6 +45,8 @@
     "verify:mann-technical-preview": "node scripts/verify-mann-technical-preview.mjs",
     "preview:mann-primary-source-verified": "node scripts/build-mann-primary-source-verified-preview.mjs",
     "test:mann-primary-source-verified": "node scripts/test-mann-primary-source-verified-preview.mjs",
+    "preview:mann-unified-technical-staging": "node scripts/build-mann-unified-technical-staging-plan.mjs",
+    "test:mann-unified-technical-expand": "node scripts/test-mann-unified-technical-expand.mjs",
     "test:ai-vehicle-resolution": "node scripts/test-ai-vehicle-resolution.mjs",
     "test:ai-material-selection": "node scripts/test-ai-material-selection.mjs",
     "test:ai-quote-and-tech-card": "node scripts/test-ai-quote-and-tech-card.mjs",
