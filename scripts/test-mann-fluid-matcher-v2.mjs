@@ -61,7 +61,7 @@ function requirement(overrides = {}) {
   };
 }
 
-assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v7");
+assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v8");
 
 const single = matchFluidRequirementToMann(requirement(), [row({})]);
 assert.equal(single.status, "CONFIRMED_SINGLE");
@@ -170,6 +170,15 @@ const familyOnlyAcRefrigerant = matchFluidRequirementToMann(requirement({
 assert.equal(familyOnlyAcRefrigerant.status, "REVIEW_REQUIRED");
 assert.ok(familyOnlyAcRefrigerant.topCandidates[0]?.reviewBlockers.includes("для этой технической системы не подтверждён точный код двигателя"));
 
+const familyOnlyFuelTank = matchFluidRequirementToMann(requirement({
+  systemCode: "FUEL_TANK",
+  systemNameRaw: "Топливный бак",
+  engineCodeNormalized: "2AZ",
+  engineCodesJson: ["2AZ"],
+}), [row({})]);
+assert.equal(familyOnlyFuelTank.status, "REVIEW_REQUIRED");
+assert.ok(familyOnlyFuelTank.topCandidates[0]?.reviewBlockers.includes("для этой технической системы не подтверждён точный код двигателя"));
+
 const modelLevelBrakeFluid = matchFluidRequirementToMann(requirement({
   systemCode: "BRAKE_FLUID",
   systemNameRaw: "Тормозная жидкость",
@@ -231,4 +240,4 @@ const contaminatedMannRow = matchFluidRequirementToMann(requirement(), [row({
 assert.equal(contaminatedMannRow.status, "REVIEW_REQUIRED");
 assert.ok(contaminatedMannRow.topCandidates[0]?.reviewBlockers.includes("строка MANN содержит признаки загрязнения текстом PDF"));
 
-console.log("MANN fluid matcher v7 source-engine-preserving policy tests — passed");
+console.log("MANN fluid matcher v8 source-engine-preserving policy tests — passed");

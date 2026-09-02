@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { MANN_MIN_PRESENTABLE_SCORE, diagnoseMannCandidatesForTest, evaluateMannCandidate, mannMakeFormsForTest, normalizeDecodedVehicleForTest, type MannResolverTestRow, type MannVehicleCandidate, type NormalizedMannVehicle } from "@/lib/mann-vehicle-resolver";
 import { normalizeMannSearchText, normalizeMannText } from "@/lib/mann-catalog";
 
-export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v7" as const;
+export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v8" as const;
 
 export type MannFluidMatchStatus =
   | "CONFIRMED_SINGLE"
@@ -130,7 +130,7 @@ const DRIVE_EVIDENCE_REQUIRED_SYSTEMS = new Set([
 const SYSTEM_TYPE_EVIDENCE_REQUIRED = new Set(["POWER_STEERING", "SUSPENSION_HYDRAULIC", "HYDRAULIC_SYSTEM"]);
 const EXACT_ENGINE_REQUIRED_SYSTEMS = new Set([
   "ENGINE_OIL", "ENGINE_COOLANT", "INTERCOOLER_COOLANT", "INVERTER_COOLANT", "SPARK_PLUG", "GENERATOR_OIL",
-  "BRAKE_FLUID", "AC_REFRIGERANT",
+  "BRAKE_FLUID", "AC_REFRIGERANT", "FUEL_TANK",
 ]);
 
 function unique(values: Array<string | null | undefined>): string[] {
