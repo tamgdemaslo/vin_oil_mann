@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import {
   PRODUCT_ATTRIBUTE_FIELDS,
   findSimilarAttributeSuggestion,
+  getProductAttributeDictionary,
   normalizeAttributeValue,
   parseStoredAttributeValues,
   productAttributeDictionaryMetadata,
@@ -117,11 +118,12 @@ export async function GET(request: NextRequest) {
   const field = fieldValue;
   const query = request.nextUrl.searchParams.get("q") ?? "";
   const limit = Math.max(1, Math.min(50, Number.parseInt(request.nextUrl.searchParams.get("limit") ?? "40", 10) || 40));
+  const offset = Math.max(0, Number.parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0);
   const selected = request.nextUrl.searchParams.getAll("selected").map((value) => value.trim()).filter(Boolean);
 
   try {
     const usage = await fieldUsage(branchAccess.context.branchId!, field);
-    const searchResults = searchProductAttributeOptions(field, query, 100);
+    const searchResults = searchProductAttributeOptions(field, query, getProductAttributeDictionary(field).length);
     const rank = new Map(searchResults.map((option, index) => [option.value, index]));
     const resolvedSelected = selected.flatMap((value) =>
       parseStoredAttributeValues(value, field).flatMap((parsed) => {
@@ -132,7 +134,7 @@ export async function GET(request: NextRequest) {
       normalized.status === "CUSTOM" || normalized.status === "AMBIGUOUS" ? [] : [normalized.value]
     );
     const selectedSet = new Set(selectedCanonical);
-    const options = searchResults
+    const rankedOptions = searchResults
       .sort((left, right) => {
         const selectedDifference = Number(selectedSet.has(right.value)) - Number(selectedSet.has(left.value));
         if (selectedDifference) return selectedDifference;
@@ -144,8 +146,10 @@ export async function GET(request: NextRequest) {
         const countDifference = (rightUsage?.count ?? 0) - (leftUsage?.count ?? 0);
         if (countDifference) return countDifference;
         return left.value.localeCompare(right.value, "ru", { numeric: true, sensitivity: "base" });
-      })
-      .slice(0, limit)
+      });
+    const total = rankedOptions.length;
+    const options = rankedOptions
+      .slice(offset, offset + limit)
       .map((option) => ({ ...option, usageCount: usage.get(option.value)?.count ?? 0 }));
 
     const normalization = query ? normalizeAttributeValue(field, query) : null;
@@ -163,6 +167,13 @@ export async function GET(request: NextRequest) {
       suggestion,
       normalization,
       resolvedSelected,
+      pagination: {
+        offset,
+        limit,
+        total,
+        hasMore: offset + options.length < total,
+        nextOffset: offset + options.length < total ? offset + options.length : null,
+      },
       metadata: {
         version: productAttributeDictionaryMetadata.version,
         generatedAt: productAttributeDictionaryMetadata.generatedAt,

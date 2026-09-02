@@ -14,7 +14,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Недостаточно прав для экспорта аналитики" }, { status: 403 });
   }
   const requestedTable = request.nextUrl.searchParams.get("table");
-  const table = requestedTable === "services" || requestedTable === "unclassified" ? requestedTable : "products";
+  const table = requestedTable === "services"
+    || requestedTable === "unclassified"
+    || requestedTable === "plan"
+    || requestedTable === "growth"
+    ? requestedTable
+    : "products";
   try {
     const data = await runWithBranchApiContext(access.context, () =>
       getSalesPerformanceAnalytics(

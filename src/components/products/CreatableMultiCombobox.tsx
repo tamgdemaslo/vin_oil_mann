@@ -39,7 +39,7 @@ export default function CreatableMultiCombobox({
   const [activeIndex, setActiveIndex] = useState(0);
   const [pendingCustom, setPendingCustom] = useState<string | null>(null);
   const { anchorRef, popupRef, position } = useComboboxPopover(open);
-  const { data, loading, error, retry } = useProductAttributeOptions({ field, open, query, selected });
+  const { data, loading, loadingMore, error, loadMoreError, retry, loadMore } = useProductAttributeOptions({ field, open, query, selected });
   const selectedKeys = new Set(selected.map((item) => item.toLocaleUpperCase("ru-RU")));
   const options = (data?.options ?? []).filter((option) => !selectedKeys.has(option.value.toLocaleUpperCase("ru-RU")));
   const visibleActiveIndex = Math.min(activeIndex, Math.max(0, options.length - 1));
@@ -56,6 +56,12 @@ export default function CreatableMultiCombobox({
     document.addEventListener("mousedown", handlePointer);
     return () => document.removeEventListener("mousedown", handlePointer);
   }, [anchorRef, open, popupRef]);
+
+  useEffect(() => {
+    if (!open || !options.length) return;
+    document.getElementById(`${listboxId}-${visibleActiveIndex}`)?.scrollIntoView({ block: "nearest" });
+    if (visibleActiveIndex >= options.length - 5) void loadMore();
+  }, [listboxId, loadMore, open, options.length, visibleActiveIndex]);
 
   const commitValues = (values: string[]) => onChange(serializeComboboxValues(values));
   const addValue = (nextValue: string) => {
@@ -125,6 +131,11 @@ export default function CreatableMultiCombobox({
     setOpen(true);
   };
 
+  const handleOptionsScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    if (element.scrollHeight - element.scrollTop - element.clientHeight <= 96) void loadMore();
+  };
+
   const statusFor = (selectedValue: string) => data?.resolvedSelected.find((match) => match.input === selectedValue || match.value === selectedValue)?.status;
   const customAvailable = Boolean(query.trim() && !options.some((option) => option.value.toLocaleUpperCase("ru-RU") === query.trim().toLocaleUpperCase("ru-RU")));
   const normalizationPreview = data?.normalization && data.normalization.value !== query.trim() && !["CUSTOM", "AMBIGUOUS"].includes(data.normalization.status)
@@ -165,7 +176,16 @@ export default function CreatableMultiCombobox({
         <div className="product-attribute-state" aria-live="polite"><Loader2 aria-hidden className="animate-spin" />Загружаем справочник…</div>
       ) : (
         <>
-          <div id={listboxId} role="listbox" aria-multiselectable="true" aria-label={label} className="product-attribute-options">
+          <div
+            id={listboxId}
+            role="listbox"
+            aria-multiselectable="true"
+            aria-label={label}
+            aria-busy={loadingMore}
+            className="product-attribute-options"
+            onScroll={handleOptionsScroll}
+            onWheel={(event) => event.stopPropagation()}
+          >
             {options.map((option, index) => (
               <button
                 id={`${listboxId}-${index}`}
@@ -184,6 +204,8 @@ export default function CreatableMultiCombobox({
             ))}
             {!options.length ? <div className="product-attribute-empty">Ничего не найдено</div> : null}
           </div>
+          {loadingMore ? <div className="product-attribute-load-more" role="status"><Loader2 aria-hidden className="animate-spin" />Загружаем ещё…</div> : null}
+          {loadMoreError ? <button type="button" className="product-attribute-load-more is-error" onClick={() => void loadMore()}><RotateCcw aria-hidden />Повторить загрузку</button> : null}
           {customAvailable ? (
             <button type="button" className="product-attribute-create" onMouseDown={(event) => event.preventDefault()} onClick={requestCustom}>
               <Plus aria-hidden />

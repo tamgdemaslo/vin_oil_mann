@@ -115,6 +115,12 @@ assert.equal(values.serializeAttributeValues(["Dexron III", "Mercon V"], "atf"),
 assert.deepEqual(values.getProductAttributeDictionary("ilsac").filter((value) => /^GF-6/u.test(value)), ["GF-6", "GF-6A", "GF-6B"]);
 assert.ok(!values.getProductAttributeDictionary("engineOem").some((value) => /^ILSAC\s/u.test(value)), "ILSAC is excluded from engine OEM options");
 assert.ok(values.searchProductAttributeOptions("transmissionOem", "zf 11", 10).some((option) => option.value === "ZF TE-ML 11"));
+assert.equal(values.searchProductAttributeOptions("engineOem", "", 40).length, 40, "the first options page stays bounded");
+assert.equal(
+  values.searchProductAttributeOptions("engineOem", "", values.getProductAttributeDictionary("engineOem").length).length,
+  values.getProductAttributeDictionary("engineOem").length,
+  "the options API can page through the complete OEM dictionary",
+);
 
 const dirtyPayload = values.normalizeProductAttributePayload({ groupPath: "Моторное масло", entityType: "product", brand: "bardahl" });
 assert.equal(dirtyPayload.values.brand, "Bardahl");

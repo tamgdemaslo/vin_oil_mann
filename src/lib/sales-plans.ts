@@ -102,6 +102,12 @@ function normalizePlanInput(input: SalesPlanWriteInput) {
   if (targetAttachRateBasisPoints != null && targetAttachRateBasisPoints > 10_000) {
     throw new Error("План прикрепляемости не может превышать 100%");
   }
+  if (
+    targetAttachRateBasisPoints != null
+    && !(parsedKey.metricType === "PRODUCT_CATEGORY" && ["AIR_FILTER", "CABIN_FILTER"].includes(parsedKey.metricCode))
+  ) {
+    throw new Error("Attach rate задаётся только для воздушного или салонного фильтра");
+  }
   const note = input.note == null ? null : String(input.note).trim().slice(0, 2_000) || null;
   return {
     ...parsedKey,

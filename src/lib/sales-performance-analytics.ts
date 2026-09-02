@@ -128,6 +128,33 @@ export type SalesPerformanceWorkingCalendar = {
   remainingWorkingDays: number;
 };
 
+export type SalesPerformancePotentialBasis = {
+  source: "PLAN" | "LAST_90_DAYS" | "MIXED" | "UNAVAILABLE";
+  averagePerUnitCents: number | null;
+  periodDateFrom: string | null;
+  periodDateTo: string | null;
+  sampleUnits: number;
+  excludedMissingCostLines: number;
+};
+
+export type SalesPerformanceAttachOpportunity = {
+  rowKey: string;
+  metricCode: "AIR_FILTER" | "CABIN_FILTER";
+  title: string;
+  eligibleVisits: number;
+  attachedVisits: number;
+  standaloneVisits: number;
+  actualRatePercent: number | null;
+  targetRatePercent: number;
+  targetAttachedVisits: number;
+  opportunityVisits: number;
+  averageGrossProfitPerAttachedSaleCents: number | null;
+  opportunityGrossProfitCents: number | null;
+  grossProfitBasis: SalesPerformancePotentialBasis;
+  plannedBranches: number;
+  totalBranches: number;
+};
+
 export type SalesPerformancePlanFactRow = {
   rowKey: string;
   metricCode: string;
@@ -139,10 +166,13 @@ export type SalesPerformancePlanFactRow = {
   configuration: ServiceConfiguration | null;
   targetCount: number;
   actualCount: number | null;
+  previousActualCount: number | null;
+  changePercent: number | null;
   completionPercent: number | null;
   remainingToPlan: number | null;
   forecastCount: number | null;
   forecastGap: number | null;
+  forecastPreliminary: boolean;
   requiredPerWorkingDay: number | null;
   actualRevenueCents: number;
   targetRevenueCents: number | null;
@@ -153,6 +183,10 @@ export type SalesPerformancePlanFactRow = {
   targetAttachRatePercent: number | null;
   expectedRevenuePerUnitCents: number | null;
   expectedGrossProfitPerUnitCents: number | null;
+  potentialRevenueCents: number | null;
+  potentialGrossProfitCents: number | null;
+  potentialRevenueBasis: SalesPerformancePotentialBasis;
+  potentialGrossProfitBasis: SalesPerformancePotentialBasis;
   status: "completed" | "on-pace" | "risk" | "no-data";
   plannedBranches: number;
   totalBranches: number;
@@ -212,8 +246,15 @@ export type SalesPerformanceAnalytics = {
       riskRows: number;
       plannedBranches: number;
       totalBranches: number;
+      potentialRevenueCents: number | null;
+      potentialGrossProfitCents: number | null;
+      potentialRows: number;
+      unavailableProfitRows: number;
+      attachOpportunityVisits: number;
+      attachOpportunityGrossProfitCents: number | null;
     };
     rows: SalesPerformancePlanFactRow[];
+    attachOpportunities: SalesPerformanceAttachOpportunity[];
   };
   warnings: string[];
 };
@@ -476,7 +517,8 @@ async function loadLines(
   params: SalesPerformanceParams,
   period: SalesPerformancePeriod,
 ): Promise<LoadResult> {
-  const dateFrom = period.comparisonDateFrom < period.dateFrom ? period.comparisonDateFrom : period.dateFrom;
+  const baselineDateFrom = addDays(period.dateTo, -89);
+  const dateFrom = [period.comparisonDateFrom, period.dateFrom, baselineDateFrom].sort()[0];
   const dateTo = period.comparisonDateTo > period.dateTo ? period.comparisonDateTo : period.dateTo;
   const [metricRows, mappingRows, positions] = await Promise.all([
     prisma.salesAnalyticsMetric.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }] }),
@@ -1035,6 +1077,28 @@ type SalesPlanActual = {
   grossProfitCents: number | null;
 };
 
+type HistoricalAverage = {
+  revenuePerUnitCents: number | null;
+  grossProfitPerUnitCents: number | null;
+  revenueSampleUnits: number;
+  grossProfitSampleUnits: number;
+  excludedMissingCostLines: number;
+};
+
+type HistoricalAverageCounter = {
+  revenueCents: number;
+  revenueUnits: number;
+  grossProfitCents: number;
+  grossProfitUnits: number;
+  excludedMissingCostLines: number;
+};
+
+type AttachGrossProfitAverage = {
+  averageCents: number | null;
+  sampleVisits: number;
+  excludedMissingCostVisits: number;
+};
+
 function salesPlanMonth(period: SalesPerformancePeriod): string | null {
   const fromMonth = period.dateFrom.slice(0, 7);
   const toMonth = period.dateTo.slice(0, 7);
@@ -1149,6 +1213,177 @@ function actualsByBranchAndRow(
   return values;
 }
 
+function branchRowKey(branchId: string, rowKey: string) {
+  return `${branchId}\u0000${rowKey}`;
+}
+
+function historicalAverages(lines: SalesPerformanceLoadedLine[]): Map<string, HistoricalAverage> {
+  const counters = new Map<string, HistoricalAverageCounter>();
+  const counterFor = (key: string) => {
+    const current = counters.get(key) ?? {
+      revenueCents: 0,
+      revenueUnits: 0,
+      grossProfitCents: 0,
+      grossProfitUnits: 0,
+      excludedMissingCostLines: 0,
+    };
+    counters.set(key, current);
+    return current;
+  };
+
+  for (const line of lines) {
+    if (line.kind !== "product" || line.classification.status !== "classified") continue;
+    const units = line.classification.baseQuantity;
+    if (units == null || units <= 0) continue;
+    const current = counterFor(branchRowKey(line.branchId, line.rowKey));
+    current.revenueCents += line.revenueCents;
+    current.revenueUnits += units;
+    if (line.grossProfitCents == null) current.excludedMissingCostLines += 1;
+    else {
+      current.grossProfitCents += line.grossProfitCents;
+      current.grossProfitUnits += units;
+    }
+  }
+
+  const linesByVisit = new Map<string, SalesPerformanceLoadedLine[]>();
+  for (const line of lines) {
+    const key = `${line.branchId}\u0000${line.demandId}`;
+    const visitLines = linesByVisit.get(key) ?? [];
+    visitLines.push(line);
+    linesByVisit.set(key, visitLines);
+  }
+  for (const visitLines of linesByVisit.values()) {
+    const serviceLinesByKey = new Map<string, SalesPerformanceLoadedLine[]>();
+    for (const line of visitLines) {
+      if (line.kind !== "service" || line.classification.status !== "classified" || !line.classification.metricCode) continue;
+      const serviceLines = serviceLinesByKey.get(line.rowKey) ?? [];
+      serviceLines.push(line);
+      serviceLinesByKey.set(line.rowKey, serviceLines);
+    }
+    const serviceKeys = [...serviceLinesByKey.keys()];
+    const operations = new Map<string, { revenueCents: number; grossProfitCents: number; missingCostLines: number }>();
+    for (const [rowKey, serviceLines] of serviceLinesByKey) {
+      const directRevenueCents = serviceLines.reduce((sum, line) => sum + line.revenueCents, 0);
+      operations.set(rowKey, { revenueCents: directRevenueCents, grossProfitCents: directRevenueCents, missingCostLines: 0 });
+    }
+    for (const productLine of visitLines) {
+      if (productLine.kind !== "product" || productLine.classification.status !== "classified" || !productLine.classification.metricCode) continue;
+      const eligibleKeys = serviceKeys.filter((rowKey) => {
+        const serviceLine = serviceLinesByKey.get(rowKey)?.[0];
+        return serviceLine?.classification.metricCode
+          ? serviceAcceptsProduct(serviceLine.classification.metricCode, productLine.classification.metricCode as string)
+          : false;
+      });
+      if (eligibleKeys.length !== 1) continue;
+      const operation = operations.get(eligibleKeys[0]);
+      if (!operation) continue;
+      operation.revenueCents += productLine.revenueCents;
+      if (productLine.grossProfitCents == null) operation.missingCostLines += 1;
+      else operation.grossProfitCents += productLine.grossProfitCents;
+    }
+    for (const [rowKey, operation] of operations) {
+      const current = counterFor(branchRowKey(visitLines[0].branchId, rowKey));
+      current.revenueCents += operation.revenueCents;
+      current.revenueUnits += 1;
+      if (operation.missingCostLines) current.excludedMissingCostLines += operation.missingCostLines;
+      else {
+        current.grossProfitCents += operation.grossProfitCents;
+        current.grossProfitUnits += 1;
+      }
+    }
+  }
+
+  return new Map([...counters].map(([key, value]) => [key, {
+    revenuePerUnitCents: value.revenueUnits > 0 ? value.revenueCents / value.revenueUnits : null,
+    grossProfitPerUnitCents: value.grossProfitUnits > 0 ? value.grossProfitCents / value.grossProfitUnits : null,
+    revenueSampleUnits: value.revenueUnits,
+    grossProfitSampleUnits: value.grossProfitUnits,
+    excludedMissingCostLines: value.excludedMissingCostLines,
+  }]));
+}
+
+function historicalAttachGrossProfit(lines: SalesPerformanceLoadedLine[]): Map<string, AttachGrossProfitAverage> {
+  const values = new Map<string, { grossProfitCents: number; sampleVisits: number; excludedMissingCostVisits: number }>();
+  const linesByVisit = new Map<string, SalesPerformanceLoadedLine[]>();
+  for (const line of lines) {
+    const key = `${line.branchId}\u0000${line.demandId}`;
+    const visitLines = linesByVisit.get(key) ?? [];
+    visitLines.push(line);
+    linesByVisit.set(key, visitLines);
+  }
+  for (const visitLines of linesByVisit.values()) {
+    const hasEngineOilChange = visitLines.some((line) =>
+      line.kind === "service"
+      && line.classification.status === "classified"
+      && line.classification.metricCode === "ENGINE_OIL_CHANGE"
+    );
+    if (!hasEngineOilChange) continue;
+    for (const metricCode of ["AIR_FILTER", "CABIN_FILTER"] as const) {
+      const productLines = visitLines.filter((line) =>
+        line.kind === "product"
+        && line.classification.status === "classified"
+        && line.classification.metricCode === metricCode
+      );
+      if (!productLines.length) continue;
+      const key = branchRowKey(visitLines[0].branchId, metricCode);
+      const current = values.get(key) ?? { grossProfitCents: 0, sampleVisits: 0, excludedMissingCostVisits: 0 };
+      if (productLines.some((line) => line.grossProfitCents == null)) current.excludedMissingCostVisits += 1;
+      else {
+        current.grossProfitCents += productLines.reduce((sum, line) => sum + (line.grossProfitCents ?? 0), 0);
+        current.sampleVisits += 1;
+      }
+      values.set(key, current);
+    }
+  }
+  return new Map([...values].map(([key, value]) => [key, {
+    averageCents: value.sampleVisits ? value.grossProfitCents / value.sampleVisits : null,
+    sampleVisits: value.sampleVisits,
+    excludedMissingCostVisits: value.excludedMissingCostVisits,
+  }]));
+}
+
+/** Pure formula for a quantity gap. The explicit plan value always wins over the historical average. */
+export function calculateSalesPotential(
+  remainingToPlan: number | null,
+  explicitPerUnitCents: number | null,
+  historicalPerUnitCents: number | null,
+) {
+  const units = remainingToPlan == null ? null : Math.max(0, remainingToPlan);
+  const averagePerUnitCents = explicitPerUnitCents ?? historicalPerUnitCents;
+  return {
+    amountCents: units == null || averagePerUnitCents == null ? null : Math.round(units * averagePerUnitCents),
+    averagePerUnitCents,
+    source: explicitPerUnitCents != null
+      ? "PLAN" as const
+      : historicalPerUnitCents != null
+        ? "LAST_90_DAYS" as const
+        : "UNAVAILABLE" as const,
+  };
+}
+
+/** Pure attach-rate formula. Callers supply distinct eligible and attached visit counts. */
+export function calculateAttachOpportunity(
+  eligibleVisits: number,
+  attachedVisits: number,
+  targetRatePercent: number,
+  averageGrossProfitPerAttachedSaleCents: number | null,
+) {
+  const eligible = Math.max(0, Math.floor(eligibleVisits));
+  const attached = Math.max(0, Math.floor(attachedVisits));
+  const rate = Math.min(100, Math.max(0, targetRatePercent));
+  const targetAttachedVisits = Math.ceil(eligible * rate / 100);
+  const opportunityVisits = Math.max(targetAttachedVisits - attached, 0);
+  return {
+    targetAttachedVisits,
+    opportunityVisits,
+    opportunityGrossProfitCents: opportunityVisits === 0
+      ? 0
+      : averageGrossProfitPerAttachedSaleCents == null
+        ? null
+        : Math.round(opportunityVisits * averageGrossProfitPerAttachedSaleCents),
+  };
+}
+
 function sumOptional(plans: BranchSalesPlan[], field: "targetRevenueCents" | "targetGrossProfitCents") {
   return plans.some((plan) => plan[field] != null)
     ? plans.reduce((sum, plan) => sum + (plan[field] ?? 0), 0)
@@ -1169,9 +1404,66 @@ function forecastAtPace(actual: number | null, calendar: SalesPerformanceWorking
   return actual / calendar.elapsedWorkingDays * calendar.totalWorkingDays;
 }
 
+type PotentialPart = {
+  remaining: number;
+  explicitPerUnitCents: number | null;
+  historicalPerUnitCents: number | null;
+  historicalSampleUnits: number;
+  excludedMissingCostLines: number;
+};
+
+function combinePotential(
+  parts: PotentialPart[],
+  baselineDateFrom: string,
+  baselineDateTo: string,
+): { amountCents: number | null; basis: SalesPerformancePotentialBasis } {
+  const active = parts.filter((part) => part.remaining > 0);
+  const considered = active.length ? active : parts;
+  const resolved = considered.map((part) => ({ part, ...calculateSalesPotential(
+    part.remaining,
+    part.explicitPerUnitCents,
+    part.historicalPerUnitCents,
+  ) }));
+  const unavailable = active.some((part) => part.explicitPerUnitCents == null && part.historicalPerUnitCents == null);
+  const sources = new Set(resolved.filter((item) => item.source !== "UNAVAILABLE").map((item) => item.source));
+  const source: SalesPerformancePotentialBasis["source"] = unavailable || !sources.size
+    ? "UNAVAILABLE"
+    : sources.size > 1
+      ? "MIXED"
+      : [...sources][0] as "PLAN" | "LAST_90_DAYS";
+  const amountCents = unavailable
+    ? null
+    : active.length
+      ? resolved.reduce((sum, item) => sum + (item.amountCents ?? 0), 0)
+      : 0;
+  const remaining = active.reduce((sum, part) => sum + part.remaining, 0);
+  const fallbackAverage = resolved.find((item) => item.averagePerUnitCents != null)?.averagePerUnitCents ?? null;
+  const averagePerUnitCents = amountCents == null
+    ? null
+    : remaining > 0
+      ? amountCents / remaining
+      : fallbackAverage;
+  const usesHistory = source === "LAST_90_DAYS" || source === "MIXED" || source === "UNAVAILABLE";
+  return {
+    amountCents,
+    basis: {
+      source,
+      averagePerUnitCents,
+      periodDateFrom: usesHistory ? baselineDateFrom : null,
+      periodDateTo: usesHistory ? baselineDateTo : null,
+      sampleUnits: considered.reduce((sum, part) => sum + (part.historicalPerUnitCents == null ? 0 : part.historicalSampleUnits), 0),
+      excludedMissingCostLines: considered.reduce((sum, part) => sum + part.excludedMissingCostLines, 0),
+    },
+  };
+}
+
 function buildPlanFactRows(
   planContext: SalesPlanLoadResult,
   currentLines: SalesPerformanceLoadedLine[],
+  previousLines: SalesPerformanceLoadedLine[],
+  baselineLines: SalesPerformanceLoadedLine[],
+  baselineDateFrom: string,
+  baselineDateTo: string,
   branchIds: string[],
   metrics: SalesAnalyticsMetricDefinition[],
 ): SalesPerformancePlanFactRow[] {
@@ -1179,6 +1471,8 @@ function buildPlanFactRows(
   const metricByCode = new Map(metrics.map((metric) => [metric.code, metric]));
   const calendarByBranch = new Map(planContext.calendars.map((calendar) => [calendar.branchId, calendar]));
   const actuals = actualsByBranchAndRow(currentLines, branchIds, metrics);
+  const previousActuals = actualsByBranchAndRow(previousLines, branchIds, metrics);
+  const baselines = historicalAverages(baselineLines);
   const grouped = new Map<string, BranchSalesPlan[]>();
   for (const plan of planContext.plans) {
     const rows = grouped.get(plan.rowKey) ?? [];
@@ -1191,10 +1485,14 @@ function buildPlanFactRows(
     const branchActuals = plans.map((plan) => ({
       plan,
       actual: actuals.get(`${plan.branchId}:${rowKey}`) ?? { count: 0, revenueCents: 0, grossProfitCents: 0 },
+      previous: previousActuals.get(`${plan.branchId}:${rowKey}`) ?? { count: 0, revenueCents: 0, grossProfitCents: 0 },
+      baseline: baselines.get(branchRowKey(plan.branchId, rowKey)),
       calendar: calendarByBranch.get(plan.branchId),
     }));
     const hasUnknownCount = branchActuals.some((item) => item.actual.count == null);
+    const hasUnknownPreviousCount = branchActuals.some((item) => item.previous.count == null);
     const actualCount = hasUnknownCount ? null : branchActuals.reduce((sum, item) => sum + (item.actual.count ?? 0), 0);
+    const previousActualCount = hasUnknownPreviousCount ? null : branchActuals.reduce((sum, item) => sum + (item.previous.count ?? 0), 0);
     const targetCount = plans.reduce((sum, plan) => sum + Number(plan.targetCount), 0);
     const actualRevenueCents = branchActuals.reduce((sum, item) => sum + item.actual.revenueCents, 0);
     const actualGrossProfitCents = branchActuals.some((item) => item.actual.grossProfitCents == null)
@@ -1216,6 +1514,23 @@ function buildPlanFactRows(
         const gap = Math.max(0, Number(item.plan.targetCount) - (item.actual.count ?? 0));
         return sum + (item.calendar.remainingWorkingDays ? gap / item.calendar.remainingWorkingDays : gap);
       }, 0);
+    const remainingToPlan = actualCount == null
+      ? null
+      : branchActuals.reduce((sum, item) => sum + Math.max(0, Number(item.plan.targetCount) - (item.actual.count ?? 0)), 0);
+    const potentialRevenue = combinePotential(branchActuals.map((item) => ({
+      remaining: item.actual.count == null ? 0 : Math.max(0, Number(item.plan.targetCount) - item.actual.count),
+      explicitPerUnitCents: item.plan.expectedRevenuePerUnitCents,
+      historicalPerUnitCents: item.baseline?.revenuePerUnitCents ?? null,
+      historicalSampleUnits: item.baseline?.revenueSampleUnits ?? 0,
+      excludedMissingCostLines: 0,
+    })), baselineDateFrom, baselineDateTo);
+    const potentialGrossProfit = combinePotential(branchActuals.map((item) => ({
+      remaining: item.actual.count == null ? 0 : Math.max(0, Number(item.plan.targetCount) - item.actual.count),
+      explicitPerUnitCents: item.plan.expectedGrossProfitPerUnitCents,
+      historicalPerUnitCents: item.baseline?.grossProfitPerUnitCents ?? null,
+      historicalSampleUnits: item.baseline?.grossProfitSampleUnits ?? 0,
+      excludedMissingCostLines: item.baseline?.excludedMissingCostLines ?? 0,
+    })), baselineDateFrom, baselineDateTo);
     const completionPercent = actualCount == null || targetCount <= 0 ? null : actualCount / targetCount * 100;
     const status: SalesPerformancePlanFactRow["status"] = actualCount == null || forecastCount == null
       ? "no-data"
@@ -1236,10 +1551,15 @@ function buildPlanFactRows(
       configuration: configuration(plans[0].configuration),
       targetCount,
       actualCount,
+      previousActualCount,
+      changePercent: actualCount == null || previousActualCount == null
+        ? null
+        : centsComparison(actualCount, previousActualCount).deltaPercent,
       completionPercent,
-      remainingToPlan: actualCount == null ? null : Math.max(0, targetCount - actualCount),
+      remainingToPlan,
       forecastCount,
-      forecastGap: forecastCount == null ? null : forecastCount - targetCount,
+      forecastGap: forecastCount == null ? null : targetCount - forecastCount,
+      forecastPreliminary: branchActuals.some((item) => (item.calendar?.elapsedWorkingDays ?? 0) < 3),
       requiredPerWorkingDay,
       actualRevenueCents,
       targetRevenueCents: sumOptional(plans, "targetRevenueCents"),
@@ -1253,6 +1573,10 @@ function buildPlanFactRows(
       })(),
       expectedRevenuePerUnitCents: weightedOptional(plans, "expectedRevenuePerUnitCents"),
       expectedGrossProfitPerUnitCents: weightedOptional(plans, "expectedGrossProfitPerUnitCents"),
+      potentialRevenueCents: remainingToPlan == null ? null : potentialRevenue.amountCents,
+      potentialGrossProfitCents: remainingToPlan == null ? null : potentialGrossProfit.amountCents,
+      potentialRevenueBasis: potentialRevenue.basis,
+      potentialGrossProfitBasis: potentialGrossProfit.basis,
       status,
       plannedBranches: plans.length,
       totalBranches: branchIds.length,
@@ -1262,6 +1586,88 @@ function buildPlanFactRows(
     const leftMetric = metricByCode.get(left.metricCode)?.sortOrder ?? 9999;
     const rightMetric = metricByCode.get(right.metricCode)?.sortOrder ?? 9999;
     return leftMetric - rightMetric || left.rowKey.localeCompare(right.rowKey, "ru");
+  });
+}
+
+function buildAttachOpportunities(
+  planContext: SalesPlanLoadResult,
+  currentLines: SalesPerformanceLoadedLine[],
+  baselineLines: SalesPerformanceLoadedLine[],
+  baselineDateFrom: string,
+  baselineDateTo: string,
+  branchIds: string[],
+  metrics: SalesAnalyticsMetricDefinition[],
+): SalesPerformanceAttachOpportunity[] {
+  if (!planContext.available) return [];
+  const targetPlans = planContext.plans.filter((plan) =>
+    (plan.metricCode === "AIR_FILTER" || plan.metricCode === "CABIN_FILTER")
+    && plan.targetAttachRateBasisPoints != null
+  );
+  if (!targetPlans.length) return [];
+  const currentByBranch = new Map(branchIds.map((branchId) => [
+    branchId,
+    aggregateLines(currentLines.filter((line) => line.branchId === branchId), metrics),
+  ]));
+  const historicalProfit = historicalAttachGrossProfit(baselineLines);
+  return ([
+    ["AIR_FILTER", "Воздушный фильтр"],
+    ["CABIN_FILTER", "Салонный фильтр"],
+  ] as const).flatMap(([metricCode, title]) => {
+    const plans = targetPlans.filter((plan) => plan.metricCode === metricCode);
+    if (!plans.length) return [];
+    const branchRows = plans.map((plan) => {
+      const aggregate = currentByBranch.get(plan.branchId);
+      const eligibleVisits = aggregate?.engineOilVisitIds.size ?? 0;
+      const productVisits = aggregate?.productDemandIds.get(metricCode) ?? new Set<string>();
+      const attachedVisits = [...productVisits].filter((demandId) => aggregate?.engineOilVisitIds.has(demandId)).length;
+      const standaloneVisits = [...productVisits].filter((demandId) => !aggregate?.engineOilVisitIds.has(demandId)).length;
+      const targetRatePercent = (plan.targetAttachRateBasisPoints ?? 0) / 100;
+      const historical = historicalProfit.get(branchRowKey(plan.branchId, metricCode));
+      return {
+        eligibleVisits,
+        attachedVisits,
+        standaloneVisits,
+        targetRatePercent,
+        historical,
+        calculation: calculateAttachOpportunity(eligibleVisits, attachedVisits, targetRatePercent, historical?.averageCents ?? null),
+      };
+    });
+    const eligibleVisits = branchRows.reduce((sum, row) => sum + row.eligibleVisits, 0);
+    const attachedVisits = branchRows.reduce((sum, row) => sum + row.attachedVisits, 0);
+    const opportunityVisits = branchRows.reduce((sum, row) => sum + row.calculation.opportunityVisits, 0);
+    const hasUnavailableProfit = branchRows.some((row) => row.calculation.opportunityGrossProfitCents == null);
+    const totalSampleVisits = branchRows.reduce((sum, row) => sum + (row.historical?.sampleVisits ?? 0), 0);
+    const sampleGrossProfitCents = branchRows.reduce((sum, row) =>
+      sum + (row.historical?.averageCents ?? 0) * (row.historical?.sampleVisits ?? 0), 0);
+    const targetRatePercent = eligibleVisits
+      ? branchRows.reduce((sum, row) => sum + row.targetRatePercent * row.eligibleVisits, 0) / eligibleVisits
+      : branchRows.reduce((sum, row) => sum + row.targetRatePercent, 0) / branchRows.length;
+    return [{
+      rowKey: productRowKey(metricCode),
+      metricCode,
+      title,
+      eligibleVisits,
+      attachedVisits,
+      standaloneVisits: branchRows.reduce((sum, row) => sum + row.standaloneVisits, 0),
+      actualRatePercent: eligibleVisits ? attachedVisits / eligibleVisits * 100 : null,
+      targetRatePercent,
+      targetAttachedVisits: branchRows.reduce((sum, row) => sum + row.calculation.targetAttachedVisits, 0),
+      opportunityVisits,
+      averageGrossProfitPerAttachedSaleCents: totalSampleVisits ? sampleGrossProfitCents / totalSampleVisits : null,
+      opportunityGrossProfitCents: hasUnavailableProfit
+        ? null
+        : branchRows.reduce((sum, row) => sum + (row.calculation.opportunityGrossProfitCents ?? 0), 0),
+      grossProfitBasis: {
+        source: hasUnavailableProfit || !totalSampleVisits ? "UNAVAILABLE" : "LAST_90_DAYS",
+        averagePerUnitCents: totalSampleVisits ? sampleGrossProfitCents / totalSampleVisits : null,
+        periodDateFrom: baselineDateFrom,
+        periodDateTo: baselineDateTo,
+        sampleUnits: totalSampleVisits,
+        excludedMissingCostLines: branchRows.reduce((sum, row) => sum + (row.historical?.excludedMissingCostVisits ?? 0), 0),
+      },
+      plannedBranches: plans.length,
+      totalBranches: branchIds.length,
+    }];
   });
 }
 
@@ -1298,6 +1704,8 @@ export async function getSalesPerformanceAnalytics(
   const loaded = await loadLines(context, branchIds, params, period);
   const currentLines = loaded.lines.filter((line) => line.documentDate >= period.dateFrom && line.documentDate <= period.dateTo);
   const previousLines = loaded.lines.filter((line) => line.documentDate >= period.comparisonDateFrom && line.documentDate <= period.comparisonDateTo);
+  const baselineDateFrom = addDays(period.dateTo, -89);
+  const baselineLines = loaded.lines.filter((line) => line.documentDate >= baselineDateFrom && line.documentDate <= period.dateTo);
   const current = aggregateLines(currentLines, loaded.metrics);
   const previous = aggregateLines(previousLines, loaded.metrics);
   let products = productRows(current, previous, loaded.metrics);
@@ -1306,8 +1714,27 @@ export async function getSalesPerformanceAnalytics(
     products = products.filter((row) => row.metricCode === params.metricCode);
     services = services.filter((row) => row.metricCode === params.metricCode);
   }
-  let planRows = buildPlanFactRows(planContext, currentLines, branchIds, loaded.metrics);
+  let planRows = buildPlanFactRows(
+    planContext,
+    currentLines,
+    previousLines,
+    baselineLines,
+    baselineDateFrom,
+    period.dateTo,
+    branchIds,
+    loaded.metrics,
+  );
+  let attachOpportunities = buildAttachOpportunities(
+    planContext,
+    currentLines,
+    baselineLines,
+    baselineDateFrom,
+    period.dateTo,
+    branchIds,
+    loaded.metrics,
+  );
   if (params.metricCode) planRows = planRows.filter((row) => row.metricCode === params.metricCode);
+  if (params.metricCode) attachOpportunities = attachOpportunities.filter((row) => row.metricCode === params.metricCode);
   const revenueCents = current.productRevenueCents + current.serviceRevenueCents;
   const previousRevenueCents = previous.productRevenueCents + previous.serviceRevenueCents;
   const warnings: string[] = [];
@@ -1320,7 +1747,21 @@ export async function getSalesPerformanceAnalytics(
   if (fallbackCalendars.length) {
     warnings.push(`${fallbackCalendars.length} филиал(а) без настроенного календаря: прогноз использует график пн–сб.`);
   }
+  const unavailableProfitRows = planRows.filter((row) => row.remainingToPlan && row.potentialGrossProfitCents == null).length;
+  if (unavailableProfitRows) {
+    warnings.push(`Для ${unavailableProfitRows} строк потенциал валовой прибыли скрыт: нет плановой ставки или полной 90-дневной базы себестоимости.`);
+  }
   const plannedBranchCount = new Set(planContext.plans.map((plan) => plan.branchId)).size;
+  const sumPlanPotential = (field: "potentialRevenueCents" | "potentialGrossProfitCents") => {
+    if (!planRows.length) return null;
+    if (planRows.some((row) => (row.remainingToPlan ?? 0) > 0 && row[field] == null)) return null;
+    return planRows.reduce((sum, row) => sum + (row[field] ?? 0), 0);
+  };
+  const attachOpportunityGrossProfitCents = !attachOpportunities.length
+    ? null
+    : attachOpportunities.some((row) => row.opportunityVisits > 0 && row.opportunityGrossProfitCents == null)
+      ? null
+      : attachOpportunities.reduce((sum, row) => sum + (row.opportunityGrossProfitCents ?? 0), 0);
 
   const value: SalesPerformanceAnalytics = {
     period,
@@ -1377,8 +1818,15 @@ export async function getSalesPerformanceAnalytics(
         riskRows: planRows.filter((row) => row.status === "risk").length,
         plannedBranches: plannedBranchCount,
         totalBranches: branchIds.length,
+        potentialRevenueCents: sumPlanPotential("potentialRevenueCents"),
+        potentialGrossProfitCents: sumPlanPotential("potentialGrossProfitCents"),
+        potentialRows: planRows.filter((row) => (row.remainingToPlan ?? 0) > 0).length,
+        unavailableProfitRows,
+        attachOpportunityVisits: attachOpportunities.reduce((sum, row) => sum + row.opportunityVisits, 0),
+        attachOpportunityGrossProfitCents,
       },
       rows: planRows,
+      attachOpportunities,
     },
     warnings,
   };
@@ -1436,10 +1884,67 @@ function csvCell(value: unknown): string {
 
 export function buildSalesPerformanceCsv(
   data: SalesPerformanceAnalytics,
-  table: "products" | "services" | "unclassified",
+  table: "products" | "services" | "unclassified" | "plan" | "growth",
 ): string {
   let rows: Record<string, unknown>[];
-  if (table === "services") {
+  if (table === "plan" || table === "growth") {
+    const planRows = (table === "growth" ? data.plan.rows.filter((row) => (row.remainingToPlan ?? 0) > 0) : data.plan.rows)
+      .map((row) => ({
+        Период: `${data.period.dateFrom} — ${data.period.dateTo}`,
+        Филиал: data.scope.branchNames.join(", "),
+        Код: row.metricCode,
+        Категория: row.title,
+        Тип: row.kind === "service" ? "Услуга" : "Товар",
+        Факт: row.actualCount,
+        План: row.targetCount,
+        "Выполнение, %": row.completionPercent,
+        "Предыдущий период": row.previousActualCount,
+        "Изменение, %": row.changePercent,
+        Прогноз: row.forecastCount,
+        "Прогнозируемый разрыв": row.forecastGap,
+        "Выручка факт, ₽": row.actualRevenueCents / 100,
+        "Выручка план, ₽": row.targetRevenueCents == null ? null : row.targetRevenueCents / 100,
+        "Выручка прогноз, ₽": row.forecastRevenueCents == null ? null : row.forecastRevenueCents / 100,
+        "Валовая прибыль факт, ₽": row.actualGrossProfitCents == null ? null : row.actualGrossProfitCents / 100,
+        "Валовая прибыль план, ₽": row.targetGrossProfitCents == null ? null : row.targetGrossProfitCents / 100,
+        "Валовая прибыль прогноз, ₽": row.forecastGrossProfitCents == null ? null : row.forecastGrossProfitCents / 100,
+        "Потенциал выручки, ₽": row.potentialRevenueCents == null ? null : row.potentialRevenueCents / 100,
+        "Потенциал валовой прибыли, ₽": row.potentialGrossProfitCents == null ? null : row.potentialGrossProfitCents / 100,
+        "База потенциала выручки": row.potentialRevenueBasis.source,
+        "База потенциала прибыли": row.potentialGrossProfitBasis.source,
+        "Attach rate факт, %": null,
+        "Attach rate план, %": row.targetAttachRatePercent,
+        "Резерв attach, визитов": null,
+      }));
+    const attachRows = table === "growth" ? data.plan.attachOpportunities.map((row) => ({
+      Период: `${data.period.dateFrom} — ${data.period.dateTo}`,
+      Филиал: data.scope.branchNames.join(", "),
+      Код: row.metricCode,
+      Категория: `${row.title} — attach rate`,
+      Тип: "Attach opportunity",
+      Факт: row.attachedVisits,
+      План: row.targetAttachedVisits,
+      "Выполнение, %": row.targetAttachedVisits ? row.attachedVisits / row.targetAttachedVisits * 100 : null,
+      "Предыдущий период": null,
+      "Изменение, %": null,
+      Прогноз: null,
+      "Прогнозируемый разрыв": row.opportunityVisits,
+      "Выручка факт, ₽": null,
+      "Выручка план, ₽": null,
+      "Выручка прогноз, ₽": null,
+      "Валовая прибыль факт, ₽": null,
+      "Валовая прибыль план, ₽": null,
+      "Валовая прибыль прогноз, ₽": null,
+      "Потенциал выручки, ₽": null,
+      "Потенциал валовой прибыли, ₽": row.opportunityGrossProfitCents == null ? null : row.opportunityGrossProfitCents / 100,
+      "База потенциала выручки": null,
+      "База потенциала прибыли": row.grossProfitBasis.source,
+      "Attach rate факт, %": row.actualRatePercent,
+      "Attach rate план, %": row.targetRatePercent,
+      "Резерв attach, визитов": row.opportunityVisits,
+    })) : [];
+    rows = [...planRows, ...attachRows];
+  } else if (table === "services") {
     rows = data.services.map((row) => ({
       Код: row.metricCode,
       Операция: row.title,

@@ -426,6 +426,12 @@
   margin: -18px -18px 14px;
 }
 
+.eco-sp-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .eco-sp-table-wrap .eco-table {
   min-width: 1060px;
 }
@@ -552,6 +558,20 @@
   text-align: right;
 }
 
+.eco-sp-attach-row--opportunity > p {
+  grid-column: 1 / -1;
+  margin: 5px 0 0 26px;
+  color: var(--eco-ink-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.eco-sp-attach-row--opportunity > p + p {
+  margin-top: 0;
+  color: var(--eco-muted);
+  font-size: 11px;
+}
+
 .eco-sp-detail {
   overflow: hidden;
 }
@@ -620,6 +640,21 @@
 
 .eco-sp-plan-fact .eco-table {
   min-width: 1220px;
+}
+
+.eco-sp-growth-table .eco-table {
+  min-width: 1320px;
+}
+
+.eco-sp-growth-value {
+  color: #166534;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.eco-sp-growth-note {
+  margin-top: 12px;
 }
 
 .eco-sp-progress {
@@ -40002,9 +40037,13 @@ textarea.product-editor-input {
 }
 
 .product-attribute-options {
+  flex: 1 1 auto;
   min-height: 42px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   padding: 5px;
 }
 
@@ -40055,6 +40094,27 @@ textarea.product-editor-input {
 .product-attribute-empty {
   padding: 15px 10px;
   text-align: center;
+}
+
+.product-attribute-load-more {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 10px;
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.product-attribute-load-more.is-error {
+  color: var(--eco-danger);
+}
+
+.product-attribute-load-more.is-error:hover {
+  background: var(--eco-danger-tint);
 }
 
 .product-attribute-state {

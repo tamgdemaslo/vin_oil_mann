@@ -9,6 +9,7 @@ export type ProductAttributeOptionResponse = {
   suggestion: string | null;
   normalization: ProductAttributeMatch | null;
   resolvedSelected: ProductAttributeMatch[];
+  pagination: { offset: number; limit: number; total: number; hasMore: boolean; nextOffset: number | null };
   metadata: { version: string; generatedAt: string; complete: boolean; missingSource: boolean };
   error?: string;
 };
@@ -37,51 +38,99 @@ export function useProductAttributeOptions(input: {
 }) {
   const [data, setData] = useState<ProductAttributeOptionResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const requestRef = useRef<AbortController | null>(null);
+  const loadMoreRequestRef = useRef<AbortController | null>(null);
+  const loadingMoreRef = useRef(false);
   const selectedKey = useMemo(() => input.selected.join("\u0000"), [input.selected]);
+  const requestKey = `${input.field}\u0000${input.query.trim().toLocaleUpperCase("ru-RU")}\u0000${selectedKey}`;
+
+  const fetchPage = useCallback(async (offset: number, append: boolean, force = false) => {
+    if (append && loadingMoreRef.current) return;
+    const controller = new AbortController();
+    if (append) {
+      loadMoreRequestRef.current?.abort();
+      loadMoreRequestRef.current = controller;
+      loadingMoreRef.current = true;
+      setLoadingMore(true);
+      setLoadMoreError(null);
+    } else {
+      requestRef.current?.abort();
+      requestRef.current = controller;
+      setLoading(true);
+      setError(null);
+    }
+
+    const params = new URLSearchParams({ field: input.field, q: input.query.trim(), limit: "40", offset: String(offset) });
+    for (const selected of selectedKey ? selectedKey.split("\u0000") : []) params.append("selected", selected);
+    const cacheKey = `${requestKey}\u0000${offset}`;
+    const applyPayload = (payload: ProductAttributeOptionResponse) => {
+      setData((current) => {
+        if (!append || !current) return payload;
+        const seen = new Set(current.options.map((option) => option.value));
+        return {
+          ...payload,
+          options: [...current.options, ...payload.options.filter((option) => !seen.has(option.value))],
+          resolvedSelected: current.resolvedSelected,
+        };
+      });
+    };
+
+    try {
+      const cached = !force ? responseCache.get(cacheKey) : null;
+      if (cached) {
+        applyPayload(cached);
+        return;
+      }
+      const response = await fetch(`/api/inventory/product-attribute-options?${params}`, { cache: "no-store", signal: controller.signal });
+      const payload = await response.json().catch(() => ({})) as ProductAttributeOptionResponse;
+      if (!response.ok) throw new Error(payload.error || "Не удалось загрузить справочник");
+      if (!controller.signal.aborted) {
+        responseCache.set(cacheKey, payload);
+        applyPayload(payload);
+        if (!append) setRevision(0);
+      }
+    } catch (loadError) {
+      if (!controller.signal.aborted) {
+        const message = loadError instanceof Error ? loadError.message : "Не удалось загрузить справочник";
+        if (append) setLoadMoreError(message);
+        else setError(message);
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        if (append) {
+          loadingMoreRef.current = false;
+          setLoadingMore(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    }
+  }, [input.field, input.query, requestKey, selectedKey]);
 
   useEffect(() => {
     if (!input.open) return;
-    const timer = window.setTimeout(async () => {
-      requestRef.current?.abort();
-      const controller = new AbortController();
-      requestRef.current = controller;
-      const params = new URLSearchParams({ field: input.field, q: input.query.trim(), limit: "40" });
-      for (const selected of selectedKey ? selectedKey.split("\u0000") : []) params.append("selected", selected);
-      const cacheKey = `${input.field}\u0000${input.query.trim().toLocaleUpperCase("ru-RU")}\u0000${selectedKey}`;
-      const cached = responseCache.get(cacheKey);
-      if (cached && revision === 0) {
-        setData(cached);
-        setError(null);
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await fetch(`/api/inventory/product-attribute-options?${params}`, { cache: "no-store", signal: controller.signal });
-        const payload = await response.json().catch(() => ({})) as ProductAttributeOptionResponse;
-        if (!response.ok) throw new Error(payload.error || "Не удалось загрузить справочник");
-        if (!controller.signal.aborted) {
-          responseCache.set(cacheKey, payload);
-          setData(payload);
-          setRevision(0);
-        }
-      } catch (loadError) {
-        if (!controller.signal.aborted) setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить справочник");
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
-    }, input.query.trim() ? 120 : 0);
+    loadMoreRequestRef.current?.abort();
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    setLoadMoreError(null);
+    const timer = window.setTimeout(() => { void fetchPage(0, false, revision > 0); }, input.query.trim() ? 120 : 0);
     return () => {
       window.clearTimeout(timer);
       requestRef.current?.abort();
+      loadMoreRequestRef.current?.abort();
     };
-  }, [input.field, input.open, input.query, revision, selectedKey]);
+  }, [fetchPage, input.open, input.query, revision]);
 
   const retry = useCallback(() => setRevision((current) => current + 1), []);
-  return { data, loading, error, retry };
+  const loadMore = useCallback(async () => {
+    if (!data?.pagination.hasMore || data.pagination.nextOffset === null || loadingMoreRef.current) return;
+    await fetchPage(data.pagination.nextOffset, true);
+  }, [data, fetchPage]);
+  return { data, loading, loadingMore, error, loadMoreError, retry, loadMore };
 }
 
 export function useComboboxPopover(open: boolean) {

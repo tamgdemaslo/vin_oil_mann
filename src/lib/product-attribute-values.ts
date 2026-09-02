@@ -291,8 +291,9 @@ export function searchProductAttributeOptions(field: ProductAttributeField, quer
   const queryText = genericSearchText(rawQuery);
   const queryLookup = productAttributeLookupKey(field, rawQuery);
   const aliases = generated.verifiedAliases.filter((alias) => alias.field === field);
+  const dictionary = getProductAttributeDictionary(field);
   type RankedOption = ProductAttributeOption & { rank: number };
-  const ranked: RankedOption[] = getProductAttributeDictionary(field).flatMap((value): RankedOption[] => {
+  const ranked: RankedOption[] = dictionary.flatMap((value): RankedOption[] => {
     if (!rawQuery) return [{ value, rank: 6, matchKind: "default" as const }];
     const valueText = genericSearchText(value);
     const valueLookup = productAttributeLookupKey(field, value);
@@ -312,7 +313,7 @@ export function searchProductAttributeOptions(field: ProductAttributeField, quer
   });
   return ranked
     .sort((left, right) => left.rank - right.rank || left.value.localeCompare(right.value, "ru", { numeric: true, sensitivity: "base" }))
-    .slice(0, Math.max(1, Math.min(100, limit)))
+    .slice(0, Math.max(1, Math.min(dictionary.length, Number.isFinite(limit) ? Math.floor(limit) : dictionary.length)))
     .map(({ value, matchKind }) => ({ value, matchKind }));
 }
 

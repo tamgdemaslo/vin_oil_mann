@@ -35,7 +35,7 @@ export default function CreatableSearchCombobox({
   const [activeIndex, setActiveIndex] = useState(0);
   const [pendingCustom, setPendingCustom] = useState<string | null>(null);
   const { anchorRef, popupRef, position } = useComboboxPopover(open);
-  const { data, loading, error, retry } = useProductAttributeOptions({ field, open, query: hasTyped ? draft : "", selected: value ? [value] : [] });
+  const { data, loading, loadingMore, error, loadMoreError, retry, loadMore } = useProductAttributeOptions({ field, open, query: hasTyped ? draft : "", selected: value ? [value] : [] });
   const options = data?.options ?? [];
   const visibleDraft = hasTyped ? draft : value;
   const visibleActiveIndex = Math.min(activeIndex, Math.max(0, options.length - 1));
@@ -53,6 +53,12 @@ export default function CreatableSearchCombobox({
     document.addEventListener("mousedown", handlePointer);
     return () => document.removeEventListener("mousedown", handlePointer);
   }, [anchorRef, open, popupRef, value]);
+
+  useEffect(() => {
+    if (!open || !options.length) return;
+    document.getElementById(`${listboxId}-${visibleActiveIndex}`)?.scrollIntoView({ block: "nearest" });
+    if (visibleActiveIndex >= options.length - 5) void loadMore();
+  }, [listboxId, loadMore, open, options.length, visibleActiveIndex]);
 
   const selectValue = (nextValue: string) => {
     onChange(nextValue);
@@ -103,6 +109,11 @@ export default function CreatableSearchCombobox({
     }
   };
 
+  const handleOptionsScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    if (element.scrollHeight - element.scrollTop - element.clientHeight <= 96) void loadMore();
+  };
+
   const customAvailable = Boolean(hasTyped && draft.trim() && !options.some((option) => option.value.toLocaleUpperCase("ru-RU") === draft.trim().toLocaleUpperCase("ru-RU")));
   const normalizationPreview = hasTyped && data?.normalization && data.normalization.value !== draft.trim() && !["CUSTOM", "AMBIGUOUS"].includes(data.normalization.status)
     ? data.normalization.value
@@ -142,7 +153,15 @@ export default function CreatableSearchCombobox({
         <div className="product-attribute-state" aria-live="polite"><Loader2 aria-hidden className="animate-spin" />Загружаем справочник…</div>
       ) : (
         <>
-          <div id={listboxId} role="listbox" aria-label={label} className="product-attribute-options">
+          <div
+            id={listboxId}
+            role="listbox"
+            aria-label={label}
+            aria-busy={loadingMore}
+            className="product-attribute-options"
+            onScroll={handleOptionsScroll}
+            onWheel={(event) => event.stopPropagation()}
+          >
             {options.map((option, index) => (
               <button
                 id={`${listboxId}-${index}`}
@@ -161,6 +180,8 @@ export default function CreatableSearchCombobox({
             ))}
             {!options.length ? <div className="product-attribute-empty">Ничего не найдено</div> : null}
           </div>
+          {loadingMore ? <div className="product-attribute-load-more" role="status"><Loader2 aria-hidden className="animate-spin" />Загружаем ещё…</div> : null}
+          {loadMoreError ? <button type="button" className="product-attribute-load-more is-error" onClick={() => void loadMore()}><RotateCcw aria-hidden />Повторить загрузку</button> : null}
           {customAvailable ? (
             <button type="button" className="product-attribute-create" onMouseDown={(event) => event.preventDefault()} onClick={requestCustom}>
               <Plus aria-hidden />
