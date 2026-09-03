@@ -4,6 +4,7 @@ import { canonicalizeLogin, getLoginVariants, getUsersFromEnv } from "@/lib/auth
 import { listPayrollAdjustments, listPayrollPayments } from "@/lib/payroll-settlements";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { calculateLineFinancials } from "@/lib/inventory-costing";
+import { serviceOperationGroupId } from "@/lib/piecework-service-operations";
 import {
   calculatePieceworkAmountCents,
   extractLocalEntityId,
@@ -244,6 +245,31 @@ async function fetchLocalDemandsWithPositions(
       })
     : [];
   const fallbackProductsById = new Map(fallbackProducts.map((product) => [product.id, product]));
+  const oneOffServiceMetricCodes = [...new Set(
+    demands.flatMap((demand) => demand.positions.map((position) => {
+      const raw = recordValue(position.raw);
+      const service = recordValue(raw?.oneOffService);
+      return textValue(service?.analyticsMetricCode)?.toUpperCase() ?? null;
+    })).filter((code): code is string => Boolean(code)),
+  )];
+  const operationGroups = oneOffServiceMetricCodes.length
+    ? await prisma.localCatalogGroup.findMany({
+        where: {
+          branchId,
+          kind: "service",
+          archived: false,
+          id: { in: oneOffServiceMetricCodes.map((code) => serviceOperationGroupId(branchId, code)) },
+        },
+        select: { id: true, name: true },
+      })
+    : [];
+  const operationGroupByMetricCode = new Map(
+    oneOffServiceMetricCodes.flatMap((code) => {
+      const id = serviceOperationGroupId(branchId, code);
+      const group = operationGroups.find((candidate) => candidate.id === id);
+      return group ? [[code, group] as const] : [];
+    }),
+  );
 
   return demands.map((demand) => ({
     demand: {
@@ -256,7 +282,12 @@ async function fetchLocalDemandsWithPositions(
     positions: demand.positions.map((position) => {
       const raw = recordValue(position.raw);
       const oneOffProduct = recordValue(raw?.oneOffProduct);
+      const oneOffService = recordValue(raw?.oneOffService);
       const oneOffGroupLabel = textValue(oneOffProduct?.groupLabel);
+      const oneOffServiceMetricCode = textValue(oneOffService?.analyticsMetricCode)?.toUpperCase() ?? null;
+      const oneOffServiceGroup = oneOffServiceMetricCode
+        ? operationGroupByMetricCode.get(oneOffServiceMetricCode)
+        : undefined;
       const linkedProduct = position.product;
       const candidates = [
         ...positionProductReferenceIds(position)
@@ -275,7 +306,7 @@ async function fetchLocalDemandsWithPositions(
           : linkedProduct;
       const assortmentType = position.assortmentType ?? product?.entityType ?? "";
       const assortmentId = product?.id ?? position.productId ?? position.id;
-      const groupId = position.groupIdSnapshot ?? product?.groupId ?? undefined;
+      const groupId = position.groupIdSnapshot ?? product?.groupId ?? oneOffServiceGroup?.id ?? undefined;
       return {
         assortment: {
           meta: {
@@ -283,7 +314,7 @@ async function fetchLocalDemandsWithPositions(
             type: assortmentType,
           },
           name: position.name,
-          pathName: position.groupSnapshot?.name ?? product?.groupPath ?? oneOffGroupLabel ?? undefined,
+          pathName: position.groupSnapshot?.name ?? product?.groupPath ?? oneOffServiceGroup?.name ?? oneOffGroupLabel ?? undefined,
           groupId,
           buyPrice: {
             value: assortmentType === "service" ? 0 : position.buyPriceCentsPerUnit ?? undefined,

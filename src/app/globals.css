@@ -21296,6 +21296,225 @@ select.eco-input::-ms-expand,
   font-weight: 700;
 }
 
+.eco-piecework-group-manager {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  background: var(--eco-surface-sunk);
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 6px;
+}
+
+.eco-piecework-group-manager__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.eco-piecework-group-manager__head h2 {
+  margin: 3px 0 0;
+  color: var(--eco-ink);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.eco-piecework-group-manager__head p {
+  max-width: 720px;
+  margin: 5px 0 0;
+  color: var(--eco-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.eco-piecework-group-steps {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  color: var(--eco-ink-2);
+  background: var(--eco-surface);
+  border-left: 3px solid var(--eco-rust);
+}
+
+.eco-piecework-group-steps strong {
+  font-size: 12px;
+}
+
+.eco-piecework-group-steps span {
+  color: var(--eco-muted);
+  font-size: 12px;
+}
+
+.eco-piecework-operation-library {
+  display: grid;
+  gap: 8px;
+}
+
+.eco-piecework-operation-library .eco-payroll-section-title > div {
+  display: grid;
+  gap: 2px;
+}
+
+.eco-piecework-operation-library .eco-payroll-section-title small {
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.eco-piecework-operation-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.eco-piecework-operation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line);
+  border-radius: 4px;
+}
+
+.eco-piecework-operation-row strong {
+  min-width: 0;
+  color: var(--eco-ink);
+  font-size: 12px;
+}
+
+.eco-piecework-group-create {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.8fr) minmax(260px, 1.5fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.eco-piecework-group-create label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.eco-piecework-group-create label > span {
+  color: var(--eco-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eco-piecework-group-feedback {
+  padding: 9px 11px;
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.eco-piecework-group-feedback.is-success {
+  color: #18733a;
+  background: #ecfdf3;
+  border-color: #a7f3c2;
+}
+
+.eco-piecework-group-feedback.is-error {
+  color: var(--eco-danger);
+  background: #fff1f0;
+  border-color: #fecaca;
+}
+
+.eco-piecework-group-section,
+.eco-piecework-service-assignment {
+  display: grid;
+  gap: 8px;
+}
+
+.eco-piecework-group-empty {
+  padding: 14px;
+  color: var(--eco-muted);
+  background: var(--eco-surface);
+  border: 1px dashed var(--eco-line-strong);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.eco-piecework-group-table {
+  min-width: 720px;
+}
+
+.eco-piecework-service-table {
+  min-width: 620px;
+}
+
+.eco-piecework-group-rename,
+.eco-piecework-group-actions,
+.eco-piecework-service-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eco-piecework-group-rename {
+  min-width: 290px;
+}
+
+.eco-piecework-group-rename .eco-input {
+  min-width: 0;
+}
+
+.eco-piecework-group-actions {
+  justify-content: flex-end;
+}
+
+.eco-piecework-service-select .eco-input {
+  min-width: 240px;
+}
+
+.eco-piecework-service-assignment .eco-payroll-section-title > div {
+  display: grid;
+  gap: 2px;
+}
+
+.eco-piecework-service-assignment .eco-payroll-section-title small {
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.eco-piecework-group-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 80px;
+  color: var(--eco-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .eco-piecework-group-manager__head,
+  .eco-piecework-group-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eco-piecework-group-create {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-piecework-operation-list {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-piecework-group-create .eco-btn,
+  .eco-piecework-group-actions .eco-btn {
+    width: 100%;
+  }
+}
+
 .eco-payroll-rule-filters {
   justify-content: flex-start;
 }

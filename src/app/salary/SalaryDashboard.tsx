@@ -42,6 +42,7 @@ import {
   EcoKpi,
   EcoSelect,
 } from "@/components/platform/EcoUI";
+import PieceworkGroupManager from "./PieceworkGroupManager";
 import { SERVICE_TIME_ZONE, formatServiceDateTime } from "@/lib/date-time";
 import {
   getCurrentMonthRange,
@@ -1135,6 +1136,7 @@ export default function SalaryDashboard({
   const [ruleRoleFilter, setRuleRoleFilter] = useState("all");
   const [ruleModeFilter, setRuleModeFilter] = useState("all");
   const [ruleStatusFilter, setRuleStatusFilter] = useState("all");
+  const [groupManagerOpen, setGroupManagerOpen] = useState(true);
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [calendarLogin, setCalendarLogin] = useState(isOwner ? "" : login);
   const [selectedDate, setSelectedDate] = useState(() => toLocalDateInputValue(new Date()));
@@ -3350,8 +3352,19 @@ export default function SalaryDashboard({
               <span>Группы товаров · {rules.filter((rule) => rule.targetType === "product_group").length}</span>
               <span>Настроено · {rules.filter((rule) => rule.isConfigured).length}</span>
               <span>Требуют настройки · {missingRulesCount}</span>
+              <EcoButton type="button" size="sm" onClick={() => setGroupManagerOpen((value) => !value)}>
+                {groupManagerOpen ? "Скрыть группы" : "Управлять группами"}
+              </EcoButton>
             </div>
           </div>
+
+          {groupManagerOpen && (
+            <PieceworkGroupManager
+              onChanged={async () => {
+                await Promise.all([loadRules(), loadPayroll()]);
+              }}
+            />
+          )}
 
           <div className="eco-payroll-rule-filters">
             <label className="eco-payroll-search">
