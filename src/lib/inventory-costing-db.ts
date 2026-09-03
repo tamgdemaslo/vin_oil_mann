@@ -13,6 +13,8 @@ export async function lockInventoryCostKeys(
     .map((productId) => `${input.branchId}:${input.storeId}:${productId}`)
     .sort();
   for (const key of keys) {
-    await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+    await tx.$queryRaw<Array<{ locked: string }>>(Prisma.sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))::text AS locked
+    `);
   }
 }
