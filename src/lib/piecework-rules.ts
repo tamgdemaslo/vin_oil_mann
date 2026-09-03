@@ -2,14 +2,16 @@ import { prisma } from "@/lib/db";
 import { getBranchContext } from "@/lib/branch-context";
 
 export type PieceworkRole = "master" | "admin";
-export type PieceworkTargetType = "service_group" | "product_group";
+/**
+ * A master is paid for an exact service card; an administrator is paid for an
+ * exact product group. Both identifiers are stable catalog IDs, never names.
+ */
+export type PieceworkTargetType = "service" | "product_group";
 export type PieceworkMode = "fixed" | "percent";
 
 export type PieceworkRuleView = {
   targetType: PieceworkTargetType;
-  /** Stable LocalCatalogGroup.id. Never a display name or a legacy slug. */
   targetId: string;
-  /** Canonical current name, shown only to the operator. */
   targetName: string;
   role: PieceworkRole;
   mode: PieceworkMode;
@@ -19,12 +21,24 @@ export type PieceworkRuleView = {
   isDefault: false;
 };
 
+export type PieceworkTargetOption = {
+  id: string;
+  name: string;
+  targetType: PieceworkTargetType;
+  role: PieceworkRole;
+};
+
+export type PieceworkTargets = {
+  services: PieceworkTargetOption[];
+  productGroups: PieceworkTargetOption[];
+};
+
 function toKey(targetType: PieceworkTargetType, targetId: string, role: PieceworkRole) {
   return `${targetType}:${targetId}:${role}`;
 }
 
 export function isAllowedPieceworkRule(targetType: PieceworkTargetType, role: PieceworkRole) {
-  return (targetType === "service_group" && role === "master") || (targetType === "product_group" && role === "admin");
+  return (targetType === "service" && role === "master") || (targetType === "product_group" && role === "admin");
 }
 
 export function isPieceworkRole(role: string): role is PieceworkRole {
@@ -59,74 +73,112 @@ export function calculatePieceworkAmountCents(
   return (rule.fixedCents ?? 0) * quantity;
 }
 
-/**
- * Lists actual catalog groups in the active branch. Missing entries are
- * intentionally returned to the UI so a new group cannot silently receive a
- * guessed rate.
- */
-export async function listPieceworkRules(branchId?: string): Promise<PieceworkRuleView[]> {
+async function resolveBranchId(branchId?: string) {
   const scopedBranchId = branchId ?? (await getBranchContext({ requireActive: true }))?.branchId;
   if (!scopedBranchId) throw new Error("Для сдельных правил нужен активный филиал");
+  return scopedBranchId;
+}
 
-  const [groups, savedRules] = await Promise.all([
-    prisma.localCatalogGroup.findMany({
-      where: { branchId: scopedBranchId, archived: false, kind: { in: ["product", "service"] } },
-      select: { id: true, kind: true, name: true },
-      orderBy: [{ kind: "asc" }, { name: "asc" }],
+/**
+ * Lists only rules that the owner explicitly added. We deliberately do not
+ * create rows from all services or all groups: an untouched catalog must not
+ * look like a payroll configuration.
+ */
+export async function listPieceworkRules(branchId?: string): Promise<PieceworkRuleView[]> {
+  const scopedBranchId = await resolveBranchId(branchId);
+  const savedRules = await prisma.pieceworkRule.findMany({
+    where: {
+      branchId: scopedBranchId,
+      OR: [
+        { targetType: "service", role: "master" },
+        { targetType: "product_group", role: "admin" },
+      ],
+    },
+    orderBy: [{ targetType: "asc" }, { targetName: "asc" }],
+  });
+
+  const [services, productGroups] = await Promise.all([
+    prisma.localProduct.findMany({
+      where: {
+        branchId: scopedBranchId,
+        archived: false,
+        entityType: "service",
+        id: { in: savedRules.filter((rule) => rule.targetType === "service").map((rule) => rule.targetId) },
+      },
+      select: { id: true, name: true },
     }),
-    prisma.pieceworkRule.findMany({
-      where: { branchId: scopedBranchId },
-      orderBy: [{ targetType: "asc" }, { targetName: "asc" }, { role: "asc" }],
+    prisma.localCatalogGroup.findMany({
+      where: {
+        branchId: scopedBranchId,
+        archived: false,
+        kind: "product",
+        id: { in: savedRules.filter((rule) => rule.targetType === "product_group").map((rule) => rule.targetId) },
+      },
+      select: { id: true, name: true },
+    }),
+  ]);
+  const serviceNames = new Map(services.map((service) => [service.id, service.name]));
+  const productGroupNames = new Map(productGroups.map((group) => [group.id, group.name]));
+
+  return savedRules.flatMap((rule) => {
+    const targetType = rule.targetType as PieceworkTargetType;
+    const role = rule.role as PieceworkRole;
+    if (!isAllowedPieceworkRule(targetType, role)) return [];
+    const targetName = targetType === "service"
+      ? serviceNames.get(rule.targetId)
+      : productGroupNames.get(rule.targetId);
+    if (!targetName) return [];
+    return [{
+      targetType,
+      targetId: rule.targetId,
+      targetName,
+      role,
+      mode: rule.mode === "fixed" ? "fixed" : "percent",
+      fixedCents: rule.fixedCents,
+      percentBasisPoints: rule.percentBasisPoints,
+      isConfigured: true,
+      isDefault: false,
+    }];
+  });
+}
+
+/** Sources for the explicit "Add" control in the payroll screen. */
+export async function listPieceworkTargets(branchId?: string): Promise<PieceworkTargets> {
+  const scopedBranchId = await resolveBranchId(branchId);
+  const [services, productGroups] = await Promise.all([
+    prisma.localProduct.findMany({
+      where: { branchId: scopedBranchId, archived: false, entityType: "service" },
+      select: { id: true, name: true },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+    }),
+    prisma.localCatalogGroup.findMany({
+      where: { branchId: scopedBranchId, archived: false, kind: "product" },
+      select: { id: true, name: true },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
     }),
   ]);
 
-  const savedByKey = new Map(
-    savedRules
-      .filter((rule) => {
-        const targetType = rule.targetType as PieceworkTargetType;
-        const role = rule.role as PieceworkRole;
-        return isAllowedPieceworkRule(targetType, role);
-      })
-      .map((rule) => [toKey(rule.targetType as PieceworkTargetType, rule.targetId, rule.role as PieceworkRole), rule])
-  );
-
-  return groups.map((group) => {
-    const targetType: PieceworkTargetType = group.kind === "service" ? "service_group" : "product_group";
-    const role: PieceworkRole = group.kind === "service" ? "master" : "admin";
-    const saved = savedByKey.get(toKey(targetType, group.id, role));
-    return {
-      targetType,
-      targetId: group.id,
-      targetName: group.name,
-      role,
-      mode: saved ? (saved.mode === "fixed" ? "fixed" : "percent") : group.kind === "service" ? "fixed" : "percent",
-      fixedCents: saved?.fixedCents ?? null,
-      percentBasisPoints: saved?.percentBasisPoints ?? null,
-      isConfigured: Boolean(saved),
-      isDefault: false,
-    };
-  });
+  return {
+    services: services.map((service) => ({ ...service, targetType: "service" as const, role: "master" as const })),
+    productGroups: productGroups.map((group) => ({ ...group, targetType: "product_group" as const, role: "admin" as const })),
+  };
 }
 
 /** Only configured ID-bound rules can take part in a payroll calculation. */
 export async function getPieceworkRuleMap(branchId?: string): Promise<Map<string, PieceworkRuleView>> {
   const rules = await listPieceworkRules(branchId);
-  return new Map(
-    rules
-      .filter((rule) => rule.isConfigured)
-      .map((rule) => [toKey(rule.targetType, rule.targetId, rule.role), rule])
-  );
+  return new Map(rules.map((rule) => [toKey(rule.targetType, rule.targetId, rule.role), rule]));
 }
 
-export function resolveGroupPieceworkRule(params: {
+export function resolvePieceworkRule(params: {
   ruleMap: Map<string, PieceworkRuleView>;
-  groupId?: string | null;
+  targetId?: string | null;
   targetType: PieceworkTargetType;
   role: PieceworkRole;
 }): PieceworkRuleView | undefined {
-  const { ruleMap, groupId, targetType, role } = params;
-  if (!groupId || !isAllowedPieceworkRule(targetType, role)) return undefined;
-  return ruleMap.get(toKey(targetType, groupId, role));
+  const { ruleMap, targetId, targetType, role } = params;
+  if (!targetId || !isAllowedPieceworkRule(targetType, role)) return undefined;
+  return ruleMap.get(toKey(targetType, targetId, role));
 }
 
 export function getPieceworkRuleKey(

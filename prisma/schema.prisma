@@ -282,7 +282,7 @@ model ShiftRate {
 model PieceworkRule {
   id                 String   @id @default(cuid())
   branchId           String   @default("branch-main") @map("branch_id")
-  targetType         String   @map("target_type") // service_group | product_group
+  targetType         String   @map("target_type") // service | product_group
   targetId           String   @map("target_id")
   targetName         String   @map("target_name")
   role               String

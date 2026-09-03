@@ -4,12 +4,11 @@ import { canonicalizeLogin, getLoginVariants, getUsersFromEnv } from "@/lib/auth
 import { listPayrollAdjustments, listPayrollPayments } from "@/lib/payroll-settlements";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { calculateLineFinancials } from "@/lib/inventory-costing";
-import { serviceOperationGroupId } from "@/lib/piecework-service-operations";
 import {
   calculatePieceworkAmountCents,
   extractLocalEntityId,
   getPieceworkRuleMap,
-  resolveGroupPieceworkRule,
+  resolvePieceworkRule,
 } from "@/lib/piecework-rules";
 
 const payrollCache = new Map<
@@ -245,32 +244,6 @@ async function fetchLocalDemandsWithPositions(
       })
     : [];
   const fallbackProductsById = new Map(fallbackProducts.map((product) => [product.id, product]));
-  const oneOffServiceMetricCodes = [...new Set(
-    demands.flatMap((demand) => demand.positions.map((position) => {
-      const raw = recordValue(position.raw);
-      const service = recordValue(raw?.oneOffService);
-      return textValue(service?.analyticsMetricCode)?.toUpperCase() ?? null;
-    })).filter((code): code is string => Boolean(code)),
-  )];
-  const operationGroups = oneOffServiceMetricCodes.length
-    ? await prisma.localCatalogGroup.findMany({
-        where: {
-          branchId,
-          kind: "service",
-          archived: false,
-          id: { in: oneOffServiceMetricCodes.map((code) => serviceOperationGroupId(branchId, code)) },
-        },
-        select: { id: true, name: true },
-      })
-    : [];
-  const operationGroupByMetricCode = new Map(
-    oneOffServiceMetricCodes.flatMap((code) => {
-      const id = serviceOperationGroupId(branchId, code);
-      const group = operationGroups.find((candidate) => candidate.id === id);
-      return group ? [[code, group] as const] : [];
-    }),
-  );
-
   return demands.map((demand) => ({
     demand: {
       id: demand.id,
@@ -282,18 +255,13 @@ async function fetchLocalDemandsWithPositions(
     positions: demand.positions.map((position) => {
       const raw = recordValue(position.raw);
       const oneOffProduct = recordValue(raw?.oneOffProduct);
-      const oneOffService = recordValue(raw?.oneOffService);
       const oneOffGroupLabel = textValue(oneOffProduct?.groupLabel);
-      const oneOffServiceMetricCode = textValue(oneOffService?.analyticsMetricCode)?.toUpperCase() ?? null;
-      const oneOffServiceGroup = oneOffServiceMetricCode
-        ? operationGroupByMetricCode.get(oneOffServiceMetricCode)
-        : undefined;
       const linkedProduct = position.product;
       const candidates = [
         ...positionProductReferenceIds(position)
           .map((id) => fallbackProductsById.get(id))
           .filter((candidate): candidate is (typeof fallbackProducts)[number] => Boolean(candidate)),
-      ].filter((candidate, index, all) => all.findIndex((other) => other.id === candidate.id) === index && Boolean(candidate.groupId));
+      ].filter((candidate, index, all) => all.findIndex((other) => other.id === candidate.id) === index);
       const candidateGroupIds = new Set(candidates.map((candidate) => candidate.groupId).filter((groupId): groupId is string => Boolean(groupId)));
       // Prefer an immutable shipment snapshot. For old rows only, recover a
       // group from one unambiguous saved product id — never from a name.
@@ -302,11 +270,11 @@ async function fetchLocalDemandsWithPositions(
         : linkedProduct?.groupId
         ? linkedProduct
         : candidateGroupIds.size === 1
-          ? candidates[0]
-          : linkedProduct;
+        ? candidates[0]
+          : linkedProduct ?? (position.assortmentType === "service" && candidates.length === 1 ? candidates[0] : undefined);
       const assortmentType = position.assortmentType ?? product?.entityType ?? "";
       const assortmentId = product?.id ?? position.productId ?? position.id;
-      const groupId = position.groupIdSnapshot ?? product?.groupId ?? oneOffServiceGroup?.id ?? undefined;
+      const groupId = position.groupIdSnapshot ?? product?.groupId ?? undefined;
       return {
         assortment: {
           meta: {
@@ -314,7 +282,7 @@ async function fetchLocalDemandsWithPositions(
             type: assortmentType,
           },
           name: position.name,
-          pathName: position.groupSnapshot?.name ?? product?.groupPath ?? oneOffServiceGroup?.name ?? oneOffGroupLabel ?? undefined,
+          pathName: position.groupSnapshot?.name ?? product?.groupPath ?? oneOffGroupLabel ?? undefined,
           groupId,
           buyPrice: {
             value: assortmentType === "service" ? 0 : position.buyPriceCentsPerUnit ?? undefined,
@@ -639,21 +607,22 @@ export async function computePayroll(params: {
           });
           continue;
         }
-        if (!groupId) {
+        const serviceId = extractLocalEntityId(p.assortment?.meta?.href);
+        if (!serviceId) {
           addUnallocatedPiecework({
             category: "work",
             label: name,
             quantity: qty,
             baseCents: saleCents,
             reason: "missing_rule",
-            diagnostic: "У услуги отсутствует сохранённый ID группы. Назначьте группе услуг ID в карточке услуги и повторите расчёт.",
+            diagnostic: "У услуги нет ID карточки каталога. Добавьте услугу из каталога в отгрузку и повторите расчёт.",
           });
           continue;
         }
-        const rule = resolveGroupPieceworkRule({
+        const rule = resolvePieceworkRule({
           ruleMap: pieceworkRuleMap,
-          groupId,
-          targetType: "service_group",
+          targetId: serviceId,
+          targetType: "service",
           role: "master",
         });
         if (!rule) {
@@ -664,8 +633,8 @@ export async function computePayroll(params: {
             baseCents: saleCents,
             reason: "missing_rule",
             groupPath: pathName || undefined,
-            ruleTargetId: groupId,
-            diagnostic: `Для группы услуг «${pathName || groupId}» (ID ${groupId}) не настроено правило мастера.`,
+            ruleTargetId: serviceId,
+            diagnostic: `Для услуги «${name || serviceId}» (ID ${serviceId}) не настроено правило мастера.`,
           });
           continue;
         }
@@ -725,9 +694,9 @@ export async function computePayroll(params: {
           });
           continue;
         }
-        const rule = resolveGroupPieceworkRule({
+        const rule = resolvePieceworkRule({
           ruleMap: pieceworkRuleMap,
-          groupId,
+          targetId: groupId,
           targetType: "product_group",
           role: "admin",
         });

@@ -42,7 +42,6 @@ import {
   EcoKpi,
   EcoSelect,
 } from "@/components/platform/EcoUI";
-import PieceworkGroupManager from "./PieceworkGroupManager";
 import { SERVICE_TIME_ZONE, formatServiceDateTime } from "@/lib/date-time";
 import {
   getCurrentMonthRange,
@@ -191,7 +190,7 @@ type PayrollShiftItem = {
 };
 
 type PieceworkRuleItem = {
-  targetType: "service_group" | "product_group";
+  targetType: "service" | "product_group";
   targetId: string;
   targetName: string;
   role: "master" | "admin";
@@ -200,6 +199,18 @@ type PieceworkRuleItem = {
   percentBasisPoints: number | null;
   isConfigured: boolean;
   isDefault: boolean;
+};
+
+type PieceworkTargetOption = {
+  id: string;
+  name: string;
+  targetType: PieceworkRuleItem["targetType"];
+  role: PieceworkRuleItem["role"];
+};
+
+type PieceworkTargets = {
+  services: PieceworkTargetOption[];
+  productGroups: PieceworkTargetOption[];
 };
 
 type BonusPenaltyItem = {
@@ -697,12 +708,12 @@ function makeRuleDraft(rule: PieceworkRuleItem): DraftRule {
 }
 
 function targetTypeLabel(targetType: PieceworkRuleItem["targetType"]) {
-  return targetType === "service_group" ? "Группа услуг" : "Группа товаров";
+  return targetType === "service" ? "Услуга" : "Группа товаров";
 }
 
 function ruleBasisLabel(rule: Pick<PieceworkRuleItem, "targetType">, mode: DraftRule["mode"]) {
-  if (mode === "fixed") return rule.targetType === "service_group" ? "за услугу" : "за единицу";
-  return rule.targetType === "service_group" ? "от суммы продажи" : "от чистой прибыли";
+  if (mode === "fixed") return rule.targetType === "service" ? "за услугу" : "за единицу";
+  return rule.targetType === "service" ? "от суммы услуги" : "от чистой прибыли";
 }
 
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
@@ -1127,16 +1138,16 @@ export default function SalaryDashboard({
   const [rates, setRates] = useState<ShiftRateItem[]>([]);
   const [ratesLoading, setRatesLoading] = useState(false);
   const [rules, setRules] = useState<PieceworkRuleItem[]>([]);
+  const [ruleTargets, setRuleTargets] = useState<PieceworkTargets>({ services: [], productGroups: [] });
   const [rulesLoading, setRulesLoading] = useState(false);
   const [draftRules, setDraftRules] = useState<Record<string, DraftRule>>({});
+  const [pendingRuleKeys, setPendingRuleKeys] = useState<Set<string>>(() => new Set());
   const [ruleErrors, setRuleErrors] = useState<Record<string, string>>({});
   const [rulesSaving, setRulesSaving] = useState(false);
   const [rulesMessage, setRulesMessage] = useState<string | null>(null);
   const [ruleSearch, setRuleSearch] = useState("");
-  const [ruleRoleFilter, setRuleRoleFilter] = useState("all");
-  const [ruleModeFilter, setRuleModeFilter] = useState("all");
-  const [ruleStatusFilter, setRuleStatusFilter] = useState("all");
-  const [groupManagerOpen, setGroupManagerOpen] = useState(true);
+  const [ruleRoleFilter, setRuleRoleFilter] = useState<PieceworkRuleItem["role"]>("master");
+  const [ruleTargetToAdd, setRuleTargetToAdd] = useState("");
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [calendarLogin, setCalendarLogin] = useState(isOwner ? "" : login);
   const [selectedDate, setSelectedDate] = useState(() => toLocalDateInputValue(new Date()));
@@ -1276,10 +1287,15 @@ export default function SalaryDashboard({
     setRulesLoading(true);
     try {
       const response = await fetch("/api/piecework-rules", { cache: "no-store" });
-      const payload = await readJson<{ rules?: PieceworkRuleItem[] }>(response, "Не удалось загрузить правила");
+      const payload = await readJson<{ rules?: PieceworkRuleItem[]; targets?: PieceworkTargets }>(response, "Не удалось загрузить правила");
       const nextRules = Array.isArray(payload.rules) ? payload.rules : [];
       setRules(nextRules);
+      setRuleTargets({
+        services: Array.isArray(payload.targets?.services) ? payload.targets.services : [],
+        productGroups: Array.isArray(payload.targets?.productGroups) ? payload.targets.productGroups : [],
+      });
       setDraftRules(Object.fromEntries(nextRules.map((rule) => [ruleKey(rule), makeRuleDraft(rule)])));
+      setPendingRuleKeys(new Set());
       setRuleErrors({});
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Не удалось загрузить правила");
@@ -1470,12 +1486,13 @@ export default function SalaryDashboard({
 
   const hasUnsavedRuleChanges = useMemo(
     () =>
+      pendingRuleKeys.size > 0 ||
       rules.some((rule) => {
         const draft = draftRules[ruleKey(rule)] ?? makeRuleDraft(rule);
         const original = makeRuleDraft(rule);
         return draft.mode !== original.mode || draft.value !== original.value;
       }),
-    [draftRules, rules]
+    [draftRules, pendingRuleKeys, rules]
   );
 
   useEffect(() => {
@@ -1793,7 +1810,7 @@ export default function SalaryDashboard({
     }
     if (action.kind === "rules") {
       changeTab("rules");
-      setRuleRoleFilter(action.role ?? "all");
+      setRuleRoleFilter(action.role ?? "master");
       setToast(action.instruction);
       return;
     }
@@ -2284,7 +2301,7 @@ export default function SalaryDashboard({
     const draft = draftRules[key] ?? makeRuleDraft(rule);
     const original = makeRuleDraft(rule);
     const numericValue = Number(draft.value.replace(",", "."));
-    if (draft.mode !== original.mode || draft.value !== original.value) return "changed";
+    if (pendingRuleKeys.has(key) || draft.mode !== original.mode || draft.value !== original.value) return "changed";
     if (!rule.isConfigured) return "missing";
     if (!draft.value.trim() || Number.isNaN(numericValue)) return "missing";
     if (numericValue === 0) return "disabled";
@@ -2346,9 +2363,88 @@ export default function SalaryDashboard({
   }
 
   function resetRuleDrafts() {
-    setDraftRules(Object.fromEntries(rules.map((rule) => [ruleKey(rule), makeRuleDraft(rule)])));
+    setRules((previous) => previous.filter((rule) => !pendingRuleKeys.has(ruleKey(rule))));
+    setDraftRules(
+      Object.fromEntries(
+        rules
+          .filter((rule) => !pendingRuleKeys.has(ruleKey(rule)))
+          .map((rule) => [ruleKey(rule), makeRuleDraft(rule)])
+      )
+    );
+    setPendingRuleKeys(new Set());
     setRuleErrors({});
     setRulesMessage("Изменения отменены");
+  }
+
+  function addRuleTarget() {
+    const options = ruleRoleFilter === "master" ? ruleTargets.services : ruleTargets.productGroups;
+    const target = options.find((item) => item.id === ruleTargetToAdd);
+    if (!target) {
+      setRulesMessage(ruleRoleFilter === "master" ? "Выберите услугу из каталога" : "Выберите группу товаров");
+      return;
+    }
+    const nextRule: PieceworkRuleItem = {
+      targetType: target.targetType,
+      targetId: target.id,
+      targetName: target.name,
+      role: target.role,
+      mode: ruleRoleFilter === "master" ? "fixed" : "percent",
+      fixedCents: null,
+      percentBasisPoints: null,
+      isConfigured: false,
+      isDefault: false,
+    };
+    const key = ruleKey(nextRule);
+    if (rules.some((rule) => ruleKey(rule) === key)) {
+      setRulesMessage("Это правило уже добавлено");
+      return;
+    }
+    setRules((previous) => [...previous, nextRule].sort((left, right) => left.targetName.localeCompare(right.targetName, "ru")));
+    setDraftRules((previous) => ({ ...previous, [key]: makeRuleDraft(nextRule) }));
+    setPendingRuleKeys((previous) => new Set([...previous, key]));
+    setRuleTargetToAdd("");
+    setRuleErrors((previous) => {
+      const next = { ...previous };
+      delete next[key];
+      return next;
+    });
+    setRulesMessage("Правило добавлено. Укажите сумму или процент и сохраните изменения.");
+    focusRuleValue(nextRule);
+  }
+
+  async function removeRule(rule: PieceworkRuleItem) {
+    const key = ruleKey(rule);
+    if (pendingRuleKeys.has(key)) {
+      setRules((previous) => previous.filter((item) => ruleKey(item) !== key));
+      setDraftRules((previous) => {
+        const next = { ...previous };
+        delete next[key];
+        return next;
+      });
+      setPendingRuleKeys((previous) => {
+        const next = new Set(previous);
+        next.delete(key);
+        return next;
+      });
+      setRulesMessage("Добавление отменено");
+      return;
+    }
+    if (!window.confirm(`Убрать «${rule.targetName}» из сдельных правил? Карточка услуги или группа товаров останется в каталоге.`)) {
+      return;
+    }
+    setRulesSaving(true);
+    setRulesMessage(null);
+    try {
+      const params = new URLSearchParams({ targetType: rule.targetType, targetId: rule.targetId, role: rule.role });
+      const response = await fetch(`/api/piecework-rules?${params.toString()}`, { method: "DELETE" });
+      await readJson(response, "Не удалось убрать правило");
+      setToast("Правило убрано");
+      await Promise.all([loadRules(), loadPayroll()]);
+    } catch (error) {
+      setRulesMessage(error instanceof Error ? error.message : "Не удалось убрать правило");
+    } finally {
+      setRulesSaving(false);
+    }
   }
 
   async function saveRate(applyToMonth: boolean) {
@@ -2559,35 +2655,16 @@ export default function SalaryDashboard({
   }
 
   const changedRulesCount = rules.filter((rule) => getRuleStatus(rule) === "changed").length;
-  const missingRulesCount = rules.filter((rule) => !rule.isConfigured).length;
-  const hiddenByRoleRulesCount =
-    ruleRoleFilter === "all" ? 0 : rules.filter((rule) => rule.role !== ruleRoleFilter).length;
+  const activeRuleTargetType = ruleRoleFilter === "master" ? "service" : "product_group";
+  const activeRuleLabel = ruleRoleFilter === "master" ? "услуги" : "группы товаров";
+  const addableRuleTargets = (ruleRoleFilter === "master" ? ruleTargets.services : ruleTargets.productGroups).filter(
+    (target) => !rules.some((rule) => rule.targetType === target.targetType && rule.targetId === target.id && rule.role === target.role)
+  );
   const filteredRules = rules.filter((rule) => {
-    const key = ruleKey(rule);
-    const draft = draftRules[key] ?? makeRuleDraft(rule);
-    const status = getRuleStatus(rule);
     const search = ruleSearch.trim().toLowerCase();
     if (search && !`${rule.targetName} ${rule.targetId}`.toLowerCase().includes(search)) return false;
-    if (ruleRoleFilter !== "all" && rule.role !== ruleRoleFilter) return false;
-    if (ruleModeFilter !== "all" && draft.mode !== ruleModeFilter) return false;
-    if (ruleStatusFilter !== "all" && status !== ruleStatusFilter) return false;
-    return true;
+    return rule.role === ruleRoleFilter && rule.targetType === activeRuleTargetType;
   });
-
-  const ruleSections = [
-    {
-      id: "service_group",
-      title: "Группы услуг",
-      allRows: rules.filter((rule) => rule.targetType === "service_group"),
-      rows: filteredRules.filter((rule) => rule.targetType === "service_group"),
-    },
-    {
-      id: "product_group",
-      title: "Группы товаров",
-      allRows: rules.filter((rule) => rule.targetType === "product_group"),
-      rows: filteredRules.filter((rule) => rule.targetType === "product_group"),
-    },
-  ] as const;
 
   const selectedDayState = getEffectiveShiftState(selectedDate);
   const selectedDayItems = selectedDayState.items;
@@ -3345,215 +3422,178 @@ export default function SalaryDashboard({
           <div className="eco-payroll-toolbar">
             <div>
               <div className="eco-page-kicker">Правила сдельной части</div>
-              <p>Проценты и фиксированные начисления по ID групп услуг и товаров.</p>
+              <p>Мастер получает начисление за конкретную услугу, администратор — за конкретную группу товаров.</p>
             </div>
             <div className="eco-payroll-rule-summary">
-              <span>Группы услуг · {rules.filter((rule) => rule.targetType === "service_group").length}</span>
+              <span>Услуги мастера · {rules.filter((rule) => rule.targetType === "service").length}</span>
               <span>Группы товаров · {rules.filter((rule) => rule.targetType === "product_group").length}</span>
-              <span>Настроено · {rules.filter((rule) => rule.isConfigured).length}</span>
-              <span>Требуют настройки · {missingRulesCount}</span>
-              <EcoButton type="button" size="sm" onClick={() => setGroupManagerOpen((value) => !value)}>
-                {groupManagerOpen ? "Скрыть группы" : "Управлять группами"}
-              </EcoButton>
             </div>
           </div>
 
-          {groupManagerOpen && (
-            <PieceworkGroupManager
-              onChanged={async () => {
-                await Promise.all([loadRules(), loadPayroll()]);
-              }}
-            />
-          )}
-
           <div className="eco-payroll-rule-filters">
+            <EcoSelect
+              value={ruleRoleFilter}
+              onChange={(event) => {
+                setRuleRoleFilter(event.target.value as PieceworkRuleItem["role"]);
+                setRuleTargetToAdd("");
+              }}
+              aria-label="Должность для настройки правил"
+            >
+              <option value="master">Мастер</option>
+              <option value="admin">Администратор</option>
+            </EcoSelect>
+            <EcoSelect
+              value={ruleTargetToAdd}
+              onChange={(event) => setRuleTargetToAdd(event.target.value)}
+              aria-label={ruleRoleFilter === "master" ? "Услуга для добавления" : "Группа товаров для добавления"}
+            >
+              <option value="">{ruleRoleFilter === "master" ? "Выберите услугу" : "Выберите группу товаров"}</option>
+              {addableRuleTargets.map((target) => (
+                <option key={target.id} value={target.id}>
+                  {target.name} · {target.id}
+                </option>
+              ))}
+            </EcoSelect>
+            <EcoButton type="button" variant="primary" onClick={addRuleTarget} disabled={rulesSaving || !ruleTargetToAdd}>
+              Добавить {ruleRoleFilter === "master" ? "услугу" : "группу товаров"}
+            </EcoButton>
             <label className="eco-payroll-search">
               <Search size={15} />
               <EcoInput
                 value={ruleSearch}
                 onChange={(event) => setRuleSearch(event.target.value)}
-                placeholder="Поиск по услуге или группе"
+                placeholder={`Поиск по ${activeRuleLabel}`}
               />
             </label>
-            <EcoSelect value={ruleRoleFilter} onChange={(event) => setRuleRoleFilter(event.target.value)}>
-              <option value="all">Все роли</option>
-              <option value="master">Мастер</option>
-              <option value="admin">Администратор</option>
-            </EcoSelect>
-            <EcoSelect value={ruleModeFilter} onChange={(event) => setRuleModeFilter(event.target.value)}>
-              <option value="all">Все режимы</option>
-              <option value="percent">Процент</option>
-              <option value="fixed">Фикс</option>
-            </EcoSelect>
-            <EcoSelect value={ruleStatusFilter} onChange={(event) => setRuleStatusFilter(event.target.value)}>
-              <option value="all">Все статусы</option>
-              <option value="changed">Изменённые</option>
-              <option value="custom">Настроенные</option>
-              <option value="missing">Без правила</option>
-              <option value="disabled">Отключено</option>
-            </EcoSelect>
           </div>
 
           <div className="eco-payroll-rule-context" role="status">
             <div>
-              <strong>Как настроить правило</strong>
+              <strong>Один шаг на правило</strong>
               <span>
-                Нажмите «Настроить», укажите сумму или процент в строке и сохраните изменения.
-                {hiddenByRoleRulesCount > 0
-                  ? ` Сейчас скрыто правил другой роли: ${hiddenByRoleRulesCount}.`
-                  : ""}
+                Выберите {ruleRoleFilter === "master" ? "услугу" : "группу товаров"}, добавьте её, укажите фикс или процент и сохраните.
               </span>
             </div>
-            {hiddenByRoleRulesCount > 0 && (
-              <EcoButton type="button" size="sm" onClick={() => setRuleRoleFilter("all")}>
-                Показать все группы
-              </EcoButton>
-            )}
           </div>
 
           {rulesLoading ? (
             <SkeletonRows rows={6} />
-          ) : rules.length === 0 ? (
-            <EmptyState
-              title="Правила сдельной части не настроены"
-              text="Добавьте правила для услуг и групп товаров."
-            />
           ) : (
             <div className="eco-payroll-rule-sections">
-              {ruleSections.map((section) => (
-                <div key={section.id} className="eco-payroll-rule-section">
-                  <div className="eco-payroll-section-title">
-                    <strong>{section.title}</strong>
-                    <span>{section.rows.length}</span>
-                  </div>
-                  {section.rows.length === 0 ? (
-                    <EmptyState
-                      title={
-                        ruleRoleFilter !== "all" && section.allRows.some((rule) => rule.role !== ruleRoleFilter)
-                          ? `${section.title} скрыты фильтром роли`
-                          : "Нет правил в этой группе"
-                      }
-                      text={
-                        ruleRoleFilter !== "all" && section.allRows.some((rule) => rule.role !== ruleRoleFilter)
-                          ? "Покажите все роли, чтобы увидеть и настроить эти группы."
-                          : "Измените поиск или фильтры."
-                      }
-                    />
-                  ) : (
-                    <div className="eco-table-wrap eco-payroll-rules-table-wrap">
-                      <table className="eco-table eco-payroll-rules-table">
-                        <thead>
-                          <tr>
-                            <th>Тип</th>
-                            <th>Название</th>
-                            <th>Роль</th>
-                            <th>Режим</th>
-                            <th>Значение</th>
-                            <th>Основа расчёта</th>
-                            <th>Статус</th>
-                            <th>Действия</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {section.rows.map((rule) => {
-                            const key = ruleKey(rule);
-                            const inputId = ruleValueInputId(rule);
-                            const draft = draftRules[key] ?? makeRuleDraft(rule);
-                            const status = getRuleStatus(rule);
-                            const error = ruleErrors[key];
-                            return (
-                              <tr key={key} className={status === "changed" ? "is-dirty" : ""}>
-                                <td>{targetTypeLabel(rule.targetType)}</td>
-                                <td>
-                                  <strong>{rule.targetName}</strong>
-                                  <small>{rule.targetId}</small>
-                                </td>
-                                <td>{roleShortLabel(rule.role)}</td>
-                                <td>
-                                  <EcoSelect
-                                    value={draft.mode}
-                                    onChange={(event) => {
-                                      const modeValue = event.target.value as DraftRule["mode"];
-                                      updateRuleDraft(key, {
-                                        mode: modeValue,
-                                        value:
-                                          modeValue === "fixed"
-                                            ? formatFixedInput(rule.fixedCents)
-                                            : formatPercentInput(rule.percentBasisPoints),
-                                      });
-                                    }}
-                                  >
-                                    <option value="percent">Процент</option>
-                                    <option value="fixed">Фикс</option>
-                                  </EcoSelect>
-                                </td>
-                                <td>
-                                  <div className="eco-payroll-value-field">
-                                    {draft.mode === "fixed" ? (
-                                      <MoneyInput
-                                        id={inputId}
-                                        value={draft.value}
-                                        onValueChange={(value, valueDraft) =>
-                                          updateRuleDraft(key, { value: valueDraft ? String(value) : "" })
-                                        }
-                                        className="eco-input"
-                                        placeholder={rule.isConfigured ? "0" : "Укажите сумму"}
-                                        aria-label={`Значение правила «${rule.targetName}»`}
-                                      />
-                                    ) : (
-                                      <EcoInput
-                                        id={inputId}
-                                        inputMode="decimal"
-                                        value={draft.value}
-                                        onChange={(event) => updateRuleDraft(key, { value: event.target.value })}
-                                        placeholder={rule.isConfigured ? "0" : "Укажите процент"}
-                                        aria-label={`Значение правила «${rule.targetName}»`}
-                                      />
-                                    )}
-                                    <span>{draft.mode === "fixed" ? "₽" : "%"}</span>
-                                  </div>
-                                  {error && <small className="eco-payroll-row-error">{error}</small>}
-                                </td>
-                                <td>{ruleBasisLabel(rule, draft.mode)}</td>
-                                <td>
-                                  {status === "changed" && <EcoBadge tone="rust">Есть изменения</EcoBadge>}
-                                  {status === "custom" && <EcoBadge tone="rust">Настроено</EcoBadge>}
-                                  {status === "missing" && <EcoBadge tone="warning">Не настроено</EcoBadge>}
-                                  {status === "disabled" && <EcoBadge tone="neutral">Отключено</EcoBadge>}
-                                </td>
-                                <td>
-                                  <div className="eco-payroll-rule-actions">
-                                    {status === "changed" ? (
-                                      <EcoButton
-                                        type="button"
-                                        size="sm"
-                                        onClick={() =>
-                                          setDraftRules((prev) => ({ ...prev, [key]: makeRuleDraft(rule) }))
-                                        }
-                                      >
-                                        Отменить
-                                      </EcoButton>
-                                    ) : (
-                                      <EcoButton
-                                        type="button"
-                                        size="sm"
-                                        variant={status === "missing" ? "primary" : "secondary"}
-                                        onClick={() => focusRuleValue(rule)}
-                                      >
-                                        {status === "missing" ? "Настроить" : "Изменить"}
-                                      </EcoButton>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+              <div className="eco-payroll-rule-section">
+                <div className="eco-payroll-section-title">
+                  <strong>{ruleRoleFilter === "master" ? "Услуги мастера" : "Группы товаров администратора"}</strong>
+                  <span>{filteredRules.length}</span>
                 </div>
-              ))}
+                {filteredRules.length === 0 ? (
+                  <EmptyState
+                    title={`Нет добавленных ${activeRuleLabel}`}
+                    text={`Выберите ${ruleRoleFilter === "master" ? "услугу" : "группу товаров"} выше и добавьте её в сдельные правила.`}
+                  />
+                ) : (
+                  <div className="eco-table-wrap eco-payroll-rules-table-wrap">
+                    <table className="eco-table eco-payroll-rules-table">
+                      <thead>
+                        <tr>
+                          <th>Тип</th>
+                          <th>Название и ID</th>
+                          <th>Режим</th>
+                          <th>Значение</th>
+                          <th>Основа расчёта</th>
+                          <th>Статус</th>
+                          <th>Действия</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredRules.map((rule) => {
+                          const key = ruleKey(rule);
+                          const inputId = ruleValueInputId(rule);
+                          const draft = draftRules[key] ?? makeRuleDraft(rule);
+                          const status = getRuleStatus(rule);
+                          const error = ruleErrors[key];
+                          return (
+                            <tr key={key} className={status === "changed" ? "is-dirty" : ""}>
+                              <td>{targetTypeLabel(rule.targetType)}</td>
+                              <td>
+                                <strong>{rule.targetName}</strong>
+                                <small>{rule.targetId}</small>
+                              </td>
+                              <td>
+                                <EcoSelect
+                                  value={draft.mode}
+                                  onChange={(event) => {
+                                    const modeValue = event.target.value as DraftRule["mode"];
+                                    updateRuleDraft(key, {
+                                      mode: modeValue,
+                                      value: modeValue === "fixed" ? formatFixedInput(rule.fixedCents) : formatPercentInput(rule.percentBasisPoints),
+                                    });
+                                  }}
+                                >
+                                  <option value="fixed">Фикс</option>
+                                  <option value="percent">Процент</option>
+                                </EcoSelect>
+                              </td>
+                              <td>
+                                <div className="eco-payroll-value-field">
+                                  {draft.mode === "fixed" ? (
+                                    <MoneyInput
+                                      id={inputId}
+                                      value={draft.value}
+                                      onValueChange={(value, valueDraft) => updateRuleDraft(key, { value: valueDraft ? String(value) : "" })}
+                                      className="eco-input"
+                                      placeholder="Укажите сумму"
+                                      aria-label={`Значение правила «${rule.targetName}»`}
+                                    />
+                                  ) : (
+                                    <EcoInput
+                                      id={inputId}
+                                      inputMode="decimal"
+                                      value={draft.value}
+                                      onChange={(event) => updateRuleDraft(key, { value: event.target.value })}
+                                      placeholder="Укажите процент"
+                                      aria-label={`Значение правила «${rule.targetName}»`}
+                                    />
+                                  )}
+                                  <span>{draft.mode === "fixed" ? "₽" : "%"}</span>
+                                </div>
+                                {error && <small className="eco-payroll-row-error">{error}</small>}
+                              </td>
+                              <td>{ruleBasisLabel(rule, draft.mode)}</td>
+                              <td>
+                                {status === "changed" && <EcoBadge tone="rust">Не сохранено</EcoBadge>}
+                                {status === "custom" && <EcoBadge tone="rust">Настроено</EcoBadge>}
+                                {status === "disabled" && <EcoBadge tone="neutral">Отключено</EcoBadge>}
+                              </td>
+                              <td>
+                                <div className="eco-payroll-rule-actions">
+                                  {status === "changed" && (
+                                    <EcoButton
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => {
+                                        if (pendingRuleKeys.has(key)) {
+                                          void removeRule(rule);
+                                          return;
+                                        }
+                                        setDraftRules((previous) => ({ ...previous, [key]: makeRuleDraft(rule) }));
+                                      }}
+                                    >
+                                      Отменить
+                                    </EcoButton>
+                                  )}
+                                  <EcoButton type="button" size="sm" onClick={() => void removeRule(rule)} disabled={rulesSaving}>
+                                    Убрать
+                                  </EcoButton>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -3562,15 +3602,13 @@ export default function SalaryDashboard({
               <strong>
                 {changedRulesCount > 0
                   ? `${changedRulesCount} правил изменено`
-                  : missingRulesCount > 0
-                    ? `Требуют настройки: ${missingRulesCount}`
-                    : "Нет несохранённых изменений"}
+                  : "Нет несохранённых изменений"}
               </strong>
               <span>
                 {rulesMessage ??
                   (changedRulesCount > 0
                     ? "Сохраните изменения, чтобы правило начало участвовать в расчёте."
-                    : "Выберите «Настроить» в нужной строке, затем введите значение.")}
+                    : `Добавьте ${ruleRoleFilter === "master" ? "услугу" : "группу товаров"}, когда для неё нужно начисление.`)}
               </span>
             </div>
             <EcoButton type="button" onClick={resetRuleDrafts} disabled={!hasUnsavedRuleChanges || rulesSaving}>

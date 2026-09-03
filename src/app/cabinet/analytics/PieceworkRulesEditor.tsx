@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MoneyInput from "@/components/MoneyInput";
 
 type PieceworkRuleItem = {
-  targetType: "service_group" | "product_group";
+  targetType: "service" | "product_group";
   targetId: string;
   targetName: string;
   role: "master" | "admin";
@@ -45,7 +45,7 @@ function makeDraft(rule: PieceworkRuleItem): DraftRule {
 }
 
 function targetTypeLabel(targetType: PieceworkRuleItem["targetType"]) {
-  return targetType === "service_group" ? "Группа услуг" : "Группа товара";
+  return targetType === "service" ? "Услуга" : "Группа товара";
 }
 
 function roleLabel(role: PieceworkRuleItem["role"]) {
@@ -53,8 +53,8 @@ function roleLabel(role: PieceworkRuleItem["role"]) {
 }
 
 function valueHint(rule: PieceworkRuleItem, mode: DraftRule["mode"]) {
-  if (mode === "fixed") return "₽ за единицу";
-  return rule.targetType === "product_group" ? "% от чистой прибыли" : "% от продажи";
+  if (mode === "fixed") return rule.targetType === "service" ? "₽ за услугу" : "₽ за единицу";
+  return rule.targetType === "product_group" ? "% от чистой прибыли" : "% от суммы услуги";
 }
 
 export default function PieceworkRulesEditor({ onSaved }: { onSaved?: () => void }) {
@@ -104,9 +104,9 @@ export default function PieceworkRulesEditor({ onSaved }: { onSaved?: () => void
   const sections = useMemo(
     () => [
       {
-        id: "service_group" as const,
-        title: "Группы услуг",
-        rows: rules.filter((rule) => rule.targetType === "service_group"),
+        id: "service" as const,
+        title: "Услуги",
+        rows: rules.filter((rule) => rule.targetType === "service"),
       },
       {
         id: "product_group" as const,
@@ -179,8 +179,8 @@ export default function PieceworkRulesEditor({ onSaved }: { onSaved?: () => void
         <div>
           <h3 className="font-semibold text-zinc-900 dark:text-zinc-50">Правила сдельной части</h3>
           <p className="text-sm text-zinc-500">
-            Для мастера начисления считаются по ID групп услуг, для администратора — по ID групп
-            товаров. Для каждой строки можно выбрать фикс или процент.
+            Для мастера начисления считаются по ID услуг, для администратора — по ID групп товаров.
+            Для каждой строки можно выбрать фикс или процент.
           </p>
           {!loading && !errorMessage && (
             <p className="mt-1 text-xs text-zinc-500">Загружено правил: {rules.length}</p>

@@ -181,7 +181,7 @@ assert.match(finance, /analyticsKey/);
 assert.match(payroll, /position\.assortmentType !== "nonstock_product"/);
 assert.match(demandWrite, /groupIdSnapshot:\s*payrollGroup\?\.id \?\? null/);
 assert.match(payroll, /position\.groupIdSnapshot/);
-assert.match(payroll, /resolveGroupPieceworkRule/);
+assert.match(payroll, /resolvePieceworkRule/);
 assert.match(payroll, /calculateLineFinancials/);
 assert.match(demandRead, /positions[\s\S]*JSON\.stringify\(position\.raw/);
 assert.match(paymentRoute, /nonstockOilRequiresCheck/);
