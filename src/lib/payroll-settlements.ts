@@ -56,6 +56,10 @@ export type PayrollPaymentRecord = {
   cashOrderId: string | null;
   cashOrderNumber: string | null;
   cashOrderStatus: string | null;
+  /** Actual cash movement date. For non-cash payments, operationDate is used. */
+  cashOrderExpenseDate: string | null;
+  /** Needed to protect an already closed cash shift from retroactive edits. */
+  cashOrderShiftStatus: string | null;
   bankOperationId: string | null;
   status: string;
   comment: string | null;
@@ -247,6 +251,8 @@ async function findPaymentById(id: string) {
       p.cash_order_id AS "cashOrderId",
       c.number AS "cashOrderNumber",
       c.status AS "cashOrderStatus",
+      c.expense_date AS "cashOrderExpenseDate",
+      s.status AS "cashOrderShiftStatus",
       p.bank_operation_id AS "bankOperationId",
       p.status,
       p.comment,
@@ -258,11 +264,17 @@ async function findPaymentById(id: string) {
       p.reversed_at AS "reversedAt"
     FROM payroll_payments p
     LEFT JOIN cash_expense_orders c ON c.id = p.cash_order_id
+    LEFT JOIN cash_shifts s ON s.id = c.shift_id
     WHERE p.id = ${id}
       AND p.branch_id = ${branchId}
     LIMIT 1
   `;
   return rows[0] ? mapPayment(rows[0]) : null;
+}
+
+/** Read one payment inside the active branch scope. */
+export async function getPayrollPaymentById(id: string) {
+  return findPaymentById(id);
 }
 
 export async function listPayrollAdjustments(params: {
@@ -351,6 +363,8 @@ export async function listPayrollPayments(params: {
         p.cash_order_id AS "cashOrderId",
         c.number AS "cashOrderNumber",
         c.status AS "cashOrderStatus",
+        c.expense_date AS "cashOrderExpenseDate",
+        s.status AS "cashOrderShiftStatus",
         p.bank_operation_id AS "bankOperationId",
         p.status,
         p.comment,
@@ -362,6 +376,7 @@ export async function listPayrollPayments(params: {
         p.reversed_at AS "reversedAt"
       FROM payroll_payments p
       LEFT JOIN cash_expense_orders c ON c.id = p.cash_order_id
+      LEFT JOIN cash_shifts s ON s.id = c.shift_id
       WHERE p.organization_id = ${organizationId}
         AND p.branch_id = ${branchId}
         AND (${dateFrom}::text IS NULL OR p.period_to >= ${dateFrom})
@@ -448,6 +463,8 @@ export async function createPayrollAdjustment(params: {
     )
   `;
 
+  const { invalidatePayrollCache } = await import("@/lib/payroll");
+  invalidatePayrollCache();
   const { logChange } = await import("@/lib/change-log");
   await logChange({
     entityType: "payroll_adjustment",
@@ -525,6 +542,8 @@ export async function reversePayrollAdjustment(params: {
     `;
   });
 
+  const { invalidatePayrollCache } = await import("@/lib/payroll");
+  invalidatePayrollCache();
   const { logChange } = await import("@/lib/change-log");
   await logChange({
     entityType: "payroll_adjustment",
@@ -686,6 +705,8 @@ export async function createPayrollPayment(params: {
     }
   });
 
+  const { invalidatePayrollCache } = await import("@/lib/payroll");
+  invalidatePayrollCache();
   const { logChange } = await import("@/lib/change-log");
   await logChange({
     entityType: "payroll_payment",
@@ -696,6 +717,149 @@ export async function createPayrollPayment(params: {
   });
 
   return findPaymentById(id);
+}
+
+/**
+ * Changes the allocation of a payroll payment without conflating it with the
+ * actual cash movement. `periodFrom`/`periodTo` decide which payroll period is
+ * settled. `operationDate` is the factual payment date and, for cash payments,
+ * is mirrored into the linked cash expense order.
+ */
+export async function updatePayrollPayment(params: {
+  id: string;
+  periodFrom: string;
+  periodTo: string;
+  operationDate: string;
+  operationType?: string;
+  amountCents: number;
+  comment?: string | null;
+  updatedByLogin: string;
+  updatedByName?: string | null;
+}) {
+  const { branchId } = requireSingleBranchSqlContext();
+  const existing = await findPaymentById(params.id);
+  if (!existing) throw new Error("Выплата не найдена");
+  if (existing.status !== "ACTIVE") throw new Error("Можно изменить только активную выплату");
+
+  assertDate(params.periodFrom, "Дата начала периода");
+  assertDate(params.periodTo, "Дата конца периода");
+  assertDate(params.operationDate, "Фактическая дата выплаты");
+  if (params.periodFrom > params.periodTo) {
+    throw new Error("Дата начала периода не может быть позже даты конца");
+  }
+
+  const amountCents = Math.abs(Math.round(params.amountCents));
+  if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    throw new Error("Сумма выплаты должна быть больше нуля");
+  }
+
+  const operationType = normalizePaymentOperationType(params.operationType ?? existing.operationType);
+  const comment = params.comment?.trim() || null;
+  const updatedById = normalizePayrollLogin(params.updatedByLogin);
+  const cashDateBefore = existing.cashOrderExpenseDate ?? existing.operationDate;
+  const changesCashMovement = Boolean(existing.cashOrderId) && (
+    cashDateBefore !== params.operationDate ||
+    existing.amountCents !== amountCents ||
+    existing.operationType !== operationType
+  );
+
+  if (changesCashMovement && existing.cashOrderShiftStatus !== "open") {
+    throw new Error(
+      "РКО проведён в закрытой кассовой смене. Можно изменить период зарплаты и комментарий, а для исправления суммы или даты денег отмените выплату и оформите новый РКО в нужной смене."
+    );
+  }
+
+  const employeeName = await getEmployeeName(existing.employeeId);
+  await prisma.$transaction(async (tx) => {
+    if (existing.cashOrderId) {
+      const cashOrder = await tx.cashExpenseOrder.findFirst({
+        where: { id: existing.cashOrderId, branchId },
+        select: { id: true, status: true, shiftId: true },
+      });
+      if (!cashOrder) throw new Error("Связанный расходный ордер не найден");
+      if (cashOrder.status !== "posted") throw new Error("Связанный расходный ордер отменён или не проведён");
+      if (changesCashMovement) {
+        const cashShift = await tx.cashShift.findFirst({
+          where: { id: cashOrder.shiftId, branchId },
+          select: { status: true },
+        });
+        if (cashShift?.status !== "open") {
+          throw new Error(
+            "РКО проведён в закрытой кассовой смене. Для исправления движения денег отмените выплату и оформите новый РКО в нужной смене."
+          );
+        }
+      }
+
+      const title = operationTitle(operationType);
+      const expenseItem = await tx.cashExpenseItem.upsert({
+        where: { branchId_name: { branchId, name: title } },
+        create: { branchId, name: title, source: "payroll" },
+        update: { isActive: true },
+      });
+      const paymentPurpose = `${title}: ${employeeName}, период ${params.periodFrom} - ${params.periodTo}`;
+
+      await tx.cashExpenseOrder.update({
+        where: { id: cashOrder.id },
+        data: {
+          amountCents,
+          expenseDate: params.operationDate,
+          expenseItemId: expenseItem.id,
+          expenseItemName: expenseItem.name,
+          counterpartyName: employeeName,
+          article: title,
+          paymentPurpose,
+          comment: comment ?? "Создано из раздела Зарплата",
+          employeeId: existing.employeeId,
+          payrollPeriodId: existing.payrollPeriodId,
+          payrollPeriodFrom: params.periodFrom,
+          payrollPeriodTo: params.periodTo,
+        },
+      });
+    }
+
+    await tx.$executeRaw`
+      UPDATE payroll_payments
+      SET period_from = ${params.periodFrom},
+          period_to = ${params.periodTo},
+          operation_date = ${params.operationDate},
+          operation_type = ${operationType},
+          amount_cents = ${amountCents},
+          comment = ${comment},
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${existing.id}
+        AND branch_id = ${branchId}
+    `;
+  });
+
+  const { invalidatePayrollCache } = await import("@/lib/payroll");
+  invalidatePayrollCache();
+  const { logChange } = await import("@/lib/change-log");
+  await logChange({
+    entityType: "payroll_payment",
+    entityId: existing.id,
+    action: "update",
+    oldValue: {
+      periodFrom: existing.periodFrom,
+      periodTo: existing.periodTo,
+      operationDate: existing.operationDate,
+      cashDate: cashDateBefore,
+      operationType: existing.operationType,
+      amountCents: existing.amountCents,
+      comment: existing.comment,
+    },
+    newValue: {
+      periodFrom: params.periodFrom,
+      periodTo: params.periodTo,
+      operationDate: params.operationDate,
+      cashDate: existing.cashOrderId ? params.operationDate : null,
+      operationType,
+      amountCents,
+      comment,
+    },
+    performedByLogin: updatedById,
+  });
+
+  return findPaymentById(existing.id);
 }
 
 export async function reversePayrollPayment(params: {
@@ -735,6 +899,8 @@ export async function reversePayrollPayment(params: {
     }
   });
 
+  const { invalidatePayrollCache } = await import("@/lib/payroll");
+  invalidatePayrollCache();
   const { logChange } = await import("@/lib/change-log");
   await logChange({
     entityType: "payroll_payment",

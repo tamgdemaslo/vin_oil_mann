@@ -450,6 +450,9 @@ export type PayrollSummary = {
       shiftTotalCents: number;
       pieceworkCents: number;
       bonusPenaltyCents: number;
+      /** Kept separate so a bonus never hides an existing penalty in the UI. */
+      bonusCents?: number;
+      penaltyCents?: number;
       paidOutCents: number;
       remainingCents: number;
       totalCents: number;
@@ -470,6 +473,11 @@ export type PayrollSummary = {
     paymentMethod?: string;
     operationType?: string;
     cashOrderId?: string | null;
+    paymentId?: string;
+    periodFrom?: string;
+    periodTo?: string;
+    cashDate?: string;
+    cashOrderShiftStatus?: string | null;
   }[];
 };
 
@@ -805,6 +813,11 @@ export async function computePayroll(params: {
       };
     }
     byLogin[canonicalLogin].bonusPenaltyCents += bp.amountCents;
+    if (bp.amountCents >= 0) {
+      byLogin[canonicalLogin].bonusCents = (byLogin[canonicalLogin].bonusCents ?? 0) + bp.amountCents;
+    } else {
+      byLogin[canonicalLogin].penaltyCents = (byLogin[canonicalLogin].penaltyCents ?? 0) + bp.amountCents;
+    }
   }
 
   for (const adjustment of payrollAdjustments) {
@@ -824,6 +837,11 @@ export async function computePayroll(params: {
       };
     }
     byLogin[canonicalLogin].bonusPenaltyCents += adjustment.amountCents;
+    if (adjustment.amountCents >= 0) {
+      byLogin[canonicalLogin].bonusCents = (byLogin[canonicalLogin].bonusCents ?? 0) + adjustment.amountCents;
+    } else {
+      byLogin[canonicalLogin].penaltyCents = (byLogin[canonicalLogin].penaltyCents ?? 0) + adjustment.amountCents;
+    }
   }
 
   for (const payment of payrollPayments) {
@@ -848,7 +866,7 @@ export async function computePayroll(params: {
     cashoutHistory.push({
       cashoutId: payment.cashOrderId ?? payment.id,
       name: payment.cashOrderNumber ? `РКО ${payment.cashOrderNumber}` : `Выплата ${payment.id.slice(0, 8)}`,
-      date: payment.operationDate,
+      date: payment.cashOrderExpenseDate ?? payment.operationDate,
       agentName: nameByLogin.get(normalizeLogin(canonicalLogin)) ?? canonicalLogin,
       sumCents: payment.amountCents,
       paymentPurpose:
@@ -863,6 +881,11 @@ export async function computePayroll(params: {
       paymentMethod: payment.paymentMethod,
       operationType: payment.operationType,
       cashOrderId: payment.cashOrderId,
+      paymentId: payment.id,
+      periodFrom: payment.periodFrom,
+      periodTo: payment.periodTo,
+      cashDate: payment.cashOrderExpenseDate ?? payment.operationDate,
+      cashOrderShiftStatus: payment.cashOrderShiftStatus,
     });
   }
 

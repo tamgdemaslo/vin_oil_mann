@@ -22182,6 +22182,28 @@ select.eco-input::-ms-expand,
   grid-column: 1 / -1;
 }
 
+.eco-payroll-operation-note {
+  grid-column: 1 / -1;
+  margin: -2px 0 0;
+  padding: 9px 10px;
+  color: var(--eco-ink-2);
+  background: #f8f6f1;
+  border-left: 3px solid var(--eco-rust);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.eco-payroll-operation-note strong {
+  color: var(--eco-ink);
+}
+
+.eco-payroll-operation-note.is-warning {
+  color: #7a4a10;
+  background: #fff8e9;
+  border-left-color: #d89013;
+}
+
 .eco-payroll-operation-error {
   grid-column: 1 / -1;
   padding: 10px 12px;

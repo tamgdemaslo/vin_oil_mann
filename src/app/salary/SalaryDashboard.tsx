@@ -73,6 +73,8 @@ type PayrollByLogin = {
   shiftTotalCents: number;
   pieceworkCents: number;
   bonusPenaltyCents: number;
+  bonusCents?: number;
+  penaltyCents?: number;
   paidOutCents: number;
   remainingCents: number;
   totalCents: number;
@@ -113,25 +115,32 @@ type VehicleRecord = {
   }[];
 };
 
+type PayrollCashoutHistoryItem = {
+  cashoutId: string;
+  name: string;
+  date: string;
+  agentName: string;
+  sumCents: number;
+  paymentPurpose: string;
+  description: string;
+  login: string;
+  sourceType?: "cash_expense_order" | "payroll_payment";
+  paymentMethod?: "CASH" | "BANK_TRANSFER" | "OTHER";
+  operationType?: "SALARY" | "ADVANCE" | "COMPENSATION";
+  cashOrderId?: string | null;
+  paymentId?: string;
+  periodFrom?: string;
+  periodTo?: string;
+  cashDate?: string;
+  cashOrderShiftStatus?: string | null;
+};
+
 type Payroll = {
   dateFrom: string;
   dateTo: string;
   byLogin: Record<string, PayrollByLogin>;
   vehicleHistory?: VehicleRecord[];
-  cashoutHistory?: {
-    cashoutId: string;
-    name: string;
-    date: string;
-    agentName: string;
-    sumCents: number;
-    paymentPurpose: string;
-    description: string;
-    login: string;
-    sourceType?: "cash_expense_order" | "payroll_payment";
-    paymentMethod?: string;
-    operationType?: string;
-    cashOrderId?: string | null;
-  }[];
+  cashoutHistory?: PayrollCashoutHistoryItem[];
 };
 
 type SavedAdjustment = {
@@ -1177,9 +1186,12 @@ export default function SalaryDashboard({
   const [paymentOperationType, setPaymentOperationType] = useState<"SALARY" | "ADVANCE" | "COMPENSATION">("SALARY");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(() => toLocalDateInputValue(new Date()));
+  const [paymentPeriodFrom, setPaymentPeriodFrom] = useState(defaults.dateFrom);
+  const [paymentPeriodTo, setPaymentPeriodTo] = useState(defaults.dateTo);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK_TRANSFER" | "OTHER">("CASH");
   const [paymentComment, setPaymentComment] = useState("");
   const [paymentSaving, setPaymentSaving] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<PayrollCashoutHistoryItem | null>(null);
   const [operationEmployeeLogin, setOperationEmployeeLogin] = useState("");
   const [paidOverrides, setPaidOverrides] = useState<Set<string>>(() => new Set());
   const [closedPeriods, setClosedPeriods] = useState<Set<string>>(() => new Set());
@@ -2562,8 +2574,11 @@ export default function SalaryDashboard({
     setSelectedLogin(row.login);
     setOperationEmployeeLogin(row.login);
     setAdjustmentOpen(false);
+    setEditingPayment(null);
     setPaymentOperationType(operationType);
     setPaymentDate(toLocalDateInputValue(new Date()));
+    setPaymentPeriodFrom(dateFrom);
+    setPaymentPeriodTo(dateTo);
     setPaymentMethod("CASH");
     setPaymentAmount(operationType === "SALARY" ? formatFixedInput(Math.max(0, row.payroll.remainingCents)) : "");
     setPaymentComment("");
@@ -2574,9 +2589,33 @@ export default function SalaryDashboard({
     focusOperationForm();
   }
 
+  function openPaymentEdit(item: PayrollCashoutHistoryItem) {
+    if (item.sourceType !== "payroll_payment" || !item.paymentId) {
+      setToast("Этот расходный ордер не связан с редактируемой выплатой из зарплаты.");
+      return;
+    }
+    setSelectedLogin(item.login);
+    setOperationEmployeeLogin(item.login);
+    setAdjustmentOpen(false);
+    setSavedAdjustment(null);
+    setAdjustmentError(null);
+    setEditingPayment(item);
+    setPaymentOperationType((item.operationType === "ADVANCE" || item.operationType === "COMPENSATION") ? item.operationType : "SALARY");
+    setPaymentAmount(formatFixedInput(item.sumCents));
+    setPaymentDate(item.cashDate ?? item.date);
+    setPaymentPeriodFrom(item.periodFrom ?? dateFrom);
+    setPaymentPeriodTo(item.periodTo ?? dateTo);
+    setPaymentMethod((item.paymentMethod === "BANK_TRANSFER" || item.paymentMethod === "OTHER") ? item.paymentMethod : "CASH");
+    setPaymentComment(item.description ?? "");
+    setPaymentOpen(true);
+    setToast("Открыто редактирование выплаты. Период зарплаты и дата движения денег настраиваются отдельно.");
+    focusOperationForm();
+  }
+
   function closePayrollOperation() {
     setPaymentOpen(false);
     setAdjustmentOpen(false);
+    setEditingPayment(null);
     setAdjustmentError(null);
     setSavedAdjustment(null);
   }
@@ -2589,25 +2628,25 @@ export default function SalaryDashboard({
       return;
     }
     const amount = parseMoneyInput(paymentAmount);
-    if (!paymentDate || amount <= 0) {
-      setToast("Укажите дату и сумму выплаты");
+    if (!paymentDate || !paymentPeriodFrom || !paymentPeriodTo || paymentPeriodFrom > paymentPeriodTo || amount <= 0) {
+      setToast("Укажите фактическую дату, период зарплаты и сумму выплаты");
       return;
     }
     const paymentRow = payrollRows.find((row) => normalizeLogin(row.login) === normalizeLogin(employeeLogin));
-    if (paymentOperationType === "SALARY" && paymentRow && amount * 100 > Math.max(0, paymentRow.payroll.remainingCents)) {
+    if (!editingPayment && paymentOperationType === "SALARY" && paymentRow && amount * 100 > Math.max(0, paymentRow.payroll.remainingCents)) {
       setToast("Сумма выплаты больше суммы к выплате");
       return;
     }
 
     setPaymentSaving(true);
     try {
-      const response = await fetch("/api/payroll/payments", {
-        method: "POST",
+      const response = await fetch(editingPayment?.paymentId ? `/api/payroll/payments/${encodeURIComponent(editingPayment.paymentId)}` : "/api/payroll/payments", {
+        method: editingPayment?.paymentId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           employeeLogin,
-          periodFrom: dateFrom,
-          periodTo: dateTo,
+          periodFrom: paymentPeriodFrom,
+          periodTo: paymentPeriodTo,
           operationDate: paymentDate,
           operationType: paymentOperationType,
           amountCents: Math.round(amount * 100),
@@ -2616,8 +2655,9 @@ export default function SalaryDashboard({
         }),
       });
       const payload = await readJson<{ cashOrderNumber?: string | null } | null>(response, "Не удалось создать выплату");
-      setToast(payload?.cashOrderNumber ? `Выплата создана: РКО ${payload.cashOrderNumber}` : "Выплата создана");
+      setToast(editingPayment ? "Выплата исправлена" : payload?.cashOrderNumber ? `Выплата создана: РКО ${payload.cashOrderNumber}` : "Выплата создана");
       setPaymentOpen(false);
+      setEditingPayment(null);
       setPaymentAmount("");
       setPaymentComment("");
       await loadPayroll();
@@ -2732,6 +2772,9 @@ export default function SalaryDashboard({
   const selectedCashouts = selectedRow
     ? cashoutHistory.filter((item) => normalizeLogin(item.login) === normalizeLogin(selectedRow.login))
     : [];
+  const editingCashMovementLocked = Boolean(
+    editingPayment?.cashOrderId && editingPayment.cashOrderShiftStatus !== "open"
+  );
 
   return (
     <main className="eco-page eco-page--wide eco-payroll-page">
@@ -3009,8 +3052,8 @@ export default function SalaryDashboard({
                 </thead>
                 <tbody>
                   {payrollRows.map((row) => {
-                    const bonuses = Math.max(0, row.payroll.bonusPenaltyCents);
-                    const penalties = Math.min(0, row.payroll.bonusPenaltyCents);
+                    const bonuses = Math.max(0, row.payroll.bonusCents ?? 0);
+                    const penalties = Math.min(0, row.payroll.penaltyCents ?? 0);
                     return (
                       <tr
                         key={row.login}
@@ -3780,8 +3823,10 @@ export default function SalaryDashboard({
                     <th>Сотрудник</th>
                     <th>Документ</th>
                     <th>Назначение</th>
+                    <th>Учёт в зарплате</th>
                     <th className="is-num">Сумма</th>
                     <th>Способ</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -3795,8 +3840,20 @@ export default function SalaryDashboard({
                       <td>
                         {item.sourceType === "payroll_payment" ? paymentOperationLabel(item.operationType) : item.paymentPurpose || item.description || "—"}
                       </td>
+                      <td>
+                        {item.periodFrom && item.periodTo
+                          ? `${formatDate(item.periodFrom)} — ${formatDate(item.periodTo)}`
+                          : "—"}
+                      </td>
                       <td className="is-num is-strong">{formatMoney(item.sumCents)}</td>
                       <td>{paymentMethodLabel(item.paymentMethod)}</td>
+                      <td>
+                        {canManagePayroll && item.sourceType === "payroll_payment" && item.paymentId ? (
+                          <EcoButton type="button" size="sm" onClick={() => openPaymentEdit(item)}>
+                            Изменить
+                          </EcoButton>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -4188,6 +4245,14 @@ export default function SalaryDashboard({
                         {" · "}
                         {item.paymentPurpose || item.description || paymentMethodLabel(item.paymentMethod)}
                       </p>
+                      {item.periodFrom && item.periodTo && (
+                        <p>Учтено в зарплате за {formatDate(item.periodFrom)} — {formatDate(item.periodTo)}</p>
+                      )}
+                      {canManagePayroll && item.sourceType === "payroll_payment" && item.paymentId && (
+                        <EcoButton type="button" size="sm" onClick={() => openPaymentEdit(item)}>
+                          Изменить выплату
+                        </EcoButton>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -4208,7 +4273,7 @@ export default function SalaryDashboard({
             {(paymentOpen || adjustmentOpen || savedAdjustment) && canManagePayroll && (
               <div ref={operationFormRef} className="eco-payroll-operation-panel">
                 <div className="eco-payroll-operation-panel__head">
-                  <strong>{savedAdjustment ? "Корректировка сохранена" : paymentOpen ? paymentOperationTitle(paymentOperationType) : adjustmentOperationTitle(adjustmentType)}</strong>
+                  <strong>{savedAdjustment ? "Корректировка сохранена" : paymentOpen ? editingPayment ? "Исправление выплаты" : paymentOperationTitle(paymentOperationType) : adjustmentOperationTitle(adjustmentType)}</strong>
                   <button
                     type="button"
                     className="eco-icon-btn"
@@ -4223,6 +4288,7 @@ export default function SalaryDashboard({
                 <FieldLabel label="Сотрудник">
                   <EcoSelect
                     value={operationEmployeeLogin || selectedRow.login}
+                    disabled={Boolean(editingPayment)}
                     onChange={(event) => {
                       const nextLogin = event.target.value;
                       setOperationEmployeeLogin(nextLogin);
@@ -4239,11 +4305,29 @@ export default function SalaryDashboard({
                     ))}
                   </EcoSelect>
                 </FieldLabel>
-                <FieldLabel label="Дата">
-                  <EcoInput type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} />
+                <FieldLabel label="Период зарплаты: с">
+                  <EcoInput type="date" value={paymentPeriodFrom} onChange={(event) => setPaymentPeriodFrom(event.target.value)} />
+                </FieldLabel>
+                <FieldLabel label="Период зарплаты: по">
+                  <EcoInput type="date" value={paymentPeriodTo} onChange={(event) => setPaymentPeriodTo(event.target.value)} />
+                </FieldLabel>
+                <p className="eco-payroll-operation-note">
+                  <strong>За какой период засчитывается выплата.</strong> Эта дата меняет остаток по зарплате, но не дату движения денег в кассе.
+                </p>
+                <FieldLabel label={paymentMethod === "CASH" ? "Фактическая дата РКО" : "Фактическая дата выплаты"}>
+                  <EcoInput
+                    type="date"
+                    value={paymentDate}
+                    disabled={editingCashMovementLocked}
+                    onChange={(event) => setPaymentDate(event.target.value)}
+                  />
                 </FieldLabel>
                 <FieldLabel label="Операция">
-                  <EcoSelect value={paymentOperationType} onChange={(event) => setPaymentOperationType(event.target.value as typeof paymentOperationType)}>
+                  <EcoSelect
+                    value={paymentOperationType}
+                    disabled={editingCashMovementLocked}
+                    onChange={(event) => setPaymentOperationType(event.target.value as typeof paymentOperationType)}
+                  >
                     <option value="SALARY">Выплата зарплаты</option>
                     <option value="ADVANCE">Аванс</option>
                     <option value="COMPENSATION">Компенсация</option>
@@ -4255,10 +4339,11 @@ export default function SalaryDashboard({
                     onValueChange={(_, draft) => setPaymentAmount(draft)}
                     className="eco-input"
                     placeholder="0"
+                    disabled={editingCashMovementLocked}
                   />
                 </FieldLabel>
                 <FieldLabel label="Способ">
-                  <EcoSelect value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)}>
+                  <EcoSelect value={paymentMethod} disabled={Boolean(editingPayment)} onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)}>
                     <option value="CASH">Наличные · создать РКО</option>
                     <option value="BANK_TRANSFER">Перевод</option>
                     <option value="OTHER">Другое</option>
@@ -4267,9 +4352,14 @@ export default function SalaryDashboard({
                 <FieldLabel label="Комментарий">
                   <EcoInput value={paymentComment} onChange={(event) => setPaymentComment(event.target.value)} placeholder="Основание выплаты" />
                 </FieldLabel>
+                {editingCashMovementLocked && (
+                  <p className="eco-payroll-operation-note is-warning">
+                    <strong>Кассовая смена закрыта.</strong> Можно изменить только период зарплаты и комментарий. Сумма и фактическая дата РКО зафиксированы, чтобы не исказить кассу.
+                  </p>
+                )}
                 <EcoButton type="submit" variant="primary" disabled={paymentSaving}>
                   {paymentSaving ? <Loader2 size={15} className="eco-spin" /> : <Save size={15} />}
-                  Создать выплату
+                  {paymentSaving ? "Сохраняем…" : editingPayment ? "Сохранить изменения" : "Создать выплату"}
                 </EcoButton>
                   </form>
                 )}
