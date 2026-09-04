@@ -121,6 +121,13 @@ for (const route of [
   "src/app/api/mann-catalog/match-local-products/route.ts",
   "src/app/api/mann-catalog/resolve-decoded-vehicle/route.ts",
   "src/app/api/mann-catalog/resolve-vehicle/route.ts",
+  "src/app/api/products/export/route.ts",
+  "src/app/api/products/import/route.ts",
+  "src/app/api/products/import/validate/route.ts",
+  "src/app/api/products/import/execute/route.ts",
+  "src/app/api/products/import/[jobId]/route.ts",
+  "src/app/api/products/import/[jobId]/report/route.ts",
+  "src/app/api/products/import/[jobId]/rollback/route.ts",
 ]) {
   requireText(route, [/requireBranchApi/, /runWithBranchApiContext/]);
 }

@@ -30,7 +30,7 @@ export function resolveProductFluidAttributeProfile(product: ProductFluidProfile
   if (!value) return "OTHER";
 
   if (
-    /(?:^| )(?:transmission\p{L}*|gear oil|atf|cvt|dct|dsg|акпп|мкпп|кпп|вариатор\p{L}*|трансмисс\p{L}*|редуктор\p{L}*|дифференциал\p{L}*|раздаточн\p{L}*)(?: |$)/u.test(value)
+    /(?:^| )(?:transmission\p{L}*|gear oil|atf|cvt|dct|dsg|акпп|мкпп|кпп|вариатор\p{L}*|трансмис\p{L}*|редуктор\p{L}*|дифференциал\p{L}*|раздаточн\p{L}*)(?: |$)/u.test(value)
   ) {
     return "TRANSMISSION_FLUID";
   }

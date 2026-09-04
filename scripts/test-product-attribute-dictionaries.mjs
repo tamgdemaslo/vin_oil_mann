@@ -134,6 +134,7 @@ assert.deepEqual(oil.normalizeILSAC("ILSAC GF-6A"), ["GF-6A"]);
 
 assert.equal(profiles.resolveProductFluidAttributeProfile({ groupPath: "Масла / Моторные масла", entityType: "product" }), "ENGINE_OIL");
 assert.equal(profiles.resolveProductFluidAttributeProfile({ groupPath: "Масла / АКПП и CVT", entityType: "product" }), "TRANSMISSION_FLUID");
+assert.equal(profiles.resolveProductFluidAttributeProfile({ groupPath: "Масло в канистрах трансмисионное", entityType: "product" }), "TRANSMISSION_FLUID");
 assert.equal(profiles.resolveProductFluidAttributeProfile({ groupPath: "Масляные фильтры", entityType: "product" }), "OTHER");
 assert.equal(profiles.resolveProductFluidAttributeProfile({ groupPath: "Моторное масло", entityType: "service" }), "OTHER");
 

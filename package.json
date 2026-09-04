@@ -81,6 +81,8 @@
     "audit:storage-cells": "node scripts/audit-storage-cells.mjs",
     "audit:product-fluid-attributes": "node scripts/audit-product-fluid-attributes.mjs",
     "normalize:product-fluid-attributes": "node scripts/normalize-product-fluid-attributes.mjs",
+    "prepare:eurol-product-attributes": "node scripts/prepare-eurol-product-attributes.mjs",
+    "test:eurol-product-attributes": "node scripts/test-eurol-product-attributes.mjs",
     "test:storage-cells": "node scripts/test-storage-cells.mjs",
     "audit:branch-models": "node scripts/generate-branch-model-classification.mjs",
     "audit:branch-raw-sql": "node scripts/audit-branch-raw-sql.mjs --strict",

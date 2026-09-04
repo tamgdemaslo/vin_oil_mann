@@ -1,0 +1,325 @@
+{
+  "metadata": {
+    "vendor": "Eurol",
+    "catalog": "Product Catalogue July 2024",
+    "sourceFile": "pr01301-eurol-product-catalogue-july-2024.pdf",
+    "sourceSha256": "eb6a637290ed75874c73b856398ce8913182f192ca3a81ce4701afed1c80f850",
+    "catalogDate": "2024-07",
+    "preparedAt": "2026-09-04",
+    "scope": "Only Eurol families that have an unambiguous match in the current inventory snapshot",
+    "evidencePolicy": "APPROVED, PERFORMANCE LEVEL and RECOMMENDED FOR USE are merged into the corresponding searchable specification fields; the source PDF remains the authority",
+    "packageVolumePolicy": "Package volume is read from the inventory card name because the catalogue identifies formulations, not local package SKUs"
+  },
+  "products": [
+    {
+      "key": "evolence-0w20",
+      "catalogName": "Eurol Evolence 0W-20",
+      "catalogCode": "E100128",
+      "printedPages": [6, 7],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["eurol", "evolence", "0w20"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "0W-20",
+        "acea": [],
+        "apiSpec": ["SP", "SP-RC", "CF"],
+        "ilsac": ["GF-6A"],
+        "oem": ["Chrysler MS 6395", "Ford WSS-M2C 947-A", "GM Dexos 1 Gen 2"]
+      }
+    },
+    {
+      "key": "fluence-dxs-5w30",
+      "catalogName": "Eurol Fluence DXS 5W-30",
+      "catalogCode": "E100076",
+      "printedPages": [8],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["eurol", "fluence", "dxs", "5w30"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "5W-30",
+        "acea": ["C3"],
+        "apiSpec": ["SN", "CF"],
+        "ilsac": [],
+        "oem": ["MB 229.52", "MB 229.51", "Opel OV0401547 - D30", "VW 502.00", "VW 505.01", "MB 229.31", "BMW Longlife-04", "GM Dexos 2", "GM-LL-A-025", "GM-LL-B-025", "FIAT 9.55535-S3", "VW 505.00", "GM DexosD", "STJLR.03.5007"]
+      }
+    },
+    {
+      "key": "fluence-fe-5w30",
+      "catalogName": "Eurol Fluence FE 5W-30",
+      "catalogCode": "E100069",
+      "printedPages": [8],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["eurol", "fluence", "fe", "5w30"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "5W-30",
+        "acea": ["A5/B5", "C2", "C3"],
+        "apiSpec": ["SP"],
+        "ilsac": [],
+        "oem": ["MB 229.51", "MB 229.52", "PSA B71 2290", "Renault RN 0710", "Renault RN 0700", "FIAT 9.55535-S3", "Renault RN17", "MB 226.52", "FIAT 9.55535-S1"]
+      }
+    },
+    {
+      "key": "fortence-5w30",
+      "catalogName": "Eurol Fortence 5W-30",
+      "catalogCode": "E100065",
+      "printedPages": [10],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["eurol", "fortence", "5w30"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "5W-30",
+        "acea": ["A5/B5"],
+        "apiSpec": ["SN/CF", "SL"],
+        "ilsac": [],
+        "oem": ["Ford WSS-M2C 913-D", "Jaguar/Land Rover STJLR.03.5003", "Renault RN 0700", "FIAT 9.55535-G1", "Fiat 9.55535-N1"]
+      }
+    },
+    {
+      "key": "super-lite-5w40",
+      "catalogName": "Eurol Super Lite 5W-40",
+      "catalogCode": "E100092",
+      "printedPages": [11],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["eurol", "super", "lite", "5w40"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "5W-40",
+        "acea": ["A3/B4"],
+        "apiSpec": ["SN", "CF"],
+        "ilsac": [],
+        "oem": ["VW 502.00", "MB 229.3", "VW 505.00", "Renault RN 0710", "Renault RN 0700", "GM-LL-B-025", "MB 229.1", "PSA B71 2296", "PSA B71 2293", "PORSCHE A40", "FIAT 9.55535-M2", "FIAT 9.55535-H2"]
+      }
+    },
+    {
+      "key": "syntence-5w30",
+      "catalogName": "Eurol Syntence 5W-30",
+      "catalogCode": "E100062",
+      "printedPages": [9],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["eurol", "syntence", "5w30"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "5W-30",
+        "acea": ["C3"],
+        "apiSpec": ["SP"],
+        "ilsac": [],
+        "oem": ["MB 229.52", "BMW Longlife-04", "MB 229.51", "MB 229.31", "PORSCHE C30", "Opel OV0401547 - G30", "Opel OV0401547 - D30", "VW 504.00", "VW 507.00"]
+      }
+    },
+    {
+      "key": "syntence-lv-0w20",
+      "catalogName": "Eurol Syntence LV 0W-20",
+      "catalogCode": "E100159",
+      "printedPages": [12],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["eurol", "syntence", "lv", "0w20"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "0W-20",
+        "acea": ["C5"],
+        "apiSpec": [],
+        "ilsac": [],
+        "oem": ["VW 508.00/509.00", "Porsche C20", "Ford WSS-M2C 956-A1"]
+      }
+    },
+    {
+      "key": "turbo-di-5w40",
+      "catalogName": "Eurol Turbo DI 5W-40",
+      "catalogCode": "E100085",
+      "printedPages": [9],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["eurol", "turbo", "di", "5w40"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "5W-40",
+        "acea": ["C3"],
+        "apiSpec": ["SN", "CF"],
+        "ilsac": [],
+        "oem": ["MB 229.31", "VW 505.00", "GM Dexos 2", "Ford WSS-M2C 917-A", "VW 502.00", "VW 505.01", "MB 226.5", "BMW Longlife-04", "PORSCHE A40", "Renault RN 0710", "Renault RN 0700", "FIAT 9.55535-T2", "FIAT 9.55535-S2", "FIAT 9.55535-GH2"]
+      }
+    },
+    {
+      "key": "turbosyn-10w40",
+      "catalogName": "Eurol Turbosyn 10W-40",
+      "catalogCode": "E100094",
+      "printedPages": [14],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["eurol", "turbosyn", "10w40"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "10W-40",
+        "acea": ["A3/B4"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["MB 229.1", "VW 501.01", "VW 505.00", "VW 500.00", "FIAT 9.55535-G2"]
+      }
+    },
+    {
+      "key": "ultrance-vcc-0w20",
+      "catalogName": "Eurol Ultrance VCC 0W-20",
+      "catalogCode": "E100017",
+      "printedPages": [9],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["eurol", "ultrance", "vcc", "0w20"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "0W-20",
+        "acea": ["C5"],
+        "apiSpec": ["SN"],
+        "ilsac": [],
+        "oem": ["Volvo VCC RBS0-2AE"]
+      }
+    },
+    {
+      "key": "fultrasyn-75w90",
+      "catalogName": "Eurol Fultrasyn 75W-90 GL-3/-4/-5",
+      "catalogCode": "E110076",
+      "printedPages": [31],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["eurol", "fultrasyn", "75w90"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "75W-90",
+        "apiSpec": ["GL-4/GL-5", "MT-1"],
+        "atf": [],
+        "oemAtf": ["MAN 342 Type M3", "MAN 342 Type S1", "MAN 341 Type E3", "MAN 341 Type Z2", "MB 235.8", "ZF TE-ML 02B/05B/07A/12B/12/12N/16F/17B/19C/21B", "DETROIT DIESEL DFS93K219.01", "Arvin Meritor 076-N", "Mack GO-J", "IVECO", "MIL-PRF-2105E", "Volvo 97312", "Scania STO 1:0", "Renault Note Technique B0032/2 Annex 3", "DAF", "SAE J2360", "Scania STO 1:1G", "Scania STO 2:0A FS"]
+      }
+    },
+    {
+      "key": "hpg-gl5-80w90",
+      "catalogName": "Eurol HPG GL-5 80W-90",
+      "catalogCode": "E110630",
+      "printedPages": [34],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["eurol", "hpg", "80w90"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "80W-90",
+        "apiSpec": ["GL-5"],
+        "atf": [],
+        "oemAtf": ["MIL-L-2105B", "MIL-L-2105C", "MIL-L-2105D", "Mack GO-G"]
+      }
+    },
+    {
+      "key": "mpg-80w90",
+      "catalogName": "Eurol MPG 80W-90",
+      "catalogCode": "E110605",
+      "printedPages": [35],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["eurol", "mpg", "80w90"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "80W-90",
+        "apiSpec": ["GL-4"],
+        "atf": [],
+        "oemAtf": ["MIL-L-2105D"]
+      }
+    },
+    {
+      "key": "mtf-75w-gl4",
+      "catalogName": "Eurol MTF 75W GL-4",
+      "catalogCode": "E110073",
+      "printedPages": [33],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["eurol", "mtf", "75w", "gl4"], "noneNameFragments": ["75w85"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "75W",
+        "apiSpec": ["GL-4"],
+        "atf": [],
+        "oemAtf": ["MIL-L-2105D", "VW G 052 726", "VW G 052 512", "VW G 052 178", "VW G 052 171", "MB 235.73", "Ford WSS-M2C 200-D2"]
+      }
+    },
+    {
+      "key": "mtf-75w85-fe-gl5",
+      "catalogName": "Eurol MTF 75W-85 FE GL-5",
+      "catalogCode": "E110081",
+      "printedPages": [33],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["eurol", "mtf", "75w85", "fe"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "75W-85",
+        "apiSpec": ["GL-5"],
+        "atf": [],
+        "oemAtf": ["MB 235.7", "VW G 055 190", "VW G 052 190", "VW G 052 145", "Fiat", "BMW", "Alfa Romeo", "LANCIA"]
+      }
+    },
+    {
+      "key": "transyn-75w90",
+      "catalogName": "Eurol Transyn 75W-90 GL-4/-5",
+      "catalogCode": "E110075",
+      "printedPages": [31],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["eurol", "transyn", "75w90"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": "75W-90",
+        "apiSpec": ["GL-4/GL-5", "MT-1"],
+        "atf": [],
+        "oemAtf": ["MIL-L-2105B", "MIL-L-2105C", "MIL-L-2105D", "ZF TE-ML 02B/05A/07A/08A/12E/16B/16C/16D/17B/19B/21A", "Mack GO-J", "MIL-PRF-2105E", "Volvo 97310", "Scania STO 1:0", "DAF", "MAN M 3343 Type M", "MAN 342 Type M2", "MAN 341 Type Z2", "MB 235.1", "MB 235.0", "Arvin Meritor 076-N", "IVECO"]
+      }
+    },
+    {
+      "key": "atf-1100",
+      "catalogName": "Eurol ATF 1100",
+      "catalogCode": "E113661",
+      "printedPages": [37],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["eurol", "atf", "1100"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": null,
+        "apiSpec": [],
+        "atf": ["ATF LT 71141", "Dexron IIIH", "Mercon", "Mercon V", "Dexron III", "Dexron IID", "ATF Z1", "SP-II", "SP-III", "ATF M-III", "ATF M-V", "ATF+3", "ATF+4", "Matic J", "Type T", "Type T-II", "Type T-III", "Type T-IV"],
+        "oemAtf": ["Allison C4", "Allison TES 295", "Allison TES 389", "BMW LT 71141", "BMW ETL-7045E", "Ford Mercon", "Ford Mercon V", "Ford WSS-M2C 138-CJ", "Ford WSS-M2C 166-H", "Ford WSS-M2C 202-B", "GM Dexron III", "GM Dexron II D", "Honda ATF Z1", "Hyundai SP II", "Hyundai SP III", "Mitsubishi ATF J2", "Idemitsu K17", "Isuzu besco ATF-II/ATF-III", "JASO M 315 1A", "JATCO 3100 PL 085", "JWS 3309", "JWS 3314", "JWS 3317", "MAN 339 Type Z1", "MAN 339 Type V1", "MAN 339 Type Z2", "Mazda ATF M-III", "Mazda ATF M-V", "MB 236.1 - 236.11", "Chrysler MS-7176", "Chrysler MS-9602", "Nissan AT-matic D", "Nissan AT-Matic J", "Nissan AT-Matic K", "Subaru K0410Y0700", "Toyota Type T", "Toyota Type T-II", "Toyota Type T-III", "Toyota Type T-IV", "Voith G607/G1363", "Volvo 1161540", "Volvo 97341", "VW G 052 162", "VW G 052 990", "VW G 055 025", "ZF TE-ML 03D/04D/09X/11B/14B/17C", "Caterpillar TO-2"]
+      }
+    },
+    {
+      "key": "atf-6700",
+      "catalogName": "Eurol ATF 6700",
+      "catalogCode": "E113653",
+      "printedPages": [37],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["eurol", "atf", "6700"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": null,
+        "apiSpec": [],
+        "atf": ["AW-1", "Dexron VI", "Type DW-1", "SP-IV", "Mercon LV", "Mercon SP", "ATF FZ", "Type WS"],
+        "oemAtf": ["Aisin JWS AW-1", "Bentley PY112995PA", "Chrysler 68157995AA", "DSI H 6-Speed Transmission AT 3292", "FIAT 9.55550-AV2", "FIAT 9.55550-AV5", "Ford WSS-M2C 924-A", "GM Dexron VI", "Honda: DW-1", "Hyundai NWS 9638", "HYUNDAI SP-IV", "Hyundai SPH-IV", "Jaguar Fluid 02JDE 26444", "Jaguar Fluid 8432", "JWS 3324", "Land Rover LR023288", "Land Rover TYK500050", "BMW M-1375.4", "Maserati 231603", "Mazda ATF FZ", "MB 236.12", "MB 236.41", "Ford Mercon LV", "Ford MERCON SP", "Mitsubishi SP-IV", "Mitsubishi ATF J2", "Nissan AT-Matic S", "SAAB 93 165 147", "Toyota Type WS", "VW G 055 005", "VW G 055 162", "VW G 055 540", "ZF Lifeguardfluid 8"]
+      }
+    },
+    {
+      "key": "cvt-1304",
+      "catalogName": "Eurol CVT 1304",
+      "catalogCode": "E113663",
+      "printedPages": [39],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["eurol", "cvt", "1304"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": null,
+        "apiSpec": [],
+        "atf": [],
+        "oemAtf": ["BMW 83 22 0 136 376", "BMW 83 22 0 429 154", "Chrysler CVTF +4", "BMW CVT EZL 799A", "Daihatsu AMIX CVTF-DC", "Daihatsu CVTF DFE", "Daihatsu/Suzuki TC", "GM DEX-CVT", "Mitsubishi CVTF J1", "Mitsubishi CVTF J4", "Elf Matic CVT", "BMW EZL 799", "Ford CVT23", "Honda HCF-2", "Honda HMMF", "MB 236.20", "Mopar CVTF +4", "Nissan NS-1", "Nissan NS-2", "Nissan NS-3", "Subaru Lineartronic CVTF", "Suzuki CVT Green 1", "Suzuki CVTF Green 2", "Suzuki NS-2", "Toyota CVT FE", "Toyota CVT TC", "VW G 052 180", "VW G 052 516", "Ford WSS-M2C 928-A"]
+      }
+    },
+    {
+      "key": "dcf-1404",
+      "catalogName": "Eurol DCF 1404",
+      "catalogCode": "E113670",
+      "printedPages": [38],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["eurol", "dcf", "1404"] },
+      "values": {
+        "brand": "Eurol",
+        "sae": null,
+        "apiSpec": [],
+        "atf": [],
+        "oemAtf": ["BMW DCTF-1", "BMW DCTF-1+", "BMW DCTF-2", "BMW MTF LT-5", "Chrysler 68044345 EA/GA", "Ferrari TF DCT-F3", "FFL-2", "FFL-3", "FFL-4", "FIAT 9.55550-HE2", "FIAT 9.55550-MZ6", "Ford WSS-M2C 936-A", "MB 236.21", "MB 236.24", "MB 236.25", "Mitsubishi Dia Queen SSTF-1", "Nissan R35 Special", "Porsche 000 043 207 30", "Porsche 000 043 207 29", "PSA 9734 S2", "Renault EDC 6-Speed", "Volvo 1161838", "VW G 052 182", "VW G 052 529", "VW G 055 529", "VW G 052 536", "VW G 055 536"]
+      }
+    }
+  ]
+}
