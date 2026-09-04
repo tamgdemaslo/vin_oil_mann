@@ -147,6 +147,7 @@ function TechnicalProfile({ profile, loading, error }: { profile: MannUnifiedTec
         <strong>Технические жидкости</strong>
         {profile?.status === "active" ? <span className="is-active">Активные данные</span> : null}
         {profile?.status === "staged_preview" ? <span className="is-preview">Проверено · тест</span> : null}
+        {profile?.status === "catalog_preview" ? <span className="is-catalog">Каталог · предварительно</span> : null}
       </div>
       {loading ? (
         <div className="eco-vehicle-lookup__profile-loading" role="status">
@@ -166,22 +167,31 @@ function TechnicalProfile({ profile, loading, error }: { profile: MannUnifiedTec
                     <strong>{item.systemLabel}</strong>
                     {item.componentModel ? <span>{item.componentModel}</span> : null}
                   </div>
-                  {item.capacity ? <b>{capacityLabel(item.capacity)}</b> : null}
+                  {item.capacities.length ? (
+                    <div className="eco-vehicle-lookup__profile-capacities">
+                      {item.capacities.map((capacity, index) => <b key={`${capacityLabel(capacity)}-${index}`}>{capacityLabel(capacity)}</b>)}
+                    </div>
+                  ) : null}
                 </div>
                 {item.specifications.length ? (
-                  <span><em>Спецификации</em>{item.specifications.join(" · ")}</span>
+                  <span><em>Допуски / классы</em>{item.specifications.join(" · ")}</span>
                 ) : null}
                 {item.viscosityGrades.length ? (
                   <span><em>Вязкость</em>{item.viscosityGrades.join(" · ")}</span>
                 ) : null}
                 {!item.specifications.length && !item.viscosityGrades.length ? (
-                  <span className="is-muted">Допуски и вязкость для этой записи пока не подтверждены.</span>
+                  <span className="is-muted">
+                    {profile.status === "catalog_preview"
+                      ? "Допуски и вязкость для этой записи в исходном каталоге не указаны."
+                      : "Допуски и вязкость для этой записи пока не подтверждены."}
+                  </span>
                 ) : null}
+                {item.requiresReview ? <span className="is-review">Числовой объём скрыт: строка требует проверки разбора.</span> : null}
                 {item.recommendation ? <span><em>Рекомендация</em>{item.recommendation}</span> : null}
                 {item.replacementInterval ? <span><em>Интервал</em>{item.replacementInterval}</span> : null}
                 {item.evidence.length ? (
                   <details className="eco-vehicle-lookup__profile-source">
-                    <summary>Источник: {item.evidence[0]?.publisher ?? item.evidence[0]?.title ?? "первичный документ"}</summary>
+                    <summary>Источник: {item.evidence[0]?.publisher ?? item.evidence[0]?.title ?? "технический каталог"}</summary>
                     <div>
                       {item.evidence.map((source, index) => {
                         const label = [source.title ?? source.publisher ?? "Документ", source.printedPage != null ? `стр. ${source.printedPage}` : null].filter(Boolean).join(" · ");
@@ -198,7 +208,7 @@ function TechnicalProfile({ profile, loading, error }: { profile: MannUnifiedTec
           {profile.notice ? <p className="eco-vehicle-lookup__profile-notice">{profile.notice}</p> : null}
         </>
       ) : (
-        <div className="eco-vehicle-lookup__profile-state">Для этой модификации подтверждённых технических данных пока нет.</div>
+        <div className="eco-vehicle-lookup__profile-state">Для этой модификации технических данных пока нет.</div>
       )}
     </div>
   );
