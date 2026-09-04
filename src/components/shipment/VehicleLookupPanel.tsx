@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
+import type { MannTechnicalCapacity, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
 
 type LookupTab = "vin" | "plate" | "manual";
@@ -118,6 +119,91 @@ function candidateLabel(candidate: MannVehicleCandidate): string {
   return details.length ? `${title} · ${details.join(" · ")}` : title;
 }
 
+function formatLiters(value: number): string {
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(value);
+}
+
+function capacityLabel(capacity: MannTechnicalCapacity): string {
+  let value = "";
+  if (capacity.nominalLiters != null) {
+    value = `${formatLiters(capacity.nominalLiters)} л`;
+    if (capacity.toleranceLiters != null && capacity.toleranceLiters > 0) {
+      value += ` ± ${formatLiters(capacity.toleranceLiters)} л`;
+    }
+  } else if (capacity.minLiters != null && capacity.maxLiters != null) {
+    value = `${formatLiters(capacity.minLiters)}–${formatLiters(capacity.maxLiters)} л`;
+  } else if (capacity.maxLiters != null) {
+    value = `до ${formatLiters(capacity.maxLiters)} л`;
+  } else if (capacity.minLiters != null) {
+    value = `от ${formatLiters(capacity.minLiters)} л`;
+  }
+  return [value, capacity.serviceContextLabel].filter(Boolean).join(" · ");
+}
+
+function TechnicalProfile({ profile, loading, error }: { profile: MannUnifiedTechnicalProfile | null; loading: boolean; error: string }) {
+  return (
+    <div className="eco-vehicle-lookup__profile" aria-live="polite" aria-busy={loading}>
+      <div className="eco-vehicle-lookup__profile-head">
+        <strong>Технические жидкости</strong>
+        {profile?.status === "active" ? <span className="is-active">Активные данные</span> : null}
+        {profile?.status === "staged_preview" ? <span className="is-preview">Проверено · тест</span> : null}
+      </div>
+      {loading ? (
+        <div className="eco-vehicle-lookup__profile-loading" role="status">
+          <span className="eco-sr-only">Загружаем технический профиль…</span>
+          <i />
+          <i />
+        </div>
+      ) : error ? (
+        <div className="eco-vehicle-lookup__profile-state is-warning">{error}</div>
+      ) : profile?.items.length ? (
+        <>
+          <div className="eco-vehicle-lookup__profile-items">
+            {profile.items.map((item) => (
+              <div className="eco-vehicle-lookup__profile-item" key={item.revisionId}>
+                <div className="eco-vehicle-lookup__profile-main">
+                  <div>
+                    <strong>{item.systemLabel}</strong>
+                    {item.componentModel ? <span>{item.componentModel}</span> : null}
+                  </div>
+                  {item.capacity ? <b>{capacityLabel(item.capacity)}</b> : null}
+                </div>
+                {item.specifications.length ? (
+                  <span><em>Спецификации</em>{item.specifications.join(" · ")}</span>
+                ) : null}
+                {item.viscosityGrades.length ? (
+                  <span><em>Вязкость</em>{item.viscosityGrades.join(" · ")}</span>
+                ) : null}
+                {!item.specifications.length && !item.viscosityGrades.length ? (
+                  <span className="is-muted">Допуски и вязкость для этой записи пока не подтверждены.</span>
+                ) : null}
+                {item.recommendation ? <span><em>Рекомендация</em>{item.recommendation}</span> : null}
+                {item.replacementInterval ? <span><em>Интервал</em>{item.replacementInterval}</span> : null}
+                {item.evidence.length ? (
+                  <details className="eco-vehicle-lookup__profile-source">
+                    <summary>Источник: {item.evidence[0]?.publisher ?? item.evidence[0]?.title ?? "первичный документ"}</summary>
+                    <div>
+                      {item.evidence.map((source, index) => {
+                        const label = [source.title ?? source.publisher ?? "Документ", source.printedPage != null ? `стр. ${source.printedPage}` : null].filter(Boolean).join(" · ");
+                        return source.url ? (
+                          <a href={source.url} target="_blank" rel="noreferrer" key={`${source.url}-${index}`}>{label}</a>
+                        ) : <span key={`${label}-${index}`}>{label}</span>;
+                      })}
+                    </div>
+                  </details>
+                ) : null}
+              </div>
+            ))}
+          </div>
+          {profile.notice ? <p className="eco-vehicle-lookup__profile-notice">{profile.notice}</p> : null}
+        </>
+      ) : (
+        <div className="eco-vehicle-lookup__profile-state">Для этой модификации подтверждённых технических данных пока нет.</div>
+      )}
+    </div>
+  );
+}
+
 export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onLookupStart, onManualMode }: Props) {
   const [tab, setTab] = useState<LookupTab>("vin");
   const [input, setInput] = useState(initialVin ?? "");
@@ -129,10 +215,15 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   const [feedback, setFeedback] = useState<LookupFeedback | null>(null);
   const [appliedVehicle, setAppliedVehicle] = useState<NormalizedVehicleIdentity | null>(null);
   const [appliedFromCache, setAppliedFromCache] = useState(false);
+  const [technicalProfile, setTechnicalProfile] = useState<MannUnifiedTechnicalProfile | null>(null);
+  const [technicalProfileLoading, setTechnicalProfileLoading] = useState(false);
+  const [technicalProfileError, setTechnicalProfileError] = useState("");
   const lookupRequestIdRef = useRef(0);
   const resolutionRequestIdRef = useRef(0);
+  const technicalProfileRequestIdRef = useRef(0);
   const lookupControllerRef = useRef<AbortController | null>(null);
   const resolutionControllerRef = useRef<AbortController | null>(null);
+  const technicalProfileControllerRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastAutomaticLookupRef = useRef("");
 
@@ -146,12 +237,48 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   };
 
   const resetLookupState = () => {
+    technicalProfileRequestIdRef.current += 1;
+    technicalProfileControllerRef.current?.abort();
     setLookup(null);
     setResolution(null);
     setSelectedKey(null);
     setFeedback(null);
     setAppliedVehicle(null);
     setAppliedFromCache(false);
+    setTechnicalProfile(null);
+    setTechnicalProfileLoading(false);
+    setTechnicalProfileError("");
+  };
+
+  const loadTechnicalProfile = async (variantKeys: string[]) => {
+    const requestId = ++technicalProfileRequestIdRef.current;
+    technicalProfileControllerRef.current?.abort();
+    const controller = new AbortController();
+    technicalProfileControllerRef.current = controller;
+    setTechnicalProfile(null);
+    setTechnicalProfileError("");
+    setTechnicalProfileLoading(true);
+    try {
+      const response = await fetch("/api/mann-catalog/technical-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variantKeys }),
+        signal: controller.signal,
+      });
+      const data = await responseJson<MannUnifiedTechnicalProfile & { error?: string }>(response);
+      if (requestId !== technicalProfileRequestIdRef.current) return;
+      if (!response.ok || !data) {
+        setTechnicalProfileError(data?.error ?? "Не удалось загрузить технический профиль.");
+        return;
+      }
+      setTechnicalProfile(data);
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return;
+      if (requestId !== technicalProfileRequestIdRef.current) return;
+      setTechnicalProfileError("Технический профиль временно недоступен. Подбор фильтров продолжает работать.");
+    } finally {
+      if (requestId === technicalProfileRequestIdRef.current) setTechnicalProfileLoading(false);
+    }
   };
 
   const handleResolution = async (vehicle: NormalizedVehicleIdentity, fromCache?: boolean) => {
@@ -188,6 +315,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
         setAppliedVehicle(vehicle);
         setAppliedFromCache(Boolean(fromCache));
         setFeedback(null);
+        if (data.selectedApplication) void loadTechnicalProfile(data.selectedApplication.variantIds);
         return;
       }
 
@@ -237,6 +365,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     resolutionRequestIdRef.current += 1;
     lookupControllerRef.current?.abort();
     resolutionControllerRef.current?.abort();
+    technicalProfileControllerRef.current?.abort();
     const controller = new AbortController();
     lookupControllerRef.current = controller;
     onLookupStart();
@@ -248,6 +377,9 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setFeedback(null);
     setAppliedVehicle(null);
     setAppliedFromCache(false);
+    setTechnicalProfile(null);
+    setTechnicalProfileLoading(false);
+    setTechnicalProfileError("");
 
     try {
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
@@ -328,6 +460,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setAppliedVehicle(vehicle);
     setAppliedFromCache(Boolean(lookup?.fromCache));
     setFeedback(null);
+    void loadTechnicalProfile(candidate.variantIds);
     onConfirmMannCandidate(vehicle, candidate);
   };
 
@@ -340,12 +473,16 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     resolutionRequestIdRef.current += 1;
     lookupControllerRef.current?.abort();
     resolutionControllerRef.current?.abort();
+    technicalProfileControllerRef.current?.abort();
     setTab(next);
     setLookup(null);
     setResolution(null);
     setFeedback(null);
     setAppliedVehicle(null);
     setAppliedFromCache(false);
+    setTechnicalProfile(null);
+    setTechnicalProfileLoading(false);
+    setTechnicalProfileError("");
     setInput("");
     lastAutomaticLookupRef.current = "";
     if (next === "manual") {
@@ -360,6 +497,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     resolutionRequestIdRef.current += 1;
     lookupControllerRef.current?.abort();
     resolutionControllerRef.current?.abort();
+    technicalProfileControllerRef.current?.abort();
     resetLookupState();
     setInput("");
     lastAutomaticLookupRef.current = "";
@@ -396,6 +534,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             </details>
           </div>
         </div>
+        <TechnicalProfile profile={technicalProfile} loading={technicalProfileLoading} error={technicalProfileError} />
       </section>
     );
   }

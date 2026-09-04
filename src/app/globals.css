@@ -68273,6 +68273,195 @@ select[size="1"]::-ms-expand {
   outline: 0;
 }
 
+.eco-shipment-new-page .eco-vehicle-lookup__profile {
+  padding: 14px 16px 16px;
+  color: #34312c;
+  background: #fbfaf7;
+  border-top: 1px solid #e6e0d6;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-head > strong {
+  color: #26241f;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-head > span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-head > span.is-active {
+  color: #185b38;
+  background: #e6f4ec;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-head > span.is-preview {
+  color: #70470e;
+  background: #f7eacb;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-items {
+  display: grid;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-item {
+  display: grid;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid #ebe5dc;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-item:last-child {
+  padding-bottom: 0;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-main > div {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 7px;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-main strong,
+.eco-shipment-new-page .eco-vehicle-lookup__profile-main b {
+  color: #292722;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-main b {
+  flex: none;
+  text-align: right;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-main span,
+.eco-shipment-new-page .eco-vehicle-lookup__profile-item > span,
+.eco-shipment-new-page .eco-vehicle-lookup__profile-source {
+  color: #625d55;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-item > span {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-item > span em {
+  min-width: 88px;
+  color: #777066;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-item > span.is-muted {
+  color: #706a61;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-source > summary {
+  width: fit-content;
+  color: #625d55;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: #bbb2a5;
+  text-underline-offset: 2px;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-source > summary:focus-visible,
+.eco-shipment-new-page .eco-vehicle-lookup__profile-source > summary:hover {
+  color: #332f2a;
+  outline: 0;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-source > div {
+  display: grid;
+  gap: 3px;
+  padding: 7px 0 0 16px;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-source a {
+  color: #7a341e;
+  font-weight: 650;
+  text-underline-offset: 2px;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-notice {
+  margin: 11px 0 0;
+  padding: 9px 10px;
+  color: #614413;
+  background: #fff8e7;
+  border: 1px solid #ead8aa;
+  border-radius: 7px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-state {
+  color: #6c675f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-state.is-warning {
+  color: #7d321d;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-loading {
+  display: grid;
+  gap: 7px;
+  padding: 2px 0;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-loading i {
+  display: block;
+  width: min(420px, 82%);
+  height: 10px;
+  background: #e9e3da;
+  border-radius: 4px;
+  animation: eco-vehicle-profile-pulse 900ms ease-in-out infinite alternate;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__profile-loading i:last-child {
+  width: min(300px, 58%);
+  animation-delay: 120ms;
+}
+
+@keyframes eco-vehicle-profile-pulse {
+  from { opacity: 0.5; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eco-shipment-new-page .eco-vehicle-lookup__profile-loading i {
+    animation: none;
+    opacity: 0.75;
+  }
+}
+
 .eco-shipment-new-page .eco-shipment-fast-search {
   margin: 0 !important;
   padding: 0 !important;
@@ -68855,6 +69044,30 @@ select[size="1"]::-ms-expand {
     color: #4b4740;
     content: "✎";
     font-size: 15px;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__profile {
+    padding: 12px;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__profile-main {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__profile-main b {
+    text-align: left;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__profile-item > span {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__profile-item > span em {
+    min-width: 0;
   }
 
   .eco-shipment-new-page .eco-shipment-position-searchbar,

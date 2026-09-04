@@ -49,6 +49,7 @@
     "build:mann-unified-technical-staging-sql": "node scripts/build-mann-unified-technical-staging-sql.mjs",
     "test:mann-unified-technical-expand": "node scripts/test-mann-unified-technical-expand.mjs",
     "test:mann-unified-technical-staging-sql": "node scripts/test-mann-unified-technical-staging-sql.mjs",
+    "test:mann-unified-technical-profile": "node scripts/test-mann-unified-technical-profile.mjs",
     "test:ai-vehicle-resolution": "node scripts/test-ai-vehicle-resolution.mjs",
     "test:ai-material-selection": "node scripts/test-ai-material-selection.mjs",
     "test:ai-quote-and-tech-card": "node scripts/test-ai-quote-and-tech-card.mjs",
