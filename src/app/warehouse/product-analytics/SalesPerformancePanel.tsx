@@ -485,7 +485,7 @@ function potentialBasisLabel(row: SalesPerformancePlanFactRow, kind: "revenue" |
   return "Недостаточно данных для точной оценки";
 }
 
-function PlanFactTable({ rows }: { rows: SalesPerformancePlanFactRow[] }) {
+function PlanFactTable({ rows, onOpen }: { rows: SalesPerformancePlanFactRow[]; onOpen: (key: string, title: string) => void }) {
   if (!rows.length) return <div className="eco-sp-empty">На выбранный месяц планы пока не заданы.</div>;
   return (
     <EcoTable className="eco-sp-table-wrap eco-sp-plan-fact">
@@ -494,10 +494,13 @@ function PlanFactTable({ rows }: { rows: SalesPerformancePlanFactRow[] }) {
           <th>Категория</th>
           <th>Факт / план</th>
           <th>Выполнение</th>
+          <th>Прошлый период</th>
           <th>Прогноз</th>
           <th>Осталось</th>
           <th>Нужный темп / раб. день</th>
           <th>Выручка факт / план</th>
+          <th>Валовая прибыль факт / план</th>
+          <th>Потенциал до плана</th>
           <th>Статус</th>
         </tr>
       </thead>
@@ -507,16 +510,17 @@ function PlanFactTable({ rows }: { rows: SalesPerformancePlanFactRow[] }) {
           return (
             <tr key={row.rowKey}>
               <td>
-                <span className="eco-sp-row-title">
+                <button type="button" className="eco-sp-row-title" onClick={() => onOpen(row.rowKey, row.title)}>
                   <strong>{row.title}</strong>
                   <small>{row.kind === "service" ? servicePlanSubtitle(row) : row.metricCode}</small>
-                </span>
+                </button>
               </td>
               <td><strong className="eco-sp-number">{quantity(row.actualCount, row.unit)}</strong><small className="eco-sp-cell-note">из {quantity(row.targetCount, row.unit)}</small></td>
               <td>
                 <strong>{percent(row.completionPercent)}</strong>
                 <span className="eco-sp-progress" aria-hidden><span style={{ width: `${Math.min(100, Math.max(0, row.completionPercent ?? 0))}%` }} /></span>
               </td>
+              <td>{quantity(row.previousActualCount, row.unit)}<small className="eco-sp-cell-note">{row.changePercent == null ? "нет базы" : `${row.changePercent > 0 ? "+" : ""}${percent(row.changePercent)}`}</small></td>
               <td>
                 {quantity(row.forecastCount, row.unit)}
                 <small className={`eco-sp-cell-note ${row.forecastGap != null && row.forecastGap > 0 ? "is-warning" : ""}`}>
@@ -531,6 +535,11 @@ function PlanFactTable({ rows }: { rows: SalesPerformancePlanFactRow[] }) {
               <td>{quantity(row.remainingToPlan, row.unit)}</td>
               <td>{quantity(row.requiredPerWorkingDay, row.unit)}</td>
               <td>{money(row.actualRevenueCents)}<small className="eco-sp-cell-note">из {money(row.targetRevenueCents)}</small></td>
+              <td>{money(row.actualGrossProfitCents)}<small className="eco-sp-cell-note">из {money(row.targetGrossProfitCents)}</small></td>
+              <td>
+                <strong className="eco-sp-growth-value">{money(row.potentialGrossProfitCents)}</strong>
+                <small className={`eco-sp-cell-note ${row.potentialGrossProfitCents == null && (row.remainingToPlan ?? 0) > 0 ? "is-warning" : ""}`}>выручка {money(row.potentialRevenueCents)}</small>
+              </td>
               <td><EcoBadge tone={status.tone}>{status.label}</EcoBadge>{row.plannedBranches < row.totalBranches ? <small className="eco-sp-cell-note is-warning">План у {row.plannedBranches} из {row.totalBranches} филиалов</small> : null}</td>
             </tr>
           );
@@ -549,13 +558,13 @@ function GrowthPanel({ data, onOpen, onExport }: {
     return <div className="eco-sp-empty">{data.plan.reason || "Возможности роста доступны для месячного плана."}</div>;
   }
   const growthRows = data.plan.rows.filter((row) => (row.remainingToPlan ?? 0) > 0);
-  const forecastGap = data.plan.rows.reduce((sum, row) => sum + Math.max(0, row.forecastGap ?? 0), 0);
+  const forecastGapRows = data.plan.rows.filter((row) => (row.forecastGap ?? 0) > 0).length;
   return (
     <div className="eco-sp-stack">
       <div className="eco-sp-kpis">
-        <EcoKpi label="Потенциал выручки до плана" value={money(data.plan.summary.potentialRevenueCents)} sub={`${data.plan.summary.potentialRows} категорий с резервом`} tone="success" />
+        <EcoKpi label="Потенциал выручки до плана" value={money(data.plan.summary.potentialRevenueCents)} sub={`${data.plan.summary.potentialRows} категорий с резервом`} tone={data.plan.summary.potentialRevenueCents == null && data.plan.summary.potentialRows ? "warning" : "success"} />
         <EcoKpi label="Расчётный резерв прибыли" value={money(data.plan.summary.potentialGrossProfitCents)} sub={data.plan.summary.unavailableProfitRows ? `${data.plan.summary.unavailableProfitRows} строк без полной базы` : "себестоимость подтверждена"} tone={data.plan.summary.unavailableProfitRows ? "warning" : "success"} />
-        <EcoKpi label="Прогнозируемый разрыв" value={number(forecastGap, 1)} sub="единиц по текущему темпу" tone={forecastGap > 0 ? "warning" : "neutral"} />
+        <EcoKpi label="Категории с разрывом" value={String(forecastGapRows)} sub="прогноз ниже месячной цели" tone={forecastGapRows > 0 ? "warning" : "neutral"} />
         <EcoKpi label="Резерв attach rate" value={`${data.plan.summary.attachOpportunityVisits} виз.`} sub={`потенциал прибыли ${money(data.plan.summary.attachOpportunityGrossProfitCents)}`} tone={data.plan.summary.attachOpportunityVisits ? "info" : "neutral"} />
       </div>
 
@@ -610,7 +619,12 @@ function GrowthPanel({ data, onOpen, onExport }: {
   );
 }
 
-function PlanPanel({ data, onSaved, onExport }: { data: SalesPerformanceAnalytics; onSaved: () => Promise<void>; onExport: () => void }) {
+function PlanPanel({ data, onSaved, onExport, onOpen }: {
+  data: SalesPerformanceAnalytics;
+  onSaved: () => Promise<void>;
+  onExport: () => void;
+  onOpen: (key: string, title: string) => void;
+}) {
   const [drafts, setDrafts] = useState<Record<string, PlanDraft>>({});
   const [expandedKey, setExpandedKey] = useState("");
   const [savingKey, setSavingKey] = useState("");
@@ -769,7 +783,7 @@ function PlanPanel({ data, onSaved, onExport }: { data: SalesPerformanceAnalytic
             <button type="button" className="eco-btn eco-btn--sm" onClick={() => void toggleHistory()}><History className="eco-icon" aria-hidden />История</button>
           </div>
         </div>
-        <PlanFactTable rows={data.plan.rows} />
+        <PlanFactTable rows={data.plan.rows} onOpen={onOpen} />
         {data.plan.calendars.length ? (
           <p className="eco-sp-footnote eco-sp-calendar-note">
             Рабочие дни: {data.plan.calendars.map((item) => `${item.branchName} — ${item.elapsedWorkingDays} из ${item.totalWorkingDays}${item.source === "DEFAULT_MONDAY_SATURDAY" ? " (пн–сб по умолчанию)" : ""}`).join("; ")}.
@@ -1028,7 +1042,7 @@ export default function SalesPerformancePanel() {
             </section>
           ) : null}
 
-          {activeTab === "plan" ? <PlanPanel data={data} onSaved={() => load(filters, true)} onExport={() => exportTable("plan")} /> : null}
+          {activeTab === "plan" ? <PlanPanel data={data} onSaved={() => load(filters, true)} onExport={() => exportTable("plan")} onOpen={(key, title) => void openDetails(key, title)} /> : null}
 
           {activeTab === "growth" ? <GrowthPanel data={data} onOpen={(key, title) => void openDetails(key, title)} onExport={() => exportTable("growth")} /> : null}
 
