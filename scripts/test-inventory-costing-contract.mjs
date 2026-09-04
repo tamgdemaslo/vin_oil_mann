@@ -15,6 +15,8 @@ const payroll = read("src/lib/payroll.ts");
 const customerProfit = read("src/lib/customer-analytics-profit.ts");
 const customerAnalytics = read("src/lib/customer-analytics.ts");
 const dashboard = read("src/app/api/dashboard/operations/route.ts");
+const cutover = read("src/lib/inventory-cost-cutover.ts");
+const cutoverRoute = read("src/app/api/system/inventory-cost-cutover/route.ts");
 
 assert.match(costingDb, /pg_advisory_xact_lock[\s\S]*?::text\s+AS\s+locked/);
 
@@ -37,5 +39,13 @@ assert.match(dashboard, /calculateLineFinancials/);
 assert.doesNotMatch(finance, /position\.buyPriceCentsPerUnit\s*\?\?\s*position\.product/);
 assert.doesNotMatch(analytics, /position\.buyPriceCentsPerUnit\s*\?\?\s*position\.product/);
 assert.doesNotMatch(payroll, /position\.buyPriceCentsPerUnit\s*\?\?\s*product\?\.buyPriceCents/);
+
+assert.match(cutover, /OPENING_COST_RECONSTRUCTED/);
+assert.match(cutover, /analyticsImpact:\s*false/);
+assert.match(cutover, /expectedPlanHash/);
+assert.match(cutover, /backupReference/);
+assert.doesNotMatch(cutover, /localDemandPosition\.(?:update|updateMany|upsert|delete)/);
+assert.match(cutoverRoute, /session\.user\.role !== "owner"/);
+assert.match(cutoverRoute, /invalidateWarehouseReadCaches/);
 
 console.log("inventory costing integration contract: ok");
