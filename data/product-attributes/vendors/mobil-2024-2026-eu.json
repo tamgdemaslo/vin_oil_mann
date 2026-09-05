@@ -1,0 +1,110 @@
+{
+  "metadata": {
+    "vendor": "Mobil",
+    "catalog": "Official ExxonMobil European product data sheets",
+    "catalogUrl": "https://www.mobil.com/en-gb/passenger-vehicle-lube/",
+    "regionalCatalogUrl": "https://www.mobil.com/ru-ua/passenger-vehicle-lube/",
+    "catalogDate": "2024-2026",
+    "preparedAt": "2026-09-04",
+    "scope": "Mobil engine-oil families with an unambiguous match in the Дачная 6В inventory export dated 2026-09-04",
+    "evidencePolicy": "Use the official European or former-Soviet-market ExxonMobil PDS for the exact product line. Preserve API SN for the older Super 3000 XE package generation. For unchanged names, use the current PDS; for the shortened inventory name Mobil 1 FS 5W-50, use the current successor Mobil 1 FS X2 5W-50.",
+    "packageVolumePolicy": "Package volume is read from the local inventory card name."
+  },
+  "products": [
+    {
+      "key": "mobil-super-3000-x1-formula-fe-5w30",
+      "catalogName": "Mobil Super 3000 X1 Formula FE 5W-30",
+      "catalogReferences": ["151521", "157848"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mobil", "super", "3000", "fe", "5w30"] },
+      "evidenceUrls": [
+        "https://www.mobil.com/en-pl/passenger-vehicle-lube/pds/eu-xx-mobil-super-3000-x1-formula-fe-5w-30",
+        "https://www.mobil.com/en-nz/passenger-vehicle-lube/pds/gl-xx-mobil-super-3000-x1-formula-fe-5w30"
+      ],
+      "values": {
+        "brand": "Mobil",
+        "sae": "5W-30",
+        "acea": ["A5/B5"],
+        "apiSpec": ["SL/CF"],
+        "ilsac": [],
+        "oem": ["Ford WSS-M2C 913-D", "Ford WSS-M2C 913-C", "Jaguar/Land Rover STJLR.03.5003"]
+      }
+    },
+    {
+      "key": "mobil-super-3000-xe-5w30",
+      "catalogName": "Mobil Super 3000 XE 5W-30",
+      "catalogReferences": ["151453", "157573"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mobil", "super", "3000", "xe", "5w30"] },
+      "evidenceUrls": [
+        "https://www.mobil.com/tr-tr/passenger-vehicle-lube/pds/gl-xx-mobil-super-3000-xe-5w-30",
+        "https://www.mobil.com/ro-ro/passenger-vehicle-lube/pds/gl-xx-mobil-super-3000-xe-5w30"
+      ],
+      "values": {
+        "brand": "Mobil",
+        "sae": "5W-30",
+        "acea": ["C3"],
+        "apiSpec": ["SN"],
+        "ilsac": [],
+        "oem": ["GM Dexos 2", "BMW Longlife-04", "MB 229.31", "MB 229.51", "MB 229.52", "VW 505.00", "VW 505.01", "Ford WSS-M2C 917-A", "GM-LL-A-025", "GM-LL-B-025"]
+      }
+    },
+    {
+      "key": "mobil-1-esp-5w30",
+      "catalogName": "Mobil 1 ESP 5W-30",
+      "catalogReferences": ["157293", "157294"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mobil", "1", "esp", "5w30"] },
+      "evidenceUrls": [
+        "https://www.mobil.com/en-hu/passenger-vehicle-lube/pds/af-xx-mobil-1-esp-5w-30",
+        "https://www.mobil.com/en-ao/passenger-vehicle-lube/pds/eu-xx-mobil-1-esp-5w-30"
+      ],
+      "values": {
+        "brand": "Mobil",
+        "sae": "5W-30",
+        "acea": ["C2", "C3"],
+        "apiSpec": ["SQ"],
+        "ilsac": [],
+        "oem": ["BMW Longlife-04", "MB 229.31", "MB 229.51", "MB 229.52", "Opel OV0401547 - D30", "Opel OV0401547 - G30", "PORSCHE C30", "VW 504.00", "VW 507.00", "FIAT 9.55535-S3"]
+      }
+    },
+    {
+      "key": "mobil-1-fs-x2-5w50",
+      "catalogName": "Mobil 1 FS X2 5W-50",
+      "catalogReferences": ["Mobil 1 FS X2 5W-50"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mobil", "1", "fs", "5w50"] },
+      "evidenceUrls": [
+        "https://www.mobil.com/en-gb/passenger-vehicle-lube/pds/eu-xx-mobil-1-fs-x2-5w-50",
+        "https://www.mobil.com/en/lubricants/for-personal-vehicles/our-products/products/mobil-1-fs-x2-5w-50"
+      ],
+      "values": {
+        "brand": "Mobil",
+        "sae": "5W-50",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SQ"],
+        "ilsac": [],
+        "oem": ["MB 229.3", "PORSCHE A40", "FIAT 9.55535-M2", "Lexus LFA Service Fill"]
+      }
+    },
+    {
+      "key": "mobil-super-3000-x1-5w40",
+      "catalogName": "Mobil Super 3000 X1 5W-40",
+      "catalogReferences": ["151154", "157577"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mobil", "super", "3000", "x1", "5w40"] },
+      "evidenceUrls": [
+        "https://www.mobil.com/ru-ua/passenger-vehicle-lube/pds/eu-xx-mobil-super-3000-x1-5w-40",
+        "https://www.mobil.com/en-gb/passenger-vehicle-lube/pds/eu-xx-mobil-super-3000-x1-5w40"
+      ],
+      "values": {
+        "brand": "Mobil",
+        "sae": "5W-40",
+        "acea": ["A3/B4"],
+        "apiSpec": ["SQ"],
+        "ilsac": [],
+        "oem": ["PORSCHE A40", "Renault RN 0700", "Renault RN 0710", "VW 502.00", "VW 505.00", "MB 229.3", "FIAT 9.55535-G2"]
+      }
+    }
+  ]
+}

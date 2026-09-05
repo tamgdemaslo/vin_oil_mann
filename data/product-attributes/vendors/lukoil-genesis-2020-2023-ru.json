@@ -1,0 +1,189 @@
+{
+  "metadata": {
+    "vendor": "Lukoil",
+    "catalog": "Official LUKOIL GENESIS product cards and technical descriptions, 2020–2023",
+    "catalogUrl": "https://lukoil-masla.ru/FileSystem/9/634200.pdf",
+    "regionalCatalogUrl": "https://lukoil-masla.ru/ru/products/ForPassengerCars/NewGenesis",
+    "catalogDate": "2020-2023",
+    "preparedAt": "2026-09-04",
+    "scope": "LUKOIL GENESIS oil families with an unambiguous match in the Дачная 6В inventory export dated 2026-09-04",
+    "evidencePolicy": "Use official Russian LUKOIL product pages and archived official TDS editions matching the formulation and packaging generation named in the inventory. Do not silently upgrade API SN/SP products to the later API SQ formulations introduced in 2025.",
+    "packageVolumePolicy": "Package volume is read from the local inventory card name; per-litre bulk cards are stored as 1 л and the explicit 100 мл bulk card remains 100 мл."
+  },
+  "products": [
+    {
+      "key": "genesis-armortech-euro-5w40",
+      "catalogName": "LUKOIL GENESIS ARMORTECH 5W-40 (European cars)",
+      "catalogReferences": ["СТО 79345251-185-2019"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "armortech", "euro", "5w40"] },
+      "evidenceUrls": ["https://catalog.lukoil-masla.ru/u/product_document_file/4426/tds_669_l_rus_lukoil_genesis_armortech_5w-40_17.03.2020.pdf"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "5W-40",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["MB 226.5", "MB 229.5", "MB 229.3", "VW 502.00", "VW 505.00", "Renault RN 0700", "Renault RN 0710", "PORSCHE A40", "BMW Longlife-01", "FIAT 9.55535-N2", "FIAT 9.55535-Z2", "PSA B71 2296", "GM-LL-B-025"]
+      }
+    },
+    {
+      "key": "genesis-armortech-diesel-5w30",
+      "catalogName": "LUKOIL GENESIS ARMORTECH DIESEL 5W-30",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "armortech", "diesel", "5w30"] },
+      "evidenceUrls": ["https://lukoil-masla.ru/FileSystem/9/611775.pdf", "https://lukoil-masla.ru/ru/products/ProductCard/lukoil-genesis-armortech-diesel-5w-30"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "5W-30",
+        "acea": ["C2", "C3"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["MB 229.51", "MB 229.52", "GM Dexos 2"]
+      }
+    },
+    {
+      "key": "genesis-armortech-diesel-5w40",
+      "catalogName": "LUKOIL GENESIS ARMORTECH DIESEL 5W-40",
+      "catalogReferences": ["СТО 79345251-185-2019"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "isel", "5w40"] },
+      "evidenceUrls": ["https://catalog.lukoil-masla.ru/u/product_document_file/4243/tds_819_l_rus_lukoil_genesis_armortech_diesel_5w-40_27.02.2020.pdf"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "5W-40",
+        "acea": ["C3"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["BMW Longlife-04", "GM Dexos 2", "MB 229.51", "MB 229.31", "MB 226.5", "Renault RN 0700", "Renault RN 0710", "VW 505.00", "VW 505.01", "PORSCHE A40", "Ford WSS-M2C 917-A", "FIAT 9.55535-S2"]
+      }
+    },
+    {
+      "key": "genesis-armortech-dx1-5w30",
+      "catalogName": "LUKOIL GENESIS ARMORTECH DX1 5W-30",
+      "catalogReferences": ["СТО 79345251-185-2019"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "armortech", "dx1", "5w30"] },
+      "evidenceUrls": ["https://catalog.lukoil-masla.ru/u/product_document_file/6193/tds_1072_l_eng_lukoil_genesis_armortech_dx1_5w-30_13.10.2022.pdf"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "5W-30",
+        "acea": [],
+        "apiSpec": ["SP", "SP-RC", "SN Plus", "SN RC"],
+        "ilsac": ["GF-6A", "GF-5"],
+        "oem": ["GM Dexos 1 Gen 2"]
+      }
+    },
+    {
+      "key": "genesis-armortech-fd-5w30",
+      "catalogName": "LUKOIL GENESIS ARMORTECH FD 5W-30",
+      "catalogReferences": ["СТО 79345251-185-2019"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "armortech", "fd", "5w30"] },
+      "evidenceUrls": ["https://lukoil-masla.ru/ru/products/ProductCard/lukoil-genesis-armortech-fd-5w-30"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "5W-30",
+        "acea": ["A1/B1", "A5/B5"],
+        "apiSpec": ["SL/CF"],
+        "ilsac": [],
+        "oem": ["Ford WSS-M2C 913-A", "Ford WSS-M2C 913-B", "Ford WSS-M2C 913-C", "Ford WSS-M2C 913-D", "Iveco 18-1811", "Jaguar/Land Rover STJLR.03.5003", "Renault RN 0700", "FIAT 9.55535-G1"]
+      }
+    },
+    {
+      "key": "genesis-armortech-gc-5w30",
+      "catalogName": "LUKOIL GENESIS ARMORTECH GC 5W-30",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "armortech", "gc", "5w30"] },
+      "evidenceUrls": ["https://lukoil-masla.ru/ru/products/ProductCard/lukoil-genesis-armortech-gc-5w-30", "https://lukoil-masla.ru/FileSystem/9/634200.pdf"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "5W-30",
+        "acea": ["C3"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["VW 504.00", "VW 507.00", "MB 229.51", "MB 229.31", "FIAT 9.55535-S3", "PORSCHE C30", "BMW Longlife-04"]
+      }
+    },
+    {
+      "key": "genesis-armortech-hk-5w30",
+      "catalogName": "LUKOIL GENESIS ARMORTECH HK 5W-30",
+      "catalogReferences": ["СТО 79345251-185-2019"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "armortech", "hk", "5w30"] },
+      "evidenceUrls": ["https://lukoil-masla.ru/ru/products/ProductCard/lukoil-genesis-armortech-hk-5w-30"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "5W-30",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SL/CF"],
+        "ilsac": [],
+        "oem": ["VW 502.00", "VW 505.00", "MB 229.5", "Renault RN 0700", "Renault RN 0710"]
+      }
+    },
+    {
+      "key": "genesis-armortech-cn-5w40",
+      "catalogName": "LUKOIL GENESIS ARMORTECH CN 5W-40",
+      "catalogReferences": ["СТО 79345251-185-2019"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "armo", "tech", "cn", "5w40"] },
+      "evidenceUrls": ["https://catalog.lukoil-masla.ru/u/product_document_file/6335/tds_1792_l_eng_lukoil_genesis_armortech_cn_5w-40_27.01.2023.pdf"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "5W-40",
+        "acea": [],
+        "apiSpec": ["SP", "CF"],
+        "ilsac": [],
+        "oem": []
+      }
+    },
+    {
+      "key": "genesis-universal-10w40",
+      "catalogName": "LUKOIL GENESIS UNIVERSAL 10W-40",
+      "catalogReferences": ["СТО 79345251-185-2019"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "universal", "10w40"] },
+      "evidenceUrls": ["https://lukoil-masla.ru/ru/products/ProductCard/lukoil-genesis-universal-10w-40"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "10W-40",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["MB 229.3", "VW 502.00", "VW 505.00", "GM-LL-A-025", "GM-LL-B-025", "PSA B71 2300", "PSA B71 2294", "Renault RN 0700", "Renault RN 0710", "FIAT 9.55535-G2"]
+      }
+    },
+    {
+      "key": "genesis-universal-a5b5-5w30",
+      "catalogName": "LUKOIL GENESIS UNIVERSAL 5W-30",
+      "catalogReferences": ["СТО 79345251-185-2019"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "universal", "a5b5", "5w30"] },
+      "evidenceUrls": ["https://catalog.lukoil-masla.ru/u/product_document_file/6143/tds_1701_l_rus_lukoil_genesis_universal_5w-30_05.08.2022.pdf"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "5W-30",
+        "acea": ["A1/B1", "A5/B5"],
+        "apiSpec": ["SL/CF"],
+        "ilsac": [],
+        "oem": ["Ford WSS-M2C 913-A", "Ford WSS-M2C 913-B", "Ford WSS-M2C 913-C", "Ford WSS-M2C 913-D", "Renault RN 0700"]
+      }
+    },
+    {
+      "key": "genesis-universal-diesel-5w30",
+      "catalogName": "LUKOIL GENESIS UNIVERSAL DIESEL 5W-30",
+      "catalogReferences": ["СТО 79345251-185-2019"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["genesis", "universal", "diesel", "5w30"] },
+      "evidenceUrls": ["https://catalog.lukoil-masla.ru/u/product_document_file/4234/tds_824_l_rus_lukoil_genesis_universal_diesel_5w-30_26.02.2020.pdf"],
+      "values": {
+        "brand": "Lukoil",
+        "sae": "5W-30",
+        "acea": ["C2", "C3"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+{
+  "metadata": {
+    "vendor": "ZIC",
+    "catalog": "Official ZIC Russia product cards and TDS",
+    "catalogUrl": "https://zicoil.ru/oils-for-chinese-cars/%D1%81atalog_2025_web.pdf",
+    "regionalCatalogUrl": "https://zicoil.ru/products/smazochnye-materialy-dlya-legkovykh-avtomobiley/",
+    "catalogDate": "2026-09",
+    "preparedAt": "2026-09-04",
+    "scope": "ZIC engine-oil families with an unambiguous match in the Дачная 6В inventory export dated 2026-09-04",
+    "evidencePolicy": "Use the current official Russian ZIC product card and TDS when the inventory name does not identify a superseded API formulation. Preserve explicitly named formulation markers if present.",
+    "packageVolumePolicy": "Package volume is read from the local inventory card name."
+  },
+  "products": [
+    {
+      "key": "zic-top-5w30",
+      "catalogName": "ZIC TOP 5W-30",
+      "catalogReferences": ["132681", "162681"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["zictop", "5w30"] },
+      "evidenceUrls": ["https://zicoil.ru/products/top/zic-top-5w-30.html", "https://zicoil.ru/upload/iblock/b41/2681-tds-tekhnicheskoe-opisanie-rus-sk-zic-top-5w_30.pdf"],
+      "values": {
+        "brand": "ZIC",
+        "sae": "5W-30",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SL"],
+        "ilsac": [],
+        "oem": ["VW 502.00", "VW 505.00", "MB 229.5", "MB 229.3", "BMW Longlife-01", "Renault RN 0700", "Renault RN 0710"]
+      }
+    },
+    {
+      "key": "zic-top-5w40",
+      "catalogName": "ZIC TOP 5W-40",
+      "catalogReferences": ["132682", "162682"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["zictop", "5w40"] },
+      "evidenceUrls": ["https://zicoil.ru/products/top/zic-top-5w-40.html", "https://zicoil.ru/upload/iblock/04b/2682-tds-tekhnicheskoe-opisanie-rus-sk-zic-top-5w_40.pdf"],
+      "values": {
+        "brand": "ZIC",
+        "sae": "5W-40",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SQ"],
+        "ilsac": [],
+        "oem": ["VW 502.00", "VW 505.00", "MB 229.5", "MB 229.3", "BMW Longlife-01", "Renault RN 0700", "Renault RN 0710", "PSA B71 2296", "PORSCHE A40"]
+      }
+    },
+    {
+      "key": "zic-x9-5w30",
+      "catalogName": "ZIC X9 5W-30",
+      "catalogReferences": ["132614", "162614"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["zic", "x9", "5w30"], "noneNameFragments": ["fe", "ls"] },
+      "evidenceUrls": ["https://zicoil.ru/products/x9/zic-x9-5w-30.html", "https://zicoil.ru/upload/iblock/b2b/2614-tds-tekhnicheskoe-opisanie-rus-sk-zic-x9-5w_30.pdf"],
+      "values": {
+        "brand": "ZIC",
+        "sae": "5W-30",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SL"],
+        "ilsac": [],
+        "oem": ["VW 502.00", "VW 505.00", "MB 229.5", "MB 229.3", "BMW Longlife-01", "Renault RN 0700", "Renault RN 0710"]
+      }
+    },
+    {
+      "key": "zic-x9-5w40",
+      "catalogName": "ZIC X9 5W-40",
+      "catalogReferences": ["132613", "162613"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["zic", "x9", "5w40"], "noneNameFragments": ["ls"] },
+      "evidenceUrls": ["https://zicoil.ru/products/x9/zic-x9-5w-40.html", "https://zicoil.ru/upload/iblock/07a/2613-tds-rus-tekh-opisanie-zic-x9-5w_40.pdf"],
+      "values": {
+        "brand": "ZIC",
+        "sae": "5W-40",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SQ"],
+        "ilsac": [],
+        "oem": ["VW 502.00", "VW 505.00", "MB 229.5", "MB 229.3", "BMW Longlife-01", "Renault RN 0700", "Renault RN 0710", "PSA B71 2296", "PORSCHE A40"]
+      }
+    },
+    {
+      "key": "zic-x9-fe-5w30",
+      "catalogName": "ZIC X9 FE 5W-30",
+      "catalogReferences": ["132615", "162615"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["zic", "x9", "fe", "5w30"] },
+      "evidenceUrls": ["https://zicoil.ru/products/x9/zic-x9-fe-5w-30.html", "https://zicoil.ru/upload/iblock/7e6/2615-tds-tekhnicheskoe-opisanie-rus-sk-zic-x9-fe-5w_30.pdf"],
+      "values": {
+        "brand": "ZIC",
+        "sae": "5W-30",
+        "acea": ["A5/B5"],
+        "apiSpec": ["SP"],
+        "ilsac": [],
+        "oem": ["Ford WSS-M2C 913-D", "Renault RN 0700", "Jaguar/Land Rover STJLR.03.5003"]
+      }
+    },
+    {
+      "key": "zic-x9-ls-5w30",
+      "catalogName": "ZIC X9 LS 5W-30",
+      "catalogReferences": ["132608", "162608"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["zic", "x9", "ls", "5w30"] },
+      "evidenceUrls": ["https://zicoil.ru/products/x9/zic-x9-ls-5w-30.html", "https://zicoil.ru/upload/iblock/83f/2608-tds-tekhnicheskoe-opisanie-rus-zic-x9-ls-5w_30.pdf"],
+      "values": {
+        "brand": "ZIC",
+        "sae": "5W-30",
+        "acea": ["C3"],
+        "apiSpec": ["SN"],
+        "ilsac": [],
+        "oem": ["VW 505.00", "VW 505.01", "MB 229.52", "MB 229.51", "BMW Longlife-04", "GM Dexos 2"]
+      }
+    }
+  ]
+}

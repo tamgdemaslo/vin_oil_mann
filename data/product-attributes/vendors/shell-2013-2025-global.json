@@ -1,0 +1,128 @@
+{
+  "metadata": {
+    "vendor": "Shell",
+    "catalog": "Official Shell Global product cards and Shell technical data sheets",
+    "catalogUrl": "https://www.shell.com/motorist/oils-lubricants/helix-for-cars.html",
+    "regionalCatalogUrl": "https://www.epc.shell.com/",
+    "catalogDate": "2013-2025",
+    "preparedAt": "2026-09-04",
+    "scope": "Shell engine-oil families with an unambiguous match in the Дачная 6В inventory export dated 2026-09-04, including the orphan HX7 card with a blank category",
+    "evidencePolicy": "Use exact Shell Global product cards where available. Keep the official SL/CF classification for HX8 5W-30 even though some distributor records describe later engine-test performance as SN. Use the exact Ultra SP 0W-20 TDS, which lists only API SP and ACEA C5. Restore the orphan HX7 card to the engine-oil category; its 4 l package is inferred from the 4,690 RUB card price and the standard retail package for this family because the name and local barcode omit volume.",
+    "packageVolumePolicy": "Package volume is read from the local inventory card name."
+  },
+  "products": [
+    {
+      "key": "shell-helix-hx7-5w40",
+      "catalogName": "Shell Helix HX7 5W-40",
+      "catalogReferences": ["Local orphan card 2000000033693"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["shell", "hx7", "5w40"] },
+      "evidenceUrls": [
+        "https://www.shell.com/motorist/oils-lubricants/helix-for-cars/helix-semi-synthetic/shell-helix-hx7-5w-40.html"
+      ],
+      "values": {
+        "brand": "Shell",
+        "category": "Масло в канистрах моторное/Масло в канистрах моторное",
+        "packageVolume": "4 л",
+        "sae": "5W-40",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["MB 229.3", "VW 502.00", "VW 505.00", "GM-LL-A-025", "GM-LL-B-025", "Renault RN 0700", "Renault RN 0710", "FIAT 9.55535-N2", "FIAT 9.55535-M2"]
+      }
+    },
+    {
+      "key": "shell-helix-ultra-5w40",
+      "catalogName": "Shell Helix Ultra 5W-40",
+      "catalogReferences": ["Helix Ultra 5W-40 (SN/CF, A3/B4), v5.5"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["shell", "helix", "ultra", "5w40"], "noneNameFragments": ["ect", "sp"] },
+      "evidenceUrls": [
+        "https://www.shell.com/motorist/oils-lubricants/helix-for-cars/shell-helix-ultra/shell-helix-ultra-5w-40.html",
+        "https://www.epc.shell.com/DocumentManagement/BlobDocumentDownload?DocId=120515514"
+      ],
+      "values": {
+        "brand": "Shell",
+        "sae": "5W-40",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["BMW Longlife-01", "MB 229.5", "MB 226.5", "VW 502.00", "VW 505.00", "PORSCHE A40", "Renault RN 0700", "Renault RN 0710", "PSA B71 2296", "FIAT 9.55535-Z2", "FIAT 9.55535-GH2", "Chrysler MS 10725"]
+      }
+    },
+    {
+      "key": "shell-helix-hx8-5w30",
+      "catalogName": "Shell Helix HX8 Synthetic 5W-30",
+      "catalogReferences": ["550052835", "001E9067"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["shell", "helix", "hx8", "5w30"] },
+      "evidenceUrls": [
+        "https://www.shell.com/motorist/oils-lubricants/helix-for-cars/helix-fully-synthetic/shell-helix-hx8-synthetic-5w-30.html?v=1.0.26",
+        "https://www.epc.shell.com/DocumentManagement/BlobDocumentDownload?DocId=102431545"
+      ],
+      "values": {
+        "brand": "Shell",
+        "sae": "5W-30",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SL/CF"],
+        "ilsac": [],
+        "oem": ["MB 229.3", "VW 502.00", "VW 505.00", "Renault RN 0700", "Renault RN 0710"]
+      }
+    },
+    {
+      "key": "shell-helix-hx8-5w40",
+      "catalogName": "Shell Helix HX8 Synthetic 5W-40",
+      "catalogReferences": ["Helix HX8 Synthetic 5W-40"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["shell", "helix", "hx8", "5w40"] },
+      "evidenceUrls": [
+        "https://www.shell.com/motorist/oils-lubricants/helix-for-cars/helix-fully-synthetic/shell-helix-hx8-synthetic-5w-40.html"
+      ],
+      "values": {
+        "brand": "Shell",
+        "sae": "5W-40",
+        "acea": ["A3/B3", "A3/B4"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["MB 229.3", "VW 502.00", "VW 505.00", "Renault RN 0700", "Renault RN 0710", "FIAT 9.55535-N2", "FIAT 9.55535-M2"]
+      }
+    },
+    {
+      "key": "shell-helix-ultra-ect-c3-5w30",
+      "catalogName": "Shell Helix Ultra ECT C3 5W-30",
+      "catalogReferences": ["Helix Ultra ECT C3 5W-30"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["shell", "helix", "ultra", "ect", "c3", "5w30"] },
+      "evidenceUrls": [
+        "https://www.shell.com/motorist/oils-lubricants/helix-for-cars/shell-helix-ultra/shell-helix-ultra-ect-c3-5w-30.html"
+      ],
+      "values": {
+        "brand": "Shell",
+        "sae": "5W-30",
+        "acea": ["C3"],
+        "apiSpec": ["SN"],
+        "ilsac": [],
+        "oem": ["MB 229.51", "MB 229.31", "BMW Longlife-04", "GM Dexos 2", "Chrysler MS 11106"]
+      }
+    },
+    {
+      "key": "shell-helix-ultra-sp-0w20",
+      "catalogName": "Shell Helix Ultra SP 0W-20",
+      "catalogReferences": ["Helix Ultra SP 0W-20 (C5/SP), v1.2"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["shell", "helix", "ultra", "sp", "0w20"] },
+      "evidenceUrls": [
+        "https://www.shell-livedocs.com/data/published/en/4a46bf2f-44f0-4daf-85c2-42520bd0a4cf.pdf",
+        "https://www.shell.com.au/motorists/oils-lubricants/helix-for-cars/helix-fully-synthetic/shell-helix-ultra-sn-0w-20.html"
+      ],
+      "values": {
+        "brand": "Shell",
+        "sae": "0W-20",
+        "acea": ["C5"],
+        "apiSpec": ["SP"],
+        "ilsac": [],
+        "oem": []
+      }
+    }
+  ]
+}

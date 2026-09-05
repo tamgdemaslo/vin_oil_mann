@@ -1,0 +1,91 @@
+{
+  "metadata": {
+    "vendor": "Elf",
+    "catalog": "Official ELF and TotalEnergies product catalogue, brochure and technical data sheets",
+    "catalogUrl": "https://lubricants.catalog.elf.com/corporate/en_UK",
+    "regionalCatalogUrl": "https://baltics.totalenergies.com/en/system/files/atoms/files/elf_product_brochure_en.pdf",
+    "catalogDate": "2020-2023",
+    "preparedAt": "2026-09-04",
+    "scope": "ELF engine-oil families with an unambiguous match in the Дачная 6В inventory export dated 2026-09-04",
+    "evidencePolicy": "Use the official regional product generation matching the inventory EANs. Preserve SL/CF for the older Evolution 900 NF and SXR 5W-30 packages and SN/CF for SXR 5W-40 instead of applying later catalogue upgrades.",
+    "packageVolumePolicy": "Package volume is read from the local inventory card name."
+  },
+  "products": [
+    {
+      "key": "elf-evolution-700-sti-10w40",
+      "catalogName": "ELF Evolution 700 STI 10W-40",
+      "catalogReferences": ["3425901110783", "3425901110776"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["elf", "evolution", "700", "sti", "10w40"] },
+      "evidenceUrls": [
+        "https://lubricants.catalog.elf.com/corporate/en_UK/dfe_evolution-700-sti-10w-40-sn",
+        "https://evp-totalenergies-dam-prod-secured-cdn.wedia-group.com/medias/20241008-0556-c214ff55-e992-41c6-9a03-e63a1ca52100/pdf_output.pdf"
+      ],
+      "values": {
+        "brand": "Elf",
+        "sae": "10W-40",
+        "acea": ["A3/B4"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["VW 501.01", "VW 505.00", "MB 229.3", "Renault RN 0700", "Renault RN 0710", "PSA B71 2294", "PSA B71 2300", "FIAT 9.55535-G2"]
+      }
+    },
+    {
+      "key": "elf-evolution-900-nf-5w40",
+      "catalogName": "ELF Evolution 900 NF 5W-40",
+      "catalogReferences": ["3425901108971", "3425901108940"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["elf", "evolution", "900", "nf", "5w40"] },
+      "evidenceUrls": [
+        "https://baltics.totalenergies.com/en/system/files/atoms/files/elf_product_brochure_en.pdf",
+        "https://kz.totalenergies.com/ru/katalog/avtomasla-elf/motornye-masla-elf-dlya-legkovyh-avtomobiley/motornoe-maslo-evolution-900-nf"
+      ],
+      "values": {
+        "brand": "Elf",
+        "sae": "5W-40",
+        "acea": ["A3/B4"],
+        "apiSpec": ["SL/CF"],
+        "ilsac": [],
+        "oem": ["VW 502.00", "VW 505.00", "MB 229.3", "PORSCHE A40"]
+      }
+    },
+    {
+      "key": "elf-evolution-900-sxr-5w30",
+      "catalogName": "ELF Evolution 900 SXR 5W-30",
+      "catalogReferences": ["3425901108742", "3425901108803"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["elf", "evolution", "900", "sxr", "5w30"] },
+      "evidenceUrls": [
+        "https://lubricants.catalog.elf.com/catalog-th/en_UK/but_evolution-900-sxr-5w-30",
+        "https://baltics.totalenergies.com/en/system/files/atoms/files/elf_product_brochure_en.pdf"
+      ],
+      "values": {
+        "brand": "Elf",
+        "sae": "5W-30",
+        "acea": ["A5/B5"],
+        "apiSpec": ["SL/CF"],
+        "ilsac": [],
+        "oem": ["Ford WSS-M2C 913-D", "Ford WSS-M2C 913-C", "Jaguar/Land Rover STJLR.03.5003", "Renault RN 0700"]
+      }
+    },
+    {
+      "key": "elf-evolution-900-sxr-5w40",
+      "catalogName": "ELF Evolution 900 SXR 5W-40",
+      "catalogReferences": ["3425901108834", "3425901108995"],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["elf", "evolution", "900", "sxr", "5w40"] },
+      "evidenceUrls": [
+        "https://trocadeoleo.totalenergies.com.br/uploads/files/tds_elf_evolution900sxr5w40_buv_202105_pt_bra-6650f59fc560f.pdf",
+        "https://baltics.totalenergies.com/en/system/files/atoms/files/elf_product_brochure_en.pdf"
+      ],
+      "values": {
+        "brand": "Elf",
+        "sae": "5W-40",
+        "acea": ["A3/B4"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["Renault RN 0700", "Renault RN 0710", "MB 229.5", "PORSCHE A40", "VW 502.00", "VW 505.00", "PSA B71 2296", "FIAT 9.55535-M2", "Chrysler MS 12991"]
+      }
+    }
+  ]
+}

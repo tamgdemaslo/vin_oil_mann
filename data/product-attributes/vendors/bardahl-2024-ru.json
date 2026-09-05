@@ -1,0 +1,235 @@
+{
+  "metadata": {
+    "vendor": "Bardahl",
+    "catalog": "Bardahl Oil Catalogue 2024 + official Russian product pages",
+    "catalogUrl": "https://www.bardahl.co.uk/wp-content/uploads/2024/04/bardahl-oil-catalogue.pdf",
+    "regionalCatalogUrl": "https://bardahl-motor.ru/",
+    "catalogDate": "2024-04",
+    "preparedAt": "2026-09-04",
+    "scope": "Bardahl oil families with an unambiguous match in the Дачная 6В inventory export dated 2026-09-04",
+    "evidencePolicy": "Prefer exact Russian-market product pages for the physical SKUs. Use the official 2024 Bardahl catalogue for XTEC 0W30 B12 and XTEC 5W30 C2/C3. Preserve the formulation named on the inventory card instead of upgrading an older GF-6A/SP product to a later GF-7A/SQ formulation.",
+    "packageVolumePolicy": "Package volume is read from the local inventory card name; per-litre bulk cards are stored as 1 л."
+  },
+  "products": [
+    {
+      "key": "atf-vi",
+      "catalogName": "Bardahl ATF VI / ATF 6",
+      "catalogReferences": ["36591", "36593"],
+      "printedPages": [36],
+      "profile": "TRANSMISSION_FLUID",
+      "match": { "allNameFragments": ["bardahl", "atf", "vi"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/atf-vi-1-l", "https://www.bardahl.co.uk/wp-content/uploads/2024/04/bardahl-oil-catalogue.pdf"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": null,
+        "apiSpec": [],
+        "atf": ["ATF+2", "ATF+3", "ATF+4", "Dexron VI", "Dexron II", "Dexron IID", "Dexron IIE", "Dexron IIIG", "Dexron IIIH", "Mercon", "Mercon LV", "SP-II", "SP-III", "SP-IV", "SP-IV M", "SP-IV RR", "Type DW-1", "ATF Z1", "ATF M-III", "ATF M-V", "ATF FZ", "ATF F-1", "ATF S-1", "ATF N-1", "Type T-III", "Type T-IV", "Type WS", "AW-1"],
+        "oemAtf": ["Chrysler Dodge Mopar AS68RC/69RC (T-IV)", "BMW ETL-7045/7045E/8072B/LA2634/Mini Cooper T-IV", "MB 236.1/236.2/236.3/236.5/236.7/236.8/236.9/236.41", "FIAT 9.55550-AV5", "Daihatsu ATF D-II/D-III SP", "GM Dexron VI/II/IID/IIE/IIIG/IIIH/TASA", "Ford Mercon LV/Mercon/M2C138-CJ/166-H/922-A1/924-A", "Honda Acura DW-1/ATF-Z1 (except CVT)", "Hyundai/Kia JWS 3314/9683", "Hyundai/Kia SP-II/SP-III/SP-IV/SP-IV M/SP-IV RR", "Isuzu ATF II/III/SP", "Jaguar ATF 3403 M115/JLM 20238/20292", "JASO M315-2013 1A/1A-LV/2A", "Mazda ATF DII/M-III/M-V/FZ/F-1/S-1/N-1/3317", "Mitsubishi SK/SP-II/SP-III/SP-IV/AW/J2/J3/ATF PA", "Nissan Matic C/D/J/K/P/S", "Porsche 3403-M115/T-IV", "Subaru ATF/AW-1/5AT/ATF HP", "Suzuki ATF 3309/3314/3317/2326/2384K", "Toyota D-II/D-III/T-III/T-IV/WS", "Voith 55.6335.xx (G607)", "Volvo 97335/97340/1161540", "VW G 052 025/G 052 055/G 052 162/G 052 990/G 053 001/G 053 025/G 055 005/G 055 025/G 055 162/G 055 540/G 060 162", "ZF 5HP 18FL/19FL/24A/30/4HP20", "ZF TE-ML 05L/09/11A/11B/21L", "Aisin Warner JWS 3309 (T-IV)/3324 (WS)/AW-1/AW-2", "Allison C3/C4", "Caterpillar TO-2"]
+      }
+    },
+    {
+      "key": "xts-0w20",
+      "catalogName": "Bardahl XTS 0W20",
+      "catalogReferences": ["36331", "36333"],
+      "printedPages": [15],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xts", "0w20"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/motornye/xts-0w20-1-l"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "0W-20",
+        "acea": [],
+        "apiSpec": ["SP", "SP-RC"],
+        "ilsac": ["GF-6A"],
+        "oem": ["Chrysler MS 6395", "Ford WSS-M2C 947-A", "Ford WSS-M2C 947-B1", "Ford WSS-M2C 962-A1", "GM Dexos 1 Gen 2"]
+      }
+    },
+    {
+      "key": "xts-5w20-gf6a",
+      "catalogName": "Bardahl XTS 5W20 GF-6A",
+      "catalogReferences": ["36291", "36293"],
+      "printedPages": [15],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xts", "5w20"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/dlja-avtomobilej/xts-5w20-5-l"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "5W-20",
+        "acea": [],
+        "apiSpec": ["SP", "SP-RC"],
+        "ilsac": ["GF-6A"],
+        "oem": ["GM Dexos 1 Gen 3", "GM 6094M", "Ford WSS-M2C 945-A", "Ford WSS-M2C 945-B1", "Ford WSS-M2C 960-A1", "Ford WSS-M2C 948-B", "Chrysler MS 6395", "FIAT 9.55535-CR1"]
+      }
+    },
+    {
+      "key": "xts-5w30",
+      "catalogName": "Bardahl XTS 5W30",
+      "catalogReferences": ["36541", "36542", "36543", "36547"],
+      "printedPages": [16],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xts", "5w30"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/xts-5w30-1-l"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "5W-30",
+        "acea": ["A5/B5", "A1/B1"],
+        "apiSpec": ["SL/CF"],
+        "ilsac": [],
+        "oem": ["Ford WSS-M2C 913-D", "Renault RN 0700", "Jaguar/Land Rover STJLR.03.5003"]
+      }
+    },
+    {
+      "key": "xts-5w40",
+      "catalogName": "Bardahl XTS 5W40",
+      "catalogReferences": ["36891", "36892", "36893", "36897"],
+      "printedPages": [16],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xts", "5w40"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/xts-5w40-1-l"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "5W-40",
+        "acea": ["A3/B4"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["VW 502.00", "VW 505.00", "VW 501.01", "MB 229.3", "MB 229.5", "PORSCHE A40", "BMW Longlife-01", "GM-LL-B-025", "PSA B71 2296", "Renault RN 0700", "Renault RN 0710"]
+      }
+    },
+    {
+      "key": "xtc-10w40",
+      "catalogName": "Bardahl XTC 10W40",
+      "catalogReferences": ["36241", "36242", "36243"],
+      "printedPages": [21],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xtc", "10w40"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/motornoe-maslo-xtc-10w40-4l"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "10W-40",
+        "acea": ["A3/B4"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["MB 229.1", "Renault RN 0700", "VW 501.01", "VW 505.00"]
+      }
+    },
+    {
+      "key": "xtec-0w30-b12",
+      "catalogName": "Bardahl XTEC 0W30 B12",
+      "catalogReferences": ["36841", "36843"],
+      "printedPages": [18],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xtec", "0w30", "b12"] },
+      "evidenceUrls": ["https://www.bardahl.co.uk/wp-content/uploads/2024/04/bardahl-oil-catalogue.pdf"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "0W-30",
+        "acea": ["C2"],
+        "apiSpec": [],
+        "ilsac": [],
+        "oem": ["BMW Longlife-12 FE"]
+      }
+    },
+    {
+      "key": "xtec-5w30-c2-c3",
+      "catalogName": "Bardahl XTEC 5W30 C2/C3",
+      "catalogReferences": ["33071", "33072", "33073"],
+      "printedPages": [19],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xtec", "5w30", "c2c3"] },
+      "evidenceUrls": ["https://www.bardahl.co.uk/wp-content/uploads/2024/04/bardahl-oil-catalogue.pdf"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "5W-30",
+        "acea": ["C2", "C3"],
+        "apiSpec": ["SN"],
+        "ilsac": [],
+        "oem": ["BMW Longlife-04", "FIAT 9.55535-S1", "GM Dexos 2", "MB 229.31", "MB 229.51", "MB 229.52", "VW 505.00", "VW 505.01", "Renault RN17"]
+      }
+    },
+    {
+      "key": "xtec-5w30-c2",
+      "catalogName": "Bardahl XTEC 5W30 C2",
+      "catalogReferences": ["36531", "36532", "36533"],
+      "printedPages": [19],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xtec", "5w30", "c2"], "noneNameFragments": ["c2c3"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/xtec-5w30-c2-5l"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "5W-30",
+        "acea": ["C2"],
+        "apiSpec": ["SN/CF"],
+        "ilsac": [],
+        "oem": ["FIAT 9.55535-S1", "Renault RN 0700"]
+      }
+    },
+    {
+      "key": "xtec-5w30-c3",
+      "catalogName": "Bardahl XTEC 5W30 C3",
+      "catalogReferences": ["36301", "36302", "36303"],
+      "printedPages": [20],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xtec", "5w30", "c3"], "noneNameFragments": ["c2c3"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/xtec-5w30-c3-5l"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "5W-30",
+        "acea": ["C3"],
+        "apiSpec": ["SP"],
+        "ilsac": [],
+        "oem": ["BMW Longlife-04", "Opel OV0401547", "MB 229.31", "MB 229.52", "MB 229.51", "PORSCHE C30", "VW 504.00", "VW 507.00"]
+      }
+    },
+    {
+      "key": "xtec-5w30-c4",
+      "catalogName": "Bardahl XTEC 5W30 C4",
+      "catalogReferences": ["36151", "36152", "36153"],
+      "printedPages": [20],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xtec", "5w30", "c4"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/xtec-5w30-c4-4-l"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "5W-30",
+        "acea": ["C3", "C4"],
+        "apiSpec": [],
+        "ilsac": [],
+        "oem": ["MB 226.51", "MB 229.51", "Renault RN 0720", "FIAT 9.55535-S4"]
+      }
+    },
+    {
+      "key": "xtec-5w30-rc-gf6a",
+      "catalogName": "Bardahl XTEC 5W30 RC GF-6A",
+      "catalogReferences": ["33021", "33023"],
+      "printedPages": [20],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xtec", "5w30", "rc"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/xtec-5w30-rc-5l"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "5W-30",
+        "acea": [],
+        "apiSpec": ["SP", "SP-RC"],
+        "ilsac": ["GF-6A"],
+        "oem": ["GM Dexos 1 Gen 2", "Chrysler MS 6395", "Ford WSS-M2C 946-A", "FIAT 9.55535-CR1"]
+      }
+    },
+    {
+      "key": "xtec-5w40",
+      "catalogName": "Bardahl XTEC 5W40",
+      "catalogReferences": ["36341", "36342", "36343"],
+      "printedPages": [20],
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["bardahl", "xtec", "5w40"] },
+      "evidenceUrls": ["https://bardahl-motor.ru/xtec-5w40-5-l"],
+      "values": {
+        "brand": "Bardahl",
+        "sae": "5W-40",
+        "acea": ["C3"],
+        "apiSpec": ["SN", "SN+"],
+        "ilsac": [],
+        "oem": ["VW 505.00", "VW 505.01", "MB 229.51", "MB 229.31", "MB 226.5", "PORSCHE A40", "BMW Longlife-04", "Ford WSS-M2C 917-A", "Renault RN 0700", "Renault RN 0710", "GM Dexos 2", "FIAT 9.55535-S2", "FIAT 9.55535-GH2"]
+      }
+    }
+  ]
+}

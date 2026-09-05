@@ -1,0 +1,231 @@
+{
+  "metadata": {
+    "vendor": "Mannol|NGN|Rolf|Idemitsu|Zepro|Zerpo|Motul",
+    "catalog": "Official manufacturer product pages and technical data sheets",
+    "catalogDate": "2023-2026",
+    "preparedAt": "2026-09-04",
+    "scope": "Unambiguous Mannol, NGN, Rolf, Idemitsu and Motul engine-oil families in the Дачная 6В inventory export dated 2026-09-04",
+    "evidencePolicy": "Match the exact product line and formulation named on the inventory card. Do not upgrade older API SN packages to later SP/SQ formulas. The Idemitsu official article cross-reference workbook is used to distinguish the current and legacy Russian-market packages.",
+    "packageVolumePolicy": "Package volume is read from the local inventory card name."
+  },
+  "products": [
+    {
+      "key": "mannol-diesel-extra-7504-10w40",
+      "catalogName": "MANNOL Diesel Extra 10W-40 7504",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mannol", "diesel", "extra", "7504"] },
+      "evidenceUrls": ["https://www.mannol.de/products/semi-synthetic-oils/mannol-diesel-extra-10w-40"],
+      "values": {
+        "brand": "Mannol", "sae": "10W-40", "acea": ["A3/B4"], "apiSpec": ["SN", "CH-4"], "ilsac": [],
+        "oem": ["VW 500.00", "VW 501.01", "VW 502.00", "VW 505.00", "MB 229.1", "MB 229.3", "PSA B71 2296", "Renault RN 0700", "Renault RN 0710"]
+      }
+    },
+    {
+      "key": "mannol-energy-formula-op-7701-5w30",
+      "catalogName": "MANNOL Energy Formula OP 5W-30 7701",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mannol", "7701"] },
+      "evidenceUrls": ["https://www.mannol.de/create-pdf/315/en"],
+      "values": {
+        "brand": "Mannol", "sae": "5W-30", "acea": ["C2", "C3"], "apiSpec": ["SN+"], "ilsac": [],
+        "oem": ["VW 505.00", "VW 505.01", "BMW Longlife-04", "MB 229.31", "MB 229.51", "MB 229.52", "GM Dexos 2", "PORSCHE C30", "Chrysler MS 11106", "FIAT 9.55535-S3", "Renault RN17", "PSA B71 2290"]
+      }
+    },
+    {
+      "key": "mannol-energy-formula-fr-7707-5w30",
+      "catalogName": "MANNOL Energy Formula FR 5W-30 7707",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mannol", "7707"] },
+      "evidenceUrls": ["https://www.mannol.de/products/synthetic-engine-oils/mannol-energy-formula-fr-5w-30"],
+      "values": {
+        "brand": "Mannol", "sae": "5W-30", "acea": ["A5/B5"], "apiSpec": ["SP"], "ilsac": [],
+        "oem": ["Volvo VCC 95200377", "MB 229.6", "FIAT 9.55535-G1", "Jaguar/Land Rover STJLR.03.5003", "Ford WSS-M2C 913-A", "Ford WSS-M2C 913-B", "Ford WSS-M2C 913-C", "Ford WSS-M2C 913-D"]
+      }
+    },
+    {
+      "key": "mannol-for-toyota-lexus-7709-5w30",
+      "catalogName": "MANNOL for Toyota Lexus 5W-30 7709",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mannol", "7709"] },
+      "evidenceUrls": ["https://www.mannol.de/products/motor-oils-for-cars-and-transporters/synthetic-engine-oils/mannol-for-toyota-lexus-5w-30"],
+      "values": {
+        "brand": "Mannol", "sae": "5W-30", "acea": ["A5/B5"], "apiSpec": ["SP"], "ilsac": ["GF-5"],
+        "oem": ["Ford WSS-M2C 913-A", "Ford WSS-M2C 913-B", "Ford WSS-M2C 913-C", "Ford WSS-M2C 913-D", "Jaguar/Land Rover STJLR.03.5003", "FIAT 9.55535-G1", "Renault RN 0700", "Iveco 18-1811"]
+      }
+    },
+    {
+      "key": "mannol-longlife-504-507-7715-5w30",
+      "catalogName": "MANNOL Longlife 504/507 5W-30 7715",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mannol", "7715"] },
+      "evidenceUrls": ["https://www.mannol.de/products/synthetic-engine-oils/mannol-longlife-504-507-5w-30"],
+      "values": {
+        "brand": "Mannol", "sae": "5W-30", "acea": ["C3"], "apiSpec": ["SN"], "ilsac": [],
+        "oem": ["VW 504.00", "VW 507.00", "BMW Longlife-04", "MB 229.51", "PORSCHE C30"]
+      }
+    },
+    {
+      "key": "mannol-elite-5w40",
+      "catalogName": "MANNOL Elite 5W-40",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["mannol", "elite", "5w40"] },
+      "evidenceUrls": ["https://www.mannol.de/products/motor-oils-for-cars-and-transporters/synthetic-engine-oils/mannol-elite-5w-40"],
+      "values": {
+        "brand": "Mannol", "sae": "5W-40", "acea": ["A3/B4"], "apiSpec": ["SP"], "ilsac": [],
+        "oem": ["MB 226.5", "MB 229.3", "MB 229.5", "VW 502.00", "VW 505.00", "PORSCHE A40", "Renault RN 0700", "Renault RN 0710", "BMW Longlife-01", "BMW Longlife-98", "PSA B71 2296", "FIAT 9.55535-H2", "FIAT 9.55535-Z2", "GM-LL-A-025", "GM-LL-B-025"]
+      }
+    },
+    {
+      "key": "ngn-aline-0w16",
+      "catalogName": "NGN A-Line 0W-16",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["ngn", "0w16", "aline"] },
+      "evidenceUrls": ["https://ngn-oil.com/NGN-A-LINE-0W-16.html"],
+      "values": { "category": "Масло в канистрах моторное/Масло в канистрах моторное", "brand": "NGN", "sae": "0W-16", "acea": [], "apiSpec": ["SP"], "ilsac": ["GF-6B"], "oem": [] }
+    },
+    {
+      "key": "ngn-aline-0w20-pao",
+      "catalogName": "NGN A-Line PAO 0W-20",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["ngn", "0w20", "aline", "pao"] },
+      "evidenceUrls": ["https://ngn-oil.com/NGN-A-LINE-0W-20-PAO.html"],
+      "values": { "brand": "NGN", "sae": "0W-20", "acea": [], "apiSpec": ["SP"], "ilsac": ["GF-6A"], "oem": [] }
+    },
+    {
+      "key": "ngn-aline-0w20",
+      "catalogName": "NGN A-Line 0W-20",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["ngn", "0w20", "aline"], "noneNameFragments": ["pao"] },
+      "evidenceUrls": ["https://ngn-oil.com/NGN-A-LINE-0W-20.html"],
+      "values": { "brand": "NGN", "sae": "0W-20", "acea": [], "apiSpec": ["SP"], "ilsac": ["GF-6A"], "oem": [] }
+    },
+    {
+      "key": "ngn-aline-5w20",
+      "catalogName": "NGN A-Line 5W-20",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["ngn", "5w20", "aline"] },
+      "evidenceUrls": ["https://ngn-oil.com/NGN-A-LINE-5W-20.html"],
+      "values": { "brand": "NGN", "sae": "5W-20", "acea": [], "apiSpec": ["SP"], "ilsac": ["GF-6A"], "oem": [] }
+    },
+    {
+      "key": "ngn-aline-5w30",
+      "catalogName": "NGN A-Line 5W-30",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["ngn", "5w30", "aline"] },
+      "evidenceUrls": ["https://ngn-oil.com/NGN-A-LINE-5W-30.html"],
+      "values": { "brand": "NGN", "sae": "5W-30", "acea": [], "apiSpec": ["SP"], "ilsac": ["GF-6A"], "oem": [] }
+    },
+    {
+      "key": "ngn-aline-5w40",
+      "catalogName": "NGN A-Line 5W-40",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["ngn", "5w40", "aline"] },
+      "evidenceUrls": ["https://ngn-oil.com/NGN-A-LINE-5W-40.html"],
+      "values": { "brand": "NGN", "sae": "5W-40", "acea": [], "apiSpec": ["SP"], "ilsac": [], "oem": [] }
+    },
+    {
+      "key": "rolf-ultra-5w30-c3",
+      "catalogName": "ROLF Ultra 5W-30 C3 SN/CF",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["rolf", "ultra", "5w30", "c3"] },
+      "evidenceUrls": ["https://rolfoil.ru/catalog/engine-oils/ROLF_ULTRA_5W-30_C3_SN_CF/"],
+      "values": { "brand": "Rolf", "sae": "5W-30", "acea": ["C3"], "apiSpec": ["SN/CF"], "ilsac": [], "oem": ["BMW Longlife-04", "MB 229.51", "PORSCHE C30", "VW 504.00", "VW 507.00"] }
+    },
+    {
+      "key": "rolf-gt-5w30-c3-legacy",
+      "catalogName": "ROLF GT 5W-30 C3 SN/CF",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["rolf", "5w30", "c3"], "noneNameFragments": ["ultra"] },
+      "evidenceUrls": ["https://rolfoil.ru/netcat_files/userfiles/gt5w30.pdf"],
+      "values": { "brand": "Rolf", "sae": "5W-30", "acea": ["C3"], "apiSpec": ["SN/CF"], "ilsac": [], "oem": ["BMW Longlife-04", "MB 229.51", "GM Dexos 2"] }
+    },
+    {
+      "key": "rolf-energy-10w40",
+      "catalogName": "ROLF Energy 10W-40",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["rolf", "energy", "10w40"] },
+      "evidenceUrls": ["https://rolfoil.ru/energy/"],
+      "values": { "brand": "Rolf", "sae": "10W-40", "acea": ["A3/B4"], "apiSpec": ["SL/CF"], "ilsac": [], "oem": ["MB 229.1"] }
+    },
+    {
+      "key": "rolf-gt-5w30-a3b4",
+      "catalogName": "ROLF GT 5W-30 A3/B4",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["rolf", "gt", "5w30", "a3b4"] },
+      "evidenceUrls": ["https://rolfoil.ru/gt/"],
+      "values": { "brand": "Rolf", "sae": "5W-30", "acea": ["A3/B4"], "apiSpec": ["SL/CF"], "ilsac": [], "oem": ["MB 229.5", "Renault RN 0700", "Renault RN 0710", "VW 502.00", "VW 505.00"] }
+    },
+    {
+      "key": "rolf-gt-5w40-a3b4",
+      "catalogName": "ROLF GT 5W-40 A3/B4",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["rolf", "gt", "5w40", "a3b4"] },
+      "evidenceUrls": ["https://rolfoil.ru/gt/"],
+      "values": { "brand": "Rolf", "sae": "5W-40", "acea": ["A3/B4"], "apiSpec": ["SN/CF"], "ilsac": [], "oem": ["GM-LL-A-025", "GM-LL-B-025", "MB 229.5", "PORSCHE A40", "Renault RN 0700", "Renault RN 0710", "VW 502.00", "VW 505.00"] }
+    },
+    {
+      "key": "rolf-gt-5w40-sncf",
+      "catalogName": "ROLF GT 5W-40 SN/CF",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["rolf", "gt", "5w40", "sncf"] },
+      "evidenceUrls": ["https://rolfoil.ru/gt/"],
+      "values": { "brand": "Rolf", "sae": "5W-40", "acea": ["A3/B4"], "apiSpec": ["SN/CF"], "ilsac": [], "oem": ["GM-LL-A-025", "GM-LL-B-025", "MB 229.5", "PORSCHE A40", "Renault RN 0700", "Renault RN 0710", "VW 502.00", "VW 505.00"] }
+    },
+    {
+      "key": "idemitsu-5w40-sncf",
+      "catalogName": "IDEMITSU 5W-40 SN/CF",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["idemitsu", "5w40"], "noneNameFragments": ["zepro", "zerpo"] },
+      "evidenceUrls": ["https://idemitsu.kz/products/cars/idemitsu_new/idemitsu-5w-40-sn-cf/"],
+      "values": { "brand": "Idemitsu", "sae": "5W-40", "acea": [], "apiSpec": ["SN/CF"], "ilsac": [], "oem": [] }
+    },
+    {
+      "key": "idemitsu-zepro-eco-medalist-0w20-sp",
+      "catalogName": "Idemitsu Zepro Eco Medalist SP 0W-20",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["idemitsu", "0w20"] },
+      "evidenceUrls": ["https://www.idemitsu.kz/products/cars/zepro_new/idemitsu-zepro-eco-medalist-sp-0w-20/", "https://www.idemitsu.kz/faq/articles.xlsx"],
+      "values": { "brand": "Idemitsu", "sae": "0W-20", "acea": [], "apiSpec": ["SP"], "ilsac": ["GF-6A"], "oem": [] }
+    },
+    {
+      "key": "idemitsu-zepro-diesel-5w30-dl1",
+      "catalogName": "Idemitsu Zepro Diesel 5W-30 DL-1",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["idemitsu", "diesel", "5w30"] },
+      "evidenceUrls": ["https://idemitsu.kz/products/cars/zepro_new/zepro-diesel-5w-30-dl-1/"],
+      "values": { "brand": "Idemitsu", "sae": "5W-30", "acea": [], "apiSpec": [], "ilsac": [], "oem": ["JASO DL-1"] }
+    },
+    {
+      "key": "idemitsu-zepro-sp-5w30",
+      "catalogName": "Idemitsu Zepro SP 5W-30",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["idemitsu", "sp", "5w30"] },
+      "evidenceUrls": ["https://www.idemitsu.kz/products/cars/"],
+      "values": { "brand": "Idemitsu", "sae": "5W-30", "acea": [], "apiSpec": ["SP"], "ilsac": [], "oem": [] }
+    },
+    {
+      "key": "idemitsu-zepro-touring-5w30-sn",
+      "catalogName": "Idemitsu Zepro Touring 5W-30 SN",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["touring", "fs", "5w30"] },
+      "evidenceUrls": ["https://www.idemitsu.kz/products/cars/zepro_new/zepro-touring-5w-30/", "https://www.idemitsu.kz/faq/articles.xlsx"],
+      "values": { "brand": "Idemitsu", "sae": "5W-30", "acea": [], "apiSpec": ["SN"], "ilsac": [], "oem": [] }
+    },
+    {
+      "key": "motul-8100-eco-nergy-5w30",
+      "catalogName": "MOTUL 8100 Eco-nergy 5W-30",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["motul", "8100", "econergy", "5w30"] },
+      "evidenceUrls": ["https://www.motul.com/en-GB/products/17300"],
+      "values": { "brand": "Motul", "sae": "5W-30", "acea": ["A5/B5"], "apiSpec": ["SP"], "ilsac": [], "oem": ["Ford WSS-M2C 913-D", "Jaguar/Land Rover STJLR.03.5003", "Renault RN 0700", "FIAT 9.55535-G1", "Chrysler MS 50081"] }
+    },
+    {
+      "key": "motul-8100-xcess-gen2-5w40-2023",
+      "catalogName": "MOTUL 8100 X-cess Gen2 5W-40",
+      "profile": "ENGINE_OIL",
+      "match": { "allNameFragments": ["motul", "8100", "xcess", "gen2", "5w40"] },
+      "evidenceUrls": ["https://azupim01.motul.com/media/motulData/DO/base/8100_x-cess_gen2_5w-40_en_fr_motul_17603_20230501.pdf"],
+      "values": { "brand": "Motul", "sae": "5W-40", "acea": ["A3/B4"], "apiSpec": ["SP"], "ilsac": [], "oem": ["BMW Longlife-01", "MB 226.5", "MB 229.5", "PORSCHE A40", "Renault RN 0700", "Renault RN 0710", "VW 502.00", "VW 505.00", "Chrysler MS 12991", "FIAT 9.55535-H2", "FIAT 9.55535-M2", "FIAT 9.55535-N2", "FIAT 9.55535-Z2", "GM-LL-B-025", "PSA B71 2296"] }
+    }
+  ]
+}
