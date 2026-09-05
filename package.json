@@ -25,6 +25,7 @@
     "generate:product-attribute-dictionaries:partial": "node scripts/generate-product-attribute-dictionaries.mjs --allow-missing",
     "test:openai-oil": "node scripts/test-openai-oil.mjs",
     "test:vehicle-identity": "node scripts/test-vehicle-identity.mjs",
+    "test:client-vehicle-profile": "node scripts/test-client-vehicle-profile.mjs",
     "test:mann-vehicle-resolver": "node scripts/test-mann-vehicle-resolver.mjs",
     "test:mann-vehicle-matching": "node scripts/run-mann-matching-benchmark.mjs",
     "test:mann-fluid-matcher-v2": "node scripts/test-mann-fluid-matcher-v2.mjs",

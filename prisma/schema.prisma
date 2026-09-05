@@ -1493,28 +1493,82 @@ model BookingScheduleException {
 
 /// Нормализованный автомобиль клиента; legacy vehicle в raw контрагента остаётся совместимым.
 model ClientVehicle {
-  id             String            @id @default(cuid())
-  branchId       String            @map("branch_id")
-  branch         Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  counterpartyId String            @map("counterparty_id")
-  counterparty   LocalCounterparty @relation(fields: [branchId, counterpartyId], references: [branchId, id], onDelete: Cascade)
-  make           String
-  model          String
-  generation     String?
-  year           Int?
-  plate          String?
-  vin            String?
-  status         String            @default("ACTIVE")
-  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String            @id @default(cuid())
+  branchId            String            @map("branch_id")
+  branch              Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  counterpartyId      String            @map("counterparty_id")
+  counterparty        LocalCounterparty @relation(fields: [branchId, counterpartyId], references: [branchId, id], onDelete: Cascade)
+  make                String
+  makeCanonical       String?           @map("make_canonical")
+  model               String
+  modelCanonical      String?           @map("model_canonical")
+  generation          String?
+  generationCanonical String?           @map("generation_canonical")
+  year                Int?
+  modelYearFrom       Int?              @map("model_year_from")
+  modelYearTo         Int?              @map("model_year_to")
+  plate               String?
+  vin                 String?
+  frameNumber         String?           @map("frame_number")
+  bodyName            String?           @map("body_name")
+  bodyCode            String?           @map("body_code")
+  bodyType            String?           @map("body_type")
+  engineName          String?           @map("engine_name")
+  engineCode          String?           @map("engine_code")
+  engineSeries        String?           @map("engine_series")
+  engineVolumeCc      Int?              @map("engine_volume_cc")
+  powerHp             Int?              @map("power_hp")
+  powerKw             Int?              @map("power_kw")
+  fuelType            String?           @map("fuel_type")
+  transmissionType    String?           @map("transmission_type")
+  transmissionName    String?           @map("transmission_name")
+  driveType           String?           @map("drive_type")
+  steeringPosition    String?           @map("steering_position")
+  market              String?
+  countryOfOrigin     String?           @map("country_of_origin")
+  mileage             Int?
+  mileageRecordedAt   DateTime?         @map("mileage_recorded_at") @db.Timestamptz(6)
+  ownersCount         Int?              @map("owners_count")
+  mannVariantIdsJson  Json              @default("[]") @map("mann_variant_ids_json")
+  fieldSourcesJson    Json              @default("{}") @map("field_sources_json")
+  sourceSnapshotJson  Json?             @map("source_snapshot_json")
+  confidence          String            @default("LOW")
+  verificationStatus  String            @default("LEGACY") @map("verification_status")
+  lastVerifiedAt      DateTime?         @map("last_verified_at") @db.Timestamptz(6)
+  lastVerifiedBy      String?           @map("last_verified_by")
+  status              String            @default("ACTIVE")
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  bookings Booking[]
+  bookings  Booking[]
+  revisions ClientVehicleRevision[]
 
   @@unique([branchId, id])
   @@index([branchId, counterpartyId, status])
   @@index([branchId, vin])
   @@index([branchId, plate])
+  @@index([branchId, frameNumber])
+  @@index([branchId, makeCanonical, modelCanonical])
   @@map("client_vehicles")
+}
+
+/// Неизменяемая история автоматического заполнения и ручных подтверждений паспорта автомобиля.
+model ClientVehicleRevision {
+  id                 String        @id @default(cuid())
+  branchId           String        @map("branch_id")
+  vehicleId          String        @map("vehicle_id")
+  vehicle            ClientVehicle @relation(fields: [branchId, vehicleId], references: [branchId, id], onDelete: Cascade)
+  source             String
+  verificationStatus String        @map("verification_status")
+  changedFieldsJson  Json          @default("[]") @map("changed_fields_json")
+  snapshotJson       Json          @map("snapshot_json")
+  actorLogin         String?       @map("actor_login")
+  actorName          String?       @map("actor_name")
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([branchId, id])
+  @@index([branchId, vehicleId, createdAt])
+  @@map("client_vehicle_revisions")
 }
 
 /// Собственная запись. ACTIVE включает ожидающие подтверждения и всегда блокирует слот.
@@ -2958,33 +3012,33 @@ model MannFluidRequirementLink {
 /// Каноническая MANN-модификация. На expand-этапе таблица создаётся пустой:
 /// backfill из MannFilterApplication выполняется отдельной одобренной операцией.
 model MannVehicleVariant {
-  key                   String   @id @map("variant_key")
-  make                  String
-  makeNormalized        String   @map("make_normalized")
-  model                 String
-  modelNormalized       String   @map("model_normalized")
-  generation            String?
-  bodyCodesJson         Json     @default("[]") @map("body_codes_json")
-  modelYears            String?  @map("model_years")
-  yearFrom              Int?     @map("year_from")
-  yearTo                Int?     @map("year_to")
-  vehicleText           String?  @map("vehicle_text") @db.Text
-  engineCode            String?  @map("engine_code")
-  engineCodeNormalized  String?  @map("engine_code_normalized")
-  engineCodesJson       Json     @default("[]") @map("engine_codes_json")
-  engineVolumeCc        Int?     @map("engine_volume_cc")
-  powerKw               Int?     @map("power_kw")
-  powerHp               Int?     @map("power_hp")
-  fuelType              String?  @map("fuel_type")
-  driveType             String?  @map("drive_type")
-  transmissionType      String?  @map("transmission_type")
-  conditionText         String?  @map("condition_text") @db.Text
-  canonicalPayloadHash  String   @map("canonical_payload_hash")
-  sourceHashesJson      Json     @default("[]") @map("source_hashes_json")
-  firstSeenAt           DateTime @map("first_seen_at") @db.Timestamptz(6)
-  lastSeenAt            DateTime @map("last_seen_at") @db.Timestamptz(6)
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  key                  String   @id @map("variant_key")
+  make                 String
+  makeNormalized       String   @map("make_normalized")
+  model                String
+  modelNormalized      String   @map("model_normalized")
+  generation           String?
+  bodyCodesJson        Json     @default("[]") @map("body_codes_json")
+  modelYears           String?  @map("model_years")
+  yearFrom             Int?     @map("year_from")
+  yearTo               Int?     @map("year_to")
+  vehicleText          String?  @map("vehicle_text") @db.Text
+  engineCode           String?  @map("engine_code")
+  engineCodeNormalized String?  @map("engine_code_normalized")
+  engineCodesJson      Json     @default("[]") @map("engine_codes_json")
+  engineVolumeCc       Int?     @map("engine_volume_cc")
+  powerKw              Int?     @map("power_kw")
+  powerHp              Int?     @map("power_hp")
+  fuelType             String?  @map("fuel_type")
+  driveType            String?  @map("drive_type")
+  transmissionType     String?  @map("transmission_type")
+  conditionText        String?  @map("condition_text") @db.Text
+  canonicalPayloadHash String   @map("canonical_payload_hash")
+  sourceHashesJson     Json     @default("[]") @map("source_hashes_json")
+  firstSeenAt          DateTime @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt           DateTime @map("last_seen_at") @db.Timestamptz(6)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   technicalRevisions MannTechnicalAssociationRevision[]
 
@@ -2997,23 +3051,23 @@ model MannVehicleVariant {
 /// Append-only описание одного запуска materialization. Само наличие записи
 /// STAGING/DRY_RUN не разрешает запись ACTIVE-ревизий или production cutover.
 model MannTechnicalMaterializationRun {
-  id                         String   @id
-  status                     String   @default("PLANNED")
-  mode                       String   @default("DRY_RUN")
-  matcherVersion             String   @map("matcher_version")
-  capacityParserVersion      String   @map("capacity_parser_version")
-  gitCommit                  String   @map("git_commit")
-  verificationSetVersion     String?  @map("verification_set_version")
-  sourceSnapshotJson         Json     @default("{}") @map("source_snapshot_json")
-  sourceCountsJson           Json     @default("{}") @map("source_counts_json")
-  gatesJson                  Json     @default("{}") @map("gates_json")
-  approvalJson               Json     @default("{}") @map("approval_json")
-  independentHumanSignoff    Boolean  @default(false) @map("independent_human_signoff")
-  productionApplyAuthorized  Boolean  @default(false) @map("production_apply_authorized")
-  startedAt                  DateTime? @map("started_at") @db.Timestamptz(6)
-  completedAt                DateTime? @map("completed_at") @db.Timestamptz(6)
-  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                        String    @id
+  status                    String    @default("PLANNED")
+  mode                      String    @default("DRY_RUN")
+  matcherVersion            String    @map("matcher_version")
+  capacityParserVersion     String    @map("capacity_parser_version")
+  gitCommit                 String    @map("git_commit")
+  verificationSetVersion    String?   @map("verification_set_version")
+  sourceSnapshotJson        Json      @default("{}") @map("source_snapshot_json")
+  sourceCountsJson          Json      @default("{}") @map("source_counts_json")
+  gatesJson                 Json      @default("{}") @map("gates_json")
+  approvalJson              Json      @default("{}") @map("approval_json")
+  independentHumanSignoff   Boolean   @default(false) @map("independent_human_signoff")
+  productionApplyAuthorized Boolean   @default(false) @map("production_apply_authorized")
+  startedAt                 DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt               DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt                 DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   revisions MannTechnicalAssociationRevision[]
 
@@ -3025,30 +3079,30 @@ model MannTechnicalMaterializationRun {
 /// Неизменяемая техническая ревизия. Source requirement хранится логическим ID,
 /// а не FK: очистка staging-импорта не должна удалять canonical audit history.
 model MannTechnicalAssociationRevision {
-  id                    String                          @id
-  runId                 String                          @map("run_id")
-  run                   MannTechnicalMaterializationRun @relation(fields: [runId], references: [id], onDelete: Restrict, map: "mann_tech_revision_run_fkey")
-  vehicleVariantKey     String                          @map("vehicle_variant_key")
-  vehicleVariant        MannVehicleVariant              @relation(fields: [vehicleVariantKey], references: [key], onDelete: Restrict, map: "mann_tech_revision_vehicle_fkey")
-  sourceRequirementId   String                          @map("source_requirement_id")
-  systemCode            String                          @map("system_code")
-  componentModel        String?                         @map("component_model")
-  applicabilityJson     Json                            @default("{}") @map("applicability_json")
-  verifiedFieldsJson    Json                            @default("[]") @map("verified_fields_json")
-  technicalDataJson     Json                            @default("{}") @map("technical_data_json")
-  fieldConfidenceJson   Json                            @default("{}") @map("field_confidence_json")
-  evidenceJson          Json                            @default("[]") @map("evidence_json")
-  provenanceJson        Json                            @default("{}") @map("provenance_json")
-  matchClass            String                          @map("match_class")
-  matchScore            Int                             @map("match_score")
-  semanticFingerprint   String                          @map("semantic_fingerprint")
-  state                 String                          @default("STAGED")
-  verificationStatus    String                          @default("UNVERIFIED") @map("verification_status")
-  applyEligible         Boolean                         @default(false) @map("apply_eligible")
-  supersedesRevisionId  String?                         @unique(map: "mann_tech_revision_supersedes_key") @map("supersedes_revision_id")
-  supersedesRevision    MannTechnicalAssociationRevision? @relation("MannTechnicalRevisionSupersession", fields: [supersedesRevisionId], references: [id], onDelete: Restrict, map: "mann_tech_revision_supersedes_fkey")
-  supersededBy          MannTechnicalAssociationRevision[] @relation("MannTechnicalRevisionSupersession")
-  createdAt             DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                   String                             @id
+  runId                String                             @map("run_id")
+  run                  MannTechnicalMaterializationRun    @relation(fields: [runId], references: [id], onDelete: Restrict, map: "mann_tech_revision_run_fkey")
+  vehicleVariantKey    String                             @map("vehicle_variant_key")
+  vehicleVariant       MannVehicleVariant                 @relation(fields: [vehicleVariantKey], references: [key], onDelete: Restrict, map: "mann_tech_revision_vehicle_fkey")
+  sourceRequirementId  String                             @map("source_requirement_id")
+  systemCode           String                             @map("system_code")
+  componentModel       String?                            @map("component_model")
+  applicabilityJson    Json                               @default("{}") @map("applicability_json")
+  verifiedFieldsJson   Json                               @default("[]") @map("verified_fields_json")
+  technicalDataJson    Json                               @default("{}") @map("technical_data_json")
+  fieldConfidenceJson  Json                               @default("{}") @map("field_confidence_json")
+  evidenceJson         Json                               @default("[]") @map("evidence_json")
+  provenanceJson       Json                               @default("{}") @map("provenance_json")
+  matchClass           String                             @map("match_class")
+  matchScore           Int                                @map("match_score")
+  semanticFingerprint  String                             @map("semantic_fingerprint")
+  state                String                             @default("STAGED")
+  verificationStatus   String                             @default("UNVERIFIED") @map("verification_status")
+  applyEligible        Boolean                            @default(false) @map("apply_eligible")
+  supersedesRevisionId String?                            @unique(map: "mann_tech_revision_supersedes_key") @map("supersedes_revision_id")
+  supersedesRevision   MannTechnicalAssociationRevision?  @relation("MannTechnicalRevisionSupersession", fields: [supersedesRevisionId], references: [id], onDelete: Restrict, map: "mann_tech_revision_supersedes_fkey")
+  supersededBy         MannTechnicalAssociationRevision[] @relation("MannTechnicalRevisionSupersession")
+  createdAt            DateTime                           @default(now()) @map("created_at") @db.Timestamptz(6)
 
   reviewDecisions MannTechnicalReviewDecision[]
 
@@ -3062,16 +3116,16 @@ model MannTechnicalAssociationRevision {
 /// Ручное решение добавляется отдельной строкой и никогда не переписывает
 /// исходный requirement или существующую technical revision.
 model MannTechnicalReviewDecision {
-  id                 String                           @id
-  revisionId         String                           @map("revision_id")
-  revision           MannTechnicalAssociationRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict, map: "mann_tech_review_revision_fkey")
-  decision           String
-  actorType          String                           @map("actor_type")
-  actorId            String?                          @map("actor_id")
-  reason             String                           @db.Text
-  evidenceJson       Json                             @default("[]") @map("evidence_json")
-  correctionJson     Json                             @default("{}") @map("correction_json")
-  createdAt          DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
+  id             String                           @id
+  revisionId     String                           @map("revision_id")
+  revision       MannTechnicalAssociationRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict, map: "mann_tech_review_revision_fkey")
+  decision       String
+  actorType      String                           @map("actor_type")
+  actorId        String?                          @map("actor_id")
+  reason         String                           @db.Text
+  evidenceJson   Json                             @default("[]") @map("evidence_json")
+  correctionJson Json                             @default("{}") @map("correction_json")
+  createdAt      DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([revisionId, createdAt], map: "mann_tech_review_revision_created_idx")
   @@index([decision, createdAt], map: "mann_tech_review_decision_created_idx")

@@ -32,7 +32,13 @@ import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 import { clientSessionUnavailableMessage, readClientSessionResponse } from "@/lib/client-session-response";
 import { formatServiceDateTime, toServiceMomentString } from "@/lib/date-time";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
+import {
+  clientVehicleCompleteness,
+  type ClientVehiclePassportValues,
+  type ClientVehicleProfile,
+} from "@/lib/client-vehicle-profile";
 import { isValidMannYear, normalizeMannYearInput, shouldApplyMannRequest } from "@/lib/mann-picker-state";
+import type { MannTransmissionType } from "@/lib/mann-unified-technical-profile";
 import { vehicleFieldValues, type NormalizedVehicleIdentity } from "@/lib/vehicle-identity-client";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import {
@@ -196,6 +202,8 @@ type AgentCreateJson = { id?: string; name?: string; meta?: Meta; error?: string
 type DemandCreateJson = { id?: string; name?: string; applicable?: boolean; description?: string; error?: string };
 type DiagnosticExistingJson = { diagnostic?: { id?: string }; error?: string };
 type DiagnosticCreateJson = { diagnosticId?: string; error?: string };
+type ClientVehicleProfilesJson = { profiles?: ClientVehicleProfile[]; error?: string };
+type ClientVehicleSaveJson = { profile?: ClientVehicleProfile; changedFields?: string[]; error?: string };
 
 type MannMake = {
   make: string;
@@ -633,6 +641,100 @@ function formatVehicleAttributeInput(name: string | undefined, value: string): s
     /гос.*номер|госномер|plate/.test(normalized)
   ) return value.toUpperCase();
   return value;
+}
+
+function profileText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const result = value.trim();
+  return result || undefined;
+}
+
+function profileNumber(value: unknown): number | undefined {
+  const result = Number(value);
+  return Number.isFinite(result) ? result : undefined;
+}
+
+function parseVehicleNumber(value: string): number | null {
+  const match = value.replace(/\s+/g, "").replace(",", ".").match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const result = Number(match[0]);
+  return Number.isFinite(result) ? result : null;
+}
+
+function splitVehicleMakeModel(value: string): { make: string; model: string } {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (!normalized) return { make: "", model: "" };
+  const upper = normalized.toUpperCase();
+  const compoundMakes = ["LAND ROVER", "ALFA ROMEO", "ASTON MARTIN", "GREAT WALL", "MERCEDES BENZ", "MERCEDES-BENZ"];
+  const compound = compoundMakes.find((make) => upper === make || upper.startsWith(`${make} `));
+  if (compound) return { make: normalized.slice(0, compound.length), model: normalized.slice(compound.length).trim() };
+  const [make = "", ...model] = normalized.split(" ");
+  return { make, model: model.join(" ") };
+}
+
+function profileToVehicleIdentity(profile: ClientVehicleProfile): NormalizedVehicleIdentity {
+  return {
+    vin: profileText(profile.vin),
+    frameNumber: profileText(profile.frameNumber),
+    licensePlate: profileText(profile.plate),
+    makeRaw: profileText(profile.make),
+    makeCanonical: profileText(profile.makeCanonical),
+    modelRaw: profileText(profile.model),
+    modelCanonical: profileText(profile.modelCanonical),
+    generationRaw: profileText(profile.generation),
+    generationCanonical: profileText(profile.generationCanonical),
+    bodyName: profileText(profile.bodyName),
+    bodyCode: profileText(profile.bodyCode),
+    bodyType: profileText(profile.bodyType),
+    year: profileNumber(profile.year),
+    modelYearFrom: profileNumber(profile.modelYearFrom),
+    modelYearTo: profileNumber(profile.modelYearTo),
+    engineName: profileText(profile.engineName),
+    engineCode: profileText(profile.engineCode),
+    engineSeries: profileText(profile.engineSeries),
+    engineVolumeCc: profileNumber(profile.engineVolumeCc),
+    engineVolumeLiters: profileNumber(profile.engineVolumeCc) ? Number((profileNumber(profile.engineVolumeCc)! / 1000).toFixed(3)) : undefined,
+    powerHp: profileNumber(profile.powerHp),
+    powerKw: profileNumber(profile.powerKw),
+    fuelType: profileText(profile.fuelType),
+    transmissionType: profileText(profile.transmissionType),
+    transmissionName: profileText(profile.transmissionName),
+    driveType: profileText(profile.driveType),
+    steeringPosition: profileText(profile.steeringPosition),
+    market: profileText(profile.market),
+    countryOfOrigin: profileText(profile.countryOfOrigin),
+    mileage: profileNumber(profile.mileage),
+    ownersCount: profileNumber(profile.ownersCount),
+    sourceMethods: ["manual"],
+    confidence: profile.confidence === "HIGH" ? "high" : profile.confidence === "MEDIUM" ? "medium" : "low",
+    rawResultIds: [],
+    vinStatus: "unknown",
+  };
+}
+
+function mergeVehicleAttributes(current: ShipmentAttribute[], vehicle: NormalizedVehicleIdentity) {
+  const fields = vehicleFieldValues(vehicle);
+  const next = [...current];
+  for (const [attributeName, field] of Object.entries(fields)) {
+    if (!field?.value) continue;
+    const normalizedTarget = normalizeAttrName(attributeName);
+    const index = next.findIndex((attribute) => normalizeAttrName(attribute.name) === normalizedTarget);
+    if (index >= 0) {
+      const attribute = next[index];
+      if (!attribute || attributeValueToString(attribute.value).trim()) continue;
+      next[index] = { ...attribute, value: field.value, source: field.source };
+      continue;
+    }
+    next.push({
+      id: `vehicle-profile-${normalizedTarget.replace(/\s+/g, "-")}`,
+      name: attributeName,
+      type: "string",
+      meta: { href: `local://demand-attribute/${encodeURIComponent(attributeName)}`, type: "demandattribute", mediaType: "application/json" },
+      value: field.value,
+      source: field.source,
+    });
+  }
+  return next;
 }
 
 function isBlankUiValue(value: unknown): boolean {
@@ -1150,6 +1252,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [vehicleEditorOpen, setVehicleEditorOpen] = useState(false);
   const [vehicleSaving, setVehicleSaving] = useState(false);
   const [vehicleDraftValues, setVehicleDraftValues] = useState<Record<string, string>>({});
+  const [vehicleProfile, setVehicleProfile] = useState<ClientVehicleProfile | null>(null);
+  const [vehicleProfileLoading, setVehicleProfileLoading] = useState(false);
+  const [vehicleProfileError, setVehicleProfileError] = useState("");
+  const [identifiedVehicle, setIdentifiedVehicle] = useState<NormalizedVehicleIdentity | null>(null);
   const [positionAddMode, setPositionAddMode] = useState<PositionAddMode>("mann");
 
   const [showCreateAgentForm, setShowCreateAgentForm] = useState(false);
@@ -1779,6 +1885,41 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setHighlightedAgentIndex(0);
     setReplacingAgent(false);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const counterpartyId = selectedAgent?.id?.trim();
+    setVehicleProfile(null);
+    setVehicleProfileError("");
+    if (!counterpartyId || selectedAgent?.isAnonymousRetail) {
+      setVehicleProfileLoading(false);
+      return () => { cancelled = true; };
+    }
+    setVehicleProfileLoading(true);
+    fetch(`/api/client-vehicles?counterpartyId=${encodeURIComponent(counterpartyId)}`, { cache: "no-store" })
+      .then(async (response) => {
+        const data = await safeJson<ClientVehicleProfilesJson>(response, {});
+        if (!response.ok) throw new Error(data.error ?? "Не удалось загрузить паспорт автомобиля");
+        return data;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const profile = data.profiles?.[0] ?? null;
+        setVehicleProfile(profile);
+        if (!profile) return;
+        const vehicle = profileToVehicleIdentity(profile);
+        setIdentifiedVehicle(vehicle);
+        setAttributes((current) => mergeVehicleAttributes(current, vehicle));
+        if (vehicle.vin) setVin((current) => current || vehicle.vin || "");
+      })
+      .catch((error) => {
+        if (!cancelled) setVehicleProfileError(error instanceof Error ? error.message : "Не удалось загрузить паспорт автомобиля");
+      })
+      .finally(() => {
+        if (!cancelled) setVehicleProfileLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedAgent?.id, selectedAgent?.isAnonymousRetail]);
 
   const handleAgentSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
@@ -2715,6 +2856,53 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     }
   }, [markDraftDirty, vin]);
 
+  const persistVehicleProfile = useCallback(async (payload: {
+    mode: "auto" | "confirmed";
+    vehicle?: NormalizedVehicleIdentity;
+    values?: ClientVehiclePassportValues;
+    mannVariantIds?: string[];
+  }) => {
+    const counterpartyId = selectedAgent?.id?.trim();
+    if (!counterpartyId || selectedAgent?.isAnonymousRetail) return null;
+    setVehicleProfileLoading(true);
+    setVehicleProfileError("");
+    try {
+      const response = await fetch("/api/client-vehicles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          counterpartyId,
+          vehicleId: vehicleProfile?.id,
+          mode: payload.mode,
+          vehicle: payload.vehicle,
+          values: payload.values,
+          mannVariantIds: payload.mannVariantIds,
+        }),
+      });
+      const data = await safeJson<ClientVehicleSaveJson>(response, {});
+      if (!response.ok || !data.profile) throw new Error(data.error ?? "Не удалось сохранить паспорт автомобиля");
+      setVehicleProfile(data.profile);
+      setSelectedAgent((current) => current && current.id === counterpartyId ? {
+        ...current,
+        vehicleModel: [profileText(data.profile?.make), profileText(data.profile?.model)].filter(Boolean).join(" "),
+        vehicleYear: data.profile?.year == null ? current.vehicleYear : String(data.profile.year),
+        vehiclePlate: profileText(data.profile?.plate) ?? current.vehiclePlate,
+        vehicleVin: profileText(data.profile?.vin) ?? current.vehicleVin,
+        vehicleLabel: [
+          [profileText(data.profile?.make), profileText(data.profile?.model), profileText(data.profile?.generation)].filter(Boolean).join(" "),
+          data.profile?.year,
+          profileText(data.profile?.plate),
+        ].filter(Boolean).join(" · "),
+      } : current);
+      return data.profile;
+    } catch (error) {
+      setVehicleProfileError(error instanceof Error ? error.message : "Не удалось сохранить паспорт автомобиля");
+      return null;
+    } finally {
+      setVehicleProfileLoading(false);
+    }
+  }, [selectedAgent?.id, selectedAgent?.isAnonymousRetail, vehicleProfile?.id]);
+
   const applyIdentifiedVehicle = useCallback((vehicle: NormalizedVehicleIdentity, resolution: MannVehicleResolution | null) => {
     const fields = vehicleFieldValues(vehicle);
     const fieldEntries: Array<[string, { value: string; source: string }]> = [];
@@ -2763,8 +2951,14 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         ? "Автомобиль заполнен, фильтры MANN подобраны"
         : "Автомобиль заполнен. Выберите MANN-модификацию перед подбором фильтров"
     );
+    setIdentifiedVehicle(vehicle);
+    void persistVehicleProfile({
+      mode: "auto",
+      vehicle,
+      mannVariantIds: resolution?.selectedApplication?.variantIds,
+    });
     markDraftDirty();
-  }, [markDraftDirty, vin]);
+  }, [markDraftDirty, persistVehicleProfile, vin]);
 
   const confirmMannCandidate = useCallback((vehicle: NormalizedVehicleIdentity, candidate: MannVehicleCandidate) => {
     mannAutoSelectionRef.current = { make: candidate.make, model: candidate.model, variantId: candidate.variantId };
@@ -2802,8 +2996,45 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         transmissionType: vehicle.transmissionType ?? vehicle.transmissionName,
       }),
     }).catch(() => undefined);
+    setIdentifiedVehicle(vehicle);
+    void persistVehicleProfile({ mode: "auto", vehicle, mannVariantIds: candidate.variantIds });
     markDraftDirty();
-  }, [markDraftDirty, selectedOrg?.id]);
+  }, [markDraftDirty, persistVehicleProfile, selectedOrg?.id]);
+
+  const confirmVehicleTransmission = useCallback((vehicle: NormalizedVehicleIdentity, transmissionType: MannTransmissionType, variantIds: string[]) => {
+    const labels: Record<MannTransmissionType, string> = {
+      automatic: "АКПП",
+      manual: "МКПП",
+      cvt: "Вариатор",
+      robot: "Робот",
+    };
+    const nextVehicle = { ...vehicle, transmissionType };
+    setIdentifiedVehicle(nextVehicle);
+    setAttributes((current) => {
+      const next = [...current];
+      const index = next.findIndex((attribute) => normalizeAttrName(attribute.name) === "коробка");
+      if (index >= 0 && next[index]) next[index] = { ...next[index], value: labels[transmissionType], source: "manual" };
+      else next.push({
+        id: "vehicle-transmission",
+        name: "коробка",
+        type: "string",
+        meta: { href: "local://demand-attribute/transmission", type: "demandattribute", mediaType: "application/json" },
+        value: labels[transmissionType],
+        source: "manual",
+      });
+      return next;
+    });
+    void persistVehicleProfile({
+      mode: "confirmed",
+      values: {
+        make: vehicle.makeRaw ?? vehicle.makeCanonical ?? null,
+        model: vehicle.modelRaw ?? vehicle.modelCanonical ?? null,
+        transmissionType,
+      },
+      mannVariantIds: variantIds,
+    });
+    markDraftDirty();
+  }, [markDraftDirty, persistVehicleProfile]);
 
   const resetMannVehicleSelection = useCallback(() => {
     mannAutoSelectionRef.current = null;
@@ -3337,19 +3568,44 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     && position.oneOffProduct?.explicitZeroCost !== true
   ).length;
   const decodedVehicle = vinLookupResult?.decoded;
-  const attrModel = getAttributeString(attributes, (name) => name === "модель авто");
+  const attrLegacyModel = getAttributeString(attributes, (name) => name === "модель авто");
+  const legacyModelParts = splitVehicleMakeModel(attrLegacyModel);
+  const attrMake = getAttributeString(attributes, (name) => name === "марка") || legacyModelParts.make;
+  const attrModel = getAttributeString(attributes, (name) => name === "модель") || legacyModelParts.model;
+  const attrGeneration = getAttributeString(attributes, (name) => name === "поколение");
+  const attrBody = getAttributeString(attributes, (name) => name === "кузов");
+  const attrBodyCode = getAttributeString(attributes, (name) => name === "код кузова");
+  const attrBodyType = getAttributeString(attributes, (name) => name === "тип кузова");
+  const attrFrameNumber = getAttributeString(attributes, (name) => name === "номер кузова");
   const attrYear = getAttributeString(attributes, (name) => name === "год");
   const attrPlate = getAttributeString(attributes, (name) => /^гос\.?\s*номер$|^госномер$|license\s*plate|plate/i.test(name));
   const attrMileage = getAttributeString(attributes, (name) => /пробег/i.test(name));
-  const attrVolume = getAttributeString(attributes, (name) => name === "объем");
+  const attrEngine = getAttributeString(attributes, (name) => name === "двигатель");
+  const attrEngineCode = getAttributeString(attributes, (name) => name === "код двигателя");
+  const attrEngineSeries = getAttributeString(attributes, (name) => name === "серия двигателя");
+  const attrEngineVolume = getAttributeString(attributes, (name) => name === "объем двигателя");
   const attrOil = getAttributeString(attributes, (name) => name === "моторное масло");
+  const attrPower = getAttributeString(attributes, (name) => name === "мощность");
+  const attrPowerKw = getAttributeString(attributes, (name) => name === "мощность квт");
+  const attrFuel = getAttributeString(attributes, (name) => name === "топливо");
+  const attrTransmission = getAttributeString(attributes, (name) => name === "коробка");
+  const attrTransmissionName = getAttributeString(attributes, (name) => name === "модель коробки");
+  const attrDrive = getAttributeString(attributes, (name) => name === "привод");
+  const attrSteering = getAttributeString(attributes, (name) => name === "руль");
+  const attrMarket = getAttributeString(attributes, (name) => name === "рынок");
+  const attrCountry = getAttributeString(attributes, (name) => name === "страна сборки");
+  const attrOwners = getAttributeString(attributes, (name) => name === "владельцев");
+  const attrModelYearFrom = getAttributeString(attributes, (name) => name === "модельный год с");
+  const attrModelYearTo = getAttributeString(attributes, (name) => name === "модельный год по");
   const documentVin = vin || getAttributeString(attributes, (name) => /vin/i.test(name));
   const vehicleManualReady = Boolean(
-    attrModel && (attrPlate || attrMileage || attrYear || attrVolume)
+    attrMake && attrModel && (documentVin || attrPlate || attrMileage || attrYear)
   );
-  const vehicleHasAnyManualData = Boolean(attrModel || attrPlate || attrMileage || attrYear || attrVolume || attrOil);
+  const vehicleHasAnyManualData = Boolean(attrMake || attrModel || attrLegacyModel || attrPlate || documentVin || attrMileage || attrYear);
   const vehicleTitle =
-    decodedVehicle
+    identifiedVehicle
+      ? [identifiedVehicle.makeRaw ?? identifiedVehicle.makeCanonical, identifiedVehicle.modelRaw ?? identifiedVehicle.modelCanonical, identifiedVehicle.generationRaw].filter(Boolean).join(" ")
+      : decodedVehicle
       ? [
           decodedVehicle.make,
           decodedVehicle.model,
@@ -3358,12 +3614,28 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         ]
           .filter(Boolean)
           .join(" · ")
-      : attrModel;
+      : [attrMake, attrModel, attrGeneration].filter(Boolean).join(" ") || attrLegacyModel;
   const vehicleReady = Boolean(documentVin || decodedVehicle || vehicleManualReady);
+  const engineVolumeLiters = parseVehicleNumber(attrEngineVolume);
+  const passportValuesForCompleteness: ClientVehiclePassportValues = {
+    make: attrMake || null,
+    model: attrModel || null,
+    year: parseVehicleNumber(attrYear),
+    vin: documentVin || null,
+    engineVolumeCc: engineVolumeLiters == null ? null : Math.round(engineVolumeLiters * 1000),
+    powerHp: parseVehicleNumber(attrPower),
+    fuelType: attrFuel || null,
+    transmissionType: attrTransmission || null,
+    driveType: attrDrive || null,
+    mileage: parseVehicleNumber(attrMileage),
+  };
+  const vehicleCompleteness = clientVehicleCompleteness(passportValuesForCompleteness);
   const vehicleStatusText = vehicleEditorOpen
     ? "Редактирование"
-    : vehicleReady
-      ? "Заполнено"
+    : vehicleProfile?.verificationStatus === "CONFIRMED"
+      ? `Подтверждено · ${vehicleCompleteness.completed}/${vehicleCompleteness.total}`
+      : vehicleReady
+        ? `Паспорт · ${vehicleCompleteness.completed}/${vehicleCompleteness.total}`
       : vehicleHasAnyManualData
         ? "Частично заполнен"
         : "Не указан";
@@ -3376,9 +3648,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         : "neutral";
   const vehicleActionLabel = vehicleReady ? "Редактировать" : vehicleHasAnyManualData ? "Дополнить" : "Заполнить автомобиль";
   const vehicleHelpText = vehicleReady
-    ? documentVin
-      ? "Автомобиль можно уточнить вручную или использовать подбор фильтров по автомобилю."
-      : "Автомобиль заполнен вручную, VIN не обязателен."
+    ? vehicleCompleteness.missing.length
+      ? "Паспорт сохранён. Дополните силовой агрегат и эксплуатационные данные при следующем визите."
+      : "Паспорт заполнен: данные будут использованы в следующих отгрузках и записях клиента."
     : vehicleHasAnyManualData
       ? "Добавьте модель вместе с номером, пробегом или годом, чтобы считать авто заполненным."
       : "Можно заполнить вручную без VIN или воспользоваться подбором фильтров по автомобилю.";
@@ -3420,13 +3692,31 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const finalStepReady = documentStepReady && Boolean(selectedAgent) && positions.length > 0 && overAvailablePositionsCount === 0 && !nonstockCostBlocksPosting;
   const vehicleAttributeControls = [
     {
-      key: "model",
-      label: "Марка / модель",
-      attributeName: "модель авто",
-      placeholder: "Например: AUDI A3",
-      match: (name: string) => name === "модель авто",
+      section: "identity",
+      key: "make",
+      label: "Марка",
+      attributeName: "марка",
+      placeholder: "Например: HYUNDAI",
+      match: (name: string) => name === "марка",
     },
     {
+      section: "identity",
+      key: "model",
+      label: "Модель",
+      attributeName: "модель",
+      placeholder: "Например: Solaris",
+      match: (name: string) => name === "модель",
+    },
+    {
+      section: "identity",
+      key: "generation",
+      label: "Поколение",
+      attributeName: "поколение",
+      placeholder: "Например: II (HCr)",
+      match: (name: string) => name === "поколение",
+    },
+    {
+      section: "identity",
       key: "plate",
       label: "Госномер",
       attributeName: "гос. номер",
@@ -3434,6 +3724,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       match: (name: string) => /^гос\.?\s*номер$|^госномер$|license\s*plate|plate/i.test(name),
     },
     {
+      section: "identity",
       key: "mileage",
       label: "Пробег",
       attributeName: "пробег",
@@ -3441,6 +3732,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       match: (name: string) => /пробег/i.test(name),
     },
     {
+      section: "identity",
       key: "year",
       label: "Год",
       attributeName: "год",
@@ -3448,40 +3740,202 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       match: (name: string) => name === "год",
     },
     {
-      key: "volume",
-      label: "Объём",
-      attributeName: "Объем",
-      placeholder: "Например: 1.8",
-      match: (name: string) => name === "объем",
-    },
-    {
-      key: "oil",
-      label: "Моторное масло",
-      attributeName: "Моторное масло",
-      placeholder: "Например: 5W-30",
-      match: (name: string) => name === "моторное масло",
-    },
-    {
+      section: "identity",
       key: "vin",
       label: "VIN",
       attributeName: "vin номер",
-      placeholder: "Например: WBAXXXXX5JZ123456",
+      placeholder: "Например: Z94K241BBJR074943",
       match: (name: string) => /vin/i.test(name),
+    },
+    {
+      section: "powertrain",
+      key: "engineName",
+      label: "Двигатель",
+      attributeName: "двигатель",
+      placeholder: "Например: 1.4 MPI",
+      match: (name: string) => name === "двигатель",
+    },
+    {
+      section: "powertrain",
+      key: "engineCode",
+      label: "Код двигателя",
+      attributeName: "код двигателя",
+      placeholder: "Например: G4LC",
+      match: (name: string) => name === "код двигателя",
+    },
+    {
+      section: "powertrain",
+      key: "engineSeries",
+      label: "Серия двигателя",
+      attributeName: "серия двигателя",
+      placeholder: "Например: Gamma",
+      match: (name: string) => name === "серия двигателя",
+    },
+    {
+      section: "powertrain",
+      key: "engineVolume",
+      label: "Объём двигателя, л",
+      attributeName: "объем двигателя",
+      placeholder: "Например: 1,4",
+      match: (name: string) => name === "объем двигателя",
+    },
+    {
+      section: "powertrain",
+      key: "powerHp",
+      label: "Мощность, л.с.",
+      attributeName: "мощность",
+      placeholder: "Например: 100",
+      match: (name: string) => name === "мощность",
+    },
+    {
+      section: "powertrain",
+      key: "fuelType",
+      label: "Топливо",
+      attributeName: "топливо",
+      placeholder: "Например: бензин",
+      match: (name: string) => name === "топливо",
+    },
+    {
+      section: "powertrain",
+      key: "transmissionType",
+      label: "Тип коробки",
+      attributeName: "коробка",
+      placeholder: "АКПП / МКПП / вариатор / робот",
+      match: (name: string) => name === "коробка",
+    },
+    {
+      section: "powertrain",
+      key: "transmissionName",
+      label: "Модель коробки",
+      attributeName: "модель коробки",
+      placeholder: "Например: A6GF1",
+      match: (name: string) => name === "модель коробки",
+    },
+    {
+      section: "powertrain",
+      key: "driveType",
+      label: "Привод",
+      attributeName: "привод",
+      placeholder: "Передний / задний / полный",
+      match: (name: string) => name === "привод",
+    },
+    {
+      section: "additional",
+      key: "bodyName",
+      label: "Кузов",
+      attributeName: "кузов",
+      placeholder: "Например: седан HC",
+      match: (name: string) => name === "кузов",
+    },
+    {
+      section: "additional",
+      key: "bodyCode",
+      label: "Код кузова",
+      attributeName: "код кузова",
+      placeholder: "Например: HC",
+      match: (name: string) => name === "код кузова",
+    },
+    {
+      section: "additional",
+      key: "bodyType",
+      label: "Тип кузова",
+      attributeName: "тип кузова",
+      placeholder: "Например: седан",
+      match: (name: string) => name === "тип кузова",
+    },
+    {
+      section: "additional",
+      key: "frameNumber",
+      label: "Номер кузова / Frame",
+      attributeName: "номер кузова",
+      placeholder: "Для машин без 17-значного VIN",
+      match: (name: string) => name === "номер кузова",
+    },
+    {
+      section: "additional",
+      key: "powerKw",
+      label: "Мощность, кВт",
+      attributeName: "мощность квт",
+      placeholder: "Например: 74",
+      match: (name: string) => name === "мощность квт",
+    },
+    {
+      section: "additional",
+      key: "modelYearFrom",
+      label: "Модельный год с",
+      attributeName: "модельный год с",
+      placeholder: "Например: 2017",
+      match: (name: string) => name === "модельный год с",
+    },
+    {
+      section: "additional",
+      key: "modelYearTo",
+      label: "Модельный год по",
+      attributeName: "модельный год по",
+      placeholder: "Например: 2022",
+      match: (name: string) => name === "модельный год по",
+    },
+    {
+      section: "additional",
+      key: "steeringPosition",
+      label: "Руль",
+      attributeName: "руль",
+      placeholder: "Левый / правый",
+      match: (name: string) => name === "руль",
+    },
+    {
+      section: "additional",
+      key: "market",
+      label: "Рынок",
+      attributeName: "рынок",
+      placeholder: "Например: Европа",
+      match: (name: string) => name === "рынок",
+    },
+    {
+      section: "additional",
+      key: "countryOfOrigin",
+      label: "Страна сборки",
+      attributeName: "страна сборки",
+      placeholder: "Например: Россия",
+      match: (name: string) => name === "страна сборки",
+    },
+    {
+      section: "additional",
+      key: "ownersCount",
+      label: "Владельцев",
+      attributeName: "владельцев",
+      placeholder: "Например: 2",
+      match: (name: string) => name === "владельцев",
     },
   ].map((control) => {
     const attrIndex = attributes.findIndex((a) => control.match(normalizeAttrName(a.name)));
     const attr = attrIndex >= 0 ? attributes[attrIndex] : null;
-    const value = control.key === "vin" ? documentVin : attributeValueToString(attr?.value);
+    const fallback = control.key === "make" ? legacyModelParts.make : control.key === "model" ? legacyModelParts.model : "";
+    const value = control.key === "vin" ? documentVin : attributeValueToString(attr?.value) || fallback;
     return { ...control, attr, attrIndex, value };
   });
   const vehicleSummaryItems: KeyValueItem[] = [
     { key: "model", label: "Марка / модель", value: vehicleTitle || "—" },
+    { key: "generation", label: "Поколение / кузов", value: [attrGeneration, attrBody].filter(Boolean).join(" · ") || "—" },
     { key: "plate", label: "Госномер", value: attrPlate || "—" },
     { key: "mileage", label: "Пробег", value: attrMileage ? `${attrMileage} км` : "—" },
     { key: "year", label: "Год", value: attrYear || "—" },
-    { key: "volume", label: "Объём", value: attrVolume || "—" },
-    { key: "oil", label: "Моторное масло", value: attrOil || "—" },
+    { key: "engine", label: "Двигатель", value: [attrEngineCode, attrEngine].filter(Boolean).join(" · ") || "—" },
+    { key: "engineVolume", label: "Объём / мощность", value: [attrEngineVolume, attrPower].filter(Boolean).join(" · ") || "—" },
+    { key: "transmission", label: "Коробка / привод", value: [attrTransmission, attrTransmissionName, attrDrive].filter(Boolean).join(" · ") || "—" },
     { key: "vin", label: "VIN", value: documentVin || "—", wide: true },
+  ];
+  const vehicleAdditionalSummaryItems: KeyValueItem[] = [
+    { key: "fuel", label: "Топливо", value: attrFuel || "—" },
+    { key: "engineSeries", label: "Серия двигателя", value: attrEngineSeries || "—" },
+    { key: "powerKw", label: "Мощность, кВт", value: attrPowerKw || "—" },
+    { key: "bodyDetails", label: "Кузов", value: [attrBodyType, attrBodyCode].filter(Boolean).join(" · ") || "—" },
+    { key: "frame", label: "Номер кузова", value: attrFrameNumber || "—" },
+    { key: "steering", label: "Руль", value: attrSteering || "—" },
+    { key: "market", label: "Рынок", value: attrMarket || "—" },
+    { key: "country", label: "Страна сборки", value: attrCountry || "—" },
+    { key: "owners", label: "Владельцев", value: attrOwners || "—" },
+    { key: "modelYears", label: "Модельные годы", value: [attrModelYearFrom, attrModelYearTo].filter(Boolean).join("–") || "—" },
   ];
   const documentMomentLabel = momentStr ? formatServiceDateTime(momentStr) : "Дата и время...";
   const documentParamsSummary = [
@@ -3498,7 +3952,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setVehicleEditorOpen(true);
   };
 
-  const saveVehicleEditor = () => {
+  const saveVehicleEditor = async () => {
     if (vehicleSaving) return;
     setVehicleSaving(true);
     const nextValues = new Map(
@@ -3542,8 +3996,51 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           value,
         });
       }
+      const displayModel = [nextValues.get("make"), nextValues.get("model")].filter(Boolean).join(" ");
+      const legacyIndex = next.findIndex((attribute) => normalizeAttrName(attribute.name) === "модель авто");
+      if (legacyIndex >= 0 && next[legacyIndex]) next[legacyIndex] = { ...next[legacyIndex], value: displayModel || null, source: "manual" };
+      else if (displayModel) next.push({
+        id: "vehicle-model-display",
+        name: "модель авто",
+        type: "string",
+        meta: { href: "local://demand-attribute/vehicle-model", type: "demandattribute", mediaType: "application/json" },
+        value: displayModel,
+        source: "manual",
+      });
       return next;
     });
+    const engineLiters = parseVehicleNumber(nextValues.get("engineVolume") ?? "");
+    const manualValues: ClientVehiclePassportValues = {
+      make: nextValues.get("make") || null,
+      model: nextValues.get("model") || null,
+      generation: nextValues.get("generation") || null,
+      year: parseVehicleNumber(nextValues.get("year") ?? ""),
+      plate: nextValues.get("plate") || null,
+      vin: nextVin || null,
+      bodyName: nextValues.get("bodyName") || null,
+      bodyCode: nextValues.get("bodyCode") || null,
+      bodyType: nextValues.get("bodyType") || null,
+      frameNumber: nextValues.get("frameNumber") || null,
+      engineName: nextValues.get("engineName") || null,
+      engineCode: nextValues.get("engineCode") || null,
+      engineSeries: nextValues.get("engineSeries") || null,
+      engineVolumeCc: engineLiters == null ? null : Math.round(engineLiters * 1000),
+      powerHp: parseVehicleNumber(nextValues.get("powerHp") ?? ""),
+      powerKw: parseVehicleNumber(nextValues.get("powerKw") ?? ""),
+      fuelType: nextValues.get("fuelType") || null,
+      transmissionType: nextValues.get("transmissionType") || null,
+      transmissionName: nextValues.get("transmissionName") || null,
+      driveType: nextValues.get("driveType") || null,
+      steeringPosition: nextValues.get("steeringPosition") || null,
+      market: nextValues.get("market") || null,
+      countryOfOrigin: nextValues.get("countryOfOrigin") || null,
+      mileage: parseVehicleNumber(nextValues.get("mileage") ?? ""),
+      ownersCount: parseVehicleNumber(nextValues.get("ownersCount") ?? ""),
+      modelYearFrom: parseVehicleNumber(nextValues.get("modelYearFrom") ?? ""),
+      modelYearTo: parseVehicleNumber(nextValues.get("modelYearTo") ?? ""),
+    };
+    const savedProfile = await persistVehicleProfile({ mode: "confirmed", values: manualValues, mannVariantIds: vehicleProfile?.mannVariantIds });
+    if (savedProfile) setIdentifiedVehicle(profileToVehicleIdentity(savedProfile));
     setVehicleDraftValues({});
     markDraftDirty();
     setVehicleEditorOpen(false);
@@ -3658,7 +4155,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const selectedMannVariant = mannVariants.find((variant) => variant.variantId === selectedMannVariantId) ?? null;
   const vehicleContextTitle = vehicleTitle || [selectedMannMake, selectedMannModel].filter(Boolean).join(" ") || "Автомобиль не указан";
   const vehicleEngineLabel = [
-    decodedVehicle?.displacementL ? `${decodedVehicle.displacementL} л` : attrVolume ? `${attrVolume} л` : "",
+    decodedVehicle?.displacementL ? `${decodedVehicle.displacementL} л` : attrEngineVolume ? `${attrEngineVolume} л` : "",
     decodedVehicle?.engineSeries,
   ].filter(Boolean).join(" · ");
   const mannMakeOptions = mannMakes.map((item): MannComboboxOption => ({
@@ -4340,38 +4837,87 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           />
           {vehicleEditorOpen ? (
             <div className="eco-shipment-vehicle-editor">
-              <div className="eco-shipment-vehicle-editor-grid">
-                {vehicleAttributeControls.map((control) => (
-                  <label key={control.key} className={control.key === "vin" ? "is-wide" : undefined}>
-                    <span>{control.label}</span>
-                    <input
-                      id={control.key === "model" ? "shipment-vehicle-model" : undefined}
-                      type="text"
-                      maxLength={control.key === "vin" ? 17 : undefined}
-                      value={vehicleDraftValues[control.key] ?? control.value}
-                      onChange={(e) => {
-                        const attrName = control.attr?.name ?? control.label;
-                        const nextValue = formatVehicleAttributeInput(attrName, e.target.value);
-                        setVehicleDraftValues((prev) => ({ ...prev, [control.key]: nextValue }));
-                      }}
-                      className="eco-input"
-                      placeholder={control.placeholder}
-                    />
-                  </label>
-                ))}
+              <div className="eco-shipment-vehicle-passport-intro">
+                <div>
+                  <strong>Паспорт автомобиля</strong>
+                  <span>Заполните известное. Пустые поля можно дополнить при следующем визите.</span>
+                </div>
+                <b>{vehicleCompleteness.completed} из {vehicleCompleteness.total}</b>
               </div>
+              {[{ key: "identity", label: "Основные данные" }, { key: "powertrain", label: "Силовой агрегат" }].map((section) => (
+                <fieldset className="eco-shipment-vehicle-fieldset" key={section.key}>
+                  <legend>{section.label}</legend>
+                  <div className="eco-shipment-vehicle-editor-grid">
+                    {vehicleAttributeControls.filter((control) => control.section === section.key).map((control) => (
+                      <label key={control.key} className={control.key === "vin" ? "is-wide" : undefined}>
+                        <span>{control.label}</span>
+                        <input
+                          id={control.key === "model" ? "shipment-vehicle-model" : undefined}
+                          type="text"
+                          inputMode={["year", "mileage", "engineVolume", "powerHp"].includes(control.key) ? "decimal" : undefined}
+                          maxLength={control.key === "vin" ? 17 : undefined}
+                          value={vehicleDraftValues[control.key] ?? control.value}
+                          onChange={(e) => {
+                            const attrName = control.attr?.name ?? control.label;
+                            const nextValue = formatVehicleAttributeInput(attrName, e.target.value);
+                            setVehicleDraftValues((prev) => ({ ...prev, [control.key]: nextValue }));
+                          }}
+                          className="eco-input"
+                          placeholder={control.placeholder}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              ))}
+              <details className="eco-shipment-vehicle-more-fields">
+                <summary>Дополнительные данные</summary>
+                <div className="eco-shipment-vehicle-editor-grid">
+                  {vehicleAttributeControls.filter((control) => control.section === "additional").map((control) => (
+                    <label key={control.key}>
+                      <span>{control.label}</span>
+                      <input
+                        type="text"
+                        inputMode={["modelYearFrom", "modelYearTo", "ownersCount"].includes(control.key) ? "numeric" : undefined}
+                        value={vehicleDraftValues[control.key] ?? control.value}
+                        onChange={(e) => {
+                          const attrName = control.attr?.name ?? control.label;
+                          const nextValue = formatVehicleAttributeInput(attrName, e.target.value);
+                          setVehicleDraftValues((prev) => ({ ...prev, [control.key]: nextValue }));
+                        }}
+                        className="eco-input"
+                        placeholder={control.placeholder}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </details>
+              {vehicleProfileError ? <p className="eco-shipment-vehicle-profile-error" role="alert">{vehicleProfileError}</p> : null}
               <div className="eco-shipment-vehicle-editor-actions">
                 <EcoButton type="button" onClick={cancelVehicleEditor}>
                   Отмена
                 </EcoButton>
                 <EcoButton type="button" onClick={saveVehicleEditor} variant="primary" disabled={vehicleSaving}>
-                  {vehicleSaving ? "Сохранение..." : "Сохранить"}
+                  {vehicleSaving ? "Сохранение..." : selectedAgent?.isAnonymousRetail ? "Сохранить в отгрузке" : "Сохранить паспорт"}
                 </EcoButton>
               </div>
             </div>
           ) : (
             <div className="eco-shipment-vehicle-summary">
+              <div className="eco-shipment-vehicle-completeness" aria-label={`Паспорт заполнен на ${vehicleCompleteness.percent}%`}>
+                <span><i style={{ width: `${vehicleCompleteness.percent}%` }} /></span>
+                <b>{vehicleCompleteness.percent}%</b>
+                <em>{vehicleProfile?.verificationStatus === "CONFIRMED" ? "Подтверждено вручную" : vehicleProfile ? "Сохранено в карточке клиента" : "Данные текущей отгрузки"}</em>
+              </div>
               <KeyValueGrid items={vehicleSummaryItems} />
+              {vehicleAdditionalSummaryItems.some((item) => item.value !== "—") ? (
+                <details className="eco-shipment-vehicle-summary-more">
+                  <summary>Все данные паспорта</summary>
+                  <KeyValueGrid items={vehicleAdditionalSummaryItems} />
+                </details>
+              ) : null}
+              {vehicleProfileLoading ? <p>Обновляем карточку автомобиля…</p> : null}
+              {vehicleProfileError ? <p className="eco-shipment-vehicle-profile-error" role="alert">{vehicleProfileError}</p> : null}
               {!vehicleReady ? <p>{vehicleHelpText}</p> : null}
             </div>
           )}
@@ -4423,6 +4969,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             </button>
           </div>
         </div>
+      <div className="eco-shipment-composition-grid">
       <section id="shipment-positions-add" className="eco-shipment-new-add" aria-label="Поиск и подбор позиций">
         <h3 className="sr-only">Поиск и подбор позиций</h3>
         {(positionAddMode === "catalog" || positionAddMode === "mann") && (
@@ -5073,6 +5620,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               initialVin={vin}
               onUseVehicle={applyIdentifiedVehicle}
               onConfirmMannCandidate={confirmMannCandidate}
+              onConfirmTransmission={confirmVehicleTransmission}
               onLookupStart={resetMannVehicleSelection}
               onManualMode={openMannManualPicker}
             />
@@ -5516,6 +6064,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         )}
       </section>
 
+      <div className="eco-shipment-composition-rail">
+
       {positions.length === 0 && (
         <section id="shipment-position-list" className="eco-card eco-card--padded eco-shipment-new-positions" aria-live="polite">
           <div className="eco-card__head">
@@ -5928,10 +6478,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           </div>
 		        </section>
 		      )}
-		      </section>
-
-		        </div>
-
 		        <aside id="shipment-finalize" className="eco-shipment-detail-aside eco-shipment-new-aside" aria-labelledby="shipment-finalize-title">
 	          <section className="eco-card eco-shipment-new-total-card">
 	            <div className="eco-shipment-card-head">
@@ -6056,6 +6602,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	            </div>
 	          </section>
 	        </aside>
+      </div>
+      </div>
+      </section>
+        </div>
       </div>
 
       {submitError && (

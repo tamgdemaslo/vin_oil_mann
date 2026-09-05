@@ -724,15 +724,31 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
 
 export function vehicleFieldValues(vehicle: NormalizedVehicleIdentity): Partial<Record<string, { value: string; source: VehicleSourceMethod }>> {
   const source = vehicle.sourceMethods[0] ?? "manual";
+  const body = [vehicle.bodyName, vehicle.bodyCode, vehicle.bodyType].filter(Boolean).join(" · ");
   return {
     "vin номер": vehicle.vin ? { value: vehicle.vin, source } : undefined,
     "гос. номер": vehicle.licensePlate ? { value: vehicle.licensePlate, source } : undefined,
     "модель авто": [vehicle.makeRaw, vehicle.modelRaw].filter(Boolean).join(" ") ? { value: [vehicle.makeRaw, vehicle.modelRaw].filter(Boolean).join(" "), source } : undefined,
+    "марка": (vehicle.makeRaw ?? vehicle.makeCanonical) ? { value: vehicle.makeRaw ?? vehicle.makeCanonical!, source } : undefined,
+    "модель": (vehicle.modelRaw ?? vehicle.modelCanonical) ? { value: vehicle.modelRaw ?? vehicle.modelCanonical!, source } : undefined,
     "год": vehicle.year ? { value: String(vehicle.year), source } : undefined,
+    "поколение": (vehicle.generationRaw ?? vehicle.generationCanonical) ? { value: vehicle.generationRaw ?? vehicle.generationCanonical!, source } : undefined,
+    "кузов": body ? { value: body, source } : undefined,
+    "код кузова": vehicle.bodyCode ? { value: vehicle.bodyCode, source } : undefined,
+    "тип кузова": vehicle.bodyType ? { value: vehicle.bodyType, source } : undefined,
+    "номер кузова": vehicle.frameNumber ? { value: vehicle.frameNumber, source } : undefined,
     "двигатель": [vehicle.engineCode, vehicle.engineName].filter(Boolean).join(" · ") ? { value: [vehicle.engineCode, vehicle.engineName].filter(Boolean).join(" · "), source } : undefined,
+    "код двигателя": vehicle.engineCode ? { value: vehicle.engineCode, source } : undefined,
     "объем двигателя": vehicle.engineVolumeLiters ? { value: `${vehicle.engineVolumeLiters} л`, source } : undefined,
     "мощность": vehicle.powerHp ? { value: `${vehicle.powerHp} л.с.`, source } : undefined,
+    "мощность квт": vehicle.powerKw ? { value: `${vehicle.powerKw} кВт`, source } : undefined,
+    "топливо": vehicle.fuelType ? { value: vehicle.fuelType, source } : undefined,
     "коробка": [vehicle.transmissionType, vehicle.transmissionName].filter(Boolean).join(" · ") ? { value: [vehicle.transmissionType, vehicle.transmissionName].filter(Boolean).join(" · "), source } : undefined,
     "привод": vehicle.driveType ? { value: vehicle.driveType, source } : undefined,
+    "руль": vehicle.steeringPosition ? { value: vehicle.steeringPosition, source } : undefined,
+    "рынок": vehicle.market ? { value: vehicle.market, source } : undefined,
+    "страна сборки": vehicle.countryOfOrigin ? { value: vehicle.countryOfOrigin, source } : undefined,
+    "пробег": vehicle.mileage != null ? { value: String(Math.round(vehicle.mileage)), source } : undefined,
+    "владельцев": vehicle.ownersCount != null ? { value: String(Math.round(vehicle.ownersCount)), source } : undefined,
   };
 }

@@ -38,7 +38,7 @@ const BRANCH_SCOPED_MODELS = new Set([
   "ClosingDocumentNumberSequence", "LocalDemandPosition", "DemandAttributeDefinition",
   "TBankIntegration", "TBankSettlementAccount", "SupplierInvoiceTBankPayment", "TBankWebhookEvent",
   "BranchBookingSettings", "BranchBookingWorkingHour", "BookingService", "BookingMasterService",
-  "BookingMasterWorkingHour", "BookingScheduleException", "ClientVehicle", "Booking", "BookingServiceItem",
+  "BookingMasterWorkingHour", "BookingScheduleException", "ClientVehicle", "ClientVehicleRevision", "Booking", "BookingServiceItem",
 ]);
 
 const WRITE_OPERATIONS = new Set([

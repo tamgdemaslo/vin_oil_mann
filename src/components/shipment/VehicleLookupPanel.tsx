@@ -20,6 +20,7 @@ type Props = {
   initialVin?: string;
   onUseVehicle: (vehicle: NormalizedVehicleIdentity, resolution: MannVehicleResolution | null) => void;
   onConfirmMannCandidate: (vehicle: NormalizedVehicleIdentity, candidate: MannVehicleCandidate) => void;
+  onConfirmTransmission?: (vehicle: NormalizedVehicleIdentity, transmissionType: MannTransmissionType, variantIds: string[]) => void;
   onLookupStart: () => void;
   onManualMode: (context?: VehicleLookupManualContext) => void;
 };
@@ -261,7 +262,7 @@ function TechnicalProfile({
   );
 }
 
-export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onLookupStart, onManualMode }: Props) {
+export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
   const [tab, setTab] = useState<LookupTab>("vin");
   const [input, setInput] = useState(initialVin ?? "");
   const [loading, setLoading] = useState(false);
@@ -614,6 +615,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
           error={technicalProfileError}
           onSelectTransmission={(transmissionType) => {
             if (!technicalProfileVariantKeys.length || transmissionType === selectedTransmissionType) return;
+            onConfirmTransmission?.(appliedVehicle, transmissionType, technicalProfileVariantKeys);
             void loadTechnicalProfile(technicalProfileVariantKeys, transmissionType);
           }}
         />
