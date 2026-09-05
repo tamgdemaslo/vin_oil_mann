@@ -32,11 +32,7 @@ import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 import { clientSessionUnavailableMessage, readClientSessionResponse } from "@/lib/client-session-response";
 import { formatServiceDateTime, toServiceMomentString } from "@/lib/date-time";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
-import {
-  clientVehicleCompleteness,
-  type ClientVehiclePassportValues,
-  type ClientVehicleProfile,
-} from "@/lib/client-vehicle-profile";
+import { type ClientVehiclePassportValues, type ClientVehicleProfile } from "@/lib/client-vehicle-profile";
 import { isValidMannYear, normalizeMannYearInput, shouldApplyMannRequest } from "@/lib/mann-picker-state";
 import type { MannTransmissionType } from "@/lib/mann-unified-technical-profile";
 import { vehicleFieldValues, type NormalizedVehicleIdentity } from "@/lib/vehicle-identity-client";
@@ -58,6 +54,13 @@ import {
   normalizeOneOffServiceInput,
   type OneOffServiceInput,
 } from "@/lib/one-off-service";
+import {
+  deriveShipmentVisitOilSuggestion,
+  SHIPMENT_ACTUAL_VOLUME_SOURCE,
+  SHIPMENT_OIL_CATALOG_SOURCE,
+  SHIPMENT_OIL_CUSTOMER_SOURCE,
+  SHIPMENT_OIL_SELECTED_SOURCE,
+} from "@/lib/shipment-visit-oil";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -102,6 +105,10 @@ type Product = {
   slotName?: string;
   cost?: number;
   buyPriceCents?: number;
+  groupPath?: string;
+  uomName?: string;
+  packageVolume?: string;
+  volume?: number | null;
 };
 
 type Position = {
@@ -136,6 +143,14 @@ type Position = {
     catalogMatchProductId?: string | null;
   };
   oneOffService?: OneOffServiceInput;
+  product?: {
+    id: string;
+    name: string;
+    uomName?: string | null;
+    groupPath?: string | null;
+    packageVolume?: string | null;
+    volume?: string | number | null;
+  };
   copyMeta?: {
     status?: "linked" | "updated" | "unlinked" | "ambiguous" | "archived" | string;
     message?: string;
@@ -758,6 +773,41 @@ function mergeVehicleAttributes(current: ShipmentAttribute[], vehicle: Normalize
   return next;
 }
 
+function syncVisitAttribute(
+  current: ShipmentAttribute[],
+  input: { name: string; value: string; source: string; autoSources: string[] },
+): ShipmentAttribute[] {
+  const normalizedTarget = normalizeAttrName(input.name);
+  const index = current.findIndex((attribute) => normalizeAttrName(attribute.name) === normalizedTarget);
+  if (index < 0) {
+    if (!input.value) return current;
+    return [
+      ...current,
+      {
+        id: `visit-${normalizedTarget.replace(/\s+/g, "-")}`,
+        name: input.name,
+        type: "string",
+        meta: {
+          href: `local://demand-attribute/${encodeURIComponent(input.name)}`,
+          type: "demandattribute",
+          mediaType: "application/json",
+        },
+        value: input.value,
+        source: input.source,
+      },
+    ];
+  }
+
+  const attribute = current[index];
+  if (!attribute) return current;
+  const existingValue = attributeValueToString(attribute.value);
+  const mayReplace = !existingValue || input.autoSources.includes(attribute.source ?? "");
+  if (!mayReplace || (existingValue === input.value && attribute.source === input.source)) return current;
+  const next = [...current];
+  next[index] = { ...attribute, value: input.value || null, source: input.value ? input.source : undefined };
+  return next;
+}
+
 function isBlankUiValue(value: unknown): boolean {
   if (value == null) return true;
   if (typeof value !== "string") return false;
@@ -1271,8 +1321,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(0);
   const agentSearchRef = useRef<HTMLDivElement | null>(null);
   const [vehicleEditorOpen, setVehicleEditorOpen] = useState(false);
+  const [technicalVehicleEditorOpen, setTechnicalVehicleEditorOpen] = useState(false);
   const [vehicleSaving, setVehicleSaving] = useState(false);
   const [vehicleDraftValues, setVehicleDraftValues] = useState<Record<string, string>>({});
+  const [vehicleDraftSources, setVehicleDraftSources] = useState<Record<string, string>>({});
   const [vehicleProfile, setVehicleProfile] = useState<ClientVehicleProfile | null>(null);
   const [vehicleProfileLoading, setVehicleProfileLoading] = useState(false);
   const [vehicleProfileError, setVehicleProfileError] = useState("");
@@ -1545,7 +1597,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             const current = currentByName.get(normalizedName);
             const currentValue = attributeValueToString(current?.value);
             if (currentValue && !attributeValueToString(attribute.value)) {
-              return { ...attribute, value: currentValue };
+              return { ...attribute, value: currentValue, source: current?.source };
             }
             return attribute;
           });
@@ -2402,6 +2454,14 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           reserve: p.reserveQuantity,
           available: p.availableQuantity,
         },
+        product: {
+          id: p.id,
+          name: p.name,
+          uomName: p.uomName,
+          groupPath: p.groupPath,
+          packageVolume: p.packageVolume,
+          volume: p.volume,
+        },
       },
     ]);
     productResultsDismissedRef.current = false;
@@ -2848,10 +2908,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             if (name === "год") {
               const val = (decoded.modelYear ?? "").trim();
               return { ...a, value: val || null };
-            }
-            if (name === "объем") {
-              const val = (data as VinLookupResult).oilInfo?.fillVolumeLiters?.trim();
-              if (val && !attributeValueToString(a.value).trim()) return { ...a, value: val };
             }
             return a;
           })
@@ -3579,6 +3635,49 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     && position.oneOffProduct?.purchasePrice == null
     && position.oneOffProduct?.explicitZeroCost !== true
   ).length;
+  const visitOilSuggestion = useMemo(
+    () => deriveShipmentVisitOilSuggestion(positions.map((position) => ({
+      name: position.name,
+      quantity: position.quantity,
+      assortmentType: position.assortmentMeta?.type,
+      assortmentHref: position.assortmentMeta?.href,
+      lineKind: position.lineKind,
+      uomName: position.product?.uomName,
+      groupPath: position.product?.groupPath,
+    }))),
+    [positions],
+  );
+  const visitOilSuggestionKey = visitOilSuggestion.candidates
+    .map((candidate) => `${candidate.key}:${candidate.name}:${candidate.quantity}:${candidate.uomName}`)
+    .join("|");
+
+  useEffect(() => {
+    const suggestedOil = visitOilSuggestion.state === "single" ? visitOilSuggestion.suggestedOilName ?? "" : "";
+    const suggestedVolume = visitOilSuggestion.state === "single" && visitOilSuggestion.suggestedActualVolumeLiters != null
+      ? formatQuantityInput(visitOilSuggestion.suggestedActualVolumeLiters)
+      : "";
+    setAttributes((current) => {
+      const selectedOilIndex = current.findIndex((attribute) => normalizeAttrName(attribute.name) === "моторное масло");
+      const selectedOil = selectedOilIndex >= 0 ? current[selectedOilIndex] : null;
+      const selectedOilStillPresent = selectedOil?.source !== SHIPMENT_OIL_SELECTED_SOURCE
+        || visitOilSuggestion.candidates.some((candidate) => candidate.name === attributeValueToString(selectedOil.value));
+      const reconciled = selectedOil && !selectedOilStillPresent
+        ? current.map((attribute, index) => index === selectedOilIndex ? { ...attribute, value: null, source: undefined } : attribute)
+        : current;
+      const withOil = syncVisitAttribute(reconciled, {
+        name: "Моторное масло",
+        value: suggestedOil,
+        source: SHIPMENT_OIL_CATALOG_SOURCE,
+        autoSources: [SHIPMENT_OIL_CATALOG_SOURCE],
+      });
+      return syncVisitAttribute(withOil, {
+        name: "Объем",
+        value: suggestedVolume,
+        source: SHIPMENT_ACTUAL_VOLUME_SOURCE,
+        autoSources: [SHIPMENT_ACTUAL_VOLUME_SOURCE],
+      });
+    });
+  }, [visitOilSuggestion.candidates, visitOilSuggestion.state, visitOilSuggestion.suggestedOilName, visitOilSuggestion.suggestedActualVolumeLiters, visitOilSuggestionKey]);
   const decodedVehicle = vinLookupResult?.decoded;
   const attrLegacyModel = getAttributeString(attributes, (name) => name === "модель авто");
   const legacyModelParts = splitVehicleMakeModel(attrLegacyModel);
@@ -3598,6 +3697,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const attrEngineVolume = getAttributeString(attributes, (name) => name === "объем двигателя");
   const attrFillVolume = getAttributeString(attributes, (name) => name === "объем");
   const attrMotorOil = getAttributeString(attributes, (name) => name === "моторное масло");
+  const attrMotorOilSource = attributes.find((attribute) => normalizeAttrName(attribute.name) === "моторное масло")?.source ?? "";
   const attrPower = getAttributeString(attributes, (name) => name === "мощность");
   const attrPowerKw = getAttributeString(attributes, (name) => name === "мощность квт");
   const attrFuel = getAttributeString(attributes, (name) => name === "топливо");
@@ -3610,6 +3710,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const attrOwners = getAttributeString(attributes, (name) => name === "владельцев");
   const attrModelYearFrom = getAttributeString(attributes, (name) => name === "модельный год с");
   const attrModelYearTo = getAttributeString(attributes, (name) => name === "модельный год по");
+  const recommendedFillVolume = vinLookupResult?.oilInfo?.fillVolumeLiters?.trim() ?? "";
   const normalizedTransmission = normalizeVehicleTransmission(attrTransmission);
   const normalizedDrive = normalizeVehicleDrive(attrDrive || attrTransmission);
   const documentVin = vin || getAttributeString(attributes, (name) => /vin/i.test(name));
@@ -3631,27 +3732,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           .join(" · ")
       : [attrMake, attrModel, attrGeneration].filter(Boolean).join(" ") || attrLegacyModel;
   const vehicleReady = Boolean(documentVin || decodedVehicle || vehicleManualReady);
-  const engineVolumeLiters = parseVehicleNumber(attrEngineVolume);
-  const passportValuesForCompleteness: ClientVehiclePassportValues = {
-    make: attrMake || null,
-    model: attrModel || null,
-    year: parseVehicleNumber(attrYear),
-    vin: documentVin || null,
-    frameNumber: attrFrameNumber || null,
-    engineVolumeCc: engineVolumeLiters == null ? null : Math.round(engineVolumeLiters * 1000),
-    powerHp: parseVehicleNumber(attrPower),
-    fuelType: attrFuel || null,
-    transmissionType: normalizedTransmission || null,
-    driveType: normalizedDrive || null,
-    mileage: parseVehicleNumber(attrMileage),
-  };
-  const vehicleCompleteness = clientVehicleCompleteness(passportValuesForCompleteness);
   const vehicleStatusText = vehicleEditorOpen
     ? "Редактирование"
-    : vehicleProfile?.verificationStatus === "CONFIRMED"
-      ? `Подтверждено · ${vehicleCompleteness.completed}/${vehicleCompleteness.total}`
-      : vehicleReady
-        ? `Паспорт · ${vehicleCompleteness.completed}/${vehicleCompleteness.total}`
+    : vehicleReady
+      ? "Автомобиль указан"
       : vehicleHasAnyManualData
         ? "Частично заполнен"
         : "Не указан";
@@ -3663,13 +3747,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         ? "warning"
         : "neutral";
   const vehicleActionLabel = vehicleReady ? "Редактировать" : vehicleHasAnyManualData ? "Дополнить" : "Заполнить автомобиль";
-  const vehicleHelpText = vehicleReady
-    ? vehicleCompleteness.missing.length
-      ? "Паспорт сохранён. Дополните силовой агрегат и эксплуатационные данные при следующем визите."
-      : "Паспорт заполнен: данные будут использованы в следующих отгрузках и записях клиента."
-    : vehicleHasAnyManualData
-      ? "Добавьте модель вместе с номером, пробегом или годом, чтобы считать авто заполненным."
-      : "Можно заполнить вручную без VIN или воспользоваться подбором фильтров по автомобилю.";
+  const vehicleHelpText = vehicleHasAnyManualData
+    ? "Укажите марку, модель и номер или VIN. Остальные данные система заполнит при подборе."
+    : "Укажите автомобиль вручную или найдите его по VIN при подборе позиций.";
   const readinessItems = [
     { key: "organization", label: "Организация", ready: Boolean(selectedOrg), hint: "выберите организацию", required: true },
     { key: "store", label: "Склад", ready: Boolean(selectedStore), hint: "выберите склад", required: true },
@@ -3953,31 +4033,28 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           : rawValue;
     return { ...control, attr, attrIndex, value };
   });
-  const vehicleSummaryItems: KeyValueItem[] = [
-    { key: "model", label: "Марка / модель", value: vehicleTitle || "—" },
-    { key: "generation", label: "Поколение / кузов", value: [attrGeneration, attrBody].filter(Boolean).join(" · ") || "—" },
-    { key: "plate", label: "Госномер", value: attrPlate || "—" },
-    { key: "mileage", label: "Пробег", value: attrMileage ? `${attrMileage} км` : "—" },
-    { key: "year", label: "Год", value: attrYear || "—" },
-    { key: "engine", label: "Двигатель", value: [attrEngineCode, attrEngine].filter(Boolean).join(" · ") || "—" },
-    { key: "engineVolume", label: "Объём / мощность", value: [attrEngineVolume, attrPower].filter(Boolean).join(" · ") || "—" },
-    { key: "motorOil", label: "Моторное масло", value: attrMotorOil || "—" },
-    { key: "fillVolume", label: "Объём заливки", value: attrFillVolume || "—" },
-    { key: "transmission", label: "Коробка / привод", value: [normalizedTransmission, attrTransmissionName, normalizedDrive].filter(Boolean).join(" · ") || "—" },
-    { key: "vin", label: "VIN", value: documentVin || "—", wide: true },
-  ];
-  const vehicleAdditionalSummaryItems: KeyValueItem[] = [
-    { key: "fuel", label: "Топливо", value: attrFuel || "—" },
-    { key: "engineSeries", label: "Серия двигателя", value: attrEngineSeries || "—" },
-    { key: "powerKw", label: "Мощность, кВт", value: attrPowerKw || "—" },
-    { key: "bodyDetails", label: "Кузов", value: [attrBodyType, attrBodyCode].filter(Boolean).join(" · ") || "—" },
-    { key: "frame", label: "Номер кузова", value: attrFrameNumber || "—" },
-    { key: "steering", label: "Руль", value: attrSteering || "—" },
-    { key: "market", label: "Рынок", value: attrMarket || "—" },
-    { key: "country", label: "Страна сборки", value: attrCountry || "—" },
-    { key: "owners", label: "Владельцев", value: attrOwners || "—" },
-    { key: "modelYears", label: "Модельные годы", value: [attrModelYearFrom, attrModelYearTo].filter(Boolean).join("–") || "—" },
-  ];
+  const vehiclePrimaryControls = vehicleAttributeControls.filter((control) => ["make", "model", "plate", "vin"].includes(control.key));
+  const vehicleVisitControls = vehicleAttributeControls.filter((control) => ["motorOil", "fillVolume"].includes(control.key));
+  const vehicleTechnicalControls = vehicleAttributeControls.filter((control) => !["make", "model", "plate", "vin", "motorOil", "fillVolume"].includes(control.key));
+  const vehicleTechnicalSummaryItems: KeyValueItem[] = [
+    { key: "generation", label: "Поколение / кузов", value: [attrGeneration, attrBody].filter(Boolean).join(" · ") },
+    { key: "year", label: "Год", value: attrYear },
+    { key: "mileage", label: "Пробег", value: attrMileage ? `${attrMileage} км` : "" },
+    { key: "engine", label: "Двигатель", value: [attrEngineCode, attrEngine, attrEngineSeries].filter(Boolean).join(" · ") },
+    { key: "engineVolume", label: "Объём / мощность", value: [attrEngineVolume && `${attrEngineVolume} л`, attrPower && `${attrPower} л.с.`, attrPowerKw && `${attrPowerKw} кВт`].filter(Boolean).join(" · ") },
+    { key: "fuel", label: "Топливо", value: attrFuel },
+    { key: "transmission", label: "Коробка / привод", value: [normalizedTransmission, attrTransmissionName, normalizedDrive].filter(Boolean).join(" · ") },
+    { key: "bodyDetails", label: "Кузов", value: [attrBodyType, attrBodyCode].filter(Boolean).join(" · ") },
+    { key: "frame", label: "Номер кузова", value: attrFrameNumber },
+    { key: "steering", label: "Руль", value: attrSteering },
+    { key: "market", label: "Рынок", value: attrMarket },
+    { key: "country", label: "Страна сборки", value: attrCountry },
+    { key: "owners", label: "Владельцев", value: attrOwners },
+    { key: "modelYears", label: "Модельные годы", value: [attrModelYearFrom, attrModelYearTo].filter(Boolean).join("–") },
+    { key: "source", label: "Источник / уверенность", value: vehicleProfile ? `${Object.values(vehicleProfile.fieldSources).map((field) => field?.source).filter(Boolean)[0] ?? "карточка автомобиля"} · ${vehicleProfile.confidence}` : "" },
+    { key: "mann", label: "Вариант MANN", value: vehicleProfile?.mannVariantIds?.join(", ") ?? "", wide: true },
+    { key: "recommendedFill", label: "Рекомендованный объём масла", value: recommendedFillVolume ? `${recommendedFillVolume} л` : "" },
+  ].filter((item) => Boolean(item.value));
   const documentMomentLabel = momentStr ? formatServiceDateTime(momentStr) : "Дата и время...";
   const documentParamsSummary = [
     loadingOrgs ? "Организация..." : selectedOrg?.name ?? "Организация не выбрана",
@@ -3989,6 +4066,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setVehicleDraftValues(
       Object.fromEntries(vehicleAttributeControls.map((control) => [control.key, control.value]))
     );
+    setVehicleDraftSources(
+      Object.fromEntries(vehicleAttributeControls.map((control) => [control.key, control.attr?.source ?? "manual"]))
+    );
+    setTechnicalVehicleEditorOpen(false);
     setVehicleSaving(false);
     setVehicleEditorOpen(true);
   };
@@ -4021,7 +4102,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         });
         if (existingIndex >= 0) {
           const current = next[existingIndex];
-          if (current) next[existingIndex] = { ...current, value: value || null };
+          if (current) next[existingIndex] = {
+            ...current,
+            value: value || null,
+            source: vehicleDraftSources[control.key] ?? current.source,
+          };
           continue;
         }
         if (!value) continue;
@@ -4035,6 +4120,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             mediaType: "application/json",
           },
           value,
+          source: vehicleDraftSources[control.key] ?? "manual",
         });
       }
       const displayModel = [nextValues.get("make"), nextValues.get("model")].filter(Boolean).join(" ");
@@ -4083,6 +4169,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     const savedProfile = await persistVehicleProfile({ mode: "confirmed", values: manualValues, mannVariantIds: vehicleProfile?.mannVariantIds });
     if (savedProfile) setIdentifiedVehicle(profileToVehicleIdentity(savedProfile));
     setVehicleDraftValues({});
+    setVehicleDraftSources({});
+    setTechnicalVehicleEditorOpen(false);
     markDraftDirty();
     setVehicleEditorOpen(false);
     setVehicleSaving(false);
@@ -4091,6 +4179,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const cancelVehicleEditor = () => {
     setVehicleSaving(false);
     setVehicleDraftValues({});
+    setVehicleDraftSources({});
+    setTechnicalVehicleEditorOpen(false);
     setVehicleEditorOpen(false);
   };
 
@@ -4855,75 +4945,158 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             <div className="eco-shipment-vehicle-editor">
               <div className="eco-shipment-vehicle-passport-intro">
                 <div>
-                  <strong>Паспорт автомобиля</strong>
-                  <span>Заполните известное. Пустые поля можно дополнить при следующем визите.</span>
+                  <strong>Автомобиль и данные визита</strong>
+                  <span>Основные поля — для автомобиля. Масло и объём сохранятся только в этой отгрузке.</span>
                 </div>
-                <b>{vehicleCompleteness.completed} из {vehicleCompleteness.total}</b>
               </div>
-              {[
-                { key: "identity", label: "Основные данные" },
-                { key: "powertrain", label: "Силовой агрегат" },
-                { key: "service", label: "Что залили" },
-              ].map((section) => (
-                <fieldset className="eco-shipment-vehicle-fieldset" key={section.key}>
-                  <legend>{section.label}</legend>
-                  <div className="eco-shipment-vehicle-editor-grid">
-                    {vehicleAttributeControls.filter((control) => control.section === section.key).map((control) => (
-                      <label key={control.key} className={control.key === "vin" ? "is-wide" : undefined}>
-                        <span>{control.label}</span>
-                        {control.key === "transmissionType" || control.key === "driveType" ? (
-                          <select
-                            value={vehicleDraftValues[control.key] ?? control.value}
-                            onChange={(e) => setVehicleDraftValues((prev) => ({ ...prev, [control.key]: e.target.value }))}
-                            className="eco-input"
-                          >
-                            <option value="">Не указано</option>
-                            {(control.key === "transmissionType"
-                              ? ["АКПП", "МКПП", "Вариатор", "Робот"]
-                              : ["Передний", "Задний", "Полный"]
-                            ).map((option) => <option value={option} key={option}>{option}</option>)}
-                          </select>
-                        ) : (
-                          <input
-                            id={control.key === "model" ? "shipment-vehicle-model" : undefined}
-                            type="text"
-                            inputMode={["year", "mileage", "engineVolume", "powerHp", "fillVolume"].includes(control.key) ? "decimal" : undefined}
-                            maxLength={control.key === "vin" ? 17 : undefined}
-                            value={vehicleDraftValues[control.key] ?? control.value}
-                            onChange={(e) => {
-                              const attrName = control.attr?.name ?? control.label;
-                              const nextValue = formatVehicleAttributeInput(attrName, e.target.value);
-                              setVehicleDraftValues((prev) => ({ ...prev, [control.key]: nextValue }));
-                            }}
-                            className="eco-input"
-                            placeholder={control.placeholder}
-                          />
-                        )}
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-              ))}
-              <details className="eco-shipment-vehicle-more-fields">
-                <summary>Дополнительные данные</summary>
+              <fieldset className="eco-shipment-vehicle-fieldset">
+                <legend>Основные данные</legend>
                 <div className="eco-shipment-vehicle-editor-grid">
-                  {vehicleAttributeControls.filter((control) => control.section === "additional").map((control) => (
-                    <label key={control.key}>
+                  {vehiclePrimaryControls.map((control) => (
+                    <label key={control.key} className={control.key === "vin" ? "is-wide" : undefined}>
                       <span>{control.label}</span>
                       <input
+                        id={control.key === "model" ? "shipment-vehicle-model" : undefined}
                         type="text"
-                        inputMode={["modelYearFrom", "modelYearTo", "ownersCount"].includes(control.key) ? "numeric" : undefined}
+                        maxLength={control.key === "vin" ? 17 : undefined}
                         value={vehicleDraftValues[control.key] ?? control.value}
                         onChange={(e) => {
                           const attrName = control.attr?.name ?? control.label;
                           const nextValue = formatVehicleAttributeInput(attrName, e.target.value);
                           setVehicleDraftValues((prev) => ({ ...prev, [control.key]: nextValue }));
+                          setVehicleDraftSources((prev) => ({ ...prev, [control.key]: "manual" }));
                         }}
                         className="eco-input"
                         placeholder={control.placeholder}
                       />
                     </label>
                   ))}
+                </div>
+              </fieldset>
+              <fieldset className="eco-shipment-vehicle-fieldset eco-shipment-visit-fieldset">
+                <legend>Что залили в этот визит</legend>
+                <div className="eco-shipment-vehicle-editor-grid">
+                  {vehicleVisitControls.map((control) => (
+                    <label key={control.key}>
+                      <span>{control.label}</span>
+                      <input
+                        type="text"
+                        inputMode={control.key === "fillVolume" ? "decimal" : undefined}
+                        value={vehicleDraftValues[control.key] ?? control.value}
+                        onChange={(e) => {
+                          const attrName = control.attr?.name ?? control.label;
+                          const nextValue = formatVehicleAttributeInput(attrName, e.target.value);
+                          setVehicleDraftValues((prev) => ({ ...prev, [control.key]: nextValue }));
+                          setVehicleDraftSources((prev) => ({
+                            ...prev,
+                            [control.key]: control.key === "motorOil" && prev[control.key] === SHIPMENT_OIL_CUSTOMER_SOURCE
+                              ? SHIPMENT_OIL_CUSTOMER_SOURCE
+                              : "manual",
+                          }));
+                        }}
+                        className="eco-input"
+                        placeholder={control.placeholder}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="eco-shipment-visit-oil-tools">
+                  {visitOilSuggestion.state === "single" ? (
+                    <span className="eco-shipment-visit-oil-note is-success">
+                      Масло найдено в составе{visitOilSuggestion.suggestedActualVolumeLiters == null ? ". Фактический объём укажите вручную." : " — объём взят из количества в литрах."}
+                    </span>
+                  ) : visitOilSuggestion.state === "multiple" ? (
+                    <label className="eco-shipment-visit-oil-choice">
+                      <span>В составе несколько масел — выберите фактически залитое</span>
+                      <select
+                        className="eco-input"
+                        value={visitOilSuggestion.candidates.some((candidate) => candidate.name === (vehicleDraftValues.motorOil ?? "")) ? vehicleDraftValues.motorOil : ""}
+                        onChange={(event) => {
+                          setVehicleDraftValues((prev) => ({ ...prev, motorOil: event.target.value }));
+                          setVehicleDraftSources((prev) => ({ ...prev, motorOil: SHIPMENT_OIL_SELECTED_SOURCE }));
+                        }}
+                      >
+                        <option value="">Выберите масло</option>
+                        {visitOilSuggestion.candidates.map((candidate) => (
+                          <option key={candidate.key} value={candidate.name}>{candidate.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <span className="eco-shipment-visit-oil-note">Можно оставить пустым или указать масло вручную.</span>
+                  )}
+                  {recommendedFillVolume ? (
+                    <span className="eco-shipment-visit-oil-note is-recommendation">
+                      По VIN рекомендовано {recommendedFillVolume} л. Это справочное значение; фактический объём подтвердите вручную.
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={`eco-shipment-visit-oil-source-button ${vehicleDraftSources.motorOil === SHIPMENT_OIL_CUSTOMER_SOURCE ? "is-active" : ""}`}
+                    aria-pressed={vehicleDraftSources.motorOil === SHIPMENT_OIL_CUSTOMER_SOURCE}
+                    onClick={() => {
+                      setVehicleDraftValues((prev) => ({
+                        ...prev,
+                        motorOil: vehicleDraftSources.motorOil === SHIPMENT_OIL_CUSTOMER_SOURCE ? prev.motorOil ?? "" : "",
+                      }));
+                      setVehicleDraftSources((prev) => ({ ...prev, motorOil: SHIPMENT_OIL_CUSTOMER_SOURCE }));
+                    }}
+                  >
+                    Масло клиента
+                  </button>
+                </div>
+              </fieldset>
+              <details className="eco-shipment-vehicle-more-fields">
+                <summary>Технические данные</summary>
+                <div className="eco-shipment-vehicle-technical-body">
+                  {vehicleTechnicalSummaryItems.length > 0 ? (
+                    <KeyValueGrid items={vehicleTechnicalSummaryItems} />
+                  ) : (
+                    <p>Заполняются автоматически после поиска по VIN и подбора MANN.</p>
+                  )}
+                  {!technicalVehicleEditorOpen ? (
+                    <button type="button" className="eco-shipment-technical-edit-button" onClick={() => setTechnicalVehicleEditorOpen(true)}>
+                      Редактировать технические данные
+                    </button>
+                  ) : (
+                    <div className="eco-shipment-vehicle-editor-grid eco-shipment-vehicle-technical-grid">
+                      {vehicleTechnicalControls.map((control) => (
+                        <label key={control.key}>
+                          <span>{control.label}</span>
+                          {control.key === "transmissionType" || control.key === "driveType" ? (
+                            <select
+                              value={vehicleDraftValues[control.key] ?? control.value}
+                              onChange={(e) => {
+                                setVehicleDraftValues((prev) => ({ ...prev, [control.key]: e.target.value }));
+                                setVehicleDraftSources((prev) => ({ ...prev, [control.key]: "manual" }));
+                              }}
+                              className="eco-input"
+                            >
+                              <option value="">Не указано</option>
+                              {(control.key === "transmissionType"
+                                ? ["АКПП", "МКПП", "Вариатор", "Робот"]
+                                : ["Передний", "Задний", "Полный"]
+                              ).map((option) => <option value={option} key={option}>{option}</option>)}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              inputMode={["year", "mileage", "engineVolume", "powerHp", "powerKw", "modelYearFrom", "modelYearTo", "ownersCount"].includes(control.key) ? "decimal" : undefined}
+                              value={vehicleDraftValues[control.key] ?? control.value}
+                              onChange={(e) => {
+                                const attrName = control.attr?.name ?? control.label;
+                                const nextValue = formatVehicleAttributeInput(attrName, e.target.value);
+                                setVehicleDraftValues((prev) => ({ ...prev, [control.key]: nextValue }));
+                                setVehicleDraftSources((prev) => ({ ...prev, [control.key]: "manual" }));
+                              }}
+                              className="eco-input"
+                              placeholder={control.placeholder}
+                            />
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </details>
               {vehicleProfileError ? <p className="eco-shipment-vehicle-profile-error" role="alert">{vehicleProfileError}</p> : null}
@@ -4932,27 +5105,48 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   Отмена
                 </EcoButton>
                 <EcoButton type="button" onClick={saveVehicleEditor} variant="primary" disabled={vehicleSaving}>
-                  {vehicleSaving ? "Сохранение..." : selectedAgent?.isAnonymousRetail ? "Сохранить в отгрузке" : "Сохранить паспорт"}
+                  {vehicleSaving ? "Сохранение..." : "Сохранить"}
                 </EcoButton>
               </div>
             </div>
           ) : (
             <div className="eco-shipment-vehicle-summary">
-              <div className="eco-shipment-vehicle-completeness" aria-label={`Паспорт заполнен на ${vehicleCompleteness.percent}%`}>
-                <span><i style={{ width: `${vehicleCompleteness.percent}%` }} /></span>
-                <b>{vehicleCompleteness.percent}%</b>
-                <em>{vehicleProfile?.verificationStatus === "CONFIRMED" ? "Подтверждено вручную" : vehicleProfile ? "Сохранено в карточке клиента" : "Данные текущей отгрузки"}</em>
+              <div className="eco-shipment-vehicle-primary-summary">
+                <strong>{vehicleTitle || "Автомобиль не указан"}</strong>
+                {(attrPlate || documentVin) ? (
+                  <div>
+                    {attrPlate ? <span>{attrPlate}</span> : null}
+                    {documentVin ? <span>VIN {documentVin}</span> : null}
+                  </div>
+                ) : (
+                  <p>{vehicleHelpText}</p>
+                )}
               </div>
-              <KeyValueGrid items={vehicleSummaryItems} />
-              {vehicleAdditionalSummaryItems.some((item) => item.value !== "—") ? (
-                <details className="eco-shipment-vehicle-summary-more">
-                  <summary>Все данные паспорта</summary>
-                  <KeyValueGrid items={vehicleAdditionalSummaryItems} />
-                </details>
-              ) : null}
+              <div className="eco-shipment-visit-summary">
+                <span>Что залили</span>
+                {attrMotorOil || attrFillVolume ? (
+                  <div>
+                    <strong>{attrMotorOil || "Масло не указано"}</strong>
+                    {attrFillVolume ? <b>{attrFillVolume} л</b> : null}
+                    {attrMotorOilSource === SHIPMENT_OIL_CUSTOMER_SOURCE ? <em>масло клиента</em> : null}
+                  </div>
+                ) : (
+                  <p>Масло и фактический объём пока не указаны.</p>
+                )}
+                {visitOilSuggestion.state === "multiple" ? (
+                  <p className="eco-shipment-visit-warning">В составе несколько масел. Уточните, какое залили.</p>
+                ) : null}
+              </div>
+              <details className="eco-shipment-vehicle-summary-more">
+                <summary>Технические данные</summary>
+                {vehicleTechnicalSummaryItems.length > 0 ? (
+                  <KeyValueGrid items={vehicleTechnicalSummaryItems} />
+                ) : (
+                  <p>Технический профиль заполнится автоматически после поиска по VIN или подбора MANN.</p>
+                )}
+              </details>
               {vehicleProfileLoading ? <p>Обновляем карточку автомобиля…</p> : null}
               {vehicleProfileError ? <p className="eco-shipment-vehicle-profile-error" role="alert">{vehicleProfileError}</p> : null}
-              {!vehicleReady ? <p>{vehicleHelpText}</p> : null}
             </div>
           )}
         </article>

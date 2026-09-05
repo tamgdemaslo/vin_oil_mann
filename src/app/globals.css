@@ -53066,6 +53066,165 @@ html.tgm-print-active .tgm-client-report .qr {
   padding-bottom: 16px;
 }
 
+.eco-shipment-new-page .eco-shipment-vehicle-primary-summary {
+  display: grid;
+  gap: 6px;
+}
+
+.eco-shipment-new-page .eco-shipment-vehicle-primary-summary > strong {
+  color: var(--shipment-text);
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.eco-shipment-new-page .eco-shipment-vehicle-primary-summary > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.eco-shipment-new-page .eco-shipment-vehicle-primary-summary > div span {
+  padding: 4px 7px;
+  color: var(--shipment-text-soft);
+  background: var(--shipment-soft-surface);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-summary {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  background: #f7f6f2;
+  border: 1px solid var(--shipment-border);
+  border-radius: 8px;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-summary > span {
+  color: var(--shipment-faint);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-summary > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-summary strong {
+  color: var(--shipment-text);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-summary b,
+.eco-shipment-new-page .eco-shipment-visit-summary em {
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-summary b {
+  color: #245d3e;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-summary em {
+  padding: 3px 6px;
+  color: var(--shipment-text-soft);
+  background: #ebe7df;
+  border-radius: 999px;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-warning {
+  color: #8a4b08 !important;
+  font-weight: 750 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-fieldset {
+  padding-bottom: 16px;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-oil-tools {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-oil-note,
+.eco-shipment-new-page .eco-shipment-visit-oil-choice > span {
+  color: var(--shipment-text-soft);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-oil-note.is-success {
+  color: #245d3e;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-oil-note.is-recommendation {
+  color: #74511b;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-oil-choice {
+  display: grid;
+  flex: 1 1 360px;
+  gap: 5px;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-oil-choice select {
+  min-height: 40px;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-oil-source-button,
+.eco-shipment-new-page .eco-shipment-technical-edit-button {
+  min-height: 36px;
+  padding: 0 10px;
+  color: var(--shipment-text-soft);
+  background: #fff;
+  border: 1px solid var(--shipment-border-strong);
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-oil-source-button:hover,
+.eco-shipment-new-page .eco-shipment-visit-oil-source-button:focus-visible,
+.eco-shipment-new-page .eco-shipment-technical-edit-button:hover,
+.eco-shipment-new-page .eco-shipment-technical-edit-button:focus-visible,
+.eco-shipment-new-page .eco-shipment-visit-oil-source-button.is-active {
+  color: var(--shipment-text);
+  background: var(--shipment-soft-surface);
+}
+
+.eco-shipment-new-page .eco-shipment-vehicle-technical-body {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 16px;
+}
+
+.eco-shipment-new-page .eco-shipment-vehicle-technical-body .eco-key-value-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 18px;
+}
+
+.eco-shipment-new-page .eco-shipment-technical-edit-button {
+  justify-self: start;
+}
+
+.eco-shipment-new-page .eco-shipment-vehicle-technical-grid {
+  padding-top: 14px;
+  border-top: 1px solid var(--shipment-border);
+}
+
 .eco-shipment-new-page .eco-shipment-vehicle-completeness {
   display: grid;
   grid-template-columns: minmax(88px, 180px) auto minmax(0, 1fr);
@@ -53127,8 +53286,32 @@ html.tgm-print-active .tgm-client-report .qr {
     grid-template-columns: 1fr;
   }
 
+  .eco-shipment-new-page .eco-shipment-vehicle-technical-body .eco-key-value-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .eco-shipment-new-page .eco-key-value-grid div.is-wide {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .eco-shipment-new-page .eco-shipment-visit-oil-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eco-shipment-new-page .eco-shipment-visit-oil-choice {
+    flex-basis: auto;
+  }
+
+  .eco-shipment-new-page .eco-shipment-visit-oil-source-button,
+  .eco-shipment-new-page .eco-shipment-technical-edit-button {
+    width: 100%;
+  }
+
+  .eco-shipment-new-page .eco-shipment-vehicle-technical-body .eco-key-value-grid {
+    grid-template-columns: 1fr;
   }
 }
 

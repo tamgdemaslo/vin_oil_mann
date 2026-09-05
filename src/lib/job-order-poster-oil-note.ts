@@ -46,16 +46,22 @@ const MOTOR_OIL_PHRASE = /моторное\s+масло|масло\s+мотор�
 const MOTOR_FLUID_HINT =
   /моторное\s+масло|масло\s+моторное|engine\s+oil|5w|0w|10w|15w|20w|castrol|mobil|shell|motul|\btotal\b|liquimoly|liqu\s*moly|esp|dexos|syn|energy|литр|вязк|sae|gf-|longlife|turbo|diesel|бочк|канистр|quartz|ineo|helix|neo/i;
 
+/** Безопасный признак моторного масла для интерфейсов, где важны все кандидаты, а не первый. */
+export function isLikelyMotorOilProductName(name: string): boolean {
+  const normalized = name.trim();
+  if (!normalized || isLikelyFilterOrNonFluidOilProduct(normalized) || isLikelySealOrHardwarePart(normalized)) {
+    return false;
+  }
+  return MOTOR_OIL_PHRASE.test(normalized) || MOTOR_FLUID_HINT.test(normalized);
+}
+
 function pickFromNames(names: string[]): string {
   if (names.length === 0) return "";
 
   const byPhrase = names.filter((n) => MOTOR_OIL_PHRASE.test(n));
   if (byPhrase.length > 0) return byPhrase[0]!;
 
-  const eligible = names.filter(
-    (n) => !isLikelyFilterOrNonFluidOilProduct(n) && !isLikelySealOrHardwarePart(n)
-  );
-  const oilHits = eligible.filter((n) => MOTOR_FLUID_HINT.test(n));
+  const oilHits = names.filter(isLikelyMotorOilProductName);
   if (oilHits.length > 0) return oilHits[0]!;
 
   return "";
@@ -65,6 +71,16 @@ export function pickJournalOilNoteFromRawRows(rows: RawProductRow[]): string {
   const products = rows.filter((r) => assortmentKind(r) === "product");
   const names = products.map((r) => (r.assortment?.name ?? "").trim()).filter(Boolean);
   return pickFromNames(names);
+}
+
+/** Подкапотная бирка не должна выбирать случайное масло, если в отгрузке их несколько. */
+export function pickSingleJournalOilNoteFromRawRows(rows: RawProductRow[]): string {
+  const products = rows.filter((row) => assortmentKind(row) === "product");
+  const candidates = products
+    .map((row) => (row.assortment?.name ?? "").trim())
+    .filter(isLikelyMotorOilProductName);
+  const unique = [...new Map(candidates.map((name) => [name.toLocaleLowerCase("ru-RU"), name])).values()];
+  return unique.length === 1 ? unique[0]! : "";
 }
 
 export function pickJournalOilNoteFromSyncedPositions(

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { type DemandDetailAttribute } from "@/lib/demand-detail-load";
 import {
   pickJournalOilNoteFromRawRows,
+  pickSingleJournalOilNoteFromRawRows,
   pickJournalOilNoteFromSyncedPositions,
 } from "@/lib/job-order-poster-oil-note";
 import { fetchOrganizationRecord, sellerFromOrg } from "@/lib/job-order-poster-org";
@@ -492,7 +493,7 @@ export async function buildJobOrderPosterModel(
   const partsTotal = Math.round(parts.reduce((s, p) => s + p.sum, 0) * 100) / 100;
   const grandTotal = Math.round((header.sum / 100) * 100) / 100;
 
-  const oilPick = pickJournalOilNoteFromRawRows(rawRows);
+  const oilPick = pickSingleJournalOilNoteFromRawRows(rawRows);
   const manualOilTagLine = findExactAttrNormalized(attributes, "моторное масло").trim();
   const oilTagLine =
     manualOilTagLine ||

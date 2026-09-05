@@ -23,6 +23,7 @@ export type DemandDetailAttribute = {
   type: string;
   meta: LocalEntityMeta;
   value: unknown;
+  source?: string;
 };
 
 export type DemandDetailPosition = {

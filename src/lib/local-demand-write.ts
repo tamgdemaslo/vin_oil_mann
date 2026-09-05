@@ -2538,7 +2538,7 @@ export async function loadLocalDemandDetailPayload(
   }
 
   const currentAttributes = Array.isArray(demand.attributes)
-    ? (demand.attributes as Array<{ definitionId?: string; id?: string; name?: string; type?: string; value?: unknown }>)
+    ? (demand.attributes as Array<{ definitionId?: string; id?: string; name?: string; type?: string; value?: unknown; source?: string }>)
     : [];
   const currentById = new Map<string, (typeof currentAttributes)[number]>();
   const currentByName = new Map<string, (typeof currentAttributes)[number]>();
@@ -2558,6 +2558,7 @@ export async function loadLocalDemandDetailPayload(
           type: definition.type,
           meta: definition.meta,
           value: current?.value ?? null,
+          source: current?.source,
         };
       })
     : currentAttributes.map((attr) => {
@@ -2568,6 +2569,7 @@ export async function loadLocalDemandDetailPayload(
           type: attr.type ?? "string",
           meta: localMeta("demand-attribute", id),
           value: attr.value ?? null,
+          source: attr.source,
         };
       });
   const agentMeta = demand.counterparty
