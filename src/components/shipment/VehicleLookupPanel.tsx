@@ -152,17 +152,36 @@ function TechnicalProfile({
   error: string;
   onSelectTransmission: (transmissionType: MannTransmissionType) => void;
 }) {
-  const hasTransmissionChoice = Boolean(profile?.transmissionOptions.length);
   return (
-    <details className="eco-vehicle-lookup__profile" aria-live="polite" aria-busy={loading}>
-      <summary className="eco-vehicle-lookup__profile-head">
-        <strong>Жидкости и допуски</strong>
-        {profile?.status === "active" ? <span className="is-active">Подтверждены</span> : null}
-        {profile?.status === "staged_preview" ? <span className="is-preview">Технические данные предварительные</span> : null}
-        {profile?.status === "catalog_preview" ? <span className="is-catalog">Данные каталога предварительные</span> : null}
-      </summary>
-      <div className="eco-vehicle-lookup__profile-body">
-      {loading && !profile ? (
+    <div className="eco-vehicle-lookup__profile" aria-live="polite" aria-busy={loading}>
+      <div className="eco-vehicle-lookup__profile-head">
+        <strong>Технические жидкости</strong>
+        {profile?.status === "active" ? <span className="is-active">Активные данные</span> : null}
+        {profile?.status === "staged_preview" ? <span className="is-preview">Проверено · тест</span> : null}
+        {profile?.status === "catalog_preview" ? <span className="is-catalog">Каталог · предварительно</span> : null}
+      </div>
+      {profile?.transmissionOptions.length ? (
+        <fieldset className="eco-vehicle-lookup__transmission-choice">
+          <legend>Коробка передач</legend>
+          <div>
+            {profile.transmissionOptions.map((option) => (
+              <button
+                type="button"
+                key={option.type}
+                className={profile.selectedTransmissionType === option.type ? "is-selected" : ""}
+                aria-pressed={profile.selectedTransmissionType === option.type}
+                disabled={loading}
+                onClick={() => onSelectTransmission(option.type)}
+              >
+                {option.label}
+              </button>
+            ))}
+            {loading ? <span role="status">Обновляем…</span> : null}
+            {profile.selectedTransmissionType ? <em>Указано вручную</em> : <span>Выберите установленный тип — покажем жидкость и объём.</span>}
+          </div>
+        </fieldset>
+      ) : null}
+      {loading ? (
         <div className="eco-vehicle-lookup__profile-loading" role="status">
           <span className="eco-sr-only">Загружаем технический профиль…</span>
           <i />
@@ -170,30 +189,9 @@ function TechnicalProfile({
         </div>
       ) : error ? (
         <div className="eco-vehicle-lookup__profile-state is-warning">{error}</div>
-      ) : profile ? (
+      ) : profile?.items.length ? (
         <>
-          {hasTransmissionChoice ? (
-            <fieldset className="eco-vehicle-lookup__transmission-choice">
-              <legend>Коробка передач</legend>
-              <div>
-                {profile.transmissionOptions.map((option) => (
-                  <button
-                    type="button"
-                    key={option.type}
-                    className={profile.selectedTransmissionType === option.type ? "is-selected" : ""}
-                    aria-pressed={profile.selectedTransmissionType === option.type}
-                    disabled={loading}
-                    onClick={() => onSelectTransmission(option.type)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-                {loading ? <span role="status">Обновляем…</span> : null}
-                {profile.selectedTransmissionType ? <em>Указано вручную</em> : <span>Выберите установленный тип — покажем жидкость и объём.</span>}
-              </div>
-            </fieldset>
-          ) : null}
-          {profile.items.length ? <div className="eco-vehicle-lookup__profile-items">
+          <div className="eco-vehicle-lookup__profile-items">
             {profile.items.map((item) => (
               <div className="eco-vehicle-lookup__profile-item" key={item.revisionId}>
                 <div className="eco-vehicle-lookup__profile-main">
@@ -221,13 +219,13 @@ function TechnicalProfile({
                       : "Допуски и вязкость для этой записи пока не подтверждены."}
                   </span>
                 ) : null}
-                {item.requiresReview ? <span className="is-review">Объём требует проверки</span> : null}
-                {item.recommendation || item.replacementInterval || item.evidence.length ? (
+                {item.requiresReview ? <span className="is-review">Числовой объём скрыт: строка требует проверки разбора.</span> : null}
+                {item.recommendation ? <span><em>Рекомендация</em>{item.recommendation}</span> : null}
+                {item.replacementInterval ? <span><em>Интервал</em>{item.replacementInterval}</span> : null}
+                {item.evidence.length ? (
                   <details className="eco-vehicle-lookup__profile-source">
-                    <summary>Интервалы, пояснения и источник</summary>
+                    <summary>Источник: {item.evidence[0]?.publisher ?? item.evidence[0]?.title ?? "технический каталог"}</summary>
                     <div>
-                      {item.recommendation ? <span><b>Рекомендация:</b> {item.recommendation}</span> : null}
-                      {item.replacementInterval ? <span><b>Интервал:</b> {item.replacementInterval}</span> : null}
                       {item.evidence.map((source, index) => {
                         const label = [source.title ?? source.publisher ?? "Документ", source.printedPage != null ? `стр. ${source.printedPage}` : null].filter(Boolean).join(" · ");
                         return source.url ? (
@@ -239,26 +237,13 @@ function TechnicalProfile({
                 ) : null}
               </div>
             ))}
-          </div> : (
-            <div className="eco-vehicle-lookup__profile-state">
-              {hasTransmissionChoice
-                ? "Выберите тип коробки передач, чтобы увидеть подходящую жидкость."
-                : "Для этой модификации технических данных пока нет."}
-            </div>
-          )}
-          {profile.notice ? (
-            <div className="eco-vehicle-lookup__profile-notice">
-              <strong>Данные каталога предварительные</strong>
-              <details>
-                <summary>Условия использования</summary>
-                <p>{profile.notice}</p>
-              </details>
-            </div>
-          ) : null}
+          </div>
+          {profile.notice ? <p className="eco-vehicle-lookup__profile-notice">{profile.notice}</p> : null}
         </>
-      ) : <div className="eco-vehicle-lookup__profile-state">Для этой модификации технических данных пока нет.</div>}
-      </div>
-    </details>
+      ) : (
+        <div className="eco-vehicle-lookup__profile-state">Для этой модификации технических данных пока нет.</div>
+      )}
+    </div>
   );
 }
 
@@ -583,14 +568,11 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
         <div className="eco-vehicle-lookup__selected">
           <div className="eco-vehicle-lookup__identity">
             <div className="eco-vehicle-lookup__identity-head">
-              <span className="eco-vehicle-lookup__status is-ready">Автомобиль сопоставлен с каталогом</span>
+              <span className="eco-vehicle-lookup__status is-ready">Автомобиль и MANN подобраны</span>
               {appliedFromCache ? <em>Из карточки</em> : null}
             </div>
-            <strong>{resolution?.selectedApplication?.effectiveVehicleText ?? resolution?.selectedApplication?.vehicleText ?? "Модификация MANN выбрана"}</strong>
-            <span>{[
-              resolution?.selectedApplication?.engineCode,
-              resolution?.selectedApplication?.vehicleYears,
-            ].filter(Boolean).join(" · ") || "Правила совместимости готовы к подбору товаров."}</span>
+            <strong>{vehicleTitle(appliedVehicle)}</strong>
+            <span>{vehicleDetails(appliedVehicle) || "Автомобиль определён. Фильтры MANN готовы ниже."}</span>
           </div>
           <div className="eco-vehicle-lookup__actions">
             <button type="button" onClick={() => openManualMode({ reason: "manual", vehicle: appliedVehicle })}>
