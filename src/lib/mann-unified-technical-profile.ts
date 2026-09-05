@@ -4,6 +4,25 @@ const PRIMARY_SOURCE_VERIFIED = "PRIMARY_SOURCE_VERIFIED";
 const PRIMARY_SOURCE_VERIFIED_FIELDS = "PRIMARY_SOURCE_VERIFIED_FIELDS";
 const UNVERIFIED = "UNVERIFIED";
 const CATALOG_PREVIEW_POLICY = "MANN_V9_CONSERVATIVE_MATCHER";
+const CONDITIONAL_TRANSMISSION_POLICY = "USER_CONFIRMED_TRANSMISSION_V1";
+const TRANSMISSION_REVIEW_BLOCKER = "MANN variant не подтверждает тип или модель коробки";
+
+export const MANN_TRANSMISSION_TYPES = ["automatic", "manual", "cvt", "robot"] as const;
+export type MannTransmissionType = typeof MANN_TRANSMISSION_TYPES[number];
+
+const TRANSMISSION_SYSTEMS: Record<MannTransmissionType, string> = {
+  automatic: "AUTOMATIC_TRANSMISSION",
+  manual: "MANUAL_TRANSMISSION",
+  cvt: "CVT_TRANSMISSION",
+  robot: "ROBOT_TRANSMISSION",
+};
+
+const TRANSMISSION_LABELS: Record<MannTransmissionType, string> = {
+  automatic: "АКПП",
+  manual: "МКПП",
+  cvt: "Вариатор",
+  robot: "Робот",
+};
 
 const SYSTEM_LABELS: Record<string, string> = {
   ENGINE_OIL: "Моторное масло",
@@ -74,11 +93,22 @@ export type MannTechnicalProfileItem = {
   evidence: MannTechnicalEvidence[];
   sourceStatus: "primary_source" | "catalog_preview";
   requiresReview: boolean;
+  transmissionType?: MannTransmissionType;
+  userConfirmedTransmission: boolean;
+};
+
+export type MannTechnicalTransmissionOption = {
+  type: MannTransmissionType;
+  label: string;
+  systemCode: string;
 };
 
 export type MannUnifiedTechnicalProfile = {
   status: MannTechnicalProfileStatus;
   items: MannTechnicalProfileItem[];
+  transmissionOptions: MannTechnicalTransmissionOption[];
+  selectedTransmissionType?: MannTransmissionType;
+  containsCatalogPreview: boolean;
   notice?: string;
 };
 
@@ -87,6 +117,7 @@ type TechnicalRevisionRow = {
   sourceRequirementId: string;
   systemCode: string;
   componentModel: string | null;
+  applicabilityJson: unknown;
   technicalDataJson: unknown;
   verifiedFieldsJson: unknown;
   fieldConfidenceJson: unknown;
@@ -95,6 +126,7 @@ type TechnicalRevisionRow = {
   state: string;
   verificationStatus: string;
   matchClass: string;
+  matchScore: number;
   applyEligible: boolean;
   createdAt: Date;
   reviewConfirmed: boolean;
@@ -187,13 +219,13 @@ function normalizeCapacity(value: unknown): MannTechnicalCapacity | undefined {
   };
 }
 
-function safeCapacities(row: TechnicalRevisionRow, data: Record<string, unknown>, catalogPreview: boolean): MannTechnicalCapacity[] {
+function safeCapacities(row: TechnicalRevisionRow, data: Record<string, unknown>, catalogPreview: boolean, userConfirmedTransmission: boolean): MannTechnicalCapacity[] {
   if (!catalogPreview) {
     if (!fieldIsVerified(row, "technical.capacity")) return [];
     const capacity = normalizeCapacity(data.capacity);
     return capacity ? [capacity] : [];
   }
-  if (row.state !== "STAGED" || !fieldHasCatalogConfidence(row, "technical.capacity")) return [];
+  if ((!userConfirmedTransmission && row.state !== "STAGED") || !fieldHasCatalogConfidence(row, "technical.capacity")) return [];
   if (!Array.isArray(data.capacities)) return [];
   return data.capacities.flatMap((capacity) => {
     const source = record(capacity);
@@ -275,9 +307,42 @@ function isCatalogPreview(row: TechnicalRevisionRow): boolean {
     && validation.reviewBlockers.length === 0;
 }
 
-function toProfileItem(row: TechnicalRevisionRow, catalogPreview: boolean): MannTechnicalProfileItem | null {
+function transmissionTypeFor(row: TechnicalRevisionRow): MannTransmissionType | undefined {
+  const value = text(record(row.applicabilityJson).transmissionType)?.toLowerCase();
+  return MANN_TRANSMISSION_TYPES.find((candidate) => candidate === value);
+}
+
+function isConditionalTransmissionPreview(row: TechnicalRevisionRow): boolean {
+  const transmissionType = transmissionTypeFor(row);
+  if (!transmissionType || TRANSMISSION_SYSTEMS[transmissionType] !== row.systemCode) return false;
+
+  const provenance = record(row.provenanceJson);
+  const validation = record(provenance.independentValidation);
+  const gates = record(row.run.gatesJson);
+  const reviewBlockers = strings(validation.reviewBlockers);
+  return row.state === "REVIEW"
+    && !row.applyEligible
+    && row.verificationStatus === UNVERIFIED
+    && row.matchClass === "CONDITIONAL_TRANSMISSION"
+    && row.matchScore >= 80
+    && row.run.status === "COMPLETED"
+    && row.run.mode === "STAGING"
+    && !row.run.independentHumanSignoff
+    && !row.run.productionApplyAuthorized
+    && gates.conditionalTransmissionPolicy === CONDITIONAL_TRANSMISSION_POLICY
+    && gates.automaticProductSelection === false
+    && provenance.conditionalTransmissionPolicy === CONDITIONAL_TRANSMISSION_POLICY
+    && provenance.conditionalTransmissionEligible === true
+    && validation.vehicleIdentityIndependentlyValidated === true
+    && Array.isArray(validation.hardConflicts)
+    && validation.hardConflicts.length === 0
+    && reviewBlockers.length === 1
+    && reviewBlockers[0] === TRANSMISSION_REVIEW_BLOCKER;
+}
+
+function toProfileItem(row: TechnicalRevisionRow, catalogPreview: boolean, userConfirmedTransmission = false): MannTechnicalProfileItem | null {
   const data = record(row.technicalDataJson);
-  const capacities = safeCapacities(row, data, catalogPreview);
+  const capacities = safeCapacities(row, data, catalogPreview, userConfirmedTransmission);
   const specifications = safeStringList(
     row,
     data,
@@ -326,7 +391,9 @@ function toProfileItem(row: TechnicalRevisionRow, catalogPreview: boolean): Mann
     replacementInterval,
     evidence,
     sourceStatus: catalogPreview ? "catalog_preview" : "primary_source",
-    requiresReview: catalogPreview && row.state === "REVIEW",
+    requiresReview: catalogPreview && row.state === "REVIEW" && !userConfirmedTransmission,
+    transmissionType: userConfirmedTransmission ? transmissionTypeFor(row) : undefined,
+    userConfirmedTransmission,
   };
 }
 
@@ -347,19 +414,31 @@ function itemFingerprint(item: MannTechnicalProfileItem): string {
  * ACTIVE data always wins. STAGED data is returned solely as a labelled test
  * preview and must never be used for automatic product selection.
  */
-export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[]): MannUnifiedTechnicalProfile {
+export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[], selectedTransmissionType?: MannTransmissionType): MannUnifiedTechnicalProfile {
   const activeRows = rows.filter(isActive);
   const stagedRows = rows.filter(isStagedPreview);
   const catalogRows = rows.filter(isCatalogPreview);
+  const conditionalTransmissionRows = rows.filter(isConditionalTransmissionPreview);
+  const transmissionOptions = MANN_TRANSMISSION_TYPES.flatMap((type) => (
+    conditionalTransmissionRows.some((row) => transmissionTypeFor(row) === type)
+      ? [{ type, label: TRANSMISSION_LABELS[type], systemCode: TRANSMISSION_SYSTEMS[type] }]
+      : []
+  ));
   const status: MannTechnicalProfileStatus = activeRows.length
     ? "active"
     : stagedRows.length
       ? "staged_preview"
       : catalogRows.length
         ? "catalog_preview"
-        : "none";
+        : conditionalTransmissionRows.length && selectedTransmissionType
+          ? "catalog_preview"
+          : "none";
   const eligibleRows = status === "active" ? activeRows : status === "staged_preview" ? stagedRows : status === "catalog_preview" ? catalogRows : [];
+  const selectedConditionalRows = selectedTransmissionType
+    ? conditionalTransmissionRows.filter((row) => transmissionTypeFor(row) === selectedTransmissionType)
+    : [];
   eligibleRows.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || left.id.localeCompare(right.id));
+  selectedConditionalRows.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || left.id.localeCompare(right.id));
 
   const items = new Map<string, MannTechnicalProfileItem>();
   for (const row of eligibleRows) {
@@ -368,23 +447,43 @@ export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[]): 
     const fingerprint = itemFingerprint(item);
     if (!items.has(fingerprint)) items.set(fingerprint, item);
   }
+  for (const row of selectedConditionalRows) {
+    const item = toProfileItem(row, true, true);
+    if (!item) continue;
+    const fingerprint = itemFingerprint(item);
+    if (!items.has(fingerprint)) items.set(fingerprint, item);
+  }
 
   const resultItems = [...items.values()].sort((left, right) => left.systemLabel.localeCompare(right.systemLabel, "ru"));
-  if (!resultItems.length) return { status: "none", items: [] };
+  const containsCatalogPreview = resultItems.some((item) => item.sourceStatus === "catalog_preview");
+  if (!resultItems.length) {
+    return {
+      status: "none",
+      items: [],
+      transmissionOptions,
+      selectedTransmissionType,
+      containsCatalogPreview: false,
+    };
+  }
   return {
     status,
     items: resultItems,
+    transmissionOptions,
+    selectedTransmissionType,
+    containsCatalogPreview,
     notice: status === "staged_preview"
-      ? "Проверено по первичному источнику, но ещё не утверждено для автоматического подбора товаров. Используйте только как справку."
-      : status === "catalog_preview"
+      ? containsCatalogPreview
+        ? "Основные данные проверены по первичному источнику. Данные для выбранной коробки предварительные и не участвуют в автоматическом подборе товаров."
+        : "Проверено по первичному источнику, но ещё не утверждено для автоматического подбора товаров. Используйте только как справку."
+      : status === "catalog_preview" || containsCatalogPreview
         ? "Предварительные данные из технического каталога прошли автоматическое сопоставление с MANN, но не подтверждены производителем. Они не участвуют в автоматическом подборе товаров."
       : undefined,
   };
 }
 
-export async function getMannUnifiedTechnicalProfile(variantKeys: string[]): Promise<MannUnifiedTechnicalProfile> {
+export async function getMannUnifiedTechnicalProfile(variantKeys: string[], selectedTransmissionType?: MannTransmissionType): Promise<MannUnifiedTechnicalProfile> {
   const keys = [...new Set(variantKeys.map((key) => key.trim()).filter(Boolean))].slice(0, 20);
-  if (!keys.length) return { status: "none", items: [] };
+  if (!keys.length) return { status: "none", items: [], transmissionOptions: [], containsCatalogPreview: false };
 
   try {
     const revisions = await prisma.mannTechnicalAssociationRevision.findMany({
@@ -398,6 +497,7 @@ export async function getMannUnifiedTechnicalProfile(variantKeys: string[]): Pro
         sourceRequirementId: true,
         systemCode: true,
         componentModel: true,
+        applicabilityJson: true,
         technicalDataJson: true,
         verifiedFieldsJson: true,
         fieldConfidenceJson: true,
@@ -406,6 +506,7 @@ export async function getMannUnifiedTechnicalProfile(variantKeys: string[]): Pro
         state: true,
         verificationStatus: true,
         matchClass: true,
+        matchScore: true,
         applyEligible: true,
         createdAt: true,
         run: {
@@ -430,11 +531,11 @@ export async function getMannUnifiedTechnicalProfile(variantKeys: string[]): Pro
     return buildMannUnifiedTechnicalProfile(revisions.map((revision) => ({
       ...revision,
       reviewConfirmed: revision.reviewDecisions.length > 0,
-    })));
+    })), selectedTransmissionType);
   } catch (error) {
     // Environments that have not received the expand migration retain the
     // existing filter lookup instead of failing the whole vehicle workflow.
     console.warn("[mann-technical-profile] unavailable", error instanceof Error ? error.message : String(error));
-    return { status: "none", items: [] };
+    return { status: "none", items: [], transmissionOptions: [], containsCatalogPreview: false };
   }
 }

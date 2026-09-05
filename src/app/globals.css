@@ -68316,6 +68316,74 @@ select[size="1"]::-ms-expand {
   background: #e8edf3;
 }
 
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 1px solid #e6e0d6;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice legend {
+  padding: 0;
+  color: #4f4a43;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice button {
+  min-height: 30px;
+  padding: 5px 10px;
+  color: #4c4740;
+  background: #fff;
+  border: 1px solid #cfc7ba;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice button:hover,
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice button:focus-visible {
+  color: #7f351b;
+  border-color: #b96b4d;
+  outline: 0;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice button.is-selected {
+  color: #fff;
+  background: #943f20;
+  border-color: #943f20;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice span,
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice em {
+  color: #706a61;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice em,
+.eco-shipment-new-page .eco-vehicle-lookup__profile-item > span.is-confirmed {
+  color: #286543;
+  font-weight: 700;
+}
+
 .eco-shipment-new-page .eco-vehicle-lookup__profile-items {
   display: grid;
 }

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
-import { getMannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
+import { getMannUnifiedTechnicalProfile, MANN_TRANSMISSION_TYPES } from "@/lib/mann-unified-technical-profile";
 
 const bodySchema = z.object({
   variantKeys: z.array(z.string().trim().min(1).max(160)).min(1).max(20),
+  transmissionType: z.enum(MANN_TRANSMISSION_TYPES).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const profile = await runWithBranchApiContext(branch.context, () =>
-      getMannUnifiedTechnicalProfile(parsed.data.variantKeys)
+      getMannUnifiedTechnicalProfile(parsed.data.variantKeys, parsed.data.transmissionType)
     );
     return NextResponse.json(profile);
   } catch (error) {

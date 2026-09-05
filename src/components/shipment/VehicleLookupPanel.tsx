@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
-import type { MannTechnicalCapacity, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
+import type { MannTechnicalCapacity, MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
 
 type LookupTab = "vin" | "plate" | "manual";
@@ -140,7 +140,17 @@ function capacityLabel(capacity: MannTechnicalCapacity): string {
   return [value, capacity.serviceContextLabel].filter(Boolean).join(" · ");
 }
 
-function TechnicalProfile({ profile, loading, error }: { profile: MannUnifiedTechnicalProfile | null; loading: boolean; error: string }) {
+function TechnicalProfile({
+  profile,
+  loading,
+  error,
+  onSelectTransmission,
+}: {
+  profile: MannUnifiedTechnicalProfile | null;
+  loading: boolean;
+  error: string;
+  onSelectTransmission: (transmissionType: MannTransmissionType) => void;
+}) {
   return (
     <div className="eco-vehicle-lookup__profile" aria-live="polite" aria-busy={loading}>
       <div className="eco-vehicle-lookup__profile-head">
@@ -149,6 +159,27 @@ function TechnicalProfile({ profile, loading, error }: { profile: MannUnifiedTec
         {profile?.status === "staged_preview" ? <span className="is-preview">Проверено · тест</span> : null}
         {profile?.status === "catalog_preview" ? <span className="is-catalog">Каталог · предварительно</span> : null}
       </div>
+      {profile?.transmissionOptions.length ? (
+        <fieldset className="eco-vehicle-lookup__transmission-choice">
+          <legend>Коробка передач</legend>
+          <div>
+            {profile.transmissionOptions.map((option) => (
+              <button
+                type="button"
+                key={option.type}
+                className={profile.selectedTransmissionType === option.type ? "is-selected" : ""}
+                aria-pressed={profile.selectedTransmissionType === option.type}
+                disabled={loading}
+                onClick={() => onSelectTransmission(option.type)}
+              >
+                {option.label}
+              </button>
+            ))}
+            {loading ? <span role="status">Обновляем…</span> : null}
+            {profile.selectedTransmissionType ? <em>Указано вручную</em> : <span>Выберите установленный тип — покажем жидкость и объём.</span>}
+          </div>
+        </fieldset>
+      ) : null}
       {loading ? (
         <div className="eco-vehicle-lookup__profile-loading" role="status">
           <span className="eco-sr-only">Загружаем технический профиль…</span>
@@ -173,6 +204,7 @@ function TechnicalProfile({ profile, loading, error }: { profile: MannUnifiedTec
                     </div>
                   ) : null}
                 </div>
+                {item.userConfirmedTransmission ? <span className="is-confirmed">Тип коробки подтверждён вручную.</span> : null}
                 {item.specifications.length ? (
                   <span><em>Допуски / классы</em>{item.specifications.join(" · ")}</span>
                 ) : null}
@@ -181,7 +213,7 @@ function TechnicalProfile({ profile, loading, error }: { profile: MannUnifiedTec
                 ) : null}
                 {!item.specifications.length && !item.viscosityGrades.length ? (
                   <span className="is-muted">
-                    {profile.status === "catalog_preview"
+                    {item.sourceStatus === "catalog_preview"
                       ? "Допуски и вязкость для этой записи в исходном каталоге не указаны."
                       : "Допуски и вязкость для этой записи пока не подтверждены."}
                   </span>
@@ -226,6 +258,8 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   const [appliedVehicle, setAppliedVehicle] = useState<NormalizedVehicleIdentity | null>(null);
   const [appliedFromCache, setAppliedFromCache] = useState(false);
   const [technicalProfile, setTechnicalProfile] = useState<MannUnifiedTechnicalProfile | null>(null);
+  const [technicalProfileVariantKeys, setTechnicalProfileVariantKeys] = useState<string[]>([]);
+  const [selectedTransmissionType, setSelectedTransmissionType] = useState<MannTransmissionType | undefined>();
   const [technicalProfileLoading, setTechnicalProfileLoading] = useState(false);
   const [technicalProfileError, setTechnicalProfileError] = useState("");
   const lookupRequestIdRef = useRef(0);
@@ -256,23 +290,31 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setAppliedVehicle(null);
     setAppliedFromCache(false);
     setTechnicalProfile(null);
+    setTechnicalProfileVariantKeys([]);
+    setSelectedTransmissionType(undefined);
     setTechnicalProfileLoading(false);
     setTechnicalProfileError("");
   };
 
-  const loadTechnicalProfile = async (variantKeys: string[]) => {
+  const loadTechnicalProfile = async (variantKeys: string[], transmissionType?: MannTransmissionType) => {
     const requestId = ++technicalProfileRequestIdRef.current;
     technicalProfileControllerRef.current?.abort();
     const controller = new AbortController();
     technicalProfileControllerRef.current = controller;
-    setTechnicalProfile(null);
+    setTechnicalProfileVariantKeys(variantKeys);
+    setSelectedTransmissionType(transmissionType);
+    if (!transmissionType) {
+      setTechnicalProfile(null);
+    } else {
+      setTechnicalProfile((current) => current ? { ...current, selectedTransmissionType: transmissionType } : current);
+    }
     setTechnicalProfileError("");
     setTechnicalProfileLoading(true);
     try {
       const response = await fetch("/api/mann-catalog/technical-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variantKeys }),
+        body: JSON.stringify({ variantKeys, transmissionType }),
         signal: controller.signal,
       });
       const data = await responseJson<MannUnifiedTechnicalProfile & { error?: string }>(response);
@@ -388,6 +430,8 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setAppliedVehicle(null);
     setAppliedFromCache(false);
     setTechnicalProfile(null);
+    setTechnicalProfileVariantKeys([]);
+    setSelectedTransmissionType(undefined);
     setTechnicalProfileLoading(false);
     setTechnicalProfileError("");
 
@@ -491,6 +535,8 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setAppliedVehicle(null);
     setAppliedFromCache(false);
     setTechnicalProfile(null);
+    setTechnicalProfileVariantKeys([]);
+    setSelectedTransmissionType(undefined);
     setTechnicalProfileLoading(false);
     setTechnicalProfileError("");
     setInput("");
@@ -544,7 +590,15 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             </details>
           </div>
         </div>
-        <TechnicalProfile profile={technicalProfile} loading={technicalProfileLoading} error={technicalProfileError} />
+        <TechnicalProfile
+          profile={technicalProfile}
+          loading={technicalProfileLoading}
+          error={technicalProfileError}
+          onSelectTransmission={(transmissionType) => {
+            if (!technicalProfileVariantKeys.length || transmissionType === selectedTransmissionType) return;
+            void loadTechnicalProfile(technicalProfileVariantKeys, transmissionType);
+          }}
+        />
       </section>
     );
   }

@@ -13,6 +13,7 @@ const base = {
   sourceRequirementId: "requirement-primary",
   systemCode: "ENGINE_OIL",
   componentModel: null,
+  applicabilityJson: {},
   technicalDataJson: { capacity: { nominalLiters: 5, toleranceLiters: 0.1, serviceContext: "WITH_FILTER" } },
   verifiedFieldsJson: ["technical.capacity"],
   fieldConfidenceJson: { "technical.capacity": "PRIMARY_SOURCE_VERIFIED" },
@@ -21,6 +22,7 @@ const base = {
   state: "STAGED",
   verificationStatus: "PRIMARY_SOURCE_VERIFIED_FIELDS",
   matchClass: "PRIMARY_SOURCE_VERIFIED_SUBSET",
+  matchScore: 100,
   applyEligible: false,
   createdAt: new Date("2026-09-04T00:00:00Z"),
   reviewConfirmed: true,
@@ -48,6 +50,9 @@ assert.deepEqual(staged.items[0].capacity, {
 assert.equal(staged.items[0].capacities.length, 1);
 assert.equal(staged.items[0].sourceStatus, "primary_source");
 assert.equal(staged.items[0].requiresReview, false);
+assert.equal(staged.items[0].userConfirmedTransmission, false);
+assert.deepEqual(staged.transmissionOptions, []);
+assert.equal(staged.containsCatalogPreview, false);
 assert.deepEqual(staged.items[0].evidence, [{
   publisher: "OEM",
   title: "Owner manual",
@@ -58,13 +63,13 @@ assert.deepEqual(staged.items[0].evidence, [{
 assert.match(staged.notice, /не утверждено/u);
 
 const unconfirmed = buildMannUnifiedTechnicalProfile([{ ...base, reviewConfirmed: false }]);
-assert.deepEqual(unconfirmed, { status: "none", items: [] });
+assert.deepEqual(unconfirmed, { status: "none", items: [], transmissionOptions: [], selectedTransmissionType: undefined, containsCatalogPreview: false });
 
 const unverifiedCapacity = buildMannUnifiedTechnicalProfile([{
   ...base,
   fieldConfidenceJson: { "technical.capacity": "INFERRED" },
 }]);
-assert.deepEqual(unverifiedCapacity, { status: "none", items: [] });
+assert.deepEqual(unverifiedCapacity, { status: "none", items: [], transmissionOptions: [], selectedTransmissionType: undefined, containsCatalogPreview: false });
 
 const active = buildMannUnifiedTechnicalProfile([base, {
   ...base,
@@ -110,7 +115,7 @@ const unauthorizedActive = buildMannUnifiedTechnicalProfile([{
     gatesJson: {},
   },
 }]);
-assert.deepEqual(unauthorizedActive, { status: "none", items: [] });
+assert.deepEqual(unauthorizedActive, { status: "none", items: [], transmissionOptions: [], selectedTransmissionType: undefined, containsCatalogPreview: false });
 
 const catalogBase = {
   ...base,
@@ -171,6 +176,7 @@ assert.deepEqual(catalog.items[0].viscosityGrades, ["0W-30", "5W-30"]);
 assert.equal(catalog.items[0].replacementInterval, "10 тыс. км или 1 год");
 assert.equal(catalog.items[0].sourceStatus, "catalog_preview");
 assert.equal(catalog.items[0].requiresReview, false);
+assert.equal(catalog.containsCatalogPreview, true);
 assert.match(catalog.notice, /не подтверждены производителем/u);
 
 const catalogReview = buildMannUnifiedTechnicalProfile([{ ...catalogBase, id: "revision-catalog-review", state: "REVIEW" }]);
@@ -183,6 +189,73 @@ const unsafeCatalog = buildMannUnifiedTechnicalProfile([{
   ...catalogBase,
   run: { ...catalogBase.run, gatesJson: { catalogPreviewPolicy: "UNKNOWN", automaticProductSelection: false } },
 }]);
-assert.deepEqual(unsafeCatalog, { status: "none", items: [] });
+assert.deepEqual(unsafeCatalog, { status: "none", items: [], transmissionOptions: [], selectedTransmissionType: undefined, containsCatalogPreview: false });
+
+const conditionalTransmission = {
+  ...catalogBase,
+  id: "revision-automatic",
+  sourceRequirementId: "requirement-automatic",
+  systemCode: "AUTOMATIC_TRANSMISSION",
+  applicabilityJson: { transmissionType: "automatic", engineCodes: ["G4LC"] },
+  technicalDataJson: {
+    capacities: [{ nominalLiters: 6.7, minLiters: 6.7, maxLiters: 6.7, confidence: "HIGH", serviceContext: "UNKNOWN" }],
+    specifications: [{ type: "OEM", value: "HYUNDAI ATF SP-IV" }],
+    replacementIntervalText: "100 тыс. км или 6 лет",
+  },
+  matchClass: "CONDITIONAL_TRANSMISSION",
+  matchScore: 92,
+  state: "REVIEW",
+  provenanceJson: {
+    conditionalTransmissionPolicy: "USER_CONFIRMED_TRANSMISSION_V1",
+    conditionalTransmissionEligible: true,
+    independentValidation: {
+      vehicleIdentityIndependentlyValidated: true,
+      hardConflicts: [],
+      reviewBlockers: ["MANN variant не подтверждает тип или модель коробки"],
+    },
+  },
+  run: {
+    ...catalogBase.run,
+    gatesJson: {
+      conditionalTransmissionPolicy: "USER_CONFIRMED_TRANSMISSION_V1",
+      automaticProductSelection: false,
+    },
+  },
+};
+
+const conditionalManual = {
+  ...conditionalTransmission,
+  id: "revision-manual",
+  sourceRequirementId: "requirement-manual",
+  systemCode: "MANUAL_TRANSMISSION",
+  applicabilityJson: { transmissionType: "manual", engineCodes: ["G4LC"] },
+  technicalDataJson: {
+    capacities: [{ nominalLiters: 1.6, minLiters: 1.6, maxLiters: 1.6, confidence: "HIGH", serviceContext: "UNKNOWN" }],
+    specifications: [{ type: "OEM", value: "API GL-4" }],
+  },
+};
+
+const beforeTransmissionChoice = buildMannUnifiedTechnicalProfile([catalogBase, conditionalTransmission, conditionalManual]);
+assert.deepEqual(beforeTransmissionChoice.transmissionOptions.map((option) => [option.type, option.label]), [
+  ["automatic", "АКПП"],
+  ["manual", "МКПП"],
+]);
+assert.equal(beforeTransmissionChoice.items.some((item) => item.systemCode.includes("TRANSMISSION")), false);
+
+const automaticSelected = buildMannUnifiedTechnicalProfile([catalogBase, conditionalTransmission, conditionalManual], "automatic");
+assert.equal(automaticSelected.selectedTransmissionType, "automatic");
+assert.equal(automaticSelected.items.some((item) => item.systemCode === "MANUAL_TRANSMISSION"), false);
+const automaticItem = automaticSelected.items.find((item) => item.systemCode === "AUTOMATIC_TRANSMISSION");
+assert.ok(automaticItem);
+assert.equal(automaticItem.capacity.nominalLiters, 6.7);
+assert.deepEqual(automaticItem.specifications, ["HYUNDAI ATF SP-IV"]);
+assert.equal(automaticItem.userConfirmedTransmission, true);
+assert.equal(automaticItem.requiresReview, false);
+
+const unsafeConditional = buildMannUnifiedTechnicalProfile([{
+  ...conditionalTransmission,
+  run: { ...conditionalTransmission.run, gatesJson: { ...conditionalTransmission.run.gatesJson, automaticProductSelection: true } },
+}], "automatic");
+assert.deepEqual(unsafeConditional, { status: "none", items: [], transmissionOptions: [], selectedTransmissionType: "automatic", containsCatalogPreview: false });
 
 console.log("MANN unified technical profile publication policy tests — passed");
