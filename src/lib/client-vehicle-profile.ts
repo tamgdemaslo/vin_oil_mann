@@ -197,7 +197,9 @@ export function mergeClientVehiclePassport(input: {
 
 export function clientVehicleCompleteness(values: ClientVehiclePassportValues) {
   const required = ["make", "model", "year", "vin", "engineVolumeCc", "powerHp", "fuelType", "transmissionType", "driveType", "mileage"] as const;
-  const completed = required.filter((field) => !isBlank(values[field]));
+  const completed = required.filter((field) => field === "vin"
+    ? !isBlank(values.vin) || !isBlank(values.frameNumber)
+    : !isBlank(values[field]));
   return {
     completed: completed.length,
     total: required.length,
