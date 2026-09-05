@@ -23,6 +23,18 @@ assert.deepEqual(
   { where: { archived: false, branchId: "branch-1" } }
 );
 assert.deepEqual(
+  applyBranchQueryPolicy(
+    "BranchSalesPlan",
+    "findMany",
+    { where: { month: "2026-09" }, orderBy: [{ branchId: "asc" }, { rowKey: "asc" }] },
+    branchOne
+  ),
+  {
+    where: { month: "2026-09", branchId: "branch-1" },
+    orderBy: [{ branchId: "asc" }, { rowKey: "asc" }],
+  }
+);
+assert.deepEqual(
   applyBranchQueryPolicy("LocalDemand", "create", { data: { name: "ДЧ-1" } }, branchOne),
   { data: { name: "ДЧ-1", branchId: "branch-1" } }
 );

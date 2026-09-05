@@ -112,7 +112,11 @@ export function applyBranchQueryPolicy(
 
   const branchId = tenant.branchId;
   if (!branchId) throw new Error("Активный филиал не выбран");
-  assertNoForeignBranch(next, branchId);
+  // Only filters and mutation payloads can select or move branch-scoped data.
+  // Inspecting the whole Prisma argument object also sees harmless clauses such
+  // as `orderBy: { branchId: "asc" }` and mistakes the sort direction for a
+  // foreign branch id.
+  if (next.where) assertNoForeignBranch(next.where, branchId);
   if (operation === "create" || operation === "createMany" || operation === "createManyAndReturn") {
     next.data = scopeData(next.data, branchId);
   } else if (operation === "upsert") {
