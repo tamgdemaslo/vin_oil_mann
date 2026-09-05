@@ -3,6 +3,17 @@ import { fetch as undiciFetch, ProxyAgent } from "undici";
 
 let proxyAgent: ProxyAgent | null | undefined;
 
+type OpenAIConnectionCheck =
+  | { ok: true; proxyConfigured: boolean; status: number; timeoutMs: number }
+  | { ok: false; proxyConfigured: boolean; status?: number; timeoutMs: number; error: string };
+
+export class OpenAIConnectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpenAIConnectionError";
+  }
+}
+
 function openAIProxyAgent(): ProxyAgent | undefined {
   const proxyUrl = process.env.OPENAI_PROXY_URL?.trim();
   if (!proxyUrl) return undefined;
@@ -24,7 +35,7 @@ export function createOpenAIClient(apiKey: string, options?: { timeout?: number;
   });
 }
 
-export async function checkOpenAIConnection() {
+export async function checkOpenAIConnection(): Promise<OpenAIConnectionCheck> {
   const timeoutMs = 8_000;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -44,7 +55,7 @@ export async function checkOpenAIConnection() {
         ? "OpenAI отклонил VPN-выход (HTTP 403): проверьте страну выхода WireGuard"
         : `OpenAI ответил HTTP ${response.status}; ожидается HTTP 401 без ключа`,
     };
-  } catch (error) {
+  } catch {
     const timedOut = controller.signal.aborted;
     return {
       ok: false,
@@ -57,4 +68,15 @@ export async function checkOpenAIConnection() {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Stop an assistant run before expensive research/model calls when the
+ * configured OpenAI route is unavailable. This keeps a dead WireGuard route
+ * from consuming the 75 s research timeout and then the model timeout.
+ */
+export async function assertOpenAIConnection() {
+  const check = await checkOpenAIConnection();
+  if (!check.ok) throw new OpenAIConnectionError(check.error);
+  return check;
 }

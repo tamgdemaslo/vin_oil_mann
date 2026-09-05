@@ -7,7 +7,7 @@ import { getSelectedAssistantQuote, saveAssistantQuoteSnapshot } from "./quotes"
 import { AI_ASSISTANT_STRUCTURED_RESPONSE_SCHEMA, parseAIAssistantStructuredResponse, structuredResponseToMarkdown } from "./structured-response";
 import { isAssistantCalculationTool, shouldFinalizeAssistantToolTurn } from "./tool-loop-policy";
 import { AssistantToolError, assistantFunctionTools, executeAssistantTool, safeAssistantJson, type AssistantToolSource } from "./tools";
-import { createOpenAIClient } from "@/lib/openai-client";
+import { assertOpenAIConnection, createOpenAIClient, OpenAIConnectionError } from "@/lib/openai-client";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { employeeRequestedOriginalFluidOnly } from "./material-selection";
 import { buildQuoteAndTechCardArtifactCustomerMessage, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardToolResult, type QuoteAndTechCardArtifact } from "./quote-and-tech-card";
@@ -74,6 +74,7 @@ function runDurationExceeded(startedAt: number) {
 }
 
 function publicRunError(error: unknown) {
+  if (error instanceof OpenAIConnectionError) return error.message;
   const message = text(error instanceof Error ? error.message : String(error), 1_200);
   if (/connection error|fetch failed|econnrefused|enotfound|network/i.test(message)) {
     if (process.env.OPENAI_PROXY_URL?.trim()) {
@@ -586,6 +587,10 @@ export async function runAssistantThread(input: { threadId: string; organization
   const savedQuoteIds: string[] = [];
   let quoteAndTechCard: QuoteAndTechCardArtifact | null = null;
   try {
+    // A failed WireGuard/DNS route must be reported immediately. Without this
+    // probe, the required web-research call waits 75 s and a fallback model
+    // call can wait another 120 s before exposing the same connection fault.
+    await assertOpenAIConnection();
     const technicalRequest = isTechnicalRequest(message);
     const previousUserRequest = history.slice(0, -1).reverse().find((item) => item.role === "user")?.content ?? "";
     const continuationRequested = continuesCurrentTechnicalRequest(message);
