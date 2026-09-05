@@ -661,6 +661,31 @@ function parseVehicleNumber(value: string): number | null {
   return Number.isFinite(result) ? result : null;
 }
 
+function vehicleNumberInput(value: string): string {
+  const number = parseVehicleNumber(value);
+  return number == null ? "" : String(number);
+}
+
+function normalizeVehicleTransmission(value: string): string {
+  const normalized = value.trim();
+  const upper = normalized.toUpperCase();
+  if (/UNKNOWN_TRANSMISSION|НЕИЗВЕСТН/.test(upper)) return "";
+  if (/ВАРИАТОР|VARIATOR|\bCVT\b/.test(upper)) return "Вариатор";
+  if (/РОБОТ|\bROBOT\b|\bDCT\b|\bDSG\b/.test(upper)) return "Робот";
+  if (/АКПП|AUTOMATIC|(^|[^A-Z])AUT([^A-Z]|$)/.test(upper)) return "АКПП";
+  if (/МКПП|MECHANICAL|MANUAL|(^|[^A-Z])MAN([^A-Z]|$)/.test(upper)) return "МКПП";
+  return normalized;
+}
+
+function normalizeVehicleDrive(value: string): string {
+  const normalized = value.trim();
+  const upper = normalized.toUpperCase();
+  if (/ПОЛН|ALL_WHEEL|\bAWD\b|\b4WD\b|\b4X4\b/.test(upper)) return "Полный";
+  if (/ЗАДН|REAR_DRIVE|REAR_WHEEL|\bRWD\b/.test(upper)) return "Задний";
+  if (/ПЕРЕДН|FORWARD_CONTROL|FRONT_WHEEL|\bFWD\b/.test(upper)) return "Передний";
+  return normalized;
+}
+
 function splitVehicleMakeModel(value: string): { make: string; model: string } {
   const normalized = value.trim().replace(/\s+/g, " ");
   if (!normalized) return { make: "", model: "" };
@@ -3597,6 +3622,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const attrOwners = getAttributeString(attributes, (name) => name === "владельцев");
   const attrModelYearFrom = getAttributeString(attributes, (name) => name === "модельный год с");
   const attrModelYearTo = getAttributeString(attributes, (name) => name === "модельный год по");
+  const normalizedTransmission = normalizeVehicleTransmission(attrTransmission);
+  const normalizedDrive = normalizeVehicleDrive(attrDrive || attrTransmission);
   const documentVin = vin || getAttributeString(attributes, (name) => /vin/i.test(name));
   const vehicleManualReady = Boolean(
     attrMake && attrModel && (documentVin || attrPlate || attrMileage || attrYear)
@@ -3622,11 +3649,12 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     model: attrModel || null,
     year: parseVehicleNumber(attrYear),
     vin: documentVin || null,
+    frameNumber: attrFrameNumber || null,
     engineVolumeCc: engineVolumeLiters == null ? null : Math.round(engineVolumeLiters * 1000),
     powerHp: parseVehicleNumber(attrPower),
     fuelType: attrFuel || null,
-    transmissionType: attrTransmission || null,
-    driveType: attrDrive || null,
+    transmissionType: normalizedTransmission || null,
+    driveType: normalizedDrive || null,
     mileage: parseVehicleNumber(attrMileage),
   };
   const vehicleCompleteness = clientVehicleCompleteness(passportValuesForCompleteness);
@@ -3911,7 +3939,14 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     const attrIndex = attributes.findIndex((a) => control.match(normalizeAttrName(a.name)));
     const attr = attrIndex >= 0 ? attributes[attrIndex] : null;
     const fallback = control.key === "make" ? legacyModelParts.make : control.key === "model" ? legacyModelParts.model : "";
-    const value = control.key === "vin" ? documentVin : attributeValueToString(attr?.value) || fallback;
+    const rawValue = control.key === "vin" ? documentVin : attributeValueToString(attr?.value) || fallback;
+    const value = control.key === "transmissionType"
+      ? normalizeVehicleTransmission(rawValue)
+      : control.key === "driveType"
+        ? normalizeVehicleDrive(rawValue || attrTransmission)
+        : ["year", "mileage", "engineVolume", "powerHp", "powerKw", "modelYearFrom", "modelYearTo", "ownersCount"].includes(control.key)
+          ? vehicleNumberInput(rawValue)
+          : rawValue;
     return { ...control, attr, attrIndex, value };
   });
   const vehicleSummaryItems: KeyValueItem[] = [
@@ -3922,7 +3957,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     { key: "year", label: "Год", value: attrYear || "—" },
     { key: "engine", label: "Двигатель", value: [attrEngineCode, attrEngine].filter(Boolean).join(" · ") || "—" },
     { key: "engineVolume", label: "Объём / мощность", value: [attrEngineVolume, attrPower].filter(Boolean).join(" · ") || "—" },
-    { key: "transmission", label: "Коробка / привод", value: [attrTransmission, attrTransmissionName, attrDrive].filter(Boolean).join(" · ") || "—" },
+    { key: "transmission", label: "Коробка / привод", value: [normalizedTransmission, attrTransmissionName, normalizedDrive].filter(Boolean).join(" · ") || "—" },
     { key: "vin", label: "VIN", value: documentVin || "—", wide: true },
   ];
   const vehicleAdditionalSummaryItems: KeyValueItem[] = [
@@ -4155,7 +4190,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const selectedMannVariant = mannVariants.find((variant) => variant.variantId === selectedMannVariantId) ?? null;
   const vehicleContextTitle = vehicleTitle || [selectedMannMake, selectedMannModel].filter(Boolean).join(" ") || "Автомобиль не указан";
   const vehicleEngineLabel = [
-    decodedVehicle?.displacementL ? `${decodedVehicle.displacementL} л` : attrEngineVolume ? `${attrEngineVolume} л` : "",
+    decodedVehicle?.displacementL ? `${decodedVehicle.displacementL} л` : engineVolumeLiters != null ? `${engineVolumeLiters} л` : "",
     decodedVehicle?.engineSeries,
   ].filter(Boolean).join(" · ");
   const mannMakeOptions = mannMakes.map((item): MannComboboxOption => ({
@@ -4851,20 +4886,34 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                     {vehicleAttributeControls.filter((control) => control.section === section.key).map((control) => (
                       <label key={control.key} className={control.key === "vin" ? "is-wide" : undefined}>
                         <span>{control.label}</span>
-                        <input
-                          id={control.key === "model" ? "shipment-vehicle-model" : undefined}
-                          type="text"
-                          inputMode={["year", "mileage", "engineVolume", "powerHp"].includes(control.key) ? "decimal" : undefined}
-                          maxLength={control.key === "vin" ? 17 : undefined}
-                          value={vehicleDraftValues[control.key] ?? control.value}
-                          onChange={(e) => {
-                            const attrName = control.attr?.name ?? control.label;
-                            const nextValue = formatVehicleAttributeInput(attrName, e.target.value);
-                            setVehicleDraftValues((prev) => ({ ...prev, [control.key]: nextValue }));
-                          }}
-                          className="eco-input"
-                          placeholder={control.placeholder}
-                        />
+                        {control.key === "transmissionType" || control.key === "driveType" ? (
+                          <select
+                            value={vehicleDraftValues[control.key] ?? control.value}
+                            onChange={(e) => setVehicleDraftValues((prev) => ({ ...prev, [control.key]: e.target.value }))}
+                            className="eco-input"
+                          >
+                            <option value="">Не указано</option>
+                            {(control.key === "transmissionType"
+                              ? ["АКПП", "МКПП", "Вариатор", "Робот"]
+                              : ["Передний", "Задний", "Полный"]
+                            ).map((option) => <option value={option} key={option}>{option}</option>)}
+                          </select>
+                        ) : (
+                          <input
+                            id={control.key === "model" ? "shipment-vehicle-model" : undefined}
+                            type="text"
+                            inputMode={["year", "mileage", "engineVolume", "powerHp"].includes(control.key) ? "decimal" : undefined}
+                            maxLength={control.key === "vin" ? 17 : undefined}
+                            value={vehicleDraftValues[control.key] ?? control.value}
+                            onChange={(e) => {
+                              const attrName = control.attr?.name ?? control.label;
+                              const nextValue = formatVehicleAttributeInput(attrName, e.target.value);
+                              setVehicleDraftValues((prev) => ({ ...prev, [control.key]: nextValue }));
+                            }}
+                            className="eco-input"
+                            placeholder={control.placeholder}
+                          />
+                        )}
                       </label>
                     ))}
                   </div>

@@ -77,6 +77,28 @@ function text(value: unknown): string | null {
   return result || null;
 }
 
+function transmissionLabel(value: unknown): string | null {
+  const result = text(value);
+  if (!result) return null;
+  const upper = result.toUpperCase();
+  if (/UNKNOWN_TRANSMISSION|НЕИЗВЕСТН/.test(upper)) return null;
+  if (/ВАРИАТОР|VARIATOR|\bCVT\b/.test(upper)) return "Вариатор";
+  if (/РОБОТ|\bROBOT\b|\bDCT\b|\bDSG\b/.test(upper)) return "Робот";
+  if (/АКПП|AUTOMATIC|(^|[^A-Z])AUT([^A-Z]|$)/.test(upper)) return "АКПП";
+  if (/МКПП|MECHANICAL|MANUAL|(^|[^A-Z])MAN([^A-Z]|$)/.test(upper)) return "МКПП";
+  return result;
+}
+
+function driveLabel(value: unknown): string | null {
+  const result = text(value);
+  if (!result) return null;
+  const upper = result.toUpperCase();
+  if (/ПОЛН|ALL_WHEEL|\bAWD\b|\b4WD\b|\b4X4\b/.test(upper)) return "Полный";
+  if (/ЗАДН|REAR_DRIVE|REAR_WHEEL|\bRWD\b/.test(upper)) return "Задний";
+  if (/ПЕРЕДН|FORWARD_CONTROL|FRONT_WHEEL|\bFWD\b/.test(upper)) return "Передний";
+  return result;
+}
+
 function positiveInteger(value: unknown): number | null {
   if (value == null || value === "") return null;
   const result = Number(String(value).replace(/\s+/g, "").replace(",", "."));
@@ -131,9 +153,9 @@ export function vehicleIdentityToProfileWrite(vehicle: Partial<NormalizedVehicle
       powerHp: positiveInteger(vehicle.powerHp ?? vehicle.powerPs),
       powerKw: positiveInteger(vehicle.powerKw),
       fuelType: text(vehicle.fuelType),
-      transmissionType: text(vehicle.transmissionType),
+      transmissionType: transmissionLabel(vehicle.transmissionType),
       transmissionName: text(vehicle.transmissionName),
-      driveType: text(vehicle.driveType),
+      driveType: driveLabel(vehicle.driveType ?? vehicle.transmissionType),
       steeringPosition: text(vehicle.steeringPosition),
       market: text(vehicle.market),
       countryOfOrigin: text(vehicle.countryOfOrigin),
@@ -152,6 +174,8 @@ export function normalizeManualVehicleProfile(values: ClientVehiclePassportValue
     else if (["engineVolumeCc", "powerHp", "powerKw"].includes(field)) result[field] = positiveInteger(value);
     else if (["mileage", "ownersCount"].includes(field)) result[field] = nonNegativeInteger(value);
     else if (["vin", "frameNumber"].includes(field)) result[field] = text(value)?.replace(/\s+/g, "").toUpperCase() ?? null;
+    else if (field === "transmissionType") result[field] = transmissionLabel(value);
+    else if (field === "driveType") result[field] = driveLabel(value);
     else if (["plate", "bodyCode", "engineCode", "engineSeries"].includes(field)) result[field] = text(value)?.toUpperCase() ?? null;
     else result[field] = text(value);
   }

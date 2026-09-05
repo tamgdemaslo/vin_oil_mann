@@ -69,7 +69,16 @@ assert.equal(confirmedMerge.values.mileage, 154000);
 assert.equal(confirmedMerge.fieldSources.transmissionType.verificationStatus, "CONFIRMED");
 assert.equal(confirmedMerge.fieldSources.transmissionType.updatedBy, "ilya");
 
-const completeness = clientVehicleCompleteness({
+const normalizedPowertrain = normalizeManualVehicleProfile({
+  transmissionType: "REAR_DRIVE · AUTOMATIC",
+  driveType: "REAR_DRIVE",
+});
+assert.equal(normalizedPowertrain.values.transmissionType, "АКПП");
+assert.equal(normalizedPowertrain.values.driveType, "Задний");
+assert.equal(normalizeManualVehicleProfile({ transmissionType: "FORWARD_CONTROL · VARIATOR" }).values.transmissionType, "Вариатор");
+assert.equal(normalizeManualVehicleProfile({ transmissionType: "ALL_WHEEL_DRIVE · UNKNOWN_TRANSMISSION" }).values.transmissionType, null);
+
+const completeValues = {
   make: "HYUNDAI",
   model: "Solaris",
   year: 2018,
@@ -80,7 +89,11 @@ const completeness = clientVehicleCompleteness({
   transmissionType: "automatic",
   driveType: "front",
   mileage: 154000,
-});
+};
+const completeness = clientVehicleCompleteness(completeValues);
 assert.deepEqual(completeness, { completed: 10, total: 10, percent: 100, missing: [] });
+
+const frameCompleteness = clientVehicleCompleteness({ ...completeValues, vin: null, frameNumber: "KZN130-0001234" });
+assert.equal(frameCompleteness.missing.includes("vin"), false, "frame number must satisfy the vehicle identity requirement");
 
 console.log("Client vehicle passport merge and completeness tests — passed");
