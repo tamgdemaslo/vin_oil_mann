@@ -397,10 +397,18 @@ function scopeLabel(session: InventorySession) {
   return type;
 }
 
+function inventoryCountingComplete(session: InventorySession) {
+  return session.totalLines > 0
+    && session.countedLines >= session.totalLines
+    && session.recountRequiredLines === 0;
+}
+
 function documentAction(session: InventorySession) {
   if (session.status === "DRAFT") return "Настроить";
   if (session.status === "PAUSED") return "Продолжить";
-  if (session.status === "COUNTING" || session.status === "RECOUNT_REQUIRED") return "Продолжить подсчёт";
+  if (session.status === "COUNTING" || session.status === "RECOUNT_REQUIRED") {
+    return inventoryCountingComplete(session) ? "Завершить подсчёт" : "Продолжить подсчёт";
+  }
   if (session.status === "REVIEW" || session.status === "AWAITING_APPROVAL") return "Открыть сверку";
   if (session.status === "POSTED" || session.status === "REVERSED") return "Открыть ведомость";
   if (session.status === "CANCELLED") return "Открыть историю";
@@ -425,7 +433,11 @@ function stageHint(session: InventorySession, index: number) {
 function nextStepText(session: InventorySession) {
   if (session.status === "DRAFT") return "Проверьте склад, область товаров и начните подсчёт.";
   if (session.status === "PAUSED") return "Подсчёт приостановлен. Можно продолжить с того же места.";
-  if (session.status === "COUNTING") return "Введите фактическое количество по всем строкам и завершите подсчёт.";
+  if (session.status === "COUNTING") {
+    return inventoryCountingComplete(session)
+      ? "Все позиции посчитаны. Завершите подсчёт и перейдите к сверке."
+      : "Введите фактическое количество по всем строкам и завершите подсчёт.";
+  }
   if (session.status === "RECOUNT_REQUIRED") return "Проверьте строки с проблемами и сохраните повторный пересчёт.";
   if (session.status === "REVIEW") return "Выберите действия и причины по строкам с расхождениями.";
   if (session.status === "AWAITING_APPROVAL") return session.approvedAt ? "Инвентаризация подтверждена. Осталось провести складские движения." : "Нужно подтверждение владельца перед проведением.";
@@ -747,6 +759,10 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       return;
     }
     if (current.status === "COUNTING" || current.status === "RECOUNT_REQUIRED") {
+      if (inventoryCountingComplete(current)) {
+        void mutateSession("complete-counting");
+        return;
+      }
       document.getElementById("inventory-counting-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
