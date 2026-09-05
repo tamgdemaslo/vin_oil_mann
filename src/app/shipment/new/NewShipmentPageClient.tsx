@@ -3596,6 +3596,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const attrEngineCode = getAttributeString(attributes, (name) => name === "код двигателя");
   const attrEngineSeries = getAttributeString(attributes, (name) => name === "серия двигателя");
   const attrEngineVolume = getAttributeString(attributes, (name) => name === "объем двигателя");
+  const attrFillVolume = getAttributeString(attributes, (name) => name === "объем");
+  const attrMotorOil = getAttributeString(attributes, (name) => name === "моторное масло");
   const attrPower = getAttributeString(attributes, (name) => name === "мощность");
   const attrPowerKw = getAttributeString(attributes, (name) => name === "мощность квт");
   const attrFuel = getAttributeString(attributes, (name) => name === "топливо");
@@ -3834,6 +3836,22 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       match: (name: string) => name === "привод",
     },
     {
+      section: "service",
+      key: "motorOil",
+      label: "Моторное масло",
+      attributeName: "Моторное масло",
+      placeholder: "Например: Mobil 1 ESP 5W-30",
+      match: (name: string) => name === "моторное масло",
+    },
+    {
+      section: "service",
+      key: "fillVolume",
+      label: "Объём заливки, л",
+      attributeName: "Объем",
+      placeholder: "Например: 4,5",
+      match: (name: string) => name === "объем",
+    },
+    {
       section: "additional",
       key: "bodyName",
       label: "Кузов",
@@ -3943,6 +3961,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     { key: "year", label: "Год", value: attrYear || "—" },
     { key: "engine", label: "Двигатель", value: [attrEngineCode, attrEngine].filter(Boolean).join(" · ") || "—" },
     { key: "engineVolume", label: "Объём / мощность", value: [attrEngineVolume, attrPower].filter(Boolean).join(" · ") || "—" },
+    { key: "motorOil", label: "Моторное масло", value: attrMotorOil || "—" },
+    { key: "fillVolume", label: "Объём заливки", value: attrFillVolume || "—" },
     { key: "transmission", label: "Коробка / привод", value: [normalizedTransmission, attrTransmissionName, normalizedDrive].filter(Boolean).join(" · ") || "—" },
     { key: "vin", label: "VIN", value: documentVin || "—", wide: true },
   ];
@@ -4840,7 +4860,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 </div>
                 <b>{vehicleCompleteness.completed} из {vehicleCompleteness.total}</b>
               </div>
-              {[{ key: "identity", label: "Основные данные" }, { key: "powertrain", label: "Силовой агрегат" }].map((section) => (
+              {[
+                { key: "identity", label: "Основные данные" },
+                { key: "powertrain", label: "Силовой агрегат" },
+                { key: "service", label: "Что залили" },
+              ].map((section) => (
                 <fieldset className="eco-shipment-vehicle-fieldset" key={section.key}>
                   <legend>{section.label}</legend>
                   <div className="eco-shipment-vehicle-editor-grid">
@@ -4863,7 +4887,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                           <input
                             id={control.key === "model" ? "shipment-vehicle-model" : undefined}
                             type="text"
-                            inputMode={["year", "mileage", "engineVolume", "powerHp"].includes(control.key) ? "decimal" : undefined}
+                            inputMode={["year", "mileage", "engineVolume", "powerHp", "fillVolume"].includes(control.key) ? "decimal" : undefined}
                             maxLength={control.key === "vin" ? 17 : undefined}
                             value={vehicleDraftValues[control.key] ?? control.value}
                             onChange={(e) => {
