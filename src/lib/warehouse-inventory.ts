@@ -1397,6 +1397,7 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
       productIds: movingLines.map((line) => line.productId as string),
     });
     const movementCostByLine = new Map<string, number>();
+    const unknownCostTechnicalClearanceLineIds = new Set<string>();
 
     for (const line of lines) {
       const movementType = ledgerMovementForAction(line.finalAction, line.differenceQuantity);
@@ -1423,6 +1424,15 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
             productName: line.product?.name ?? line.id,
           });
           movementCostByLine.set(line.id, line.unitCostSnapshotCents);
+        } else if (
+          line.finalAction === "SHORTAGE_TECHNICAL"
+          && nextQuantity.equals(ZERO)
+          && (current?.buyPriceCents == null || current.buyPriceCents <= 0)
+        ) {
+          // A legacy balance with no reconstructable cost may only be removed in full,
+          // as a non-analytical technical correction. The cost remains explicitly
+          // unknown; it must never be converted to a zero-cost sale or expense.
+          unknownCostTechnicalClearanceLineIds.add(line.id);
         } else {
           movementCostByLine.set(line.id, requireBalanceAverageCost({
             productName: line.product?.name ?? line.id,
@@ -1435,12 +1445,31 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
     }
 
     for (const line of lines) {
+      if (unknownCostTechnicalClearanceLineIds.has(line.id)) {
+        line.unitCostSnapshotCents = null;
+        line.differenceCostCents = null;
+        line.affectsManagementProfit = false;
+        continue;
+      }
       const movementCost = movementCostByLine.get(line.id);
       if (movementCost != null) line.unitCostSnapshotCents = movementCost;
     }
 
+    if (unknownCostTechnicalClearanceLineIds.size > 0) {
+      await tx.inventoryLine.updateMany({
+        where: { id: { in: [...unknownCostTechnicalClearanceLineIds] } },
+        data: {
+          unitCostSnapshotCents: null,
+          differenceCostCents: null,
+          affectsManagementProfit: false,
+        },
+      });
+    }
+
     const shortageExpense = lines.filter((line) => line.finalAction === "SHORTAGE_EXPENSE");
-    const shortageTechnical = lines.filter((line) => line.finalAction === "SHORTAGE_TECHNICAL");
+    const shortageTechnical = lines.filter(
+      (line) => line.finalAction === "SHORTAGE_TECHNICAL" && !unknownCostTechnicalClearanceLineIds.has(line.id)
+    );
     const surplusReceipt = lines.filter((line) => line.finalAction === "SURPLUS_RECEIPT");
     const surplusTechnical = lines.filter((line) => line.finalAction === "SURPLUS_TECHNICAL");
     const docs = {
@@ -1455,7 +1484,10 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
       if (!movementType || !line.productId || !line.differenceQuantity) continue;
       const analyticsImpact = line.affectsManagementProfit && line.finalAction === "SHORTAGE_EXPENSE";
       const movementCostCents = movementCostByLine.get(line.id) ?? null;
-      const totalCostSnapshot = costForDifference(line.differenceQuantity, movementCostCents);
+      const costStatus = unknownCostTechnicalClearanceLineIds.has(line.id) ? "UNKNOWN_LEGACY_COST" : "KNOWN";
+      const totalCostSnapshot = movementCostCents == null
+        ? null
+        : costForDifference(line.differenceQuantity, movementCostCents);
       const current = await tx.localStockBalance.findUnique({
         where: { productId_storeId: { productId: line.productId, storeId: session.warehouseId } },
       });
@@ -1492,6 +1524,7 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
             inventoryLineId: line.id,
             finalAction: line.finalAction,
             reasonCode: line.reasonCode,
+            costStatus,
             balanceBefore: { quantity: currentQuantity.toNumber(), reserve: reserve.toNumber(), averageCostCents: current?.buyPriceCents ?? null },
             balanceAfter: { quantity: nextQuantity.toNumber(), reserve: reserve.toNumber(), averageCostCents: nextAverageCost },
           }),

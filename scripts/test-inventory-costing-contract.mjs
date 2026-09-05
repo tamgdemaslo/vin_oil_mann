@@ -17,6 +17,7 @@ const customerAnalytics = read("src/lib/customer-analytics.ts");
 const dashboard = read("src/app/api/dashboard/operations/route.ts");
 const cutover = read("src/lib/inventory-cost-cutover.ts");
 const cutoverRoute = read("src/app/api/system/inventory-cost-cutover/route.ts");
+const warehouseInventory = read("src/lib/warehouse-inventory.ts");
 
 assert.match(costingDb, /pg_advisory_xact_lock[\s\S]*?::text\s+AS\s+locked/);
 
@@ -47,5 +48,11 @@ assert.match(cutover, /backupReference/);
 assert.doesNotMatch(cutover, /localDemandPosition\.(?:update|updateMany|upsert|delete)/);
 assert.match(cutoverRoute, /session\.user\.role !== "owner"/);
 assert.match(cutoverRoute, /invalidateWarehouseReadCaches/);
+
+assert.match(warehouseInventory, /unknownCostTechnicalClearanceLineIds/);
+assert.match(warehouseInventory, /line\.finalAction === "SHORTAGE_TECHNICAL"[\s\S]*?nextQuantity\.equals\(ZERO\)/);
+assert.match(warehouseInventory, /costStatus = unknownCostTechnicalClearanceLineIds\.has\(line\.id\) \? "UNKNOWN_LEGACY_COST" : "KNOWN"/);
+assert.match(warehouseInventory, /totalCostSnapshot = movementCostCents == null[\s\S]*?\? null/);
+assert.match(warehouseInventory, /affectsManagementProfit: false/);
 
 console.log("inventory costing integration contract: ok");
