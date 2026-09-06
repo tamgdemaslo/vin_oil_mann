@@ -264,8 +264,16 @@ assert.deepEqual(quoteAndTechCardMaterials(parsedInput, false).rosskoItems.map((
 assert.deepEqual(quoteAndTechCardSupplierRows({ ...parsedInput, rosskoItems: [] }, false, 5), [{ article: "04500-00115", brand: null, offerId: null, quantity: 5, role: "fluid" }], "supplier fallback is explicit and controlled");
 assert.deepEqual(quoteAndTechCardSupplierRows(parsedInput, true, 5), [], "A: no supplier ATF is added with a local compatible product");
 
-const primaryFluid = applyBillableQuantityToPrimaryFluid([{ productId: "valvoline-atf", quantity: 12.41, role: "fluid" }], 13, true);
+const primaryFluid = applyBillableQuantityToPrimaryFluid([{ productId: "valvoline-atf", quantity: 12.41, role: "fluid" }], 13);
 assert.equal(primaryFluid[0].quantity, 13, "one billable value is reused by product line and quote");
+const enginePrimaryFluid = applyBillableQuantityToPrimaryFluid([
+  { productId: "eurol-0w20", quantity: 1, role: "fluid" },
+  { productId: "oil-filter", quantity: 1, role: "external_filter" },
+], 5);
+assert.deepEqual(enginePrimaryFluid, [
+  { productId: "eurol-0w20", quantity: 5, role: "fluid" },
+  { productId: "oil-filter", quantity: 1, role: "external_filter" },
+], "engine-oil quotes use the billable oil volume without changing the filter quantity");
 const materialTrace = {
   requiredSpecification: "Hyundai/Kia ATF SP-IV",
   oemRequirement: { specification: "Hyundai/Kia ATF SP-IV", evidence: "Hyundai/Kia ATF SP-IV" },

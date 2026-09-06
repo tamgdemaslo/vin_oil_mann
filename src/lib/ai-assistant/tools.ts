@@ -1112,7 +1112,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     const selectedProducts = applyBillableQuantityToPrimaryFluid([
       ...(localFluid ? [{ productId: localFluid.productId, quantity: localFluid.quantity, role: "fluid" }] : []),
       ...materials.selectedProducts,
-    ], option.billableQuantityLiters, plan.isTransmission);
+    ], option.billableQuantityLiters);
     const requiredFluidArticle = text(input.service.requiredFluidOemArticle, 80).toUpperCase();
     const scopedSupplierRows = supplierRows.map((row) => ({ ...row, role: requiredFluidArticle && row.article.toUpperCase() === requiredFluidArticle ? "fluid" : row.role }));
     const fallbackServiceProductId = await quoteAndTechCardFallbackServiceProductId(input.service.type, option.code);

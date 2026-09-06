@@ -373,13 +373,16 @@ export function customerProcedureDisplayName(serviceType: QuoteAndTechCardServic
 }
 
 /** One billable volume is used by the quote line, reservation and snapshot. */
-export function applyBillableQuantityToPrimaryFluid<T extends { productId: string; quantity: number; role?: string }>(rows: T[], billableQuantityLiters: number | null, transmission: boolean) {
-  if (!transmission || billableQuantityLiters == null) return rows;
+export function applyBillableQuantityToPrimaryFluid<T extends { productId: string; quantity: number; role?: string }>(rows: T[], billableQuantityLiters: number | null) {
+  if (billableQuantityLiters == null) return rows;
   const primaryIndex = rows.findIndex((row) => row.role === "fluid");
   const resolvedPrimaryIndex = primaryIndex >= 0 ? primaryIndex : rows.length === 1 ? 0 : -1;
   if (resolvedPrimaryIndex < 0) return rows;
   // An OEM reference is never a second primary fluid. Keep one sellable fluid
   // line and carry exactly the canonical billable amount into the calculator.
+  // This applies to motor oil just as it does to transmission fluid: a catalog
+  // card for a one-litre product must not turn a 5-litre service into a 1-litre
+  // calculation.
   return rows
     .filter((row, index) => index === resolvedPrimaryIndex || row.role !== "fluid")
     .map((row, index) => index === resolvedPrimaryIndex ? { ...row, quantity: billableQuantityLiters, role: "fluid" } : row);
