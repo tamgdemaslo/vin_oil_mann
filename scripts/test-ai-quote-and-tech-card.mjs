@@ -13,6 +13,7 @@ const {
   createQuoteAndTechCardPlan,
   customerMaterialDisplayName,
   customerMoneyFromCents,
+  ENGINE_OIL_FILTER_PRICE_PENDING_WARNING,
   normalizeQuoteAndTechCardInput,
   parseQuoteAndTechCardInput,
   parseQuoteAndTechCardArtifact,
@@ -30,6 +31,7 @@ const {
   assertLocalFirstInvariant,
   assertQuoteAndTechCardOptionIntegrity,
   assertServicePackageIntegrity,
+  canUsePreliminaryEngineOilQuoteWithoutFilter,
   classifyQuoteAndTechCardFailure,
   LocalFirstInvariantError,
   QuoteAndTechCardIntegrityError,
@@ -438,6 +440,14 @@ const enginePlan = createQuoteAndTechCardPlan({
 });
 const engineFluidLine = makeLine({ role: "fluid", type: "product", productId: "engine-oil", name: "Моторное масло PSA B71 2312", customerDisplayName: "Моторное масло 0W-30", quantity: 4, unitPriceCents: 150000 });
 const engineLaborLine = makeLine({ role: "labor", type: "labor", source: "labor_rule", name: "Работа: замена моторного масла", customerDisplayName: "Работа", quantity: 1, unitPriceCents: 0 });
+const engineFilterPendingPlan = createQuoteAndTechCardPlan({
+  vehicle: { id: "vehicle-octavia", displayName: "Škoda Octavia IV 1.0 TSI", aggregateCode: "DLAA", snapshot: {} },
+  service: { type: "engine_oil", name: "Замена моторного масла", requiredFluidSpec: "VW 508 00", standardTechnicalQuantityLiters: 5, filterAccess: "external_replaceable", serviceHardware: [], materialsOwner: "service" },
+  requestedProcedures: ["standard"], selectedProducts: [], consumables: [], rosskoItems: [], localCatalogChecked: true, fluidMissingLocally: false, softWarnings: [], evidence: [],
+});
+assert.equal(canUsePreliminaryEngineOilQuoteWithoutFilter("engine_oil", engineFilterPendingPlan.options[0].servicePackage, [engineFluidLine, engineLaborLine]), true, "engine-oil estimate can wait for an exact external filter only when the omission is explicit");
+assert.equal(canUsePreliminaryEngineOilQuoteWithoutFilter("automatic_transmission", engineFilterPendingPlan.options[0].servicePackage, [engineFluidLine, engineLaborLine]), false, "the engine-filter exception never relaxes a transmission package");
+assert.doesNotThrow(() => assertServicePackageIntegrity({ servicePackage: engineFilterPendingPlan.options[0].servicePackage, lines: [engineFluidLine, engineLaborLine] }, true), "a disclosed engine-oil subtotal remains usable before the VIN-specific filter is priced");
 const engineOption = {
   code: "standard", label: "Замена масла в двигателе", customerDisplayName: "Замена масла в двигателе", status: "ready",
   technicalQuantityLiters: 4, billableQuantityLiters: 4, quantityTrace: enginePlan.options[0].quantityTrace, servicePackage: enginePlan.options[0].servicePackage, materialSelectionTrace: { ...materialTrace, requiredSpecification: "PSA B71 2312", requiredQuantity: 4, selectedLocalCandidate: { ...evaluatedLocal.candidates[0], requiredQuantity: 4 } },
@@ -460,6 +470,18 @@ const engineTechCard = {
 const engineCustomerMessage = buildQuoteAndTechCardCustomerMessage({ vehicle: result.vehicle, quoteSet: engineQuoteSet, techCard: engineTechCard });
 const engineResult = parseQuoteAndTechCardResult({ scenario: "quote_and_tech_card", status: "ready", vehicle: result.vehicle, quoteSet: engineQuoteSet, techCard: engineTechCard, customerMessage: engineCustomerMessage, evidence: [{ source: "OEM", fact: "Двигатель требует PSA B71 2312, объём 4 л.", status: "confirmed", url: null }] });
 assert.ok(engineResult, "engine service keeps the same checked QuoteSet contract");
+const engineFilterPendingMessage = buildQuoteAndTechCardCustomerMessage({
+  vehicle: { displayName: "Škoda Octavia IV 1.0 TSI", aggregate: "DLAA" },
+  quoteSet: {
+    ...engineQuoteSet,
+    status: "preliminary",
+    confidence: "preliminary",
+    options: [{ ...engineOption, status: "preliminary", servicePackage: engineFilterPendingPlan.options[0].servicePackage, warnings: [ENGINE_OIL_FILTER_PRICE_PENDING_WARNING] }],
+  },
+  techCard: { ...engineTechCard, serviceName: "Замена моторного масла", requiredFluidSpec: "VW 508 00", filterPolicy: quoteAndTechCardFilterPolicy("external_replaceable"), filter: quoteAndTechCardFilterPolicy("external_replaceable") },
+});
+assert.match(engineFilterPendingMessage.text, /моторное масло с допуском VW 508 00/u, "engine customer text identifies motor oil rather than ATF");
+assert.match(engineFilterPendingMessage.text, /без масляного фильтра/u, "engine customer text makes the unpriced VIN-specific filter explicit");
 const bundleMessage = buildQuoteAndTechCardBundleCustomerMessage({ vehicle: result.vehicle, results: [engineResult, result] });
 assert.equal(bundleMessage.status, "ready", "a ready engine quote must not be lost beside a partial transmission tech card");
 assert.match(bundleMessage.text, /Замена масла в двигателе/u, "bundle customer text includes the engine service");

@@ -22,6 +22,7 @@ export const QuoteAndTechCardEvidenceSchema = z.object({
 export type QuoteAndTechCardEvidence = z.infer<typeof QuoteAndTechCardEvidenceSchema>;
 
 export const QUOTE_AND_TECH_CARD_FILTER_ACCESS = ["none", "external_replaceable", "pan_service", "integrated_with_pan", "internal_requires_disassembly", "unknown"] as const;
+export const ENGINE_OIL_FILTER_PRICE_PENDING_WARNING = "Предварительная сумма пока без масляного фильтра: его точный номер и цену подтвердим по VIN.";
 export const QuoteAndTechCardFilterPolicySchema = z.object({
   presence: z.enum(["present", "not_present", "unknown"]),
   access: z.enum(QUOTE_AND_TECH_CARD_FILTER_ACCESS),
@@ -762,6 +763,12 @@ function customerVehicleDisplayName(value: string) {
 
 function customerQuantity(value: number | null) { return value == null ? "—" : String(value); }
 
+function customerFluidRequirement(serviceType: QuoteAndTechCardResult["techCard"]["serviceType"], specification: string | null) {
+  if (!specification) return " подготовлен расчёт";
+  if (serviceType === "engine_oil") return ` требуется моторное масло с допуском ${specification}`;
+  return ` требуется жидкость спецификации ${specification}`;
+}
+
 export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCardResult, "vehicle" | "quoteSet" | "techCard">, mode: QuoteAndTechCardCustomerMessageMode = "detailed_with_price", recommendation: string | null = null): QuoteAndTechCardResult["customerMessage"] {
   const ready = input.quoteSet.options.filter((option) => option.status !== "blocked" && option.totalCents != null);
   if (!ready.length) { const blocker = input.quoteSet.hardBlockers[0] ?? input.quoteSet.options.flatMap((option) => option.blockers)[0]; return { status: "blocked", text: blocker ? `Чтобы подготовить расчёт для ${customerVehicleDisplayName(input.vehicle.displayName)}, нужно уточнить: ${blocker.requiredToContinue}` : `Для ${customerVehicleDisplayName(input.vehicle.displayName)} пока нельзя подготовить расчёт.` }; }
@@ -784,9 +791,10 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
   const vehicle = customerVehicleDisplayName(input.vehicle.displayName);
   const intro = mode === "only_final_price"
     ? `Стоимость обслуживания ${vehicle}:`
-    : `Добрый день! Для вашего ${vehicle}${input.techCard.requiredFluidSpec ? ` требуется ATF спецификации ${input.techCard.requiredFluidSpec}` : " подготовлен расчёт"}.`;
+    : `Добрый день! Для вашего ${vehicle}${customerFluidRequirement(input.techCard.serviceType, input.techCard.requiredFluidSpec)}.`;
   const preliminary = input.quoteSet.confidence === "preliminary" ? " Предварительная стоимость указана по текущим данным." : "";
   const filter = input.techCard.filterPolicy.tgmAction === "do_not_replace" && input.techCard.filterPolicy.presence === "present" ? input.techCard.filterPolicy.customerText : "";
+  const pendingEngineOilFilter = ready.some((option) => option.warnings.includes(ENGINE_OIL_FILTER_PRICE_PENDING_WARNING)) ? ENGINE_OIL_FILTER_PRICE_PENDING_WARNING : "";
   const machineCondition = ready.some((option) => option.servicePackage.diagnosticsRequired) ? "Перед аппаратной заменой сначала проведём диагностику коробки; при отсутствии противопоказаний сможем выполнить замену сразу." : "";
   const dates = input.quoteSet.requestedDates ? `Вы писали про ${input.quoteSet.requestedDates} — можем проверить свободное время.` : "Подберём удобное время и подтвердим запись.";
   // The recommendation action may not invent an upsell.  With no explicit
@@ -794,7 +802,7 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
   // condition for an аппаратная replacement.
   const safeRecommendation = recommendation ?? (mode === "recommendation" && ready.some((option) => option.code === "machine" || option.code === "machine_filter_service") ? "Рекомендуем начать с диагностики АКПП перед аппаратной заменой." : null);
   const recommendationText = mode === "recommendation" && safeRecommendation ? `Дополнительно: ${safeRecommendation}` : "";
-  return { status: "ready", text: [intro + preliminary, ...optionText, filter, machineCondition, recommendationText, dates].filter(Boolean).join("\n\n") };
+  return { status: "ready", text: [intro + preliminary, ...optionText, filter, pendingEngineOilFilter, machineCondition, recommendationText, dates].filter(Boolean).join("\n\n") };
 }
 
 /** A single customer message for several independently calculated services. */
@@ -822,6 +830,7 @@ export function buildQuoteAndTechCardBundleCustomerMessage(input: Pick<QuoteAndT
   }));
   const preliminary = readyCards.some(({ card }) => card.quoteSet.confidence === "preliminary") ? " Предварительная стоимость указана по текущим данным." : "";
   const filter = readyCards.map(({ card }) => card.techCard.filterPolicy.tgmAction === "do_not_replace" && card.techCard.filterPolicy.presence === "present" ? card.techCard.filterPolicy.customerText : "").filter(Boolean);
+  const pendingEngineOilFilter = readyCards.some(({ options }) => options.some((option) => option.warnings.includes(ENGINE_OIL_FILTER_PRICE_PENDING_WARNING))) ? ENGINE_OIL_FILTER_PRICE_PENDING_WARNING : "";
   const machineCondition = readyCards.some(({ options }) => options.some((option) => option.servicePackage.diagnosticsRequired)) ? "Перед аппаратной заменой сначала проведём диагностику коробки; при отсутствии противопоказаний сможем выполнить замену сразу." : "";
   const unresolvedServices = input.results
     .filter((card) => !readyCards.some((entry) => entry.card === card))
@@ -834,7 +843,7 @@ export function buildQuoteAndTechCardBundleCustomerMessage(input: Pick<QuoteAndT
   const recommendationText = mode === "recommendation" && recommendation ? `Дополнительно: ${recommendation}` : "";
   const vehicle = customerVehicleDisplayName(input.vehicle.displayName);
   const intro = mode === "only_final_price" ? `Стоимость обслуживания ${vehicle}:` : `Добрый день! Для вашего ${vehicle} подготовили расчёт по нескольким работам.`;
-  return { status: "ready", text: [intro + preliminary, ...sections, ...filter, machineCondition, ...unresolvedServices, recommendationText, dates].filter(Boolean).join("\n\n") };
+  return { status: "ready", text: [intro + preliminary, ...sections, ...filter, pendingEngineOilFilter, machineCondition, ...unresolvedServices, recommendationText, dates].filter(Boolean).join("\n\n") };
 }
 
 export function buildQuoteAndTechCardArtifactCustomerMessage(input: QuoteAndTechCardArtifact, mode: QuoteAndTechCardCustomerMessageMode = "detailed_with_price", recommendation: string | null = null) {

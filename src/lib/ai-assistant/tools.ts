@@ -10,7 +10,7 @@ import { classifyRosskoRuntimeFailure, type RosskoRuntimeFailureCode } from "@/l
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
 import { evaluatePreferredLocalFluid, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
-import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardProcedure, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
+import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, ENGINE_OIL_FILTER_PRICE_PENDING_WARNING, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardProcedure, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
 export type AssistantToolSource = {
@@ -969,11 +969,12 @@ export function assertQuoteAndTechCardOptionIntegrity(option: Pick<QuoteAndTechC
 }
 
 /** The customer-facing package may only promise parts that are actually quoted. */
-export function assertServicePackageIntegrity(option: Pick<QuoteAndTechCardQuoteOption, "servicePackage" | "lines">) {
+export function assertServicePackageIntegrity(option: Pick<QuoteAndTechCardQuoteOption, "servicePackage" | "lines">, allowUnpricedExternalFilter = false) {
   const requiredPart = option.servicePackage.requiredParts[0];
   if (requiredPart?.requiredForQuote) {
     const requiredRole = requiredPart.type === "integrated_pan" ? "pan" : "external_filter";
-    if (!option.lines.some((line) => line.role === requiredRole && !line.internalOnly)) {
+    const externalFilterAwaitingVin = allowUnpricedExternalFilter && requiredPart.type === "external_filter";
+    if (!externalFilterAwaitingVin && !option.lines.some((line) => line.role === requiredRole && !line.internalOnly)) {
       throw new QuoteAndTechCardIntegrityError(`Для сервиса с фильтром не подтверждена обязательная позиция «${requiredPart.type}»: фильтр или поддон, прокладка и крепёж должны быть подобраны и оценены вместе.`);
     }
   }
@@ -982,6 +983,22 @@ export function assertServicePackageIntegrity(option: Pick<QuoteAndTechCardQuote
   if (quotedHardware.length < requiredHardware.length) {
     throw new QuoteAndTechCardIntegrityError("Обязательный одноразовый крепёж или уплотнения отсутствуют в смете.");
   }
+}
+
+/**
+ * An engine-oil estimate may show the confirmed oil and labour before an
+ * exact external filter is available without a VIN. The unpriced filter is
+ * explicitly disclosed to the employee and customer; all transmission
+ * packages remain fail-closed until their complete service kit is quoted.
+ */
+export function canUsePreliminaryEngineOilQuoteWithoutFilter(
+  serviceType: QuoteAndTechCardInput["service"]["type"],
+  servicePackage: QuoteAndTechCardQuoteOption["servicePackage"],
+  lines: QuoteAndTechCardQuoteOption["lines"],
+) {
+  return serviceType === "engine_oil"
+    && servicePackage.requiredParts.some((part) => part.type === "external_filter" && part.requiredForQuote)
+    && !lines.some((line) => line.role === "external_filter" && !line.internalOnly);
 }
 
 function previousQuoteResultForService(previous: QuoteAndTechCardArtifact | null | undefined, serviceType: QuoteAndTechCardInput["service"]["type"]) {
@@ -1179,7 +1196,12 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       const supplierFluidWarning = lines.some((line) => line.role === "fluid" && line.source === "supplier")
         ? "Цена жидкости получена от поставщика: подтвердить наличие и срок поставки перед записью."
         : null;
-      const optionWarnings = uniqueWarnings([...plan.quoteWarnings, ...(supplierFluidWarning ? [supplierFluidWarning] : [])]);
+      const preliminaryEngineOilFilter = canUsePreliminaryEngineOilQuoteWithoutFilter(input.service.type, option.servicePackage, lines);
+      const optionWarnings = uniqueWarnings([
+        ...plan.quoteWarnings,
+        ...(supplierFluidWarning ? [supplierFluidWarning] : []),
+        ...(preliminaryEngineOilFilter ? [ENGINE_OIL_FILTER_PRICE_PENDING_WARNING] : []),
+      ]);
       const status = blockers.length ? "blocked" : optionWarnings.length ? "preliminary" : "ready";
       const maximum = object(quote.maximum);
       const selectionTrace = materialSelectionTrace(quote.materialSelectionTrace, lines);
@@ -1203,7 +1225,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       assertLocalFirstInvariant(selectionTrace, object(quote.materialSelectionTrace).originalOnlyOverride === true);
       if (status !== "blocked") {
         assertQuoteAndTechCardOptionIntegrity(quoteOption);
-        assertServicePackageIntegrity(quoteOption);
+        assertServicePackageIntegrity(quoteOption, preliminaryEngineOilFilter);
       }
       options.push(quoteOption);
       if (status !== "blocked") quoteSnapshots.push({ argumentsValue: quoteArgs, preview: quote });
