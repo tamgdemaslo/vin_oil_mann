@@ -19929,11 +19929,65 @@ select.eco-input::-ms-expand,
 
 .eco-records-drawer {
   display: flex;
-  width: min(760px, 100vw);
+  width: min(840px, 100vw);
   height: 100%;
   flex-direction: column;
   background: var(--eco-surface);
   box-shadow: -18px 0 48px rgba(15, 23, 42, 0.18);
+}
+
+.eco-records-form-summary {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1.1fr 1.5fr 1fr 0.8fr 1.6fr;
+  gap: 1px;
+  padding: 0 18px 12px;
+  background: var(--eco-surface);
+  border-bottom: 1px solid var(--eco-line);
+}
+
+.eco-records-form-summary > span {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 9px 10px;
+  background: var(--eco-surface-sunk);
+  border-left: 2px solid transparent;
+}
+
+.eco-records-form-summary small {
+  color: var(--eco-muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.eco-records-form-summary strong {
+  overflow: hidden;
+  color: var(--eco-ink);
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+}
+
+.eco-records-form-summary .is-check.is-ok {
+  color: var(--eco-success);
+  background: var(--eco-success-tint);
+  border-left-color: var(--eco-success);
+}
+
+.eco-records-form-summary .is-check.is-bad {
+  color: var(--eco-warning);
+  background: var(--eco-warning-tint);
+  border-left-color: var(--eco-warning);
+}
+
+.eco-records-form-summary .is-check strong {
+  color: currentColor;
 }
 
 .eco-records-drawer-head {
@@ -20106,6 +20160,92 @@ select.eco-input::-ms-expand,
 .eco-records-service-picker {
   max-height: 246px;
   overflow: auto;
+}
+
+.eco-records-selected-services,
+.eco-records-vehicle-options {
+  display: grid;
+  gap: 7px;
+  margin: 9px 0 12px;
+}
+
+.eco-records-selected-services {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.eco-records-selected-services button,
+.eco-records-vehicle-options button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 9px;
+  color: var(--eco-ink-2);
+  background: var(--eco-surface-sunk);
+  border: 1px solid var(--eco-line);
+  border-radius: 5px;
+  text-align: left;
+}
+
+.eco-records-selected-services button span,
+.eco-records-vehicle-options button span {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.eco-records-selected-services button > span {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-records-selected-services button small,
+.eco-records-vehicle-options button small {
+  color: var(--eco-muted);
+  font-size: 10px;
+}
+
+.eco-records-vehicle-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.eco-records-vehicle-options button.is-selected {
+  color: var(--eco-rust);
+  background: var(--eco-rust-tint);
+  border-color: rgba(194, 65, 12, 0.35);
+}
+
+.eco-records-additional {
+  padding: 12px;
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line);
+  border-radius: 6px;
+}
+
+.eco-records-additional summary {
+  color: var(--eco-ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.eco-records-additional[open] summary {
+  margin-bottom: 12px;
+}
+
+.eco-records-additional > label + label {
+  margin-top: 10px;
+}
+
+.eco-records-additional-status {
+  margin-top: 12px;
+  padding: 12px 0 0 !important;
+  border: 0 !important;
+  border-top: 1px solid var(--eco-line) !important;
 }
 
 .eco-records-client-field {
@@ -32382,7 +32522,8 @@ select.eco-input::-ms-expand,
   }
 
   .eco-records-form-grid,
-  .eco-records-status-picker {
+  .eco-records-status-picker,
+  .eco-records-form-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -32744,7 +32885,10 @@ select.eco-input::-ms-expand,
   }
 
   .eco-records-form-grid,
-  .eco-records-status-picker {
+  .eco-records-status-picker,
+  .eco-records-form-summary,
+  .eco-records-selected-services,
+  .eco-records-vehicle-options {
     grid-template-columns: 1fr;
   }
 
@@ -53095,14 +53239,21 @@ html.tgm-print-active .tgm-client-report .qr {
 
 .eco-shipment-new-page .eco-shipment-visit-summary {
   display: grid;
-  gap: 6px;
+  gap: 10px;
   padding: 12px 14px;
   background: #f7f6f2;
   border: 1px solid var(--shipment-border);
   border-radius: 8px;
 }
 
-.eco-shipment-new-page .eco-shipment-visit-summary > span {
+.eco-shipment-new-page .eco-shipment-visit-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-summary-head > span {
   color: var(--shipment-faint);
   font-size: 10px;
   font-weight: 850;
@@ -53110,68 +53261,82 @@ html.tgm-print-active .tgm-client-report .qr {
   text-transform: uppercase;
 }
 
-.eco-shipment-new-page .eco-shipment-visit-summary > div {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 7px 12px;
-}
-
-.eco-shipment-new-page .eco-shipment-visit-summary strong {
-  color: var(--shipment-text);
-  font-size: 14px;
+.eco-shipment-new-page .eco-shipment-visit-summary-head > small {
+  color: #2d7650;
+  font-size: 10px;
   font-weight: 800;
 }
 
-.eco-shipment-new-page .eco-shipment-visit-summary b,
-.eco-shipment-new-page .eco-shipment-visit-summary em {
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 800;
+.eco-shipment-new-page .eco-shipment-visit-inline-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.eco-shipment-new-page .eco-shipment-visit-summary b {
-  color: #245d3e;
+.eco-shipment-new-page .eco-shipment-visit-inline-fields > label.is-oil {
+  grid-column: 1 / -1;
 }
 
-.eco-shipment-new-page .eco-shipment-visit-summary em {
-  padding: 3px 6px;
+.eco-shipment-new-page .eco-shipment-visit-inline-fields > label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-inline-fields > label > span {
   color: var(--shipment-text-soft);
-  background: #ebe7df;
-  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 750;
 }
 
-.eco-shipment-new-page .eco-shipment-visit-warning {
-  color: #8a4b08 !important;
-  font-weight: 750 !important;
+.eco-shipment-new-page .eco-shipment-visit-inline-fields input.eco-input,
+.eco-shipment-new-page .eco-shipment-visit-oil-choice select.eco-input {
+  width: 100%;
+  height: 40px !important;
+  min-height: 40px !important;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.eco-shipment-new-page .eco-shipment-visit-fieldset {
-  padding-bottom: 16px;
+.eco-shipment-new-page .eco-shipment-visit-volume-input {
+  position: relative;
 }
 
-.eco-shipment-new-page .eco-shipment-visit-oil-tools {
+.eco-shipment-new-page .eco-shipment-visit-volume-input input.eco-input {
+  padding-right: 30px;
+}
+
+.eco-shipment-new-page .eco-shipment-visit-volume-input > span {
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  color: var(--shipment-text-soft);
+  font-size: 12px;
+  font-weight: 800;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.eco-shipment-new-page .eco-shipment-visit-inline-meta {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 10px;
 }
 
-.eco-shipment-new-page .eco-shipment-visit-oil-note,
+.eco-shipment-new-page .eco-shipment-visit-inline-meta > span {
+  color: var(--shipment-text-soft);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
 .eco-shipment-new-page .eco-shipment-visit-oil-choice > span {
   color: var(--shipment-text-soft);
   font-size: 11px;
   font-weight: 650;
   line-height: 1.4;
-}
-
-.eco-shipment-new-page .eco-shipment-visit-oil-note.is-success {
-  color: #245d3e;
-}
-
-.eco-shipment-new-page .eco-shipment-visit-oil-note.is-recommendation {
-  color: #74511b;
 }
 
 .eco-shipment-new-page .eco-shipment-visit-oil-choice {
@@ -53296,7 +53461,15 @@ html.tgm-print-active .tgm-client-report .qr {
 }
 
 @media (max-width: 640px) {
-  .eco-shipment-new-page .eco-shipment-visit-oil-tools {
+  .eco-shipment-new-page .eco-shipment-visit-inline-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-shipment-new-page .eco-shipment-visit-inline-fields > label.is-oil {
+    grid-column: auto;
+  }
+
+  .eco-shipment-new-page .eco-shipment-visit-inline-meta {
     align-items: stretch;
     flex-direction: column;
   }

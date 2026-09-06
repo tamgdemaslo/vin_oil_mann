@@ -23,7 +23,7 @@ export async function POST(request: NextRequest, context: Context) {
   const originError = rejectDisallowedPublicOrigin(request);
   if (originError) return originError;
   const rate = checkPublicRateLimit(request, "booking-manage-cancel", getPublicBookingWriteLimitPerHour());
-  if (!rate.ok) return publicJson(request, { error: "Слишком много попыток" }, { status: 429, headers: rateLimitHeaders(rate) });
+  if (!rate.ok) return publicJson(request, { error: "Слишком много попыток", code: "booking_rate_limited" }, { status: 429, headers: rateLimitHeaders(rate) });
   try {
     const { token } = await context.params;
     const current = await getBookingByManagementToken(token);

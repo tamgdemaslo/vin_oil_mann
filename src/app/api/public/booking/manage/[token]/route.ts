@@ -21,7 +21,7 @@ export async function GET(request: NextRequest, context: Context) {
   const originError = rejectDisallowedPublicOrigin(request);
   if (originError) return originError;
   const rate = checkPublicRateLimit(request, "booking-manage-read", Math.min(getPublicBookingReadLimitPerHour(), 80));
-  if (!rate.ok) return publicJson(request, { error: "Слишком много запросов" }, { status: 429, headers: rateLimitHeaders(rate) });
+  if (!rate.ok) return publicJson(request, { error: "Слишком много запросов", code: "booking_rate_limited" }, { status: 429, headers: rateLimitHeaders(rate) });
   try {
     const { token } = await context.params;
     const booking = await getBookingByManagementToken(token);

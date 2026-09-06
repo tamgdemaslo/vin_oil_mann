@@ -5,7 +5,8 @@ import { isCatalogBookingServiceId } from "@/lib/booking/catalog-services";
 import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
 import { DEFAULT_BOOKING_STEP_MINUTES, DEFAULT_BOOKING_WORKING_HOURS } from "@/lib/booking/defaults";
 import { bookingErrorPayload, BookingError } from "@/lib/booking/errors";
-import { assertLocalTime } from "@/lib/booking/timezone";
+import { getBookingAvailability } from "@/lib/booking/availability";
+import { addLocalDays, assertLocalTime, formatLocalDate } from "@/lib/booking/timezone";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
 
@@ -64,7 +65,32 @@ export async function GET() {
           take: 1_000,
         }),
       ]);
-      return { settings, branchHours, services, memberships, exceptions };
+      const publishedServices = services.filter((service) => service.status === "ACTIVE" && service.onlineBookingEnabled);
+      let availableWindowCount = 0;
+      if (publishedServices[0]) {
+        const today = formatLocalDate(new Date(), access.context.branch?.timezone ?? "Europe/Moscow");
+        for (let offset = 0; offset < 14 && availableWindowCount === 0; offset += 1) {
+          const availability = await getBookingAvailability({
+            branchId,
+            localDate: addLocalDays(today, offset),
+            serviceIds: [publishedServices[0].id],
+            onlineOnly: false,
+            respectLeadTime: false,
+          });
+          availableWindowCount += availability.slots.length;
+        }
+      }
+      const assignedMasters = memberships.filter((membership) => membership.bookingServices.length > 0);
+      const mastersWithHours = memberships.filter((membership) => membership.bookingHours.length > 0);
+      const checks = [
+        { code: "branch_hours", label: "Часы филиала", ok: branchHours.length === 7, message: branchHours.length === 7 ? "Настроены все 7 дней" : "Часы ещё не сохранены", action: "general" as const },
+        { code: "active_masters", label: "Активные мастера", ok: memberships.length > 0, message: memberships.length ? `${memberships.length} активных` : "Нет сотрудников с ролью «Мастер»", action: "masters" as const },
+        { code: "assignments", label: "Назначения услуг", ok: assignedMasters.length > 0, message: assignedMasters.length ? `${assignedMasters.length} мастеров с услугами` : "Услуги не назначены мастерам", action: "masters" as const },
+        { code: "master_hours", label: "Графики мастеров", ok: mastersWithHours.length > 0, message: mastersWithHours.length ? `${mastersWithHours.length} индивидуальных графиков` : "Используются общие часы филиала", action: "masters" as const },
+        { code: "published_services", label: "Опубликованные услуги", ok: publishedServices.length > 0, message: publishedServices.length ? `${publishedServices.length} доступны онлайн` : "Нет опубликованных услуг", action: "services" as const },
+        { code: "available_windows", label: "Доступные окна", ok: availableWindowCount > 0, message: availableWindowCount ? `${availableWindowCount} окон найдено в ближайшие 14 дней` : "Свободные окна не найдены", action: "masters" as const },
+      ];
+      return { settings, branchHours, services, memberships, exceptions, readiness: { ready: checks.every((item) => item.ok), availableWindowCount, checks } };
     });
     return NextResponse.json({
       branch: access.context.branch,
@@ -93,6 +119,7 @@ export async function GET() {
         workingHours: membership.bookingHours,
       })),
       exceptions: state.exceptions,
+      readiness: state.readiness,
     });
   } catch (error) {
     const failure = bookingErrorPayload(error);

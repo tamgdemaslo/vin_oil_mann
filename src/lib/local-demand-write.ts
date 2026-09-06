@@ -128,6 +128,7 @@ export type ReopenDemandBody = {
 };
 
 export type CreateDemandFromRecordBody = {
+  bookingId?: string | null;
   recordId?: string | number | null;
   recordDateTime?: string | null;
   recordSource?: string | null;
@@ -1252,13 +1253,14 @@ async function findLocalDemand(id: string, branchId: string) {
   });
 }
 
-async function findDefaultRecordShipmentContext(tx: Prisma.TransactionClient) {
+async function findDefaultRecordShipmentContext(tx: Prisma.TransactionClient, branchId: string, organizationId: string) {
   const organization = await tx.localOrganization.findFirst({
-    where: { isActive: true },
+    where: { id: organizationId, isActive: true },
     orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
   });
   const store = await tx.localStore.findFirst({
     where: {
+      branchId,
       archived: false,
       ...(organization ? { OR: [{ organizationId: organization.id }, { organizationId: null }] } : {}),
     },
@@ -1267,7 +1269,7 @@ async function findDefaultRecordShipmentContext(tx: Prisma.TransactionClient) {
   return { organization, store };
 }
 
-async function findRecordCounterparty(tx: Prisma.TransactionClient, input: CreateDemandFromRecordBody) {
+async function findRecordCounterparty(tx: Prisma.TransactionClient, input: CreateDemandFromRecordBody, branchId: string) {
   const mode = Prisma.QueryMode.insensitive;
   const phone = cleanRecordText(input.clientPhone);
   const normalizedPhone = normalizePhoneKey(phone);
@@ -1282,6 +1284,7 @@ async function findRecordCounterparty(tx: Prisma.TransactionClient, input: Creat
   if (normalizedPhone) {
     const byPhone = await tx.localCounterparty.findFirst({
       where: {
+        branchId,
         archived: false,
         OR: [
           { normalizedPhone },
@@ -1298,6 +1301,7 @@ async function findRecordCounterparty(tx: Prisma.TransactionClient, input: Creat
   for (const key of externalKeys) {
     const byExternal = await tx.localCounterparty.findFirst({
       where: {
+        branchId,
         archived: false,
         searchText: { contains: key, mode },
       },
@@ -1309,6 +1313,7 @@ async function findRecordCounterparty(tx: Prisma.TransactionClient, input: Creat
   if (clientName && phone) {
     return tx.localCounterparty.findFirst({
       where: {
+        branchId,
         archived: false,
         name: { equals: clientName, mode },
         OR: [
@@ -1387,8 +1392,8 @@ function recordCounterpartySearchText(input: CreateDemandFromRecordBody, values:
   ]);
 }
 
-async function resolveRecordCounterparty(tx: Prisma.TransactionClient, input: CreateDemandFromRecordBody) {
-  const existing = await findRecordCounterparty(tx, input);
+async function resolveRecordCounterparty(tx: Prisma.TransactionClient, input: CreateDemandFromRecordBody, branchId: string) {
+  const existing = await findRecordCounterparty(tx, input, branchId);
   const phone = cleanRecordText(input.clientPhone);
   const normalizedPhone = normalizePhoneKey(phone);
   const email = cleanRecordText(input.clientEmail);
@@ -1401,6 +1406,7 @@ async function resolveRecordCounterparty(tx: Prisma.TransactionClient, input: Cr
     const counterpartyTypeName = "Клиент из журнала записей";
     const created = await tx.localCounterparty.create({
       data: {
+        branchId,
         name,
         phone: phone || null,
         email: email || null,
@@ -1431,7 +1437,7 @@ async function resolveRecordCounterparty(tx: Prisma.TransactionClient, input: Cr
   const companyType = existing.companyType || "individual";
   const counterpartyTypeName = existing.counterpartyTypeName || "Клиент из журнала записей";
   const updated = await tx.localCounterparty.update({
-    where: { id: existing.id },
+    where: { branchId_id: { branchId, id: existing.id } },
     data: {
       phone: nextPhone,
       email: nextEmail,
@@ -1485,20 +1491,62 @@ export async function createLocalDemandFromRecord(
   input: CreateDemandFromRecordBody,
   options?: { ecoUserName?: string }
 ): Promise<
-  | { ok: true; id: string; name: string; href: string; counterpartyId: string; counterpartyCreated: boolean }
+  | { ok: true; id: string; name: string; href: string; counterpartyId: string; counterpartyCreated: boolean; alreadyExists: boolean }
   | { ok: false; error: string }
 > {
-  const moment = parseMoment(cleanRecordText(input.recordDateTime) || undefined);
-  const description = buildRecordDemandDescription(input);
-  const localAttributes = await buildLocalDemandAttributes(recordDemandAttributeInput(input), options?.ecoUserName);
-
   try {
+    const scope = await resolveDemandBranchScope();
+    const bookingId = cleanRecordText(input.bookingId);
+    const booking = bookingId ? await prisma.booking.findFirst({
+      where: { id: bookingId, branchId: scope.branchId },
+      include: { client: true, vehicle: true, serviceItems: { orderBy: { sortOrder: "asc" } } },
+    }) : null;
+    if (bookingId && !booking) throw new Error("Запись не найдена в активном филиале");
+    const effectiveInput: CreateDemandFromRecordBody = booking ? {
+      ...input,
+      bookingId: booking.id,
+      recordId: booking.id,
+      recordDateTime: booking.startsAt.toISOString(),
+      recordSource: booking.source,
+      clientName: booking.customerName,
+      clientPhone: booking.phone,
+      clientEmail: booking.email,
+      clientExternalId: booking.clientId,
+      vehicle: booking.vehicle ? {
+        model: [booking.vehicle.make, booking.vehicle.model].filter(Boolean).join(" "),
+        plate: booking.vehicle.plate,
+        vin: booking.vehicle.vin,
+        year: booking.vehicle.year ? String(booking.vehicle.year) : null,
+      } : input.vehicle,
+      comment: booking.comment,
+      internalComment: booking.internalComment,
+      services: booking.serviceItems.map((item) => item.serviceNameSnapshot),
+    } : input;
+    const moment = parseMoment(cleanRecordText(effectiveInput.recordDateTime) || undefined);
+    const description = buildRecordDemandDescription(effectiveInput);
+    const localAttributes = await buildLocalDemandAttributes(recordDemandAttributeInput(effectiveInput), options?.ecoUserName);
+
     const result = await prisma.$transaction(async (tx) => {
-      const { organization, store } = await findDefaultRecordShipmentContext(tx);
+      if (bookingId) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`booking-demand:${scope.branchId}:${bookingId}`}, 0))`;
+        const existing = await tx.localDemand.findFirst({
+          where: { branchId: scope.branchId, OR: [
+            { raw: { path: ["sourceRecord", "bookingId"], equals: bookingId } },
+            { raw: { path: ["sourceRecord", "id"], equals: bookingId } },
+          ] },
+        });
+        if (existing) return {
+          demand: existing,
+          counterpartyId: existing.counterpartyId ?? "",
+          counterpartyCreated: false,
+          alreadyExists: true,
+        };
+      }
+      const { organization, store } = await findDefaultRecordShipmentContext(tx, scope.branchId, scope.organizationId);
       if (!organization) throw new Error("Организация не найдена в локальной БД. Запустите импорт или seed.");
       if (!store) throw new Error("Склад не найден в локальной БД. Запустите импорт складского зеркала.");
 
-      const resolved = await resolveRecordCounterparty(tx, input);
+      const resolved = await resolveRecordCounterparty(tx, effectiveInput, scope.branchId);
       const generatedNumber = await nextLocalDemandNameInTx(tx);
       const name = generatedNumber.name;
       const raw = {
@@ -1506,11 +1554,13 @@ export async function createLocalDemandFromRecord(
         documentNumberScheme: LOCAL_DEMAND_NUMBER_SCHEME,
         documentNumberSequence: generatedNumber.sequence,
         sourceRecord: {
-          id: cleanRecordText(input.recordId) || null,
-          datetime: cleanRecordText(input.recordDateTime) || null,
-          source: cleanRecordText(input.recordSource) || null,
-          sourceLabel: cleanRecordText(input.sourceLabel) || null,
-          services: (input.services ?? []).map(cleanRecordText).filter(Boolean),
+          id: cleanRecordText(effectiveInput.recordId) || null,
+          bookingId: bookingId || null,
+          branchId: scope.branchId,
+          datetime: cleanRecordText(effectiveInput.recordDateTime) || null,
+          source: cleanRecordText(effectiveInput.recordSource) || null,
+          sourceLabel: cleanRecordText(effectiveInput.sourceLabel) || null,
+          services: (effectiveInput.services ?? []).map(cleanRecordText).filter(Boolean),
         },
         counterpartyId: resolved.counterparty.id,
         ecoUserName: options?.ecoUserName ?? null,
@@ -1518,6 +1568,7 @@ export async function createLocalDemandFromRecord(
 
       const demand = await tx.localDemand.create({
         data: {
+          branchId: scope.branchId,
           name,
           momentAt: moment.momentAt,
           documentDate: moment.documentDate,
@@ -1549,6 +1600,7 @@ export async function createLocalDemandFromRecord(
         demand,
         counterpartyId: resolved.counterparty.id,
         counterpartyCreated: resolved.created,
+        alreadyExists: false,
       };
     });
 
@@ -1562,10 +1614,26 @@ export async function createLocalDemandFromRecord(
       href: `local://demand/${result.demand.id}`,
       counterpartyId: result.counterpartyId,
       counterpartyCreated: result.counterpartyCreated,
+      alreadyExists: result.alreadyExists,
     };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Не удалось создать отгрузку из записи" };
   }
+}
+
+export async function findLocalDemandFromBooking(bookingIdValue: unknown) {
+  const bookingId = cleanRecordText(bookingIdValue);
+  if (!bookingId) return null;
+  const scope = await resolveDemandBranchScope();
+  const booking = await prisma.booking.findFirst({ where: { id: bookingId, branchId: scope.branchId }, select: { id: true } });
+  if (!booking) return null;
+  return prisma.localDemand.findFirst({
+    where: { branchId: scope.branchId, OR: [
+      { raw: { path: ["sourceRecord", "bookingId"], equals: bookingId } },
+      { raw: { path: ["sourceRecord", "id"], equals: bookingId } },
+    ] },
+    select: { id: true, name: true, documentDate: true, momentAt: true, sumCents: true, applicable: true },
+  });
 }
 
 export async function linkLocalDemandToAppointment(

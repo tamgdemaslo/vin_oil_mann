@@ -5,6 +5,7 @@ import {
   createLocalAdminCounterparty,
   listLocalAdminCounterparties,
 } from "@/lib/local-inventory-admin";
+import { prisma } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -25,8 +26,7 @@ export async function GET(request: NextRequest) {
   const sort = request.nextUrl.searchParams.get("sort") ?? undefined;
   const direction = request.nextUrl.searchParams.get("direction") ?? undefined;
 
-  return NextResponse.json(
-    await listLocalAdminCounterparties({
+  const result = await listLocalAdminCounterparties({
       branchId: branchAccess.context.branchId!,
       search,
       limit,
@@ -39,8 +39,26 @@ export async function GET(request: NextRequest) {
       shipments,
       sort,
       direction,
-    })
-  );
+    });
+  if (request.nextUrl.searchParams.get("includeVehicles") !== "1") {
+    return NextResponse.json(result);
+  }
+  const ids = result.counterparties.map((item) => item.id);
+  const vehicles = ids.length ? await prisma.clientVehicle.findMany({
+    where: { branchId: branchAccess.context.branchId!, counterpartyId: { in: ids }, status: "ACTIVE" },
+    select: { id: true, counterpartyId: true, make: true, model: true, generation: true, year: true, plate: true, vin: true },
+    orderBy: { updatedAt: "desc" },
+  }) : [];
+  const byClient = new Map<string, typeof vehicles>();
+  for (const vehicle of vehicles) {
+    const rows = byClient.get(vehicle.counterpartyId) ?? [];
+    rows.push(vehicle);
+    byClient.set(vehicle.counterpartyId, rows);
+  }
+  return NextResponse.json({
+    ...result,
+    counterparties: result.counterparties.map((item) => ({ ...item, vehicles: byClient.get(item.id) ?? [] })),
+  });
 }
 
 export async function POST(request: NextRequest) {

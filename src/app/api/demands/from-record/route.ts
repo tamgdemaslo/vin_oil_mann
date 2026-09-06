@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { createLocalDemandFromRecord, type CreateDemandFromRecordBody } from "@/lib/local-demand-write";
+import { createLocalDemandFromRecord, findLocalDemandFromBooking, type CreateDemandFromRecordBody } from "@/lib/local-demand-write";
+
+export async function GET(request: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const bookingId = request.nextUrl.searchParams.get("bookingId");
+  const demand = await findLocalDemandFromBooking(bookingId);
+  return NextResponse.json({ demand });
+}
 
 export async function POST(request: NextRequest) {
   const session = await getSession();

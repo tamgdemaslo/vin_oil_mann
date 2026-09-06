@@ -22,7 +22,18 @@ function tenantFor(booking: BookingWithDetails) {
 }
 
 function contextFor(booking: BookingWithDetails, managementUrl?: string | null): NotificationEventContext {
-  const vehicle = booking.vehicle;
+  const snapshot = booking.vehicleSnapshot && typeof booking.vehicleSnapshot === "object" && !Array.isArray(booking.vehicleSnapshot)
+    ? booking.vehicleSnapshot as Record<string, unknown>
+    : {};
+  const vehicle = booking.vehicle ? {
+    make: booking.vehicle.make,
+    model: booking.vehicle.model,
+    plate: booking.vehicle.plate,
+  } : {
+    make: typeof snapshot.make === "string" ? snapshot.make : null,
+    model: typeof snapshot.model === "string" ? snapshot.model : null,
+    plate: typeof snapshot.plate === "string" ? snapshot.plate : null,
+  };
   return {
     clientId: booking.clientId,
     clientName: booking.customerName,
@@ -59,7 +70,7 @@ function contextFor(booking: BookingWithDetails, managementUrl?: string | null):
 
 export async function notifyBookingCreated(booking: BookingWithDetails, managementUrl?: string | null) {
   return runWithRequestTenant(tenantFor(booking), async () => {
-    await handleAppointmentCreated({
+    return handleAppointmentCreated({
       ...contextFor(booking, managementUrl),
       source: booking.source === "PUBLIC" ? "client" : "admin",
     });
@@ -70,8 +81,9 @@ export async function notifyBookingRescheduled(booking: BookingWithDetails, mana
   return runWithRequestTenant(tenantFor(booking), async () => {
     const context = contextFor(booking, managementUrl);
     await handleAppointmentUpdated(context);
-    await enqueueClientNotificationEvent("appointment_rescheduled", context);
-    await processDueClientNotificationJobs(10);
+    const rescheduled = await enqueueClientNotificationEvent("appointment_rescheduled", context);
+    const processed = await processDueClientNotificationJobs(10);
+    return { rescheduled, processed };
   });
 }
 

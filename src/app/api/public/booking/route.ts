@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { bookingDto } from "@/lib/booking/dto";
+import { publicManagedBookingDto } from "@/lib/booking/dto";
 import { bookingErrorPayload } from "@/lib/booking/errors";
 import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingCreated } from "@/lib/booking/notifications";
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   const originError = rejectDisallowedPublicOrigin(request);
   if (originError) return originError;
   const rate = checkPublicRateLimit(request, "booking-create", getPublicBookingWriteLimitPerHour());
-  if (!rate.ok) return publicJson(request, { error: "Слишком много попыток записи. Попробуйте позже." }, { status: 429, headers: rateLimitHeaders(rate) });
+  if (!rate.ok) return publicJson(request, { error: "Слишком много попыток записи. Попробуйте позже.", code: "booking_rate_limited" }, { status: 429, headers: rateLimitHeaders(rate) });
   try {
     const body = await request.json().catch(() => null) as (CreateBookingInput & Record<string, unknown>) | null;
     if (!body || hasLeadHoneypot(body)) {
@@ -39,18 +39,37 @@ export async function POST(request: NextRequest) {
       // Public callers never select a CRM row directly; the service resolves the
       // exact normalized phone inside the branch and handles ambiguous matches safely.
       clientId: null,
-      vehicleId: typeof body.vehicleId === "string" ? body.vehicleId : null,
+      vehicleId: null,
       vehicle: body.vehicle && typeof body.vehicle === "object" ? body.vehicle : null,
       comment: typeof body.comment === "string" ? body.comment : null,
+      idempotencyKey: typeof body.idempotencyKey === "string" ? body.idempotencyKey : null,
       source: "PUBLIC",
     }, { kind: "PUBLIC", respectLeadTime: true });
     const managementUrl = buildBookingManagementUrl(request, result.managementToken);
-    await notifyBookingCreated(result.booking, managementUrl).catch((error) => console.warn("[booking/notification-created]", error));
+    let notification: { state: "DELIVERED" | "QUEUED" | "NOT_CONFIRMED" | "NOT_AVAILABLE" } = { state: "NOT_CONFIRMED" };
+    if (!result.reused) {
+      try {
+        const outcome = await notifyBookingCreated(result.booking, managementUrl);
+        const immediateIds = new Set(outcome.immediate.filter((item) => item.created && item.id).map((item) => item.id));
+        const immediateResults = outcome.processed.filter((item) => immediateIds.has(item.id));
+        notification = immediateResults.some((item) => item.status === "sent")
+          ? { state: "DELIVERED" }
+          : outcome.immediate.some((item) => item.created)
+            ? immediateResults.length
+              ? { state: "NOT_CONFIRMED" }
+              : { state: "QUEUED" }
+            : { state: "NOT_AVAILABLE" };
+      } catch (error) {
+        console.warn("[booking/notification-created]", error);
+      }
+    }
     return publicJson(request, {
       ok: true,
-      booking: bookingDto(result.booking),
+      booking: publicManagedBookingDto(result.booking),
       managementUrl,
-    }, { status: 201, headers: rateLimitHeaders(rate) });
+      reused: result.reused,
+      notification,
+    }, { status: result.reused ? 200 : 201, headers: rateLimitHeaders(rate) });
   } catch (error) {
     const failure = bookingErrorPayload(error);
     return publicJson(request, failure.body, { status: failure.status, headers: rateLimitHeaders(rate) });

@@ -4,7 +4,7 @@ import { bookingViewIsSelfOnly, canManageBookings, canViewBookings, canOverrideB
 import { bookingErrorPayload, BookingError } from "@/lib/booking/errors";
 import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingCreated } from "@/lib/booking/notifications";
-import { BOOKING_INCLUDE, createBooking, type CreateBookingInput } from "@/lib/booking/service";
+import { BOOKING_INCLUDE, createBooking, type BookingOverrideReason, type CreateBookingInput } from "@/lib/booking/service";
 import { addLocalDays, localDateUtcRange } from "@/lib/booking/timezone";
 import { readableBranchIds, requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
@@ -13,6 +13,10 @@ function parsedDate(value: string | null, fallback: Date) {
   if (!value) return fallback;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+
+function bookingOverrideReason(value: unknown): BookingOverrideReason | null {
+  return value === "slot_taken" || value === "outside_schedule" || value === "nonstandard_start" ? value : null;
 }
 
 export async function GET(request: NextRequest) {
@@ -25,6 +29,7 @@ export async function GET(request: NextRequest) {
     const from = parsedDate(request.nextUrl.searchParams.get("from"), new Date(now.getTime() - 24 * 60 * 60_000));
     const to = parsedDate(request.nextUrl.searchParams.get("to"), new Date(now.getTime() + 31 * 24 * 60 * 60_000));
     const masterMembershipId = request.nextUrl.searchParams.get("masterMembershipId")?.trim() || null;
+    const confirmationState = request.nextUrl.searchParams.get("confirmationState")?.trim() || null;
     const requestedBranchId = request.nextUrl.searchParams.get("branchId")?.trim() || null;
     if (requestedBranchId && !branchIds.includes(requestedBranchId)) {
       throw new BookingError("Филиал недоступен", "booking_branch_access_denied", 403);
@@ -54,6 +59,7 @@ export async function GET(request: NextRequest) {
         branchId: { in: scopedIds },
         ...(branchDateRanges ? { OR: branchDateRanges } : { startsAt: { lt: to }, endsAt: { gt: from } }),
         ...(visibleMasterMembershipId ? { masterMembershipId: visibleMasterMembershipId } : {}),
+        ...(confirmationState === "PENDING" ? { status: "ACTIVE", confirmationState: "PENDING" } : {}),
       },
       include: BOOKING_INCLUDE,
       orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
@@ -88,6 +94,7 @@ export async function POST(request: NextRequest) {
       internalComment: typeof body.internalComment === "string" ? body.internalComment : null,
       source: "ADMIN",
       overrideConflict: body.overrideConflict === true,
+      overrideReason: bookingOverrideReason(body.overrideReason),
     }, {
       kind: "USER",
       userId: access.context.userId,

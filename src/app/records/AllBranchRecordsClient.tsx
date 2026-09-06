@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, CalendarDays, Clock3, Filter, ShieldCheck, Wrench } from "lucide-react";
+import { BellRing, Building2, CalendarDays, Clock3, Filter, ShieldCheck, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./all-branches.module.css";
 
@@ -21,12 +21,12 @@ type Booking = {
 };
 
 function dateInput(value = new Date()) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
 }
 
 function addDays(value: string, days: number) {
-  const date = new Date(`${value}T12:00:00`);
-  date.setDate(date.getDate() + days);
+  const date = new Date(`${value}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
   return dateInput(date);
 }
 
@@ -34,7 +34,9 @@ export default function AllBranchRecordsClient({ branches }: { branches: Branch[
   const [from, setFrom] = useState(dateInput());
   const [to, setTo] = useState(addDays(dateInput(), 7));
   const [branchId, setBranchId] = useState("all");
+  const [pendingOnly, setPendingOnly] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -43,10 +45,11 @@ export default function AllBranchRecordsClient({ branches }: { branches: Branch[
     setError("");
     try {
       const params = new URLSearchParams({
-        localFrom: from,
-        localTo: to,
+        localFrom: pendingOnly ? dateInput() : from,
+        localTo: pendingOnly ? addDays(dateInput(), 60) : to,
       });
       if (branchId !== "all") params.set("branchId", branchId);
+      if (pendingOnly) params.set("confirmationState", "PENDING");
       const response = await fetch(`/api/bookings?${params}`, { cache: "no-store" });
       const body = await response.json().catch(() => null) as { bookings?: Booking[]; error?: string } | null;
       if (!response.ok) throw new Error(body?.error || "Не удалось загрузить записи");
@@ -56,9 +59,26 @@ export default function AllBranchRecordsClient({ branches }: { branches: Branch[
     } finally {
       setLoading(false);
     }
-  }, [branchId, from, to]);
+  }, [branchId, from, pendingOnly, to]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      localFrom: dateInput(),
+      localTo: addDays(dateInput(), 60),
+      confirmationState: "PENDING",
+    });
+    if (branchId !== "all") params.set("branchId", branchId);
+    void fetch(`/api/bookings?${params}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null) as { total?: number } | null;
+        if (response.ok && !controller.signal.aborted) setPendingCount(body?.total ?? 0);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [branchId]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Booking[]>();
@@ -82,11 +102,12 @@ export default function AllBranchRecordsClient({ branches }: { branches: Branch[
         <label><span>Филиал</span><select value={branchId} onChange={(event) => setBranchId(event.target.value)}><option value="all">Все филиалы</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
         <label><span>С</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
         <label><span>По</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
+        <button type="button" className={pendingOnly ? styles.pendingActive : styles.pendingButton} onClick={() => setPendingOnly((current) => !current)}><BellRing aria-hidden /> Требуют подтверждения: {pendingOnly ? bookings.length : pendingCount}</button>
         <button type="button" onClick={load} disabled={loading}>Обновить</button>
       </section>
       {error && <div className={styles.error}>{error}</div>}
       <div className={styles.groups}>
-        {grouped.map(({ branch, rows }) => <section key={branch.id} className={styles.group}><header><div><Building2 aria-hidden /><span><strong>{branch.name}</strong><small>{rows.length} записей за период</small></span></div><b>{rows.filter((row) => row.status === "ACTIVE").length} активных</b></header><div className={styles.list}>{rows.map((booking) => <article key={booking.id} className={booking.status === "CANCELLED" ? styles.cancelled : ""}><time><strong>{new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short", timeZone: booking.branch.timezone }).format(new Date(booking.startsAt))}</strong><span>{new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: booking.branch.timezone }).format(new Date(booking.startsAt))}</span></time><div><strong>{booking.customerName}</strong><small>{booking.vehicle ? `${booking.vehicle.make} ${booking.vehicle.model}${booking.vehicle.plate ? ` · ${booking.vehicle.plate}` : ""}` : "Автомобиль не указан"}</small></div><div className={styles.service}><Wrench aria-hidden /><span>{booking.services.map((service) => service.name).join(", ")}</span></div><div className={styles.master}><Clock3 aria-hidden /><span>{booking.master?.name || "Без мастера"}</span></div><em>{booking.status === "CANCELLED" ? "Отменена" : booking.confirmationState === "PENDING" ? "Ждёт подтверждения" : booking.source === "PUBLIC" ? "Онлайн" : "Активна"}</em></article>)}{!rows.length && <p>Записей за выбранный период нет.</p>}</div></section>)}
+        {grouped.map(({ branch, rows }) => <section key={branch.id} className={styles.group}><header><div><Building2 aria-hidden /><span><strong>{branch.name}</strong><small>{rows.length} {pendingOnly ? "ожидают обработки в ближайшие 60 дней" : "записей за период"}</small></span></div><b>{rows.filter((row) => row.status === "ACTIVE").length} активных</b></header><div className={styles.list}>{rows.map((booking) => <article key={booking.id} className={booking.status === "CANCELLED" ? styles.cancelled : booking.confirmationState === "PENDING" ? styles.pending : ""}><time><strong>{new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short", timeZone: booking.branch.timezone }).format(new Date(booking.startsAt))}</strong><span>{new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: booking.branch.timezone }).format(new Date(booking.startsAt))}</span></time><div><strong>{booking.customerName}</strong><small>{booking.vehicle ? `${booking.vehicle.make} ${booking.vehicle.model}${booking.vehicle.plate ? ` · ${booking.vehicle.plate}` : ""}` : "Автомобиль не указан"}</small></div><div className={styles.service}><Wrench aria-hidden /><span>{booking.services.map((service) => service.name).join(", ")}</span></div><div className={styles.master}><Clock3 aria-hidden /><span>{booking.master?.name || "Без мастера"}</span></div><em>{booking.status === "CANCELLED" ? "Отменена" : booking.confirmationState === "PENDING" ? "Ждёт подтверждения" : booking.source === "PUBLIC" ? "Онлайн" : "Активна"}</em></article>)}{!rows.length && <p>{pendingOnly ? "Ожидающих подтверждения записей нет." : "Записей за выбранный период нет."}</p>}</div></section>)}
       </div>
       {loading && <div className={styles.loading}><CalendarDays aria-hidden /> Обновляем журнал…</div>}
     </main>

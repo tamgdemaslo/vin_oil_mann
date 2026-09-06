@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
+import { DEFAULT_BOOKING_WORKING_HOURS } from "@/lib/booking/defaults";
 import {
   checkPublicRateLimit,
   getPublicBookingReadLimitPerHour,
@@ -46,7 +47,8 @@ export async function GET(request: NextRequest) {
       timezone: branch.timezone,
       intro: branch.bookingSettings?.publicIntro,
       bookingHorizonDays: branch.bookingSettings?.bookingHorizonDays ?? 60,
-      workingHours: branch.bookingWorkingHours,
+      workingHours: DEFAULT_BOOKING_WORKING_HOURS.map((fallback) =>
+        branch.bookingWorkingHours.find((row) => row.weekday === fallback.weekday) ?? fallback),
     })),
   }, { headers: rateLimitHeaders(rate) });
 }

@@ -137,7 +137,19 @@
 .slotGrid > button strong { font-size: 15px; font-variant-numeric: tabular-nums; }
 .slotGrid > button span { overflow: hidden; color: var(--booking-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .slotGrid .selectedSlot { border-color: var(--booking-accent); background: #fff1eb; }
+.nearestDays { display: grid; gap: 10px; margin-top: 20px; }
+.nearestDays > strong { font-size: 13px; }
+.nearestDays > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.nearestDays button { display: flex; min-height: 62px; align-items: center; gap: 9px; border: 1px solid var(--booking-line); border-radius: 8px; padding: 9px 10px; background: #fff; color: var(--booking-ink); text-align: left; }
+.nearestDays button:hover { border-color: var(--booking-accent); background: #fff7f3; }
+.nearestDays button > svg { flex: 0 0 auto; color: var(--booking-accent); }
+.nearestDays button > span { display: grid; gap: 3px; font-size: 12px; font-weight: 700; text-transform: capitalize; }
+.nearestDays button small { color: var(--booking-muted); font-size: 10px; font-weight: 450; }
 .contactPanel { margin-top: 28px; border-top: 1px solid var(--booking-line); padding-top: 24px; }
+.unknownResult { display: grid; gap: 8px; margin-top: 16px; border: 1px solid #d8b36c; border-radius: 9px; padding: 14px; background: #fff8e6; color: #654607; }
+.unknownResult strong { font-size: 13px; }
+.unknownResult p { margin: 0; font-size: 12px; line-height: 1.45; }
+.unknownResult button { justify-self: start; }
 
 .stageFooter { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; border-top: 1px solid var(--booking-line); padding: 18px 34px; background: #fff; }
 .primaryButton, .secondaryButton { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; gap: 8px; border-radius: 8px; padding: 0 19px; font-size: 13px; font-weight: 750; text-decoration: none; transition: background 160ms ease, border-color 160ms ease, transform 160ms cubic-bezier(.22, 1, .36, 1); }
@@ -180,6 +192,9 @@
 .confirmationFacts svg { color: var(--booking-accent); }
 .successPanel .primaryButton { width: min(330px, 100%); }
 .successPanel > small { display: block; margin-top: 12px; color: var(--booking-muted); font-size: 11px; }
+.successPanel .deliveryState { margin: -8px auto 18px; font-size: 12px; }
+.successActions { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px; }
+.successActions .primaryButton, .successActions .secondaryButton { width: auto; }
 
 .manageRoot { background: #eef0ed; }
 .manageShell { width: min(760px, calc(100% - 28px)); margin: 0 auto; padding: 54px 0 80px; }
@@ -219,6 +234,11 @@
 .manageDateRow input, .cancelReason textarea { border: 1px solid var(--booking-line); border-radius: 8px; background: #fff; color: var(--booking-ink); outline: 0; }
 .manageDateRow input { height: 44px; padding: 0 12px; }
 .manageDateRow input:focus, .cancelReason textarea:focus { border-color: var(--booking-accent); box-shadow: 0 0 0 3px rgba(184, 58, 18, .12); }
+.rescheduleComparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin-top: 20px; overflow: hidden; border: 1px solid var(--booking-line); border-radius: 9px; background: var(--booking-line); }
+.rescheduleComparison > div { display: grid; gap: 5px; padding: 14px; background: #fff; }
+.rescheduleComparison span { color: var(--booking-muted); font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: .05em; }
+.rescheduleComparison strong { font-size: 13px; line-height: 1.4; }
+.rescheduleComparison small { color: var(--booking-muted); font-size: 11px; }
 .cancelReason { margin-top: 20px; }
 .cancelReason textarea { resize: vertical; padding: 11px 12px; }
 .cancelReason textarea::placeholder { color: #686d69; opacity: 1; }
@@ -291,6 +311,9 @@
   .vehicleOptionalFields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vehicleOptionalFields .wideField { grid-column: 1 / -1; }
   .slotGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nearestDays > div { grid-template-columns: 1fr; }
+  .successActions { flex-direction: column; }
+  .successActions .primaryButton, .successActions .secondaryButton { width: 100%; }
   .stageFooter { position: sticky; z-index: var(--booking-z-sticky); bottom: 0; padding: 10px 14px max(10px, env(safe-area-inset-bottom)); box-shadow: 0 -4px 8px rgba(24, 26, 24, .06); }
   .primaryButton, .secondaryButton { min-height: 48px; padding: 0 15px; }
   .stageFooter > span:empty { display: none; }
@@ -306,6 +329,7 @@
   .manageFacts > div, .manageFacts > div:nth-child(odd), .manageFacts > div:nth-child(even) { min-height: 0; border-right: 0; padding: 17px 0; }
   .phoneLink { width: 100%; margin-left: 0; padding-top: 6px; }
   .manageDateRow { align-items: stretch; flex-direction: column; }
+  .rescheduleComparison { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

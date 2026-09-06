@@ -47,7 +47,14 @@ export type AvailabilityResult = {
   stepMinutes: number;
   requiresVin: boolean;
   requiresConfirmation: boolean;
+  workingWindows: Array<{
+    membershipId: string;
+    startTime: string;
+    endTime: string;
+  }>;
   slots: BookingSlot[];
+  reasonCode?: string;
+  message?: string;
 };
 
 function uniqueStrings(values: string[]) {
@@ -147,7 +154,12 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
       stepMinutes: settings?.bookingStepMinutes ?? DEFAULT_BOOKING_STEP_MINUTES,
       requiresVin: services.some((service) => service.requiresVin),
       requiresConfirmation: services.some((service) => service.requiresConfirmation),
+      workingWindows: [],
       slots: [],
+      reasonCode: "master_service_mismatch",
+      message: input.masterMembershipId
+        ? "Для выбранных услуг этот мастер не назначен"
+        : "Для выбранных услуг не назначен мастер",
     };
   }
 
@@ -168,7 +180,10 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
       stepMinutes: settings?.bookingStepMinutes ?? DEFAULT_BOOKING_STEP_MINUTES,
       requiresVin: services.some((service) => service.requiresVin),
       requiresConfirmation: services.some((service) => service.requiresConfirmation),
+      workingWindows: [],
       slots: [],
+      reasonCode: "branch_closed",
+      message: "Филиал не работает в выбранный день",
     };
   }
 
@@ -198,10 +213,17 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
   const minimumLeadMinutes = input.respectLeadTime === false ? 0 : Math.max(0, settings?.minimumLeadMinutes ?? 60);
   const earliest = now.getTime() + minimumLeadMinutes * 60_000;
   const slots: BookingSlot[] = [];
+  const workingWindows: AvailabilityResult["workingWindows"] = [];
+  let closedByExceptionCount = 0;
+  let workingMasterCount = 0;
+  let potentialSlotCount = 0;
 
   for (const membershipId of candidateIds) {
     const exception = exceptionById.get(membershipId);
-    if (exception?.kind === "CLOSED") continue;
+    if (exception?.kind === "CLOSED") {
+      closedByExceptionCount += 1;
+      continue;
+    }
     const configuredMasterHours = masterHoursById.get(membershipId);
     const masterInterval = exception?.kind === "CUSTOM"
       ? intervalFromHours({ isWorking: true, startTime: exception.startTime, endTime: exception.endTime })
@@ -211,12 +233,19 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
     if (!masterInterval) continue;
     const working = intersectInterval(branchInterval, masterInterval);
     if (!working) continue;
+    workingMasterCount += 1;
+    workingWindows.push({
+      membershipId,
+      startTime: minutesToLocalTime(working.start),
+      endTime: minutesToLocalTime(working.end),
+    });
 
     const firstMinute = Math.ceil(working.start / stepMinutes) * stepMinutes;
     for (let minute = firstMinute; minute + durationMinutes <= working.end; minute += stepMinutes) {
       const startsAt = zonedLocalToUtc(localDate, minutesToLocalTime(minute), branch.timezone);
       const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
       if (startsAt.getTime() < earliest) continue;
+      potentialSlotCount += 1;
       const conflicts = (busyByMaster.get(membershipId) ?? []).some(
         (booking) => booking.startsAt < endsAt && booking.endsAt > startsAt,
       );
@@ -232,6 +261,18 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
   }
 
   slots.sort((left, right) => left.startsAt.localeCompare(right.startsAt) || left.master.name.localeCompare(right.master.name, "ru"));
+  const unavailable = slots.length === 0
+    ? closedByExceptionCount === candidateIds.length
+      ? { reasonCode: "master_closed", message: "Мастер не работает в этот день" }
+      : workingMasterCount === 0
+        ? { reasonCode: "master_not_working", message: "Мастер не работает в этот день" }
+        : potentialSlotCount === 0
+          ? {
+              reasonCode: "duration_not_fit",
+              message: `Для выбранных работ требуется ${durationMinutes} минут — в графике мастера нет подходящего окна`,
+            }
+          : { reasonCode: "day_fully_booked", message: "На выбранную дату свободных окон нет" }
+    : {};
   return {
     branch: { id: branch.id, name: branch.name, timezone: branch.timezone },
     localDate,
@@ -239,6 +280,8 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
     stepMinutes,
     requiresVin: services.some((service) => service.requiresVin),
     requiresConfirmation: services.some((service) => service.requiresConfirmation),
+    workingWindows,
     slots,
+    ...unavailable,
   };
 }

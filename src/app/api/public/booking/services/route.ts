@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
+import { CATALOG_BOOKING_SERVICE_PREFIX } from "@/lib/booking/catalog-services";
 import {
   checkPublicRateLimit,
   getPublicBookingReadLimitPerHour,
@@ -38,13 +39,47 @@ export async function GET(request: NextRequest) {
     },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
+  const productIds = services
+    .map((service) => service.id.startsWith(CATALOG_BOOKING_SERVICE_PREFIX)
+      ? service.id.slice(CATALOG_BOOKING_SERVICE_PREFIX.length)
+      : null)
+    .filter((id): id is string => Boolean(id));
+  const products = productIds.length ? await prisma.localProduct.findMany({
+    where: { branchId, id: { in: productIds }, entityType: "service", archived: false },
+    select: {
+      id: true,
+      salePriceCents: true,
+      minPriceCents: true,
+      currencyName: true,
+      minPriceCurrencyName: true,
+      priceNeedsSetup: true,
+      pricingMode: true,
+    },
+  }) : [];
+  const productsById = new Map(products.map((product) => [product.id, product]));
   return publicJson(request, {
-    services: services.map((service) => ({
-      ...service,
-      requiredFields: Array.isArray(service.requiredFieldsJson)
+    services: services.map((service) => {
+      const productId = service.id.startsWith(CATALOG_BOOKING_SERVICE_PREFIX)
+        ? service.id.slice(CATALOG_BOOKING_SERVICE_PREFIX.length)
+        : null;
+      const product = productId ? productsById.get(productId) : null;
+      const pricing = !product || product.priceNeedsSetup
+        ? null
+        : product.pricingMode === "assistant_rule"
+          ? { kind: "vehicle_calculation" as const }
+          : product.minPriceCents && product.minPriceCents > 0
+            ? { kind: "from" as const, amountCents: product.minPriceCents, currency: product.minPriceCurrencyName || product.currencyName || "RUB" }
+            : product.salePriceCents > 0
+              ? { kind: "fixed" as const, amountCents: product.salePriceCents, currency: product.currencyName || "RUB" }
+              : null;
+      return {
+        ...service,
+        pricing,
+        requiredFields: Array.isArray(service.requiredFieldsJson)
         ? service.requiredFieldsJson.filter((field): field is string => typeof field === "string")
         : [],
-      requiredFieldsJson: undefined,
-    })),
+        requiredFieldsJson: undefined,
+      };
+    }),
   }, { headers: rateLimitHeaders(rate) });
 }

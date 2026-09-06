@@ -13,7 +13,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "../../booking.module.css";
 
 type ManagedBooking = {
@@ -35,29 +35,48 @@ type ManagedBooking = {
 
 type Slot = {
   startsAt: string;
+  endsAt?: string;
   localTime: string;
   master: { membershipId: string; name: string; position: string | null };
 };
 
+type NearestDay = { localDate: string; slots: Slot[] };
+
+class ApiError extends Error {
+  code: string;
+  status: number;
+
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
 async function readJson<T>(response: Response): Promise<T> {
-  const body = await response.json().catch(() => null) as (T & { error?: string }) | null;
-  if (!response.ok) throw new Error(body?.error || "Не удалось выполнить запрос");
-  if (!body) throw new Error("Сервис вернул пустой ответ");
+  const body = await response.json().catch(() => null) as (T & { error?: string; code?: string }) | null;
+  if (!response.ok) throw new ApiError(body?.error || "Не удалось выполнить запрос", body?.code || "booking_request_failed", response.status);
+  if (!body) throw new ApiError("Сервис вернул пустой ответ", "booking_empty_response", response.status);
   return body;
 }
 
-function inputDate(value = new Date()) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+function branchToday(timezone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function localDateLabel(value: string) {
+  return new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "long" }).format(new Date(`${value}T12:00:00Z`));
 }
 
 function formattedDate(value: string, timeZone?: string) {
-  return new Intl.DateTimeFormat("ru-RU", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone,
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat("ru-RU", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone }).format(new Date(value));
 }
 
 function formattedTime(value: string, timeZone?: string) {
@@ -70,68 +89,157 @@ function durationLabel(minutes: number) {
   return [hours ? `${hours} ч` : null, rest ? `${rest} мин` : null].filter(Boolean).join(" ");
 }
 
+function requestError(error: unknown) {
+  if (!(error instanceof ApiError)) return "Не удалось связаться с сервером. Проверьте интернет и повторите.";
+  if (error.status === 429 || error.code === "booking_rate_limited") return "Слишком много запросов. Подождите немного и повторите.";
+  if (error.status >= 500) return "Сервис временно недоступен. Повторите попытку позже.";
+  return error.message;
+}
+
 export default function ManageBookingClient({ token }: { token: string }) {
   const [booking, setBooking] = useState<ManagedBooking | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState<"loading" | "loaded" | "not_found" | "error">("loading");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [nearestLoading, setNearestLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [slotError, setSlotError] = useState("");
   const [notice, setNotice] = useState("");
   const [mode, setMode] = useState<"details" | "reschedule" | "cancel">("details");
-  const [localDate, setLocalDate] = useState(inputDate(new Date(Date.now() + 24 * 60 * 60_000)));
+  const [localDate, setLocalDate] = useState("");
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [nearestDays, setNearestDays] = useState<NearestDay[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [reason, setReason] = useState("");
+  const bookingAbortRef = useRef<AbortController | null>(null);
+  const slotsAbortRef = useRef<AbortController | null>(null);
+  const activeSlotsKeyRef = useRef("");
+
+  const slotsKey = useMemo(() => booking ? JSON.stringify({
+    branchId: booking.branch.id,
+    serviceIds: booking.services.map((service) => service.id).filter(Boolean).sort(),
+    localDate,
+    durationMinutes: booking.durationMinutes,
+    timezone: booking.branch.timezone,
+  }) : "", [booking, localDate]);
 
   const loadBooking = useCallback(async () => {
-    setLoading(true);
-    setError("");
+    bookingAbortRef.current?.abort();
+    const controller = new AbortController();
+    bookingAbortRef.current = controller;
+    setLoadState("loading");
+    setLoadError("");
     try {
-      const data = await readJson<{ booking: ManagedBooking }>(await fetch(`/api/public/booking/manage/${encodeURIComponent(token)}`));
+      const data = await readJson<{ booking: ManagedBooking }>(await fetch(`/api/public/booking/manage/${encodeURIComponent(token)}`, { signal: controller.signal }));
       setBooking(data.booking);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Запись не найдена");
-    } finally {
-      setLoading(false);
+      setLocalDate(branchToday(data.booking.branch.timezone));
+      setLoadState("loaded");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (error instanceof ApiError && error.status === 404) {
+        setLoadState("not_found");
+        setLoadError(error.message);
+      } else {
+        setLoadState("error");
+        setLoadError(requestError(error));
+      }
     }
   }, [token]);
 
-  useEffect(() => { void loadBooking(); }, [loadBooking]);
+  useEffect(() => {
+    void loadBooking();
+    return () => bookingAbortRef.current?.abort();
+  }, [loadBooking]);
 
   const loadSlots = useCallback(async () => {
+    if (!booking || !localDate || mode !== "reschedule") return;
+    slotsAbortRef.current?.abort();
+    const controller = new AbortController();
+    slotsAbortRef.current = controller;
+    const requestKey = slotsKey;
+    activeSlotsKeyRef.current = requestKey;
     setBusy(true);
-    setError("");
-    setSelectedSlot(null);
+    setNearestLoading(false);
+    setSlots([]);
+    setNearestDays([]);
     try {
-      const data = await readJson<{ slots: Slot[] }>(await fetch(`/api/public/booking/manage/${encodeURIComponent(token)}/availability`, {
+      const availability = await readJson<{ slots: Slot[]; message?: string }>(await fetch(`/api/public/booking/manage/${encodeURIComponent(token)}/availability`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({ localDate }),
       }));
-      setSlots(data.slots);
-    } catch (cause) {
-      setSlots([]);
-      setError(cause instanceof Error ? cause.message : "Не удалось загрузить свободное время");
-    } finally {
+      if (activeSlotsKeyRef.current !== requestKey) return;
+      setSlots(availability.slots);
       setBusy(false);
+      if (!availability.slots.length) {
+        setSlotError(availability.message || "На выбранную дату свободного времени нет.");
+        setNearestLoading(true);
+        const nearest = await readJson<{ days: NearestDay[] }>(await fetch(`/api/public/booking/manage/${encodeURIComponent(token)}/availability`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({ localDate, searchNearest: true }),
+        }));
+        if (activeSlotsKeyRef.current !== requestKey) return;
+        setNearestDays(nearest.days);
+        setNearestLoading(false);
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (activeSlotsKeyRef.current !== requestKey) return;
+      setSlotError(requestError(error));
+    } finally {
+      if (activeSlotsKeyRef.current === requestKey) {
+        setBusy(false);
+        setNearestLoading(false);
+      }
     }
-  }, [localDate, token]);
+  }, [booking, localDate, mode, slotsKey, token]);
+
+  useEffect(() => {
+    if (mode === "reschedule") void loadSlots();
+    return () => slotsAbortRef.current?.abort();
+  }, [loadSlots, mode]);
+
+  function changeDate(value: string) {
+    setLocalDate(value);
+    setSelectedSlot(null);
+    setSlots([]);
+    setNearestDays([]);
+    setSlotError("");
+    setActionError("");
+  }
 
   async function reschedule() {
-    if (!selectedSlot) return;
+    if (!selectedSlot || !booking) return;
     setBusy(true);
-    setError("");
+    setActionError("");
     try {
-      const data = await readJson<{ booking: ManagedBooking }>(await fetch(`/api/public/booking/manage/${encodeURIComponent(token)}/reschedule`, {
+      const data = await readJson<{ booking: ManagedBooking; notification: { state: "DELIVERED" | "QUEUED" | "NOT_CONFIRMED" | "NOT_AVAILABLE" } }>(await fetch(`/api/public/booking/manage/${encodeURIComponent(token)}/reschedule`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ startsAt: selectedSlot.startsAt, masterMembershipId: selectedSlot.master.membershipId }),
       }));
       setBooking(data.booking);
       setMode("details");
-      setNotice("Запись перенесена. Новое время уже закреплено за вами.");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Не удалось перенести запись");
-      await loadSlots();
+      const statusText = data.booking.confirmationState === "PENDING"
+        ? "Заявка на перенос принята. Новое время предварительное."
+        : "Запись перенесена. Новое время подтверждено.";
+      const deliveryText = data.notification.state === "DELIVERED"
+        ? " Уведомление доставлено."
+        : data.notification.state === "QUEUED"
+          ? " Уведомление поставлено в очередь."
+          : " Доставка уведомления не подтверждена.";
+      setNotice(`${statusText}${deliveryText}`);
+      setSelectedSlot(null);
+    } catch (error) {
+      const message = requestError(error);
+      setActionError(message);
+      if (error instanceof ApiError && ["booking_slot_taken", "booking_outside_schedule", "booking_nonstandard_start", "booking_master_unavailable"].includes(error.code)) {
+        setSelectedSlot(null);
+        await loadSlots();
+      }
     } finally {
       setBusy(false);
     }
@@ -139,7 +247,7 @@ export default function ManageBookingClient({ token }: { token: string }) {
 
   async function cancel() {
     setBusy(true);
-    setError("");
+    setActionError("");
     try {
       const data = await readJson<{ booking: ManagedBooking }>(await fetch(`/api/public/booking/manage/${encodeURIComponent(token)}/cancel`, {
         method: "POST",
@@ -148,9 +256,9 @@ export default function ManageBookingClient({ token }: { token: string }) {
       }));
       setBooking(data.booking);
       setMode("details");
-      setNotice("Запись отменена. Если планы изменятся, создайте новую запись.");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Не удалось отменить запись");
+      setNotice("Запись отменена. Слот освобождён.");
+    } catch (error) {
+      setActionError(requestError(error));
     } finally {
       setBusy(false);
     }
@@ -160,17 +268,22 @@ export default function ManageBookingClient({ token }: { token: string }) {
     <main className={`${styles.publicRoot} ${styles.manageRoot}`}>
       <header className={styles.publicHeader}>
         <a className={styles.brand} href="/client-site"><span aria-hidden>ТГМ</span><strong>Там где масло</strong></a>
-        <div><ShieldCheck aria-hidden /><span>Защищённая ссылка<br /><small>доступ только к вашей записи</small></span></div>
+        <div><ShieldCheck aria-hidden /><span>Защищённая ссылка<br /><small>доступ только к этой записи</small></span></div>
       </header>
 
       <section className={styles.manageShell}>
-        {loading ? (
+        {loadState === "loading" ? (
           <div className={styles.managePanel}><div className={styles.skeleton}><i /><i /><i /></div></div>
-        ) : !booking ? (
+        ) : loadState === "error" ? (
+          <div className={styles.managePanel}>
+            <span className={styles.cancelledIcon}><RefreshCw aria-hidden /></span>
+            <h1>Не удалось загрузить запись</h1><p>{loadError}</p>
+            <button className={styles.primaryButton} type="button" onClick={() => void loadBooking()}>Повторить</button>
+          </div>
+        ) : loadState === "not_found" || !booking ? (
           <div className={styles.managePanel}>
             <span className={styles.cancelledIcon}><XCircle aria-hidden /></span>
-            <h1>Запись не найдена</h1>
-            <p>{error || "Ссылка недействительна или была заменена."}</p>
+            <h1>Запись не найдена</h1><p>{loadError || "Сервер подтвердил, что ссылка недействительна или была заменена."}</p>
             <a className={styles.primaryButton} href="/booking">Создать новую запись</a>
           </div>
         ) : (
@@ -178,62 +291,47 @@ export default function ManageBookingClient({ token }: { token: string }) {
             <div className={styles.manageHeading}>
               <div>
                 <span className={booking.status === "CANCELLED" ? styles.statusCancelled : booking.confirmationState === "PENDING" ? styles.statusPending : styles.statusConfirmed}>
-                  {booking.status === "CANCELLED" ? "Запись отменена" : booking.confirmationState === "PENDING" ? "Ожидает подтверждения" : "Запись подтверждена"}
+                  {booking.status === "CANCELLED" ? "Запись отменена" : booking.confirmationState === "PENDING" ? "Время предварительное" : "Запись подтверждена"}
                 </span>
                 <h1>Здравствуйте, {booking.customerName}</h1>
-                <p>{booking.status === "CANCELLED" ? "Эта запись больше не занимает слот." : "Здесь можно проверить детали, перенести или отменить визит."}</p>
+                <p>{booking.status === "CANCELLED" ? "Эта запись больше не занимает время мастера." : "Здесь можно проверить детали, перенести или отменить визит."}</p>
               </div>
               {booking.status !== "CANCELLED" && <CheckCircle2 aria-hidden />}
             </div>
 
             {notice && <div className={styles.manageNotice} role="status"><CheckCircle2 aria-hidden /> {notice}</div>}
-            {error && <div className={styles.error} role="alert">{error}</div>}
+            {actionError && mode !== "reschedule" && <div className={styles.error} role="alert">{actionError}</div>}
 
-            {mode === "details" ? (
-              <>
-                <dl className={styles.manageFacts}>
-                  <div><dt><CalendarDays aria-hidden /> Дата и время</dt><dd>{formattedDate(booking.startsAt, booking.branch.timezone)}<strong>{formattedTime(booking.startsAt, booking.branch.timezone)}–{formattedTime(booking.endsAt, booking.branch.timezone)}</strong></dd></div>
-                  <div><dt><MapPin aria-hidden /> Филиал</dt><dd>{booking.branch.name}<small>{booking.branch.address}</small></dd></div>
-                  <div><dt><Car aria-hidden /> Автомобиль</dt><dd>{booking.vehicle ? `${booking.vehicle.make} ${booking.vehicle.model}` : "Не указан"}<small>{[booking.vehicle?.year, booking.vehicle?.plate, booking.vehicle?.vin].filter(Boolean).join(" · ")}</small></dd></div>
-                  <div><dt><Wrench aria-hidden /> Работы</dt><dd>{booking.services.map((service) => service.name).join(", ")}<small>{durationLabel(booking.durationMinutes)} · мастер {booking.master?.name || "будет назначен"}</small></dd></div>
-                </dl>
-                {booking.confirmationState === "PENDING" && booking.status !== "CANCELLED" && <div className={styles.pendingNotice}><ShieldCheck aria-hidden /> Это предварительное время, оно пока не подтверждено. Чтобы исключить двойную запись, время учтено в календаре; после проверки администратор свяжется с вами.</div>}
-                {booking.status === "CANCELLED" ? (
-                  <div className={styles.manageActions}><a className={styles.primaryButton} href="/booking">Записаться снова</a></div>
-                ) : (
-                  <div className={styles.manageActions}>
-                    <button type="button" className={styles.primaryButton} onClick={() => { setMode("reschedule"); setNotice(""); void loadSlots(); }}><RefreshCw aria-hidden /> Перенести</button>
-                    <button type="button" className={styles.dangerButton} onClick={() => { setMode("cancel"); setNotice(""); }}>Отменить запись</button>
-                    {booking.branch.phone && <a className={styles.phoneLink} href={`tel:${booking.branch.phone.replace(/[^+\d]/g, "")}`}><Phone aria-hidden /> {booking.branch.phone}</a>}
-                  </div>
-                )}
-              </>
-            ) : mode === "reschedule" ? (
-              <div className={styles.manageEditor}>
-                <button type="button" className={styles.backLink} onClick={() => { setMode("details"); setError(""); }}><ArrowLeft aria-hidden /> К записи</button>
-                <h2>Новое время</h2>
-                <p>Старый слот освободится только после успешного переноса.</p>
-                <div className={styles.manageDateRow}>
-                  <label><span>Дата</span><input type="date" min={inputDate()} value={localDate} onChange={(event) => setLocalDate(event.target.value)} /></label>
-                  <button type="button" className={styles.secondaryButton} onClick={loadSlots} disabled={busy}>Показать время</button>
-                </div>
-                {busy ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : (
-                  <div className={styles.slotGrid}>
-                    {slots.map((slot) => <button type="button" key={`${slot.startsAt}-${slot.master.membershipId}`} className={selectedSlot?.startsAt === slot.startsAt && selectedSlot.master.membershipId === slot.master.membershipId ? styles.selectedSlot : ""} onClick={() => setSelectedSlot(slot)}><strong>{slot.localTime}</strong><span>{slot.master.name}</span></button>)}
-                    {!slots.length && <div className={styles.empty}>На выбранную дату нет свободного времени.</div>}
-                  </div>
-                )}
-                <div className={styles.manageActions}><button type="button" className={styles.primaryButton} onClick={reschedule} disabled={!selectedSlot || busy}><Clock3 aria-hidden /> Подтвердить перенос</button></div>
-              </div>
-            ) : (
-              <div className={styles.manageEditor}>
-                <button type="button" className={styles.backLink} onClick={() => { setMode("details"); setError(""); }}><ArrowLeft aria-hidden /> К записи</button>
-                <h2>Отменить запись?</h2>
-                <p>Отменить запись на {formattedDate(booking.startsAt, booking.branch.timezone)} в {formattedTime(booking.startsAt, booking.branch.timezone)}? Слот сразу станет доступен другим клиентам.</p>
-                <label className={styles.cancelReason}><span>Причина — необязательно</span><textarea rows={3} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Например, изменились планы" /></label>
-                <div className={styles.manageActions}><button type="button" className={styles.dangerButton} onClick={cancel} disabled={busy}>{busy ? "Отменяем…" : "Да, отменить запись"}</button><button type="button" className={styles.secondaryButton} onClick={() => setMode("details")}>Оставить как есть</button></div>
-              </div>
-            )}
+            {mode === "details" ? <>
+              <dl className={styles.manageFacts}>
+                <div><dt><CalendarDays aria-hidden /> Дата и время</dt><dd>{formattedDate(booking.startsAt, booking.branch.timezone)}<strong>{formattedTime(booking.startsAt, booking.branch.timezone)}–{formattedTime(booking.endsAt, booking.branch.timezone)}</strong></dd></div>
+                <div><dt><MapPin aria-hidden /> Филиал</dt><dd>{booking.branch.name}<small>{booking.branch.address}</small></dd></div>
+                <div><dt><Car aria-hidden /> Автомобиль</dt><dd>{booking.vehicle ? `${booking.vehicle.make} ${booking.vehicle.model}` : "Указан в заявке"}<small>{[booking.vehicle?.year, booking.vehicle?.plate, booking.vehicle?.vin].filter(Boolean).join(" · ")}</small></dd></div>
+                <div><dt><Wrench aria-hidden /> Работы</dt><dd>{booking.services.map((service) => service.name).join(", ")}<small>{durationLabel(booking.durationMinutes)} · мастер {booking.master?.name || "будет назначен"}</small></dd></div>
+              </dl>
+              {booking.confirmationState === "PENDING" && booking.status !== "CANCELLED" && <div className={styles.pendingNotice}><ShieldCheck aria-hidden /> Заявка принята. Время предварительное и ожидает проверки администратора.</div>}
+              {booking.status === "CANCELLED" ? <div className={styles.manageActions}><a className={styles.primaryButton} href="/booking">Записаться снова</a></div> : <div className={styles.manageActions}>
+                <button type="button" className={styles.primaryButton} onClick={() => { setMode("reschedule"); setNotice(""); setActionError(""); setSlotError(""); setSelectedSlot(null); setLocalDate(branchToday(booking.branch.timezone)); }}><RefreshCw aria-hidden /> Перенести</button>
+                <button type="button" className={styles.dangerButton} onClick={() => { setMode("cancel"); setNotice(""); setActionError(""); }}>Отменить запись</button>
+                {booking.branch.phone && <a className={styles.phoneLink} href={`tel:${booking.branch.phone.replace(/[^+\d]/g, "")}`}><Phone aria-hidden /> {booking.branch.phone}</a>}
+              </div>}
+            </> : mode === "reschedule" ? <div className={styles.manageEditor}>
+              <button type="button" className={styles.backLink} onClick={() => { setMode("details"); setActionError(""); setSlotError(""); }}><ArrowLeft aria-hidden /> К записи</button>
+              <h2>Новое время</h2><p>Старый слот освободится только после успешного атомарного переноса.</p>
+              <div className={styles.manageDateRow}><label><span>Дата</span><input type="date" min={branchToday(booking.branch.timezone)} value={localDate} onChange={(event) => changeDate(event.target.value)} /></label><button type="button" className={styles.secondaryButton} onClick={() => void loadSlots()} disabled={busy || nearestLoading}>Обновить время</button></div>
+              {actionError && <div className={styles.warning} role="alert">{actionError}</div>}
+              {slotError && <div className={styles.neutralNotice}>{slotError}</div>}
+              {busy ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : <div className={styles.slotGrid}>{slots.map((slot) => <button type="button" key={`${slot.startsAt}-${slot.master.membershipId}`} className={selectedSlot?.startsAt === slot.startsAt && selectedSlot.master.membershipId === slot.master.membershipId ? styles.selectedSlot : ""} onClick={() => { setSelectedSlot(slot); setSlotError(""); }}><strong>{slot.localTime}</strong><span>{slot.master.name}</span></button>)}</div>}
+              {nearestLoading && <div className={styles.neutralNotice}>Ищем ближайшие даты со свободным временем…</div>}
+              {!busy && nearestDays.length > 0 && <div className={styles.nearestDays}><strong>Ближайшие даты со свободным временем</strong><div>{nearestDays.map((day) => <button type="button" key={day.localDate} onClick={() => changeDate(day.localDate)}><CalendarDays aria-hidden /><span>{localDateLabel(day.localDate)}<small>с {day.slots[0]?.localTime}</small></span></button>)}</div></div>}
+              {selectedSlot && <div className={styles.rescheduleComparison}><div><span>Было</span><strong>{formattedDate(booking.startsAt, booking.branch.timezone)}, {formattedTime(booking.startsAt, booking.branch.timezone)}</strong><small>Мастер: {booking.master?.name || "не указан"}</small></div><div><span>Станет</span><strong>{localDateLabel(localDate)}, {selectedSlot.localTime}</strong><small>Мастер: {selectedSlot.master.name}</small></div></div>}
+              <div className={styles.manageActions}><button type="button" className={styles.primaryButton} onClick={() => void reschedule()} disabled={!selectedSlot || busy}><Clock3 aria-hidden /> Подтвердить перенос</button></div>
+            </div> : <div className={styles.manageEditor}>
+              <button type="button" className={styles.backLink} onClick={() => { setMode("details"); setActionError(""); }}><ArrowLeft aria-hidden /> К записи</button>
+              <h2>Отменить запись?</h2><p>Отменить запись на {formattedDate(booking.startsAt, booking.branch.timezone)} в {formattedTime(booking.startsAt, booking.branch.timezone)}? Слот станет доступен другим клиентам.</p>
+              <label className={styles.cancelReason}><span>Причина — необязательно</span><textarea rows={3} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Например, изменились планы" /></label>
+              <div className={styles.manageActions}><button type="button" className={styles.dangerButton} onClick={() => void cancel()} disabled={busy}>{busy ? "Отменяем…" : "Да, отменить запись"}</button><button type="button" className={styles.secondaryButton} onClick={() => setMode("details")}>Оставить как есть</button></div>
+            </div>}
           </div>
         )}
       </section>

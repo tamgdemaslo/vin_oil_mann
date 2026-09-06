@@ -10,6 +10,10 @@
 .filters label span { color: var(--eco-muted); font-size: 8px; font-weight: 800; }
 .filters input, .filters select { height: 32px; border: 1px solid var(--eco-line); border-radius: 5px; padding: 0 8px; background: #fff; color: var(--eco-ink); font-size: 10px; }
 .filters button { height: 32px; border: 1px solid var(--eco-rust); border-radius: 5px; padding: 0 10px; background: var(--eco-rust); color: #fff; font-size: 9px; font-weight: 800; }
+.filters .pendingButton, .filters .pendingActive { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.filters .pendingButton { border-color: var(--eco-line-strong); background: var(--eco-surface); color: var(--eco-ink-2); }
+.filters .pendingActive { border-color: var(--eco-warning); background: var(--eco-warning-tint); color: var(--eco-warning); }
+.filters .pendingButton svg, .filters .pendingActive svg { width: 13px; height: 13px; }
 .groups { display: grid; gap: 14px; margin-top: 14px; }
 .group { overflow: hidden; border: 1px solid var(--eco-line); border-radius: 8px; background: var(--eco-surface); }
 .group > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--eco-line); padding: 10px 12px; background: var(--eco-surface-sunk); }
@@ -23,6 +27,7 @@
 .list article { display: grid; grid-template-columns: 82px minmax(170px, 1fr) minmax(220px, 1.5fr) minmax(140px, .8fr) 120px; align-items: center; gap: 12px; min-height: 58px; border-bottom: 1px solid var(--eco-line); padding: 7px 12px; }
 .list article:last-child { border-bottom: 0; }
 .list article.cancelled { opacity: .58; background: var(--eco-surface-sunk); }
+.list article.pending { border-left: 3px solid var(--eco-warning); background: color-mix(in srgb, var(--eco-warning-tint) 38%, var(--eco-surface)); }
 .list time, .list article > div:nth-child(2) { display: grid; gap: 3px; }
 .list time strong { font-size: 10px; text-transform: capitalize; }
 .list time span { color: var(--eco-rust); font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }

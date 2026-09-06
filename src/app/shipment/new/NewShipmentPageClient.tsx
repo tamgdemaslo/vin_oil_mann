@@ -801,11 +801,41 @@ function syncVisitAttribute(
   const attribute = current[index];
   if (!attribute) return current;
   const existingValue = attributeValueToString(attribute.value);
-  const mayReplace = !existingValue || input.autoSources.includes(attribute.source ?? "");
+  const mayReplace = (!existingValue && !attribute.source) || input.autoSources.includes(attribute.source ?? "");
   if (!mayReplace || (existingValue === input.value && attribute.source === input.source)) return current;
   const next = [...current];
   next[index] = { ...attribute, value: input.value || null, source: input.value ? input.source : undefined };
   return next;
+}
+
+function setVisitAttribute(
+  current: ShipmentAttribute[],
+  input: { name: string; value: string; source: string },
+): ShipmentAttribute[] {
+  const normalizedTarget = normalizeAttrName(input.name);
+  const index = current.findIndex((attribute) => normalizeAttrName(attribute.name) === normalizedTarget);
+  if (index >= 0) {
+    const attribute = current[index];
+    if (!attribute || (attributeValueToString(attribute.value) === input.value && attribute.source === input.source)) return current;
+    const next = [...current];
+    next[index] = { ...attribute, value: input.value || null, source: input.source };
+    return next;
+  }
+  return [
+    ...current,
+    {
+      id: `visit-${normalizedTarget.replace(/\s+/g, "-")}`,
+      name: input.name,
+      type: "string",
+      meta: {
+        href: `local://demand-attribute/${encodeURIComponent(input.name)}`,
+        type: "demandattribute",
+        mediaType: "application/json",
+      },
+      value: input.value || null,
+      source: input.source,
+    },
+  ];
 }
 
 function isBlankUiValue(value: unknown): boolean {
@@ -4034,12 +4064,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     return { ...control, attr, attrIndex, value };
   });
   const vehiclePrimaryControls = vehicleAttributeControls.filter((control) => ["make", "model", "plate", "vin"].includes(control.key));
-  const vehicleVisitControls = vehicleAttributeControls.filter((control) => ["motorOil", "fillVolume"].includes(control.key));
-  const vehicleTechnicalControls = vehicleAttributeControls.filter((control) => !["make", "model", "plate", "vin", "motorOil", "fillVolume"].includes(control.key));
+  const vehicleTechnicalControls = vehicleAttributeControls.filter((control) => !["make", "model", "plate", "vin", "mileage", "motorOil", "fillVolume"].includes(control.key));
   const vehicleTechnicalSummaryItems: KeyValueItem[] = [
     { key: "generation", label: "Поколение / кузов", value: [attrGeneration, attrBody].filter(Boolean).join(" · ") },
     { key: "year", label: "Год", value: attrYear },
-    { key: "mileage", label: "Пробег", value: attrMileage ? `${attrMileage} км` : "" },
     { key: "engine", label: "Двигатель", value: [attrEngineCode, attrEngine, attrEngineSeries].filter(Boolean).join(" · ") },
     { key: "engineVolume", label: "Объём / мощность", value: [attrEngineVolume && `${attrEngineVolume} л`, attrPower && `${attrPower} л.с.`, attrPowerKw && `${attrPowerKw} кВт`].filter(Boolean).join(" · ") },
     { key: "fuel", label: "Топливо", value: attrFuel },
@@ -4061,6 +4089,12 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     loadingStores ? "Склад..." : selectedStore?.name ?? "Склад не выбран",
     documentMomentLabel,
   ].join(" · ");
+
+  const updateVisitField = (name: "Моторное масло" | "Объем" | "Пробег", rawValue: string, source: string) => {
+    const value = formatVehicleAttributeInput(name, rawValue);
+    setAttributes((current) => setVisitAttribute(current, { name, value, source }));
+    markDraftDirty();
+  };
 
   const openVehicleEditor = () => {
     setVehicleDraftValues(
@@ -4945,8 +4979,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             <div className="eco-shipment-vehicle-editor">
               <div className="eco-shipment-vehicle-passport-intro">
                 <div>
-                  <strong>Автомобиль и данные визита</strong>
-                  <span>Основные поля — для автомобиля. Масло и объём сохранятся только в этой отгрузке.</span>
+                  <strong>Данные автомобиля</strong>
+                  <span>Измените основные данные. Технический профиль можно раскрыть ниже.</span>
                 </div>
               </div>
               <fieldset className="eco-shipment-vehicle-fieldset">
@@ -4971,79 +5005,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                       />
                     </label>
                   ))}
-                </div>
-              </fieldset>
-              <fieldset className="eco-shipment-vehicle-fieldset eco-shipment-visit-fieldset">
-                <legend>Что залили в этот визит</legend>
-                <div className="eco-shipment-vehicle-editor-grid">
-                  {vehicleVisitControls.map((control) => (
-                    <label key={control.key}>
-                      <span>{control.label}</span>
-                      <input
-                        type="text"
-                        inputMode={control.key === "fillVolume" ? "decimal" : undefined}
-                        value={vehicleDraftValues[control.key] ?? control.value}
-                        onChange={(e) => {
-                          const attrName = control.attr?.name ?? control.label;
-                          const nextValue = formatVehicleAttributeInput(attrName, e.target.value);
-                          setVehicleDraftValues((prev) => ({ ...prev, [control.key]: nextValue }));
-                          setVehicleDraftSources((prev) => ({
-                            ...prev,
-                            [control.key]: control.key === "motorOil" && prev[control.key] === SHIPMENT_OIL_CUSTOMER_SOURCE
-                              ? SHIPMENT_OIL_CUSTOMER_SOURCE
-                              : "manual",
-                          }));
-                        }}
-                        className="eco-input"
-                        placeholder={control.placeholder}
-                      />
-                    </label>
-                  ))}
-                </div>
-                <div className="eco-shipment-visit-oil-tools">
-                  {visitOilSuggestion.state === "single" ? (
-                    <span className="eco-shipment-visit-oil-note is-success">
-                      Масло найдено в составе{visitOilSuggestion.suggestedActualVolumeLiters == null ? ". Фактический объём укажите вручную." : " — объём взят из количества в литрах."}
-                    </span>
-                  ) : visitOilSuggestion.state === "multiple" ? (
-                    <label className="eco-shipment-visit-oil-choice">
-                      <span>В составе несколько масел — выберите фактически залитое</span>
-                      <select
-                        className="eco-input"
-                        value={visitOilSuggestion.candidates.some((candidate) => candidate.name === (vehicleDraftValues.motorOil ?? "")) ? vehicleDraftValues.motorOil : ""}
-                        onChange={(event) => {
-                          setVehicleDraftValues((prev) => ({ ...prev, motorOil: event.target.value }));
-                          setVehicleDraftSources((prev) => ({ ...prev, motorOil: SHIPMENT_OIL_SELECTED_SOURCE }));
-                        }}
-                      >
-                        <option value="">Выберите масло</option>
-                        {visitOilSuggestion.candidates.map((candidate) => (
-                          <option key={candidate.key} value={candidate.name}>{candidate.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : (
-                    <span className="eco-shipment-visit-oil-note">Можно оставить пустым или указать масло вручную.</span>
-                  )}
-                  {recommendedFillVolume ? (
-                    <span className="eco-shipment-visit-oil-note is-recommendation">
-                      По VIN рекомендовано {recommendedFillVolume} л. Это справочное значение; фактический объём подтвердите вручную.
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    className={`eco-shipment-visit-oil-source-button ${vehicleDraftSources.motorOil === SHIPMENT_OIL_CUSTOMER_SOURCE ? "is-active" : ""}`}
-                    aria-pressed={vehicleDraftSources.motorOil === SHIPMENT_OIL_CUSTOMER_SOURCE}
-                    onClick={() => {
-                      setVehicleDraftValues((prev) => ({
-                        ...prev,
-                        motorOil: vehicleDraftSources.motorOil === SHIPMENT_OIL_CUSTOMER_SOURCE ? prev.motorOil ?? "" : "",
-                      }));
-                      setVehicleDraftSources((prev) => ({ ...prev, motorOil: SHIPMENT_OIL_CUSTOMER_SOURCE }));
-                    }}
-                  >
-                    Масло клиента
-                  </button>
                 </div>
               </fieldset>
               <details className="eco-shipment-vehicle-more-fields">
@@ -5122,20 +5083,93 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   <p>{vehicleHelpText}</p>
                 )}
               </div>
-              <div className="eco-shipment-visit-summary">
-                <span>Что залили</span>
-                {attrMotorOil || attrFillVolume ? (
-                  <div>
-                    <strong>{attrMotorOil || "Масло не указано"}</strong>
-                    {attrFillVolume ? <b>{attrFillVolume} л</b> : null}
-                    {attrMotorOilSource === SHIPMENT_OIL_CUSTOMER_SOURCE ? <em>масло клиента</em> : null}
-                  </div>
-                ) : (
-                  <p>Масло и фактический объём пока не указаны.</p>
-                )}
+              <div className="eco-shipment-visit-summary eco-shipment-visit-summary--editable">
+                <div className="eco-shipment-visit-summary-head">
+                  <span>Что залили</span>
+                  <small>Применяется сразу</small>
+                </div>
+                <div className="eco-shipment-visit-inline-fields">
+                  <label className="is-oil">
+                    <span>Моторное масло</span>
+                    <input
+                      type="text"
+                      className="eco-input"
+                      value={attrMotorOil}
+                      onChange={(event) => updateVisitField(
+                        "Моторное масло",
+                        event.target.value,
+                        attrMotorOilSource === SHIPMENT_OIL_CUSTOMER_SOURCE ? SHIPMENT_OIL_CUSTOMER_SOURCE : "manual",
+                      )}
+                      placeholder="Например: Bardahl XTEC 5W-30"
+                    />
+                  </label>
+                  <label>
+                    <span>Фактический объём</span>
+                    <div className="eco-shipment-visit-volume-input">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="eco-input"
+                        value={attrFillVolume}
+                        onChange={(event) => updateVisitField("Объем", event.target.value, "manual")}
+                        placeholder="4,2"
+                        aria-label="Фактический объём заливки в литрах"
+                      />
+                      <span aria-hidden>л</span>
+                    </div>
+                  </label>
+                  <label>
+                    <span>Пробег</span>
+                    <div className="eco-shipment-visit-volume-input">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        className="eco-input"
+                        value={attrMileage}
+                        onChange={(event) => updateVisitField("Пробег", event.target.value, "manual")}
+                        placeholder="188 912"
+                        aria-label="Текущий пробег автомобиля в километрах"
+                      />
+                      <span aria-hidden>км</span>
+                    </div>
+                  </label>
+                </div>
                 {visitOilSuggestion.state === "multiple" ? (
-                  <p className="eco-shipment-visit-warning">В составе несколько масел. Уточните, какое залили.</p>
+                  <label className="eco-shipment-visit-oil-choice">
+                    <span>В составе несколько масел — выберите фактически залитое</span>
+                    <select
+                      className="eco-input"
+                      value={visitOilSuggestion.candidates.some((candidate) => candidate.name === attrMotorOil) ? attrMotorOil : ""}
+                      onChange={(event) => updateVisitField("Моторное масло", event.target.value, SHIPMENT_OIL_SELECTED_SOURCE)}
+                    >
+                      <option value="">Выберите масло</option>
+                      {visitOilSuggestion.candidates.map((candidate) => (
+                        <option key={candidate.key} value={candidate.name}>{candidate.name}</option>
+                      ))}
+                    </select>
+                  </label>
                 ) : null}
+                <div className="eco-shipment-visit-inline-meta">
+                  <span>
+                    {visitOilSuggestion.state === "single"
+                      ? `Масло найдено в составе${visitOilSuggestion.suggestedActualVolumeLiters == null ? "; объём укажите вручную" : "; объём взят из количества в литрах"}`
+                      : recommendedFillVolume
+                        ? `По VIN рекомендовано ${recommendedFillVolume} л`
+                        : "Сохранится вместе с отгрузкой"}
+                  </span>
+                  <button
+                    type="button"
+                    className={`eco-shipment-visit-oil-source-button ${attrMotorOilSource === SHIPMENT_OIL_CUSTOMER_SOURCE ? "is-active" : ""}`}
+                    aria-pressed={attrMotorOilSource === SHIPMENT_OIL_CUSTOMER_SOURCE}
+                    onClick={() => updateVisitField(
+                      "Моторное масло",
+                      attrMotorOilSource === SHIPMENT_OIL_CUSTOMER_SOURCE ? attrMotorOil : "",
+                      SHIPMENT_OIL_CUSTOMER_SOURCE,
+                    )}
+                  >
+                    Масло клиента
+                  </button>
+                </div>
               </div>
               <details className="eco-shipment-vehicle-summary-more">
                 <summary>Технические данные</summary>

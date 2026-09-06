@@ -75,7 +75,10 @@ export async function syncCatalogBookingServices(
         branchId,
         name: product.name,
         description: product.description,
-        durationMinutes: 60,
+        // Zero means "not configured yet". Availability rejects it until an
+        // authorised employee sets the real duration; it must not silently
+        // become a confirmed one-hour service.
+        durationMinutes: 0,
         onlineBookingEnabled: false,
         requiresVin: false,
         requiresConfirmation: false,

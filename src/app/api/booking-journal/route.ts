@@ -9,13 +9,12 @@ import {
   BOOKING_INCLUDE,
   bookingManagementToken,
   cancelBooking,
-  confirmBooking,
   createBooking,
-  rescheduleBooking,
-  updateBookingDetails,
+  updateBooking,
+  type BookingOverrideReason,
   type BookingWithDetails,
 } from "@/lib/booking/service";
-import { addLocalDays, zonedLocalToUtc } from "@/lib/booking/timezone";
+import { addLocalDays, formatLocalDate, formatLocalTime, zonedLocalToUtc } from "@/lib/booking/timezone";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
 
@@ -32,6 +31,10 @@ function text(value: unknown) {
 function number(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function overrideReason(value: unknown): BookingOverrideReason | null {
+  return value === "slot_taken" || value === "outside_schedule" || value === "nonstandard_start" ? value : null;
 }
 
 function journalDateTime(value: string | null, timeZone: string) {
@@ -97,6 +100,19 @@ function parseComment(comment: string | null) {
   };
 }
 
+function structuredVehicle(payload: JsonObject) {
+  const vehicle = object(payload.vehicle);
+  if (!Object.keys(vehicle).length) return null;
+  return {
+    make: text(vehicle.make),
+    model: text(vehicle.model),
+    generation: text(vehicle.generation),
+    year: number(vehicle.year),
+    plate: text(vehicle.plate),
+    vin: text(vehicle.vin),
+  };
+}
+
 function statusAttendance(comment: string | null) {
   const normalized = (comment ?? "").toLowerCase();
   if (/не приехал|no[-_\s]?show/u.test(normalized)) return -1;
@@ -121,10 +137,18 @@ function recordDto(booking: BookingWithDetails) {
   const vehicle = booking.vehicle;
   return {
     id: journalId(booking.id),
+    booking_id: booking.id,
     local_booking_id: booking.id,
     staff_id: booking.masterMembershipId ? journalId(booking.masterMembershipId) : legacyUnassignedId(booking.branchId),
     date: booking.startsAt.toISOString(),
     datetime: booking.startsAt.toISOString(),
+    starts_at_utc: booking.startsAt.toISOString(),
+    ends_at_utc: booking.endsAt.toISOString(),
+    local_date: formatLocalDate(booking.startsAt, booking.branch.timezone),
+    local_start_time: formatLocalTime(booking.startsAt, booking.branch.timezone),
+    local_end_date: formatLocalDate(booking.endsAt, booking.branch.timezone),
+    local_end_time: formatLocalTime(booking.endsAt, booking.branch.timezone),
+    branch_timezone: booking.branch.timezone,
     seance_length: booking.durationMinutes * 60,
     length: booking.durationMinutes * 60,
     comment,
@@ -141,6 +165,7 @@ function recordDto(booking: BookingWithDetails) {
     })),
     client: {
       id: booking.clientId ? journalId(booking.clientId) : null,
+      client_id: booking.clientId,
       display_name: booking.customerName,
       name: booking.customerName,
       phone: booking.phone,
@@ -148,6 +173,9 @@ function recordDto(booking: BookingWithDetails) {
       is_new: booking.source === "PUBLIC",
     },
     vehicle: vehicle ? {
+      id: vehicle.id,
+      make: vehicle.make,
+      model_name: vehicle.model,
       model: [vehicle.make, vehicle.model].filter(Boolean).join(" "),
       plate: vehicle.plate,
       vin: vehicle.vin,
@@ -240,7 +268,9 @@ export async function GET(request: NextRequest) {
         ]);
         return NextResponse.json({ success: true, data: {
           company_id: journalId(branchId),
+          branch_id: branchId,
           company_title: branch.displayName || branch.shortName || branch.name,
+          branch_timezone: branch.timezone,
           can_manage: canManageBookings(access.context),
           can_override_conflict: canOverrideBookingConflict(access.context),
           booking_step_minutes: settings?.bookingStepMinutes ?? DEFAULT_BOOKING_STEP_MINUTES,
@@ -261,13 +291,28 @@ export async function GET(request: NextRequest) {
         });
         const hasUnassignedArchive = bookingViewIsSelfOnly(access.context) ? 0 : await prisma.booking.count({ where: { branchId, source: "LEGACY_YCLIENTS", masterMembershipId: null } });
         return NextResponse.json({ success: true, data: [
-          ...memberships.map((membership) => ({ id: journalId(membership.id), name: membership.user.name, specialization: membership.position || membership.roleId, bookable: membership.bookingServices.length > 0 })),
+          ...memberships.map((membership) => ({ id: journalId(membership.id), membership_id: membership.id, name: membership.user.name, specialization: membership.position || membership.roleId, bookable: membership.bookingServices.length > 0 })),
           ...(hasUnassignedArchive ? [{ id: legacyUnassignedId(branchId), name: "Архив Yclients", specialization: "Исторические записи без сопоставленного сотрудника", bookable: true }] : []),
         ] });
       }
       if (action === "services") {
-        const services = await prisma.bookingService.findMany({ where: { branchId, status: "ACTIVE" }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
-        return NextResponse.json({ success: true, data: services.map((service) => ({ id: journalId(service.id), title: service.name, seance_length: service.durationMinutes * 60, duration: service.durationMinutes * 60 })) });
+        const services = await prisma.bookingService.findMany({
+          where: { branchId, status: "ACTIVE" },
+          include: { masters: { select: { membershipId: true } } },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        });
+        return NextResponse.json({ success: true, data: services.map((service) => ({
+          id: journalId(service.id),
+          booking_service_id: service.id,
+          title: service.name,
+          description: service.description,
+          seance_length: service.durationMinutes * 60,
+          duration: service.durationMinutes * 60,
+          requires_vin: service.requiresVin,
+          requires_confirmation: service.requiresConfirmation,
+          required_fields: service.requiredFieldsJson,
+          master_membership_ids: service.masters.map((item) => item.membershipId),
+        })) });
       }
       if (action === "records") {
         const startDate = request.nextUrl.searchParams.get("start_date") ?? new Date().toISOString().slice(0, 10);
@@ -313,6 +358,7 @@ export async function POST(request: NextRequest) {
     const payload = object(body.payload);
     const client = object(payload.client);
     const parsed = parseComment(text(payload.comment));
+    const vehicle = structuredVehicle(payload);
     const result = await runWithBranchApiContext(access.context, async () => {
       const branchId = access.context.branchId!;
       const branch = await prisma.branch.findUnique({ where: { id: branchId }, select: { timezone: true } });
@@ -327,11 +373,14 @@ export async function POST(request: NextRequest) {
         customerName: text(client.name) ?? "",
         phone: text(client.phone) ?? "",
         email: text(client.email),
-        vehicle: parsed.vehicle,
-        comment: parsed.comment,
-        internalComment: parsed.internalComment,
+        clientId: text(payload.client_id),
+        vehicleId: text(payload.vehicle_id),
+        vehicle: vehicle ?? parsed.vehicle,
+        comment: text(payload.client_comment) ?? parsed.comment,
+        internalComment: text(payload.internal_comment) ?? parsed.internalComment,
         source: "ADMIN",
         overrideConflict: payload.save_if_busy === true,
+        overrideReason: overrideReason(payload.override_reason_code),
         durationOverrideMinutes: number(payload.seance_length) ? Math.max(5, Math.round(number(payload.seance_length)! / 60)) : null,
       }, {
         kind: "USER",
@@ -359,9 +408,13 @@ export async function PUT(request: NextRequest) {
     const payload = object(body.payload);
     const client = object(payload.client);
     const parsed = parseComment(text(payload.comment));
+    const vehicle = structuredVehicle(payload);
+    if (payload.confirmed === 1) {
+      requireBookingCapability(canConfirmBookings(access.context), "Нет права подтверждать запись");
+    }
     const result = await runWithBranchApiContext(access.context, async () => {
       const branchId = access.context.branchId!;
-      let booking = await bookingFromJournalId(branchId, body.record_id);
+      const booking = await bookingFromJournalId(branchId, body.record_id);
       const numericServiceIds = idsFromPayload(payload);
       const serviceIds = numericServiceIds.length
         ? await resolveServiceIds(branchId, numericServiceIds)
@@ -372,40 +425,28 @@ export async function PUT(request: NextRequest) {
         ? journalDateTime(text(payload.datetime), booking.branch.timezone)
         : booking.startsAt;
       const durationMinutes = number(payload.seance_length) ? Math.max(5, Math.round(number(payload.seance_length)! / 60)) : booking.durationMinutes;
-      const currentServiceIds = booking.serviceItems.map((item) => item.serviceId).filter((id): id is string => Boolean(id)).sort();
-      const scheduleChanged = startsAt.getTime() !== booking.startsAt.getTime()
-        || membershipId !== booking.masterMembershipId
-        || durationMinutes !== booking.durationMinutes
-        || serviceIds.slice().sort().join("|") !== currentServiceIds.join("|");
-      if (scheduleChanged) {
-        booking = await rescheduleBooking(booking.id, {
-          startsAt,
-          masterMembershipId: membershipId,
-          serviceIds,
-          durationOverrideMinutes: durationMinutes,
-          overrideConflict: payload.save_if_busy === true,
-        }, {
-          kind: "USER",
-          userId: access.context.userId,
-          allowConflictOverride: canOverrideBookingConflict(access.context),
-          respectLeadTime: false,
-        });
-      }
-      booking = await updateBookingDetails(booking.id, {
+      return updateBooking(booking.id, {
+        startsAt,
+        masterMembershipId: membershipId,
+        serviceIds,
+        durationOverrideMinutes: durationMinutes,
+        overrideConflict: payload.save_if_busy === true,
+        overrideReason: overrideReason(payload.override_reason_code),
         customerName: text(client.name) ?? booking.customerName,
         phone: text(client.phone) ?? booking.phone,
         email: text(client.email),
-        comment: text(payload.comment) ?? parsed.comment,
-        internalComment: parsed.internalComment,
-        vehicle: parsed.vehicle,
-      }, { kind: "USER", userId: access.context.userId });
-      let confirmed = false;
-      if (payload.confirmed === 1 && booking.requiresConfirmation && booking.confirmationState !== "CONFIRMED") {
-        requireBookingCapability(canConfirmBookings(access.context), "Нет права подтверждать запись");
-        booking = await confirmBooking(booking.id, { kind: "USER", userId: access.context.userId });
-        confirmed = true;
-      }
-      return { booking, scheduleChanged, confirmed };
+        clientId: text(payload.client_id) ?? booking.clientId,
+        vehicleId: text(payload.vehicle_id) ?? booking.vehicleId,
+        comment: text(payload.client_comment) ?? parsed.comment,
+        internalComment: text(payload.internal_comment) ?? parsed.internalComment,
+        vehicle: vehicle ?? parsed.vehicle,
+        confirm: payload.confirmed === 1,
+      }, {
+        kind: "USER",
+        userId: access.context.userId,
+        allowConflictOverride: canOverrideBookingConflict(access.context),
+        respectLeadTime: false,
+      });
     });
     const url = managementUrl(request, result.booking);
     if (result.scheduleChanged) await runWithBranchApiContext(access.context, () => notifyBookingRescheduled(result.booking, url)).catch((error) => console.warn("[booking-journal/reschedule-notification]", error));

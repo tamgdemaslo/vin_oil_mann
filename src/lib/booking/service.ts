@@ -11,8 +11,9 @@ import {
 } from "./constants";
 import { BookingError } from "./errors";
 import { getBookingAvailability } from "./availability";
+import { publicBookingIdempotencyAuditId } from "./idempotency";
 import { createManagementHandle, createManagementToken, verifyManagementToken } from "./management-token";
-import { formatLocalDate } from "./timezone";
+import { formatLocalDate, formatLocalTime, localTimeToMinutes } from "./timezone";
 
 type BookingDb = Prisma.TransactionClient;
 
@@ -26,6 +27,8 @@ export type BookingVehicleInput = {
   plate?: string | null;
   vin?: string | null;
 };
+
+export type BookingOverrideReason = "slot_taken" | "outside_schedule" | "nonstandard_start";
 
 export type CreateBookingInput = {
   branchId: string;
@@ -42,7 +45,9 @@ export type CreateBookingInput = {
   internalComment?: string | null;
   source?: string;
   overrideConflict?: boolean;
+  overrideReason?: BookingOverrideReason | null;
   durationOverrideMinutes?: number | null;
+  idempotencyKey?: string | null;
 };
 
 export type BookingActor = {
@@ -57,6 +62,7 @@ export type RescheduleBookingInput = {
   masterMembershipId?: string | null;
   serviceIds?: string[] | null;
   overrideConflict?: boolean;
+  overrideReason?: BookingOverrideReason | null;
   durationOverrideMinutes?: number | null;
 };
 
@@ -67,6 +73,18 @@ export type UpdateBookingDetailsInput = {
   comment?: string | null;
   internalComment?: string | null;
   vehicle?: BookingVehicleInput | null;
+};
+
+export type UpdateBookingInput = UpdateBookingDetailsInput & {
+  startsAt?: string | Date | null;
+  masterMembershipId?: string | null;
+  serviceIds?: string[] | null;
+  durationOverrideMinutes?: number | null;
+  overrideConflict?: boolean;
+  overrideReason?: BookingOverrideReason | null;
+  clientId?: string | null;
+  vehicleId?: string | null;
+  confirm?: boolean;
 };
 
 function clean(value: unknown) {
@@ -126,6 +144,49 @@ function normalizeYear(value: number | string | null | undefined) {
     throw new BookingError("Некорректный год автомобиля", "booking_vehicle_year_invalid");
   }
   return year;
+}
+
+function normalizeVehicleInput(input: BookingVehicleInput | null | undefined) {
+  const make = clean(input?.make);
+  const model = clean(input?.model);
+  if (!make || !model) {
+    throw new BookingError("Укажите марку и модель автомобиля", "booking_vehicle_required");
+  }
+  return {
+    make,
+    model,
+    generation: clean(input?.generation),
+    year: normalizeYear(input?.year),
+    plate: clean(input?.plate)?.toUpperCase() ?? null,
+    vin: clean(input?.vin)?.toUpperCase() ?? null,
+  };
+}
+
+async function findPublicIdempotentBooking(branchId: string, auditId: string) {
+  const audit = await prisma.branchAuditLog.findFirst({
+    where: { id: auditId, branchId },
+    select: { branchId: true, action: true, entityType: true, entityId: true },
+  });
+  if (audit?.branchId !== branchId || audit.action !== "booking.created" || audit.entityType !== "booking" || !audit.entityId) {
+    return null;
+  }
+  return prisma.booking.findFirst({
+    where: { id: audit.entityId, branchId },
+    include: BOOKING_INCLUDE,
+  });
+}
+
+export async function getPublicBookingByIdempotency(branchId: string, idempotencyKey: string) {
+  if (!branchId) throw new BookingError("Филиал не указан", "booking_branch_required");
+  const auditId = publicBookingIdempotencyAuditId(branchId, idempotencyKey);
+  const booking = await findPublicIdempotentBooking(branchId, auditId);
+  if (!booking) {
+    throw new BookingError("Результат операции пока не найден", "booking_idempotency_result_not_found", 404);
+  }
+  return {
+    booking,
+    managementToken: createManagementToken(booking.managementHandle, booking.managementTokenVersion),
+  };
 }
 
 async function lockKeys(tx: BookingDb, keys: string[]) {
@@ -217,6 +278,7 @@ async function assertAvailableSlot(
     excludeBookingId?: string | null;
     durationOverrideMinutes?: number | null;
   },
+  overrideReason?: BookingOverrideReason | null,
 ) {
   const branch = await tx.branch.findUnique({ where: { id: input.branchId }, select: { timezone: true } });
   if (!branch) throw new BookingError("Филиал не найден", "booking_branch_not_found", 404);
@@ -232,7 +294,37 @@ async function assertAvailableSlot(
     durationOverrideMinutes: input.durationOverrideMinutes,
   }, tx);
   const exact = availability.slots.some((slot) => slot.startsAt === input.startsAt.toISOString());
-  if (!exact) throw new BookingError("Выбранное время больше недоступно", "booking_slot_taken", 409);
+  if (exact) return null;
+
+  const endsAt = new Date(input.startsAt.getTime() + availability.durationMinutes * 60_000);
+  const overlaps = await tx.booking.count({
+    where: {
+      branchId: input.branchId,
+      masterMembershipId: input.masterMembershipId,
+      status: BOOKING_STATUS.ACTIVE,
+      startsAt: { lt: endsAt },
+      endsAt: { gt: input.startsAt },
+      ...(input.excludeBookingId ? { id: { not: input.excludeBookingId } } : {}),
+    },
+  });
+  const localTime = formatLocalTime(input.startsAt, branch.timezone);
+  const actualReason: BookingOverrideReason = overlaps > 0
+    ? "slot_taken"
+    : localTimeToMinutes(localTime) % availability.stepMinutes !== 0
+      ? "nonstandard_start"
+      : "outside_schedule";
+  const message = actualReason === "slot_taken"
+    ? "На выбранное время уже есть запись"
+    : actualReason === "nonstandard_start"
+      ? `Начало записи выбирается с шагом ${availability.stepMinutes} минут`
+      : availability.message ?? `Работа не помещается в график мастера (${availability.durationMinutes} минут)`;
+  if (overrideReason !== actualReason) {
+    throw new BookingError(message, `booking_${actualReason}`, 409, {
+      reasonCode: actualReason,
+      alternatives: availability.slots.slice(0, 3),
+    });
+  }
+  return actualReason;
 }
 
 async function resolveClient(
@@ -333,8 +425,22 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
   if (!normalizedPhone) throw new BookingError("Укажите корректный телефон", "booking_phone_invalid");
   if (!input.branchId) throw new BookingError("Филиал не указан", "booking_branch_required");
   if (!input.masterMembershipId) throw new BookingError("Мастер не выбран", "booking_master_required");
+  const publicAuditId = actor.kind === "PUBLIC"
+    ? publicBookingIdempotencyAuditId(input.branchId, input.idempotencyKey)
+    : null;
+  if (publicAuditId) {
+    const existing = await findPublicIdempotentBooking(input.branchId, publicAuditId);
+    if (existing) {
+      return {
+        booking: existing,
+        managementToken: createManagementToken(existing.managementHandle, existing.managementTokenVersion),
+        reused: true,
+      };
+    }
+  }
   const startsAt = dateValue(input.startsAt, "startsAt");
-  const wantsOverride = Boolean(input.overrideConflict);
+  const overrideReason = input.overrideReason ?? (input.overrideConflict ? "slot_taken" : null);
+  const wantsOverride = Boolean(overrideReason);
   if (wantsOverride && !actor.allowConflictOverride) {
     throw new BookingError("Нет права создавать пересекающиеся записи", "booking_override_forbidden", 403);
   }
@@ -343,7 +449,9 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
   const managementHandle = createManagementHandle();
   const managementToken = createManagementToken(managementHandle, 1);
 
-  const created = await (prisma as unknown as PrismaClient).$transaction(async (tx) => {
+  let created;
+  try {
+    created = await (prisma as unknown as PrismaClient).$transaction(async (tx) => {
     await lockKeys(tx, [`booking-master:${input.branchId}:${input.masterMembershipId}`]);
     const onlineOnly = actor.kind === "PUBLIC";
     const loaded = await loadServices(tx, input.branchId, input.serviceIds, onlineOnly);
@@ -353,8 +461,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
       : loaded.durationMinutes;
     await assertMasterAssignments(tx, input.branchId, input.masterMembershipId, ids);
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
-    if (!wantsOverride) {
-      await assertAvailableSlot(tx, {
+    const appliedOverrideReason = await assertAvailableSlot(tx, {
         branchId: input.branchId,
         serviceIds: ids,
         masterMembershipId: input.masterMembershipId,
@@ -362,33 +469,44 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
         onlineOnly,
         respectLeadTime: actor.respectLeadTime !== false,
         durationOverrideMinutes: durationMinutes,
-      });
-    }
+      }, overrideReason);
     await assertNoOverlap(tx, {
       branchId: input.branchId,
       masterMembershipId: input.masterMembershipId,
       startsAt,
       endsAt,
-    }, wantsOverride);
+    }, appliedOverrideReason === "slot_taken");
     const requiresVin = services.some((service) => service.requiresVin);
-    const vehicleVin = clean(input.vehicle?.vin)?.toUpperCase() ?? null;
+    const submittedVehicle = !input.vehicleId ? normalizeVehicleInput(input.vehicle) : null;
+    const vehicleVin = submittedVehicle?.vin ?? null;
     if (requiresVin && !vehicleVin && !input.vehicleId) {
       throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
     }
 
     const client = await inBookingCreatePhase("client", () => resolveClient(tx, input, normalizedPhone));
-    const vehicle = await inBookingCreatePhase("vehicle", () => resolveVehicle(tx, input, client.id));
+    // A public form submission is a snapshot for this booking, not permission
+    // to select or mutate a vehicle in somebody else's canonical CRM profile.
+    const vehicle = actor.kind === "PUBLIC"
+      ? null
+      : await inBookingCreatePhase("vehicle", () => resolveVehicle(tx, input, client.id));
+    // When a plate/VIN matches an older profile, keep the association but use
+    // the values submitted for this visit in its immutable booking snapshot.
+    // Canonical vehicle data can be reviewed separately by an authorised user.
+    const bookingVehicle = submittedVehicle ?? vehicle;
+    if (!bookingVehicle) {
+      throw new BookingError("Укажите автомобиль", "booking_vehicle_required");
+    }
     const requiredFields = requiredServiceFields(services);
-    if (requiresVin && !vehicle.vin) {
+    if (requiresVin && !bookingVehicle.vin) {
       throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
     }
     if (requiredFields.has("email") && !clean(input.email)) {
       throw new BookingError("Для выбранной услуги нужен email", "booking_email_required");
     }
-    if (requiredFields.has("plate") && !vehicle.plate) {
+    if (requiredFields.has("plate") && !bookingVehicle.plate) {
       throw new BookingError("Для выбранной услуги нужен госномер", "booking_plate_required");
     }
-    if (requiredFields.has("year") && !vehicle.year) {
+    if (requiredFields.has("year") && !bookingVehicle.year) {
       throw new BookingError("Для выбранной услуги нужен год автомобиля", "booking_vehicle_year_required");
     }
     const requiresConfirmation = services.some((service) => service.requiresConfirmation);
@@ -399,21 +517,21 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
       data: {
         branchId: input.branchId,
         clientId: client.id,
-        vehicleId: vehicle.id,
+        vehicleId: vehicle?.id ?? null,
         masterMembershipId: input.masterMembershipId,
         customerName,
         phone: input.phone.trim(),
         normalizedPhone,
         email: clean(input.email),
         vehicleSnapshot: {
-          make: vehicle.make,
-          model: vehicle.model,
-          generation: vehicle.generation,
-          year: vehicle.year,
-          plate: vehicle.plate,
-          vin: vehicle.vin,
+          make: bookingVehicle.make,
+          model: bookingVehicle.model,
+          generation: bookingVehicle.generation,
+          year: bookingVehicle.year,
+          plate: bookingVehicle.plate,
+          vin: bookingVehicle.vin,
         },
-        vin: vehicle.vin,
+        vin: bookingVehicle.vin,
         startsAt,
         endsAt,
         durationMinutes,
@@ -422,7 +540,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
         confirmationState: requiresConfirmation ? BOOKING_CONFIRMATION.PENDING : BOOKING_CONFIRMATION.NOT_REQUIRED,
         comment: clean(input.comment),
         internalComment: actor.kind === "USER" ? clean(input.internalComment) : null,
-        conflictOverride: wantsOverride,
+        conflictOverride: Boolean(appliedOverrideReason),
         managementHandle,
         createdByUserId: actor.userId ?? null,
       },
@@ -445,6 +563,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
     if (!booking) throw new BookingError("Не удалось сохранить запись", "booking_create_failed", 500);
     await inBookingCreatePhase("audit", () => tx.branchAuditLog.create({
       data: {
+        ...(publicAuditId ? { id: publicAuditId } : {}),
         businessGroupId: branch.businessGroupId,
         branchId: branch.id,
         userId: actor.userId ?? null,
@@ -457,17 +576,34 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
           durationMinutes: booking.durationMinutes,
           endsAt: booking.endsAt.toISOString(),
           masterMembershipId: booking.masterMembershipId,
+          overrideReason: appliedOverrideReason,
           serviceIds: ids,
           conflictOverride: booking.conflictOverride,
         },
       },
     }));
     return booking;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    // If the response or the concurrent transaction was lost after commit,
+    // resolve the original operation instead of creating a second booking.
+    if (publicAuditId) {
+      const existing = await findPublicIdempotentBooking(input.branchId, publicAuditId);
+      if (existing) {
+        return {
+          booking: existing,
+          managementToken: createManagementToken(existing.managementHandle, existing.managementTokenVersion),
+          reused: true,
+        };
+      }
+    }
+    throw error;
+  }
 
   return {
     booking: created,
     managementToken,
+    reused: false,
   };
 }
 
@@ -486,7 +622,8 @@ export async function getBookingByManagementToken(token: string) {
 
 export async function rescheduleBooking(bookingId: string, input: RescheduleBookingInput, actor: BookingActor) {
   const startsAt = dateValue(input.startsAt, "startsAt");
-  const wantsOverride = Boolean(input.overrideConflict);
+  const overrideReason = input.overrideReason ?? (input.overrideConflict ? "slot_taken" : null);
+  const wantsOverride = Boolean(overrideReason);
   if (wantsOverride && !actor.allowConflictOverride) {
     throw new BookingError("Нет права переносить запись с пересечением", "booking_override_forbidden", 403);
   }
@@ -517,8 +654,7 @@ export async function rescheduleBooking(bookingId: string, input: RescheduleBook
       : loaded.durationMinutes;
     await assertMasterAssignments(tx, current.branchId, masterMembershipId, ids);
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
-    if (!wantsOverride) {
-      await assertAvailableSlot(tx, {
+    const appliedOverrideReason = await assertAvailableSlot(tx, {
         branchId: current.branchId,
         serviceIds: ids,
         masterMembershipId,
@@ -527,15 +663,14 @@ export async function rescheduleBooking(bookingId: string, input: RescheduleBook
         respectLeadTime: actor.respectLeadTime !== false,
         excludeBookingId: current.id,
         durationOverrideMinutes: durationMinutes,
-      });
-    }
+      }, overrideReason);
     await assertNoOverlap(tx, {
       branchId: current.branchId,
       masterMembershipId,
       startsAt,
       endsAt,
       excludeBookingId: current.id,
-    }, wantsOverride);
+    }, appliedOverrideReason === "slot_taken");
 
     if (input.serviceIds?.length) {
       await tx.bookingServiceItem.deleteMany({ where: { branchId: current.branchId, bookingId: current.id } });
@@ -562,7 +697,7 @@ export async function rescheduleBooking(bookingId: string, input: RescheduleBook
         confirmationState: requiresConfirmation ? BOOKING_CONFIRMATION.PENDING : BOOKING_CONFIRMATION.NOT_REQUIRED,
         confirmedAt: null,
         confirmedBy: null,
-        conflictOverride: wantsOverride,
+        conflictOverride: Boolean(appliedOverrideReason),
       },
       include: BOOKING_INCLUDE,
     });
@@ -583,6 +718,7 @@ export async function rescheduleBooking(bookingId: string, input: RescheduleBook
           durationMinutes: booking.durationMinutes,
           serviceIds: ids,
           conflictOverride: booking.conflictOverride,
+          overrideReason: appliedOverrideReason,
           actor: actor.kind,
         },
       },
@@ -694,6 +830,176 @@ export async function updateBookingDetails(bookingId: string, input: UpdateBooki
       },
     });
     return booking;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+/** Journal edit transaction: schedule, client, vehicle, services and confirmation commit together. */
+export async function updateBooking(bookingId: string, input: UpdateBookingInput, actor: BookingActor) {
+  const overrideReason = input.overrideReason ?? (input.overrideConflict ? "slot_taken" : null);
+  const wantsOverride = Boolean(overrideReason);
+  if (wantsOverride && !actor.allowConflictOverride) {
+    throw new BookingError("Нет права сохранять запись с конфликтом", "booking_override_forbidden", 403);
+  }
+  return (prisma as unknown as PrismaClient).$transaction(async (tx) => {
+    await lockKeys(tx, [`booking:${bookingId}`]);
+    const current = await tx.booking.findFirst({ where: { id: bookingId }, include: BOOKING_INCLUDE });
+    if (!current) throw new BookingError("Запись не найдена", "booking_not_found", 404);
+    if (current.status !== BOOKING_STATUS.ACTIVE) throw new BookingError("Отменённую запись нельзя изменить", "booking_cancelled", 409);
+
+    const startsAt = input.startsAt ? dateValue(input.startsAt, "startsAt") : current.startsAt;
+    const masterMembershipId = input.masterMembershipId ?? current.masterMembershipId;
+    if (!masterMembershipId) throw new BookingError("Мастер не выбран", "booking_master_required");
+    await lockKeys(tx, [
+      `booking-master:${current.branchId}:${masterMembershipId}`,
+      ...(current.masterMembershipId ? [`booking-master:${current.branchId}:${current.masterMembershipId}`] : []),
+    ]);
+    const serviceIds = input.serviceIds?.length
+      ? input.serviceIds
+      : current.serviceItems.map((item) => item.serviceId).filter((id): id is string => Boolean(id));
+    const loaded = await loadServices(tx, current.branchId, serviceIds, false);
+    const durationMinutes = input.durationOverrideMinutes && input.durationOverrideMinutes >= 5
+      ? Math.min(Math.trunc(input.durationOverrideMinutes), 1_440)
+      : loaded.durationMinutes;
+    await assertMasterAssignments(tx, current.branchId, masterMembershipId, loaded.ids);
+    const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
+    const currentServiceIds = current.serviceItems.map((item) => item.serviceId).filter((id): id is string => Boolean(id)).sort();
+    const scheduleChanged = startsAt.getTime() !== current.startsAt.getTime()
+      || masterMembershipId !== current.masterMembershipId
+      || durationMinutes !== current.durationMinutes
+      || loaded.ids.slice().sort().join("|") !== currentServiceIds.join("|");
+    let appliedOverrideReason: BookingOverrideReason | null = null;
+    if (scheduleChanged) {
+      appliedOverrideReason = await assertAvailableSlot(tx, {
+          branchId: current.branchId,
+          serviceIds: loaded.ids,
+          masterMembershipId,
+          startsAt,
+          onlineOnly: false,
+          respectLeadTime: false,
+          excludeBookingId: current.id,
+          durationOverrideMinutes: durationMinutes,
+        }, overrideReason);
+      await assertNoOverlap(tx, {
+        branchId: current.branchId,
+        masterMembershipId,
+        startsAt,
+        endsAt,
+        excludeBookingId: current.id,
+      }, appliedOverrideReason === "slot_taken");
+    }
+
+    const customerName = clean(input.customerName) ?? current.customerName;
+    const phone = clean(input.phone) ?? current.phone;
+    const normalizedPhone = normalizePhoneKey(phone);
+    if (!normalizedPhone) throw new BookingError("Укажите корректный телефон", "booking_phone_invalid");
+    const clientInput: CreateBookingInput = {
+      branchId: current.branchId,
+      serviceIds: loaded.ids,
+      masterMembershipId,
+      startsAt,
+      customerName,
+      phone,
+      email: input.email === undefined ? current.email : input.email,
+      clientId: input.clientId === undefined ? current.clientId : input.clientId,
+      vehicleId: input.vehicleId === undefined ? current.vehicleId : input.vehicleId,
+      vehicle: input.vehicle,
+    };
+    const client = await resolveClient(tx, clientInput, normalizedPhone);
+    let vehicle = current.vehicle;
+    if (clientInput.vehicleId || input.vehicle) {
+      vehicle = await resolveVehicle(tx, clientInput, client.id);
+      if (vehicle && input.vehicle && clientInput.vehicleId) {
+        vehicle = await tx.clientVehicle.update({
+          where: { branchId_id: { branchId: current.branchId, id: vehicle.id } },
+          data: {
+            make: clean(input.vehicle.make) ?? vehicle.make,
+            model: clean(input.vehicle.model) ?? vehicle.model,
+            generation: input.vehicle.generation === undefined ? undefined : clean(input.vehicle.generation),
+            year: input.vehicle.year === undefined ? undefined : normalizeYear(input.vehicle.year),
+            plate: input.vehicle.plate === undefined ? undefined : clean(input.vehicle.plate)?.toUpperCase() ?? null,
+            vin: input.vehicle.vin === undefined ? undefined : clean(input.vehicle.vin)?.toUpperCase() ?? null,
+          },
+        });
+      }
+    }
+    if (!vehicle || vehicle.counterpartyId !== client.id) {
+      throw new BookingError("Выберите автомобиль клиента", "booking_vehicle_required");
+    }
+    const requiredFields = requiredServiceFields(loaded.services);
+    const nextEmail = input.email === undefined ? current.email : clean(input.email);
+    if (loaded.services.some((service) => service.requiresVin) && !vehicle.vin) throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
+    if (requiredFields.has("email") && !nextEmail) throw new BookingError("Для выбранной услуги нужен email", "booking_email_required");
+    if (requiredFields.has("plate") && !vehicle.plate) throw new BookingError("Для выбранной услуги нужен госномер", "booking_plate_required");
+    if (requiredFields.has("year") && !vehicle.year) throw new BookingError("Для выбранной услуги нужен год автомобиля", "booking_vehicle_year_required");
+
+    await tx.localCounterparty.update({
+      where: { branchId_id: { branchId: current.branchId, id: client.id } },
+      data: { name: customerName, displayName: customerName, phone, normalizedPhone, email: nextEmail },
+    });
+    if (loaded.ids.slice().sort().join("|") !== currentServiceIds.join("|")) {
+      await tx.bookingServiceItem.deleteMany({ where: { branchId: current.branchId, bookingId: current.id } });
+      await tx.bookingServiceItem.createMany({
+        data: loaded.services.map((service, index) => ({
+          branchId: current.branchId,
+          bookingId: current.id,
+          serviceId: service.id,
+          serviceNameSnapshot: service.name,
+          durationMinutesSnapshot: service.durationMinutes,
+          sortOrder: index,
+        })),
+      });
+    }
+    const requiresConfirmation = loaded.services.some((service) => service.requiresConfirmation);
+    const shouldConfirm = input.confirm === true && requiresConfirmation;
+    const booking = await tx.booking.update({
+      where: { branchId_id: { branchId: current.branchId, id: current.id } },
+      data: {
+        clientId: client.id,
+        vehicleId: vehicle.id,
+        masterMembershipId,
+        customerName,
+        phone,
+        normalizedPhone,
+        email: nextEmail,
+        vehicleSnapshot: { make: vehicle.make, model: vehicle.model, generation: vehicle.generation, year: vehicle.year, plate: vehicle.plate, vin: vehicle.vin },
+        vin: vehicle.vin,
+        startsAt,
+        endsAt,
+        durationMinutes,
+        requiresConfirmation,
+        confirmationState: shouldConfirm ? BOOKING_CONFIRMATION.CONFIRMED : scheduleChanged && requiresConfirmation ? BOOKING_CONFIRMATION.PENDING : requiresConfirmation ? current.confirmationState : BOOKING_CONFIRMATION.NOT_REQUIRED,
+        confirmedAt: shouldConfirm ? new Date() : scheduleChanged ? null : undefined,
+        confirmedBy: shouldConfirm ? actor.userId ?? actor.kind : scheduleChanged ? null : undefined,
+        comment: input.comment === undefined ? undefined : clean(input.comment),
+        internalComment: input.internalComment === undefined ? undefined : clean(input.internalComment),
+        conflictOverride: Boolean(appliedOverrideReason),
+      },
+      include: BOOKING_INCLUDE,
+    });
+    await tx.branchAuditLog.create({
+      data: {
+        businessGroupId: current.branch.businessGroupId,
+        branchId: current.branchId,
+        userId: actor.userId ?? null,
+        action: scheduleChanged ? "booking.updated_and_rescheduled" : "booking.updated",
+        entityType: "booking",
+        entityId: current.id,
+        metadata: {
+          actor: actor.kind,
+          scheduleChanged,
+          previousStartsAt: current.startsAt.toISOString(),
+          startsAt: booking.startsAt.toISOString(),
+          previousEndsAt: current.endsAt.toISOString(),
+          endsAt: booking.endsAt.toISOString(),
+          masterMembershipId,
+          serviceIds: loaded.ids,
+          conflictOverride: wantsOverride,
+          overrideReason: appliedOverrideReason,
+          confirmed: shouldConfirm,
+        },
+      },
+    });
+    return { booking, scheduleChanged, confirmed: shouldConfirm && current.confirmationState !== BOOKING_CONFIRMATION.CONFIRMED };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 

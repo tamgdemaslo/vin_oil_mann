@@ -13,6 +13,24 @@ function vehicleDto(vehicle: BookingWithDetails["vehicle"]) {
   };
 }
 
+function snapshotVehicleDto(value: BookingWithDetails["vehicleSnapshot"]) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const vehicle = value as Record<string, unknown>;
+  const make = typeof vehicle.make === "string" ? vehicle.make : "";
+  const model = typeof vehicle.model === "string" ? vehicle.model : "";
+  if (!make || !model) return null;
+  const year = typeof vehicle.year === "number" && Number.isInteger(vehicle.year) ? vehicle.year : null;
+  return {
+    id: null,
+    make,
+    model,
+    generation: typeof vehicle.generation === "string" ? vehicle.generation : null,
+    year,
+    plate: typeof vehicle.plate === "string" ? vehicle.plate : null,
+    vin: typeof vehicle.vin === "string" ? vehicle.vin : null,
+  };
+}
+
 export function bookingDto(booking: BookingWithDetails) {
   return {
     id: booking.id,
@@ -33,7 +51,7 @@ export function bookingDto(booking: BookingWithDetails) {
     customerName: booking.customerName,
     phone: booking.phone,
     email: booking.email,
-    vehicle: vehicleDto(booking.vehicle),
+    vehicle: vehicleDto(booking.vehicle) ?? snapshotVehicleDto(booking.vehicleSnapshot),
     master: booking.masterMembership ? {
       membershipId: booking.masterMembership.id,
       name: booking.masterMembership.user.name,

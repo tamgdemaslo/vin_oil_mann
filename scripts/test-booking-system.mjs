@@ -17,7 +17,9 @@ const tokens = await jiti.import("../src/lib/booking/management-token.ts");
 const managementUrls = await jiti.import("../src/lib/booking/management-url.ts");
 const catalogServices = await jiti.import("../src/lib/booking/catalog-services.ts");
 const journalWindows = await jiti.import("../src/lib/booking/journal-windows.ts");
+const journalTime = await jiti.import("../src/lib/booking/journal-time.ts");
 const publicLinks = await jiti.import("../src/lib/booking/public-link.ts");
+const bookingIdempotency = await jiti.import("../src/lib/booking/idempotency.ts");
 const { getBookingAvailability } = await jiti.import("../src/lib/booking/availability.ts");
 const bookingAccess = await jiti.import("../src/lib/booking/access.ts");
 
@@ -41,6 +43,20 @@ assert.equal(publicLinks.publicBookingPath("филиал 1"), "/booking?branchId
 assert.equal(publicLinks.publicBookingBranchFromSearch("?branchId=branch-a"), "branch-a");
 assert.equal(publicLinks.publicBookingBranchFromSearch("?branch=legacy-branch"), "legacy-branch");
 assert.equal(publicLinks.publicBookingBranchFromSearch(""), null);
+
+const idempotencyKey = "550e8400-e29b-41d4-a716-446655440000";
+assert.equal(
+  bookingIdempotency.publicBookingIdempotencyAuditId("branch-a", idempotencyKey),
+  bookingIdempotency.publicBookingIdempotencyAuditId("branch-a", idempotencyKey),
+);
+assert.notEqual(
+  bookingIdempotency.publicBookingIdempotencyAuditId("branch-a", idempotencyKey),
+  bookingIdempotency.publicBookingIdempotencyAuditId("branch-b", idempotencyKey),
+);
+assert.throws(
+  () => bookingIdempotency.publicBookingIdempotencyAuditId("branch-a", "phone-only"),
+  /Некорректный ключ операции/,
+);
 
 assert.deepEqual(
   journalWindows.buildJournalFreeWindows(
@@ -89,6 +105,7 @@ const catalogSync = await catalogServices.syncCatalogBookingServices({
 assert.deepEqual(catalogSync, { catalogCount: 2, added: 1, updated: 1, disabled: 1 });
 assert.equal(catalogCreates[0].data[0].id, "catalog-service:product-2");
 assert.equal(catalogCreates[0].data[0].onlineBookingEnabled, false);
+assert.equal(catalogCreates[0].data[0].durationMinutes, 0);
 assert.ok(catalogUpdates.some((entry) => entry.data.name === "Диагностика"));
 assert.ok(catalogUpdates.some((entry) => entry.data.status === "INACTIVE"));
 
@@ -103,6 +120,29 @@ assert.equal(
 assert.throws(
   () => timezone.zonedLocalToUtc("2026-03-29", "02:30", "Europe/Berlin"),
   /недоступно из-за перевода часов/,
+);
+
+// Journal values are branch-local wall-clock values. They must not depend on
+// the timezone of the browser or machine that opens the editor.
+assert.equal(
+  journalTime.utcInstantToJournalLocal("2026-08-16T08:30:00.000Z", "Europe/Kaliningrad"),
+  "2026-08-16T10:30",
+);
+assert.equal(
+  journalTime.utcInstantToJournalLocal("2026-08-16T08:30:00.000Z", "Asia/Vladivostok"),
+  "2026-08-16T18:30",
+);
+assert.equal(
+  journalTime.journalLocalToUtcIso("2026-08-16T10:30", "Europe/Kaliningrad"),
+  "2026-08-16T08:30:00.000Z",
+);
+assert.equal(
+  journalTime.addMinutesToJournalLocal("2026-08-16T23:45", 30),
+  "2026-08-17T00:15",
+);
+assert.equal(
+  journalTime.journalLocalDurationMinutes("2026-08-16T10:30", "2026-08-16T12:00"),
+  90,
 );
 
 const handle = tokens.createManagementHandle();
@@ -236,6 +276,8 @@ const closedByException = await getBookingAvailability(
   availabilityDb({ exceptions: [{ membershipId: "master-1", localDate: "2026-08-17", kind: "CLOSED", startTime: null, endTime: null }] }),
 );
 assert.equal(closedByException.slots.length, 0);
+assert.equal(closedByException.reasonCode, "master_closed");
+assert.match(closedByException.message, /не работает/i);
 
 const dayOff = await getBookingAvailability(
   { ...availabilityInput, serviceIds: ["oil"] },
@@ -245,6 +287,7 @@ const dayOff = await getBookingAvailability(
   ] }),
 );
 assert.equal(dayOff.slots.length, 0);
+assert.equal(dayOff.reasonCode, "master_not_working");
 
 const inheritedBranchHours = await getBookingAvailability(
   { ...availabilityInput, serviceIds: ["oil"] },
@@ -307,12 +350,20 @@ assert.match(service, /inBookingCreatePhase\("booking"/);
 assert.match(service, /inBookingCreatePhase\("service_items"/);
 assert.match(service, /inBookingCreatePhase\("booking_reload"/);
 assert.match(service, /inBookingCreatePhase\("audit"/);
+assert.match(service, /publicBookingIdempotencyAuditId/);
+assert.match(service, /getPublicBookingByIdempotency/);
+assert.match(service, /reused: true/);
+assert.match(service, /actor\.kind === "PUBLIC"\s*\? null/);
+assert.match(service, /vehicleId: vehicle\?\.id \?\? null/);
+assert.match(service, /const bookingVehicle = submittedVehicle \?\? vehicle/);
 assert.ok(
   service.indexOf("const managementToken = createManagementToken") < service.indexOf(".$transaction", service.indexOf("export async function createBooking")),
   "management token configuration must be validated before the booking transaction",
 );
 assert.match(service, /booking\.rescheduled/);
 assert.match(service, /booking\.cancelled/);
+assert.match(service, /type BookingOverrideReason = "slot_taken" \| "outside_schedule" \| "nonstandard_start"/);
+assert.match(service, /overrideReason !== actualReason/);
 assert.ok(
   service.indexOf('lockKeys(tx, [`booking:${bookingId}`])') < service.indexOf("const current = await tx.booking.findFirst", service.indexOf("export async function rescheduleBooking")),
   "reschedule must lock the booking before reading mutable state",
@@ -327,6 +378,10 @@ assert.match(availability, /roleId: BOOKING_MASTER_ROLE_ID/);
 
 const bookingJournal = source("src/app/api/booking-journal/route.ts");
 assert.match(bookingJournal, /roleId: BOOKING_MASTER_ROLE_ID/);
+assert.match(bookingJournal, /starts_at_utc/);
+assert.match(bookingJournal, /local_start_time/);
+assert.match(bookingJournal, /clientId: text\(payload\.client_id\)/);
+assert.match(bookingJournal, /vehicleId: text\(payload\.vehicle_id\)/);
 
 const bookingSettings = source("src/app/api/booking-admin/settings/route.ts");
 assert.match(bookingSettings, /roleId: BOOKING_MASTER_ROLE_ID/);
@@ -342,6 +397,18 @@ assert.match(publicCreate, /checkPublicRateLimit/);
 assert.match(publicCreate, /hasLeadHoneypot/);
 assert.match(publicCreate, /notifyBookingCreated/);
 assert.match(publicCreate, /clientId: null/);
+assert.match(publicCreate, /vehicleId: null/);
+assert.match(publicCreate, /idempotencyKey/);
+assert.match(publicCreate, /result\.reused \? 200 : 201/);
+assert.match(publicCreate, /notification/);
+
+const publicCreateStatus = source("src/app/api/public/booking/status/route.ts");
+assert.match(publicCreateStatus, /getPublicBookingByIdempotency/);
+assert.match(publicCreateStatus, /booking_idempotency_result_not_found|bookingErrorPayload/);
+
+const nearestAvailability = source("src/app/api/public/booking/nearest/route.ts");
+assert.match(nearestAvailability, /MAX_SEARCH_DAYS = 10/);
+assert.match(nearestAvailability, /MAX_RESULT_DAYS = 3/);
 
 for (const route of [
   "src/app/api/public/booking/route.ts",
@@ -364,19 +431,72 @@ assert.match(managementTokenSource, /eco-booking-management-token-v1/);
 
 const customerLookup = source("src/app/api/public/booking/customer-lookup/route.ts");
 assert.doesNotMatch(customerLookup, /customer:\s*\{/);
+assert.doesNotMatch(customerLookup, /localCounterparty|clientVehicle|vehicles|normalizedPhone|\bvin\b|\bplate\b/);
+assert.match(customerLookup, /booking_customer_verification_required/);
 
 const publicBookingClient = source("src/app/booking/BookingClient.tsx");
 assert.match(publicBookingClient, /publicBookingBranchFromSearch\(window\.location\.search\)/);
-assert.match(publicBookingClient, /setStep\(\(current\) => current === 1 \? 2 : current\)/);
+assert.match(publicBookingClient, /setStep\(2\)/);
 assert.doesNotMatch(publicBookingClient, /data\.branches\.length === 1/);
+assert.match(publicBookingClient, /const STEPS = \["Филиал", "Услуги", "Время", "Автомобиль и контакты"\]/);
+assert.doesNotMatch(publicBookingClient, /customer-lookup/);
+assert.doesNotMatch(publicBookingClient, /params\.get\("phone"\)|params\.get\("vin"\)|params\.get\("name"\)/);
+assert.match(publicBookingClient, /AbortController/);
+assert.match(publicBookingClient, /activeAvailabilityKeyRef/);
+assert.match(publicBookingClient, /durationMinutes: totalDuration/);
+assert.match(publicBookingClient, /submissionUnknown/);
+assert.match(publicBookingClient, /\/api\/public\/booking\/status/);
+assert.doesNotMatch(publicBookingClient, /\/время\|слот\|занят\//);
+assert.match(publicBookingClient, /Заявка принята\. Время предварительное/);
+assert.match(publicBookingClient, /sessionStorage/);
+assert.match(publicBookingClient, /материалы отдельно/);
+
+const publicServices = source("src/app/api/public/booking/services/route.ts");
+assert.match(publicServices, /salePriceCents/);
+assert.match(publicServices, /priceNeedsSetup/);
+assert.match(publicServices, /vehicle_calculation/);
+
+const publicManageClient = source("src/app/booking/manage/[token]/ManageBookingClient.tsx");
+assert.match(publicManageClient, /"loading" \| "loaded" \| "not_found" \| "error"/);
+assert.match(publicManageClient, /Не удалось загрузить запись/);
+assert.match(publicManageClient, />Повторить</);
+assert.match(publicManageClient, /branchToday\(data\.booking\.branch\.timezone\)/);
+assert.match(publicManageClient, /activeSlotsKeyRef/);
+assert.match(publicManageClient, /setSelectedSlot\(null\)/);
+assert.match(publicManageClient, />Было</);
+assert.match(publicManageClient, />Станет</);
+assert.match(publicManageClient, /Новое время предварительное/);
 
 const bookingManagementSettings = source("src/app/management/booking/BookingSettingsClient.tsx");
 assert.match(bookingManagementSettings, /publicBookingPath\(state\.branch\.id\)/);
 assert.match(bookingManagementSettings, /navigator\.clipboard\.writeText\(url\)/);
+assert.match(bookingManagementSettings, /confirmAffectedBookings/);
+assert.match(bookingManagementSettings, /Новый график их не перенесёт и не отменит/);
+assert.match(bookingManagementSettings, /Отключение не отменит их/);
+assert.match(bookingManagementSettings, /data-booking-service-id/);
+assert.match(bookingManagementSettings, /beginServiceDrag/);
+assert.match(bookingManagementSettings, /moveServiceWithKeyboard/);
+assert.match(bookingManagementSettings, /\/api\/booking-admin\/services\/order/);
+
+const bookingServiceOrder = source("src/app/api/booking-admin/services/order/route.ts");
+assert.match(bookingServiceOrder, /canManageBookingSettings/);
+assert.match(bookingServiceOrder, /TransactionIsolationLevel\.Serializable/);
+assert.match(bookingServiceOrder, /branchId_id: \{ branchId, id \}/);
+assert.match(bookingServiceOrder, /booking\.services\.reordered/);
 
 const records = source("src/app/records/RecordsPageClient.tsx");
 assert.doesNotMatch(records, /\/api\/yclients/);
 assert.match(records, /\/api\/booking-journal/);
+assert.doesNotMatch(records, /fallbackEmail/);
+assert.doesNotMatch(records, /rawDate\.slice\(0, 16\)/);
+assert.match(records, /\/api\/bookings\/availability/);
+assert.match(records, /override_reason_code/);
+
+const recordDemand = source("src/lib/local-demand-write.ts");
+assert.match(recordDemand, /booking-demand:\$\{scope\.branchId\}:\$\{bookingId\}/);
+assert.match(recordDemand, /path: \["sourceRecord", "bookingId"\]/);
+assert.match(recordDemand, /where: \{ id: bookingId, branchId: scope\.branchId \}/);
+assert.match(recordDemand, /branchId: scope\.branchId/);
 
 const agentTools = source("src/lib/ai-agent/tools.ts");
 assert.doesNotMatch(agentTools, /getYclientsAvailableSlots|createYclientsAppointment|parseYclientsSlotId/);

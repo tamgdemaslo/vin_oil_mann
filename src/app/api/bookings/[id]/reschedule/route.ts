@@ -4,10 +4,14 @@ import { bookingDto } from "@/lib/booking/dto";
 import { bookingErrorPayload } from "@/lib/booking/errors";
 import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingRescheduled } from "@/lib/booking/notifications";
-import { bookingManagementToken, rescheduleBooking } from "@/lib/booking/service";
+import { bookingManagementToken, rescheduleBooking, type BookingOverrideReason } from "@/lib/booking/service";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 
 type Context = { params: Promise<{ id: string }> };
+
+function overrideReason(value: unknown): BookingOverrideReason | null {
+  return value === "slot_taken" || value === "outside_schedule" || value === "nonstandard_start" ? value : null;
+}
 
 export async function POST(request: NextRequest, context: Context) {
   const access = await requireBranchApi({ allowAll: false, requireActive: true });
@@ -21,6 +25,7 @@ export async function POST(request: NextRequest, context: Context) {
       masterMembershipId: typeof body?.masterMembershipId === "string" ? body.masterMembershipId : null,
       serviceIds: Array.isArray(body?.serviceIds) ? body.serviceIds.map(String) : null,
       overrideConflict: body?.overrideConflict === true,
+      overrideReason: overrideReason(body?.overrideReason),
     }, {
       kind: "USER",
       userId: access.context.userId,
