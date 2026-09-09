@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { cleanJobOrderVehicleName } from "@/lib/job-order-vehicle-name";
 import { type DemandDetailAttribute } from "@/lib/demand-detail-load";
 import {
   pickJournalOilNoteFromRawRows,
@@ -401,13 +402,13 @@ export async function buildJobOrderPosterModel(
     address.match(/,\s*([^,]+)\s*,/)?.[1]?.trim() ||
     defaultCity;
 
-  const modelRaw = findAttr(attributes, "модель авто").trim();
+  const plate = findPlateValue(attributes).trim() || "—";
+  const vin = findVinValue(attributes).trim() || "—";
+  const modelRaw = cleanJobOrderVehicleName(findAttr(attributes, "модель авто"), vin, plate);
   const tokens = modelRaw.split(/\s+/).filter(Boolean);
   const make = tokens[0] ?? "—";
   const model = tokens.slice(1).join(" ") || "—";
   const year = findAttr(attributes, "год").trim() || "—";
-  const plate = findPlateValue(attributes).trim() || "—";
-  const vin = findVinValue(attributes).trim() || "—";
   const mileageStr = findAttr(attributes, "пробег").trim();
   const mileage = parseIntRu(mileageStr);
 
