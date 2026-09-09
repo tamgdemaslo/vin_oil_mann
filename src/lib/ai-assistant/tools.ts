@@ -8,6 +8,7 @@ import { lookupVehicle, normalizeVehicleMake, normalizeVehicleModel } from "@/li
 import { RosskoError, rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { classifyRosskoRuntimeFailure, type RosskoRuntimeFailureCode } from "@/lib/rossko-error-classification";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
+import { matchMannArticlesToLocalProducts, normalizeMannArticle, normalizeMannSearchText } from "@/lib/mann-catalog";
 import { resolveLaborPrice } from "./labor-pricing";
 import { evaluatePreferredLocalFluid, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
 import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, ENGINE_OIL_FILTER_PRICE_PENDING_WARNING, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardProcedure, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
@@ -384,6 +385,131 @@ async function findMannFilters(args: Record<string, unknown>): Promise<Assistant
   return {
     result: { found: unique.length > 0, ambiguous: new Set(unique.map((row) => row.vehicleVariantKey)).size > 1, criteria: { make, model, year: yearValue, engineCode: engineCode || null, filterType: filterType || null }, filters: unique },
     sources: unique.slice(0, 5).map((row) => ({ sourceType: "mann" as const, title: "Внутренняя база применяемости MANN", excerpt: `${row.filterType}: ${row.mannArticle}${row.sourceFile ? ` · ${row.sourceFile}` : ""}`, metadata: { catalogPage: row.catalogPage, vehicleVariantKey: row.vehicleVariantKey } })),
+  };
+}
+
+
+type MannOilFilterCandidate = {
+  article: string;
+  detail: string | null;
+  vehicleVariantKey: string;
+  requiresVinConfirmation: boolean;
+  localProductId: string | null;
+  localProductName: string | null;
+  localPriceCents: number | null;
+  localAvailable: number;
+};
+
+type EngineOilMannFilterResolution = {
+  candidates: MannOilFilterCandidate[];
+  summary: string | null;
+  selectedProductId: string | null;
+  sources: AssistantToolSource[];
+  evidence: Array<{ source: string; fact: string; status: "confirmed" | "needs_verification" }>;
+};
+
+const MANN_OIL_FILTER_TYPE = /(?:\boil\s*filter\b|маслян\S*\s+фильтр|\blube\b)/iu;
+
+export function uniqueMannFilterRows<T extends { mannArticle: string }>(rows: T[]) {
+  return rows.filter((row, index) => rows.findIndex((other) => normalizeMannArticle(other.mannArticle) === normalizeMannArticle(row.mannArticle)) === index);
+}
+
+function engineOilMannVehicle(input: QuoteAndTechCardInput) {
+  const snapshot = object(input.vehicle.snapshot);
+  const displayName = text(input.vehicle.displayName, 180);
+  const displayTokens = displayName.replace(/[(),]/g, " ").split(/\s+/u).filter(Boolean);
+  const make = text(snapshot.makeCanonical ?? snapshot.make ?? snapshot.makeRaw ?? snapshot.brand, 80) || text(displayTokens[0], 80);
+  const model = text(snapshot.modelCanonical ?? snapshot.model ?? snapshot.modelRaw, 120) || text(displayTokens[1], 120);
+  const displayedYear = displayName.match(/\b(?:19|20)\d{2}\b/u)?.[0];
+  const year = Math.round(number(snapshot.year ?? snapshot.modelYear ?? displayedYear, 0)) || null;
+  const engineCode = text(snapshot.engineCode ?? snapshot.engineSeries ?? input.vehicle.aggregateCode, 80);
+  return { make, model, year, engineCode };
+}
+
+export function formatMannOilFilterCandidateSummary(candidates: MannOilFilterCandidate[]) {
+  if (!candidates.length) return null;
+  const entries = candidates.slice(0, 4).map((candidate) => {
+    const local = candidate.localPriceCents != null
+      ? " — " + (candidate.localPriceCents / 100).toLocaleString("ru-RU") + " ₽" + (candidate.localAvailable > 0 ? "" : " · нет в наличии")
+      : " — цена уточняется";
+    return "MANN " + candidate.article + local + (candidate.requiresVinConfirmation ? " · подтвердить по VIN" : "");
+  });
+  return "Варианты фильтра: " + entries.join("; ") + ".";
+}
+
+/**
+ * The model may research MANN itself, but an engine-oil quote cannot depend on
+ * whether it remembered that extra tool call. This resolver supplies a
+ * read-only, local-first filter shortlist after the service has been
+ * identified. It adds a price only for one exact, in-stock candidate; all
+ * ambiguous rows remain visible and await VIN confirmation.
+ */
+async function resolveEngineOilMannFilter(input: QuoteAndTechCardInput, organizationId: string): Promise<EngineOilMannFilterResolution> {
+  const empty: EngineOilMannFilterResolution = { candidates: [], summary: null, selectedProductId: null, sources: [], evidence: [] };
+  if (input.service.type !== "engine_oil" || input.service.filterAccess !== "external_replaceable") return empty;
+  const vehicle = engineOilMannVehicle(input);
+  if (!vehicle.make || !vehicle.model) return empty;
+  const makeNormalized = normalizeVehicleMake(vehicle.make) || vehicle.make.toUpperCase();
+  const canonicalModel = normalizeVehicleModel(vehicle.model, makeNormalized).canonical || vehicle.model;
+  const modelNormalized = normalizeMannSearchText(canonicalModel);
+  const baseModel = modelNormalized.split(" ")[0] || modelNormalized;
+  const baseClauses: Prisma.MannFilterApplicationWhereInput[] = [
+    { makeNormalized: { contains: makeNormalized, mode: "insensitive" } },
+    { OR: [
+      { modelNormalized: { contains: modelNormalized, mode: "insensitive" } },
+      { modelNormalized: { startsWith: baseModel, mode: "insensitive" } },
+    ] },
+    ...(vehicle.year ? [
+      { OR: [{ vehicleYearFrom: null }, { vehicleYearFrom: { lte: vehicle.year } }] },
+      { OR: [{ vehicleYearTo: null }, { vehicleYearTo: { gte: vehicle.year } }] },
+    ] : []),
+  ];
+  const baseWhere: Prisma.MannFilterApplicationWhereInput = { AND: baseClauses };
+  const select = { filterType: true, mannArticle: true, detail: true, vehicleVariantKey: true, engineCode: true, vehicleText: true, vehicleYears: true, sourceFile: true, catalogPage: true };
+  const exactRows = vehicle.engineCode
+    ? await prisma.mannFilterApplication.findMany({
+      where: { AND: [...baseClauses, { OR: [{ engineCode: { contains: vehicle.engineCode, mode: "insensitive" } }, { detail: { contains: vehicle.engineCode, mode: "insensitive" } }] }] },
+      select,
+      orderBy: [{ mannArticle: "asc" }],
+      take: 80,
+    })
+    : [];
+  const exactOilRows = exactRows.filter((row) => MANN_OIL_FILTER_TYPE.test(row.filterType));
+  const matchingRows = exactOilRows.length
+    ? exactOilRows
+    : await prisma.mannFilterApplication.findMany({ where: baseWhere, select, orderBy: [{ mannArticle: "asc" }], take: 80 });
+  const rows = uniqueMannFilterRows(matchingRows.filter((row) => MANN_OIL_FILTER_TYPE.test(row.filterType))).slice(0, 8);
+  if (!rows.length) return empty;
+  const usesExactEngine = exactOilRows.length > 0;
+  const localMatches = await matchMannArticlesToLocalProducts({
+    mannArticles: rows.map((row) => ({ mannArticle: row.mannArticle, filterType: row.filterType })),
+    organizationId,
+  });
+  const localByArticle = new Map(localMatches.map((match) => [match.mannArticleNormalized, match.bestMatch]));
+  const candidates = rows.map((row) => {
+    const local = localByArticle.get(normalizeMannArticle(row.mannArticle)) ?? null;
+    return {
+      article: row.mannArticle,
+      detail: text(row.detail ?? row.engineCode ?? row.vehicleText ?? row.vehicleYears, 180) || null,
+      vehicleVariantKey: row.vehicleVariantKey,
+      requiresVinConfirmation: !usesExactEngine || rows.length > 1,
+      localProductId: local?.id ?? null,
+      localProductName: local?.name ?? null,
+      localPriceCents: local ? Math.round(local.price * 100) : null,
+      localAvailable: local?.available ?? 0,
+    } satisfies MannOilFilterCandidate;
+  });
+  const unambiguous = candidates.length === 1 && !candidates[0].requiresVinConfirmation ? candidates[0] : null;
+  const selectedProductId = unambiguous?.localProductId && unambiguous.localPriceCents != null && unambiguous.localAvailable > 0
+    ? unambiguous.localProductId
+    : null;
+  const summary = formatMannOilFilterCandidateSummary(candidates);
+  return {
+    candidates,
+    summary,
+    selectedProductId,
+    sources: rows.slice(0, 5).map((row) => ({ sourceType: "mann" as const, title: "Внутренняя база применяемости MANN", excerpt: "Масляный фильтр: " + row.mannArticle, metadata: { catalogPage: row.catalogPage, vehicleVariantKey: row.vehicleVariantKey } })),
+    evidence: candidates.slice(0, 4).map((candidate) => ({ source: "MANN", fact: "Кандидат масляного фильтра: MANN " + candidate.article + (candidate.detail ? " · " + candidate.detail : "") + ".", status: candidate.requiresVinConfirmation ? "needs_verification" as const : "confirmed" as const })),
   };
 }
 
@@ -969,7 +1095,7 @@ export function assertQuoteAndTechCardOptionIntegrity(option: Pick<QuoteAndTechC
 }
 
 /** The customer-facing package may only promise parts that are actually quoted. */
-export function assertServicePackageIntegrity(option: Pick<QuoteAndTechCardQuoteOption, "servicePackage" | "lines">, allowUnpricedExternalFilter = false) {
+export function assertServicePackageIntegrity(option: Pick<QuoteAndTechCardQuoteOption, "servicePackage" | "lines">, allowUnpricedExternalFilter = false, allowUnpricedRequiredHardware = false) {
   const requiredPart = option.servicePackage.requiredParts[0];
   if (requiredPart?.requiredForQuote) {
     const requiredRole = requiredPart.type === "integrated_pan" ? "pan" : "external_filter";
@@ -980,7 +1106,9 @@ export function assertServicePackageIntegrity(option: Pick<QuoteAndTechCardQuote
   }
   const requiredHardware = option.servicePackage.requiredHardware.filter((item) => item.requiredForQuote);
   const quotedHardware = option.lines.filter((line) => line.role === "hardware" && !line.internalOnly);
-  if (quotedHardware.length < requiredHardware.length) {
+  const requiredHardwareQuantity = requiredHardware.reduce((sum, item) => sum + item.quantity, 0);
+  const quotedHardwareQuantity = quotedHardware.reduce((sum, item) => sum + item.quantity, 0);
+  if (!allowUnpricedRequiredHardware && quotedHardwareQuantity < requiredHardwareQuantity) {
     throw new QuoteAndTechCardIntegrityError("Обязательный одноразовый крепёж или уплотнения отсутствуют в смете.");
   }
 }
@@ -999,6 +1127,23 @@ export function canUsePreliminaryEngineOilQuoteWithoutFilter(
   return serviceType === "engine_oil"
     && servicePackage.requiredParts.some((part) => part.type === "external_filter" && part.requiredForQuote)
     && !lines.some((line) => line.role === "external_filter" && !line.internalOnly);
+}
+
+export function canUsePreliminaryEngineOilQuoteWithoutHardware(
+  serviceType: QuoteAndTechCardInput["service"]["type"],
+  servicePackage: QuoteAndTechCardQuoteOption["servicePackage"],
+  lines: QuoteAndTechCardQuoteOption["lines"],
+) {
+  if (serviceType !== "engine_oil") return false;
+  const requiredQuantity = servicePackage.requiredHardware.filter((item) => item.requiredForQuote).reduce((sum, item) => sum + item.quantity, 0);
+  const quotedQuantity = lines.filter((line) => line.role === "hardware" && !line.internalOnly).reduce((sum, line) => sum + line.quantity, 0);
+  return requiredQuantity > quotedQuantity;
+}
+
+function engineOilHardwarePendingWarning(servicePackage: QuoteAndTechCardQuoteOption["servicePackage"]) {
+  const missing = servicePackage.requiredHardware.filter((item) => item.requiredForQuote);
+  if (!missing.length) return null;
+  return `Предварительная сумма пока без обязательного крепежа: ${missing.map((item) => `${item.type} — ${item.quantity} шт.`).join("; ")}.`;
 }
 
 function previousQuoteResultForService(previous: QuoteAndTechCardArtifact | null | undefined, serviceType: QuoteAndTechCardInput["service"]["type"]) {
@@ -1104,6 +1249,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     maxTechnicalVerificationPasses: settings.calculationRules.maxTechnicalVerificationPasses,
   });
   const input = plan.input;
+  const mannOilFilter = await resolveEngineOilMannFilter(input, context.organizationId).catch((): EngineOilMannFilterResolution => ({ candidates: [], summary: null, selectedProductId: null, sources: [], evidence: [] }));
   const baseBlockers = [...plan.hardBlockers];
   const quoteSnapshots: Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }> = [];
   const traceDiagnostics: Array<{ scope: "rossko"; code: AssistantToolErrorCode; message: string; diagnostic: string | null }> = [];
@@ -1129,6 +1275,9 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     const selectedProducts = applyBillableQuantityToPrimaryFluid([
       ...(localFluid ? [{ productId: localFluid.productId, quantity: localFluid.quantity, role: "fluid" }] : []),
       ...materials.selectedProducts,
+      ...(mannOilFilter.selectedProductId && !materials.selectedProducts.some((item) => item.role === "external_filter") && !materials.consumables.some((item) => item.role === "external_filter")
+        ? [{ productId: mannOilFilter.selectedProductId, quantity: 1, role: "external_filter" as const }]
+        : []),
     ], option.billableQuantityLiters);
     const requiredFluidArticle = text(input.service.requiredFluidOemArticle, 80).toUpperCase();
     const scopedSupplierRows = supplierRows.map((row) => ({ ...row, role: requiredFluidArticle && row.article.toUpperCase() === requiredFluidArticle ? "fluid" : row.role }));
@@ -1197,10 +1346,12 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         ? "Цена жидкости получена от поставщика: подтвердить наличие и срок поставки перед записью."
         : null;
       const preliminaryEngineOilFilter = canUsePreliminaryEngineOilQuoteWithoutFilter(input.service.type, option.servicePackage, lines);
+      const preliminaryEngineOilHardware = canUsePreliminaryEngineOilQuoteWithoutHardware(input.service.type, option.servicePackage, lines);
       const optionWarnings = uniqueWarnings([
         ...plan.quoteWarnings,
         ...(supplierFluidWarning ? [supplierFluidWarning] : []),
         ...(preliminaryEngineOilFilter ? [ENGINE_OIL_FILTER_PRICE_PENDING_WARNING] : []),
+        ...(preliminaryEngineOilHardware ? [engineOilHardwarePendingWarning(option.servicePackage) ?? ""] : []),
       ]);
       const status = blockers.length ? "blocked" : optionWarnings.length ? "preliminary" : "ready";
       const maximum = object(quote.maximum);
@@ -1225,7 +1376,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       assertLocalFirstInvariant(selectionTrace, object(quote.materialSelectionTrace).originalOnlyOverride === true);
       if (status !== "blocked") {
         assertQuoteAndTechCardOptionIntegrity(quoteOption);
-        assertServicePackageIntegrity(quoteOption, preliminaryEngineOilFilter);
+        assertServicePackageIntegrity(quoteOption, preliminaryEngineOilFilter, preliminaryEngineOilHardware);
       }
       options.push(quoteOption);
       if (status !== "blocked") quoteSnapshots.push({ argumentsValue: quoteArgs, preview: quote });
@@ -1285,7 +1436,13 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       serviceType: input.service.type,
       requiredFluidSpec: text(input.service.requiredFluidSpec, 160) || null,
       filterPolicy: plan.filterPolicy,
-      filterSummary: plan.filterPolicy.customerText,
+      filterSummary: [
+        plan.filterPolicy.customerText,
+        mannOilFilter.summary,
+        input.service.type === "engine_oil" && input.service.serviceHardware.length
+          ? `Крепёж по процедуре: ${input.service.serviceHardware.map((item) => `${item.type} — ${item.quantity} шт.`).join("; ")}.`
+          : null,
+      ].filter(Boolean).join(" ").slice(0, 360),
       filter: plan.filterPolicy,
       procedureVolumes: options.map((option) => ({ code: option.code, customerDisplayName: option.customerDisplayName, technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters })),
       servicePackages: options.map((option) => option.servicePackage),
@@ -1299,7 +1456,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       warnings: uniqueWarnings(plan.techCardWarnings).slice(0, 3),
     },
     customerMessage: { status: "blocked" as const, text: "" },
-    evidence: input.evidence,
+    evidence: [...input.evidence, ...mannOilFilter.evidence].slice(0, 20),
   };
   const customerMessage = buildQuoteAndTechCardCustomerMessage(draft);
   const resultBase = { ...draft, customerMessage, status: scenarioStatus(calculatedQuoteStatus, techCardStatus, customerMessage.status) };
@@ -1309,6 +1466,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     result: { ...result, quoteSnapshots, traceDiagnostics, finalQuote: false },
     sources: [
       { sourceType: "internal_catalog" as const, title: "Техкарта и смета: детерминированный сценарий", excerpt: `Проверочных проходов: не более ${plan.rules.maxTechnicalVerificationPasses}; вариантов процедуры: ${options.length}.` },
+      ...mannOilFilter.sources,
       ...input.evidence.map((item) => ({ sourceType: "internal_catalog" as const, title: item.source, url: item.url ?? null, excerpt: item.fact })),
     ],
   } satisfies AssistantToolResult;

@@ -17,7 +17,7 @@ export type LaborPricingRequest = {
 export type AppliedLaborRule = {
   id: string | null;
   name: string;
-  source: "vehicle_complexity" | "assistant_rule" | "manual" | "service_card_fallback" | "confirmation_required";
+  source: "vehicle_complexity" | "assistant_rule" | "system_policy" | "manual" | "service_card_fallback" | "confirmation_required";
   laborPriceCents: number | null;
   priceFromCents: number | null;
   priceToCents: number | null;
@@ -87,6 +87,23 @@ function mapRule(rule: { id: string; name: string; laborPriceCents: number; pric
   return { id: rule.id, name: rule.name, source: "assistant_rule", laborPriceCents: rule.laborPriceCents, priceFromCents: rule.priceFromCents, priceToCents: rule.priceToCents, requiresHumanConfirmation: rule.requiresHumanConfirmation, selectionReason, comment: rule.comment };
 }
 
+export function systemPolicyLaborRule(input: Pick<LaborPricingRequest, "serviceFamily" | "procedureType" | "materialsOwner">): AppliedLaborRule | null {
+  if (input.serviceFamily !== "engine_oil" || input.procedureType !== "oil_change") return null;
+  const laborPriceCents = input.materialsOwner === "service" ? 0 : input.materialsOwner === "customer" ? 150_000 : null;
+  if (laborPriceCents == null) return null;
+  return {
+    id: null,
+    name: input.materialsOwner === "service" ? "Замена моторного масла — материалы сервиса" : "Замена моторного масла — материалы клиента",
+    source: "system_policy",
+    laborPriceCents,
+    priceFromCents: null,
+    priceToCents: null,
+    requiresHumanConfirmation: false,
+    selectionReason: "Использован базовый тариф сценария замены моторного масла.",
+    comment: input.materialsOwner === "service" ? "Работа включена при покупке масла сервиса." : "Базовая стоимость работы с материалами клиента — 1 500 ₽.",
+  };
+}
+
 export async function resolveLaborPrice(input: LaborPricingRequest): Promise<AppliedLaborRule> {
   if (input.materialsOwner === "mixed" || input.materialsOwner === "unknown") {
     return {
@@ -123,6 +140,9 @@ export async function resolveLaborPrice(input: LaborPricingRequest): Promise<App
   if (typeof manual === "number" && Number.isInteger(manual) && manual >= 0) {
     return { id: null, name: "Ручная стоимость работы", source: "manual", laborPriceCents: manual, priceFromCents: null, priceToCents: null, requiresHumanConfirmation: false, selectionReason: "Специальное правило не найдено; использовано ручное значение сотрудника.", comment: null };
   }
+
+  const policy = systemPolicyLaborRule(input);
+  if (policy) return policy;
 
   if (input.fallbackServiceProductId) {
     const service = await prisma.localProduct.findFirst({ where: { id: input.fallbackServiceProductId, archived: false, entityType: "service" }, select: { name: true, salePriceCents: true, pricingMode: true } });

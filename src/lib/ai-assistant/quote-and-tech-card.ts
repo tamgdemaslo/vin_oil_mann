@@ -253,7 +253,7 @@ export function quoteAndTechCardFilterPolicy(filterAccess: QuoteAndTechCardInput
     presence: "present", access: filterAccess, tgmAction: "replace", filterPartRequiredForQuote: true, panServiceRequired: false,
     reason: "Внешний фильтр доступен без разборки агрегата и должен быть включён в подтверждённый сервис.", evidence: null,
     replaceFilter: true, requiredForQuote: true, searchPart: true, rosskoSearch: true,
-    customerText: "Внешний фильтр входит в сервис только после подтверждения его применимости и цены.",
+    customerText: "Внешний фильтр заменяется при обслуживании и подбирается отдельно по применимости.",
   };
   if (filterAccess === "pan_service") return {
     presence: "present", access: filterAccess, tgmAction: "replace_with_pan", filterPartRequiredForQuote: true, panServiceRequired: true,
@@ -763,6 +763,24 @@ function customerVehicleDisplayName(value: string) {
 
 function customerQuantity(value: number | null) { return value == null ? "—" : String(value); }
 
+function customerAdditionalPartLines(option: QuoteAndTechCardQuoteOption, showPrice: boolean) {
+  return option.lines
+    .filter((line) => ["external_filter", "pan", "hardware", "consumable"].includes(line.role ?? "") && !line.internalOnly)
+    .map((line) => {
+      const article = line.article && !line.customerDisplayName.toLocaleUpperCase("ru-RU").includes(line.article.toLocaleUpperCase("ru-RU")) ? ` (${line.article})` : "";
+      const unit = line.role === "external_filter" || line.role === "pan" ? "шт." : "ед.";
+      return `${line.customerDisplayName}${article} — ${line.quantity} ${unit}${showPrice ? `, ${customerMoneyFromCents(line.totalCents)}` : ""}`;
+    });
+}
+
+function pendingEngineOilFilterText(input: Pick<QuoteAndTechCardResult, "quoteSet" | "techCard">, ready: QuoteAndTechCardQuoteOption[]) {
+  const filterPending = ready.some((option) => option.warnings.includes(ENGINE_OIL_FILTER_PRICE_PENDING_WARNING));
+  const hardwarePending = ready.flatMap((option) => option.warnings).filter((warning) => /^Предварительная сумма пока без обязательного крепежа:/u.test(warning));
+  if (!filterPending && !hardwarePending.length) return "";
+  const candidates = filterPending ? input.techCard.filterSummary.match(/Варианты фильтра:.+?(?= Крепёж по процедуре:|$)/u)?.[0] ?? "" : "";
+  return [candidates, filterPending ? ENGINE_OIL_FILTER_PRICE_PENDING_WARNING : "", ...hardwarePending].filter(Boolean).join("\n");
+}
+
 function customerFluidRequirement(serviceType: QuoteAndTechCardResult["techCard"]["serviceType"], specification: string | null) {
   if (!specification) return " подготовлен расчёт";
   if (serviceType === "engine_oil") return ` требуется моторное масло с допуском ${specification}`;
@@ -783,6 +801,7 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
     return [
       option.customerDisplayName,
       `${materialName}${input.techCard.requiredFluidSpec ? ` с допуском ${input.techCard.requiredFluidSpec}` : ""} — ${customerQuantity(option.billableQuantityLiters)} л`,
+      ...customerAdditionalPartLines(option, showPrice),
       option.code === "partial" ? "Без снятия поддона и замены фильтра." : "",
       showPrice && labor ? `Работа — ${customerMoneyFromCents(labor.totalCents)}` : "",
       showPrice ? `Итого: ${customerMoneyFromCents(option.totalCents!)}` : "",
@@ -794,7 +813,7 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
     : `Добрый день! Для вашего ${vehicle}${customerFluidRequirement(input.techCard.serviceType, input.techCard.requiredFluidSpec)}.`;
   const preliminary = input.quoteSet.confidence === "preliminary" ? " Предварительная стоимость указана по текущим данным." : "";
   const filter = input.techCard.filterPolicy.tgmAction === "do_not_replace" && input.techCard.filterPolicy.presence === "present" ? input.techCard.filterPolicy.customerText : "";
-  const pendingEngineOilFilter = ready.some((option) => option.warnings.includes(ENGINE_OIL_FILTER_PRICE_PENDING_WARNING)) ? ENGINE_OIL_FILTER_PRICE_PENDING_WARNING : "";
+  const pendingEngineOilFilter = pendingEngineOilFilterText(input, ready);
   const machineCondition = ready.some((option) => option.servicePackage.diagnosticsRequired) ? "Перед аппаратной заменой сначала проведём диагностику коробки; при отсутствии противопоказаний сможем выполнить замену сразу." : "";
   const dates = input.quoteSet.requestedDates ? `Вы писали про ${input.quoteSet.requestedDates} — можем проверить свободное время.` : "Подберём удобное время и подтвердим запись.";
   // The recommendation action may not invent an upsell.  With no explicit
@@ -824,13 +843,14 @@ export function buildQuoteAndTechCardBundleCustomerMessage(input: Pick<QuoteAndT
     return [
       title,
       `${materialName}${card.techCard.requiredFluidSpec ? ` с допуском ${card.techCard.requiredFluidSpec}` : ""} — ${customerQuantity(option.billableQuantityLiters)} л`,
+      ...customerAdditionalPartLines(option, showPrice),
       showPrice && labor ? `Работа — ${customerMoneyFromCents(labor.totalCents)}` : "",
       showPrice ? `Итого: ${customerMoneyFromCents(option.totalCents!)}` : "",
     ].filter(Boolean).join("\n");
   }));
   const preliminary = readyCards.some(({ card }) => card.quoteSet.confidence === "preliminary") ? " Предварительная стоимость указана по текущим данным." : "";
   const filter = readyCards.map(({ card }) => card.techCard.filterPolicy.tgmAction === "do_not_replace" && card.techCard.filterPolicy.presence === "present" ? card.techCard.filterPolicy.customerText : "").filter(Boolean);
-  const pendingEngineOilFilter = readyCards.some(({ options }) => options.some((option) => option.warnings.includes(ENGINE_OIL_FILTER_PRICE_PENDING_WARNING))) ? ENGINE_OIL_FILTER_PRICE_PENDING_WARNING : "";
+  const pendingEngineOilFilter = readyCards.map(({ card, options }) => pendingEngineOilFilterText(card, options)).filter(Boolean).join("\n");
   const machineCondition = readyCards.some(({ options }) => options.some((option) => option.servicePackage.diagnosticsRequired)) ? "Перед аппаратной заменой сначала проведём диагностику коробки; при отсутствии противопоказаний сможем выполнить замену сразу." : "";
   const unresolvedServices = input.results
     .filter((card) => !readyCards.some((entry) => entry.card === card))
