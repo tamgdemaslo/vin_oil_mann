@@ -20271,6 +20271,27 @@ select.eco-input::-ms-expand,
   border-color: rgba(194, 65, 12, 0.34);
 }
 
+.eco-records-service-picker button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.eco-records-service-picker button[aria-disabled="true"] strong {
+  color: var(--eco-ink-2);
+}
+
+.eco-records-service-picker button[aria-disabled="true"] span {
+  color: var(--eco-rust);
+  font-weight: 750;
+}
+
+.eco-records-service-note {
+  margin: 8px 0 0;
+  color: var(--eco-ink-2);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .eco-records-service-picker strong,
 .eco-records-client-options strong {
   color: inherit;

@@ -382,6 +382,10 @@ assert.match(bookingJournal, /starts_at_utc/);
 assert.match(bookingJournal, /local_start_time/);
 assert.match(bookingJournal, /clientId: text\(payload\.client_id\)/);
 assert.match(bookingJournal, /vehicleId: text\(payload\.vehicle_id\)/);
+assert.match(bookingJournal, /syncCatalogBookingServices\(tx, branchId\)/);
+assert.match(bookingJournal, /booking\.services\.catalog_auto_synced/);
+assert.match(bookingJournal, /duration_configured: service\.durationMinutes > 0/);
+assert.match(bookingJournal, /assigned_master_count: service\.masters\.length/);
 
 const bookingSettings = source("src/app/api/booking-admin/settings/route.ts");
 assert.match(bookingSettings, /roleId: BOOKING_MASTER_ROLE_ID/);
@@ -491,6 +495,9 @@ assert.doesNotMatch(records, /fallbackEmail/);
 assert.doesNotMatch(records, /rawDate\.slice\(0, 16\)/);
 assert.match(records, /\/api\/bookings\/availability/);
 assert.match(records, /override_reason_code/);
+assert.match(records, /aria-disabled=\{selectionBlocked\}/);
+assert.match(records, /Услуги без готовой настройки тоже показаны/);
+assert.match(records, /service\.master_membership_ids\?\.includes\(item\.membership_id\) === true/);
 
 const recordDemand = source("src/lib/local-demand-write.ts");
 assert.match(recordDemand, /booking-demand:\$\{scope\.branchId\}:\$\{bookingId\}/);

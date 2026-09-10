@@ -1,5 +1,7 @@
+import type { PrismaClient } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { bookingViewIsSelfOnly, canConfirmBookings, canManageBookings, canOverrideBookingConflict, canViewBookings, requireBookingCapability } from "@/lib/booking/access";
+import { syncCatalogBookingServices } from "@/lib/booking/catalog-services";
 import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
 import { DEFAULT_BOOKING_STEP_MINUTES, DEFAULT_BOOKING_WORKING_HOURS } from "@/lib/booking/defaults";
 import { bookingErrorPayload, BookingError } from "@/lib/booking/errors";
@@ -296,10 +298,24 @@ export async function GET(request: NextRequest) {
         ] });
       }
       if (action === "services") {
-        const services = await prisma.bookingService.findMany({
-          where: { branchId, status: "ACTIVE" },
-          include: { masters: { select: { membershipId: true } } },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        const services = await (prisma as unknown as PrismaClient).$transaction(async (tx) => {
+          const syncResult = await syncCatalogBookingServices(tx, branchId);
+          if (syncResult.added || syncResult.updated || syncResult.disabled) {
+            await tx.branchAuditLog.create({ data: {
+              businessGroupId: access.context.businessGroupId,
+              branchId,
+              userId: access.context.userId,
+              action: "booking.services.catalog_auto_synced",
+              entityType: "booking_service",
+              entityId: branchId,
+              metadata: syncResult,
+            } });
+          }
+          return tx.bookingService.findMany({
+            where: { branchId, status: "ACTIVE" },
+            include: { masters: { select: { membershipId: true } } },
+            orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          });
         });
         return NextResponse.json({ success: true, data: services.map((service) => ({
           id: journalId(service.id),
@@ -312,6 +328,8 @@ export async function GET(request: NextRequest) {
           requires_confirmation: service.requiresConfirmation,
           required_fields: service.requiredFieldsJson,
           master_membership_ids: service.masters.map((item) => item.membershipId),
+          duration_configured: service.durationMinutes > 0,
+          assigned_master_count: service.masters.length,
         })) });
       }
       if (action === "records") {

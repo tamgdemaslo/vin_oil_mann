@@ -211,7 +211,6 @@ async function loadServices(tx: BookingDb, branchId: string, serviceIds: string[
     throw new BookingError("Одна из услуг недоступна", "booking_service_unavailable", 409);
   }
   const durationMinutes = services.reduce((total, service) => total + service.durationMinutes, 0);
-  if (durationMinutes <= 0) throw new BookingError("У услуг не настроена длительность", "booking_duration_invalid", 409);
   return { services, ids, durationMinutes };
 }
 
@@ -459,6 +458,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
     const durationMinutes = actor.kind !== "PUBLIC" && actor.kind !== "MANAGE_LINK" && input.durationOverrideMinutes && input.durationOverrideMinutes >= 5
       ? Math.min(Math.trunc(input.durationOverrideMinutes), 1_440)
       : loaded.durationMinutes;
+    if (durationMinutes <= 0) throw new BookingError("У услуг не настроена длительность", "booking_duration_invalid", 409);
     await assertMasterAssignments(tx, input.branchId, input.masterMembershipId, ids);
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
     const appliedOverrideReason = await assertAvailableSlot(tx, {
@@ -652,6 +652,7 @@ export async function rescheduleBooking(bookingId: string, input: RescheduleBook
     const durationMinutes = actor.kind !== "PUBLIC" && actor.kind !== "MANAGE_LINK" && input.durationOverrideMinutes && input.durationOverrideMinutes >= 5
       ? Math.min(Math.trunc(input.durationOverrideMinutes), 1_440)
       : loaded.durationMinutes;
+    if (durationMinutes <= 0) throw new BookingError("У услуг не настроена длительность", "booking_duration_invalid", 409);
     await assertMasterAssignments(tx, current.branchId, masterMembershipId, ids);
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
     const appliedOverrideReason = await assertAvailableSlot(tx, {
@@ -860,6 +861,7 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
     const durationMinutes = input.durationOverrideMinutes && input.durationOverrideMinutes >= 5
       ? Math.min(Math.trunc(input.durationOverrideMinutes), 1_440)
       : loaded.durationMinutes;
+    if (durationMinutes <= 0) throw new BookingError("У услуг не настроена длительность", "booking_duration_invalid", 409);
     await assertMasterAssignments(tx, current.branchId, masterMembershipId, loaded.ids);
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
     const currentServiceIds = current.serviceItems.map((item) => item.serviceId).filter((id): id is string => Boolean(id)).sort();

@@ -63,6 +63,8 @@ type Service = {
   requires_confirmation?: boolean;
   required_fields?: string[];
   master_membership_ids?: string[];
+  duration_configured?: boolean;
+  assigned_master_count?: number;
 } & Record<string, unknown>;
 
 type VehicleInfo = {
@@ -2622,7 +2624,7 @@ export default function RecordsPageClient() {
   const formRequiresPlate = requiredFormFields.has("plate");
   const formRequiresYear = requiredFormFields.has("year");
   const selectedFormMaster = staff.find((item) => String(item.id) === form.staffId) ?? null;
-  const eligibleFormMasters = staff.filter((item) => item.bookable !== false && selectedFormServices.every((service) => !service.master_membership_ids?.length || (item.membership_id ? service.master_membership_ids.includes(item.membership_id) : false)));
+  const eligibleFormMasters = staff.filter((item) => item.bookable !== false && selectedFormServices.every((service) => item.membership_id ? service.master_membership_ids?.includes(item.membership_id) === true : false));
   const selectedClientPhoneKey = normalizePhone(form.clientPhone);
   const selectedClientShipments = selectedClientPhoneKey ? shipmentLookupByPhone[selectedClientPhoneKey]?.rows ?? [] : [];
 
@@ -3529,9 +3531,22 @@ export default function RecordsPageClient() {
                   {visibleFormServices.map((service) => {
                     const id = String(service.id);
                     const selected = form.serviceIds.includes(id);
-                    return <button key={service.id} type="button" className={selected ? "is-selected" : undefined} onClick={() => toggleService(id)}><strong>{service.title}</strong><span>{durationLabel(Math.round(getServiceDurationSeconds(service) / 60))} · {getServicePriceLabel(service)}</span></button>;
+                    const assignedMasterIds = service.master_membership_ids ?? [];
+                    const hasConfiguredDuration = service.duration_configured !== false && numberFromUnknown(service.seance_length) !== null;
+                    const hasAssignedMaster = assignedMasterIds.length > 0;
+                    const assignedToSelectedMaster = !selectedFormMaster?.membership_id || assignedMasterIds.includes(selectedFormMaster.membership_id);
+                    const unavailableReason = !hasConfiguredDuration
+                      ? "Нужно настроить длительность"
+                      : !hasAssignedMaster
+                        ? "Нужно назначить мастера"
+                        : !assignedToSelectedMaster
+                          ? `Не назначена мастеру ${selectedFormMaster.name}`
+                          : null;
+                    const selectionBlocked = Boolean(unavailableReason) && !selected;
+                    return <button key={service.id} type="button" className={selected ? "is-selected" : undefined} onClick={() => { if (!selectionBlocked) toggleService(id); }} aria-disabled={selectionBlocked} title={unavailableReason ?? undefined}><strong>{service.title}</strong><span>{unavailableReason ?? `${durationLabel(Math.round(getServiceDurationSeconds(service) / 60))} · ${getServicePriceLabel(service)}`}</span></button>;
                   })}
                 </div>
+                {visibleFormServices.some((service) => service.duration_configured === false || (service.assigned_master_count ?? service.master_membership_ids?.length ?? 0) === 0) ? <p className="eco-records-service-note">Услуги без готовой настройки тоже показаны. Чтобы выбрать отмеченную услугу, задайте ей длительность и назначьте мастера в разделе «Управление → Запись».</p> : null}
               </section>
 
               <section>
