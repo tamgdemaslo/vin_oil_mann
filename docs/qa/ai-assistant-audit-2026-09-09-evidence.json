@@ -1,0 +1,110 @@
+{
+  "auditDate": "2026-09-09",
+  "reportDateLocal": "2026-09-10",
+  "repo": "tamgdemaslo/vin_oil_mann",
+  "auditCommit": "2f311fd6c3b7a017b44449568605d32ff5599231",
+  "baseCommit": "3318314fb36a8075dc295b72a84dd8cbec1d0270",
+  "branch": "fix/ai-assistant-audit-20260909",
+  "changesCommitted": false,
+  "productionCommit": null,
+  "productionSample": {
+    "authorized": true,
+    "maxRuns": 100,
+    "windowDays": 7,
+    "measuredRuns": null,
+    "reason": "No accessible approved Timeweb database connection"
+  },
+  "liveSmoke": [
+    {
+      "asOf": "2026-09-09T21:49:56.779Z",
+      "scope": "live model / frozen integrations / memory database",
+      "success": false,
+      "durationMs": 33730,
+      "modelCalls": 3,
+      "status": null,
+      "code": "Error",
+      "usage": [
+        {
+          "inputTokens": 8129,
+          "outputTokens": 1373,
+          "status": "completed"
+        },
+        {
+          "inputTokens": 9575,
+          "outputTokens": 104,
+          "status": "completed"
+        },
+        {
+          "inputTokens": 8787,
+          "outputTokens": 510,
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "asOf": "2026-09-09T21:52:48.681Z",
+      "scope": "live model / frozen integrations / memory database",
+      "durationMs": 54777,
+      "modelCalls": 5,
+      "usage": [
+        {
+          "inputTokens": 8129,
+          "cachedInputTokens": 8126,
+          "outputTokens": 1089,
+          "status": "completed"
+        },
+        {
+          "inputTokens": 8707,
+          "cachedInputTokens": 4551,
+          "outputTokens": 570,
+          "status": "completed"
+        },
+        {
+          "inputTokens": 10078,
+          "cachedInputTokens": 8026,
+          "outputTokens": 272,
+          "status": "completed"
+        },
+        {
+          "inputTokens": 10529,
+          "cachedInputTokens": 0,
+          "outputTokens": 1438,
+          "status": "completed"
+        },
+        {
+          "inputTokens": 4704,
+          "cachedInputTokens": 4551,
+          "outputTokens": 324,
+          "status": "completed"
+        }
+      ],
+      "quoteAvailable": true,
+      "totalCents": 300000,
+      "saleUnits": 1,
+      "executionStatus": "verification_required"
+    }
+  ],
+  "modelTokenCostUsd": {
+    "firstRunUpperBound": 0.076826,
+    "secondRun": 0.0831528,
+    "combinedUpperBound": 0.1599788,
+    "pricingAsOf": "2026-09-09",
+    "pricingSource": "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+    "includesNativeToolFees": false,
+    "actualBilledRub": null
+  },
+  "frozenAcceptance": {
+    "e2eScenarios": 27,
+    "disjointSyntheticCases": 4,
+    "legacyFieldReplayCases": 20,
+    "legacyFieldReplayRounds": 2,
+    "realVinExtractionValidated": false,
+    "productionP95Validated": false,
+    "asOf": "2026-09-09T22:05:19.217Z",
+    "suites": 16,
+    "failedSuites": [],
+    "typeCheckPassed": true,
+    "eslintPassed": true,
+    "eslintWarnings": 0
+  }
+}

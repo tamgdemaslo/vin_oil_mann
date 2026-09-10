@@ -1,0 +1,103 @@
+{
+  "asOf": "2026-09-10T11:28:01.100393+00:00",
+  "case": "Optima IV(JF) 2.0 T-GDI, explicit Theta2, decoded G4KH, 180 kW / 245 hp",
+  "realVinPublished": false,
+  "commit": "a3c44ffd5957f6c398b4ac8425ec4018caf6e8ab",
+  "tree": "faf470d48cd5e3f4f18992e01a817c10c20763ae",
+  "base": "72fdffee9c6cb21eaba298d1a15686fd2ece0132",
+  "pr": "https://github.com/tamgdemaslo/vin_oil_mann/pull/7",
+  "deployment": "not performed; draft branch only",
+  "reproduction": {
+    "oil": {
+      "requirement": "SAE 5W-30, ACEA A5 или выше",
+      "structuredProduct": {
+        "sae": "5W-30",
+        "acea": "A5/B5"
+      },
+      "before": false,
+      "after": true
+    },
+    "mann": {
+      "beforeScore": 53,
+      "beforeConflict": "код двигателя",
+      "afterConfidence": "high",
+      "explicitSeriesRequired": true
+    }
+  },
+  "validation": {
+    "auditSuites": 17,
+    "failed": 0,
+    "typeScript": "passed",
+    "targetedEslint": "passed",
+    "diffCheck": "passed",
+    "timewebPolicy": "passed",
+    "frozenQuote": {
+      "pricesAreFictional": true,
+      "oilCanLiters": 5,
+      "oilCanQuantity": 1,
+      "oilPriceRub": 3000,
+      "filterPriceRub": 600,
+      "totalRub": 3600,
+      "technicalCapacity": null,
+      "formattingAdditionalModelCalls": 0
+    },
+    "vinReplay": "passed with synthetic VIN and decoder null fields"
+  },
+  "currentTurnLive": {
+    "crmRuns": 0,
+    "paidApiCalls": 0,
+    "additionalCostRub": 0,
+    "productionDbReads": 0,
+    "blockingCondition": "CUA admin-enforced policy could not be verified for CRM and Timeweb; no bypass attempted"
+  },
+  "remaining": [
+    "Verify production version and health after browser access is restored",
+    "Promote reviewed commit through authorized Timeweb main auto-deploy",
+    "Run bounded live Optima request and customer follow-up within remaining original 500 RUB budget; previous known cumulative estimate about 325 RUB plus unmeasured legacy fees",
+    "Confirm real local stock/prices, vehicle market, VIN association of the now-sourced OEM drain/refill volume and applicability; do not activate staged technical profiles without separate scope"
+  ],
+  "primarySources": [
+    {
+      "url": "https://www.mann-filter.com/uk-en/catalogue/search-results/product.html/w811/80_mann-filter.html",
+      "fact": "Optima IV(JF) 2.0T-GDI Theta2 180kW245hp from09/16; W811/80"
+    },
+    {
+      "url": "https://www.kia.com/content/dam/kwcms/kme/uk/en/assets/static/owners/service-maintenance/Oil-Grades-and-Capacities.pdf",
+      "page": 3,
+      "version": "23.08",
+      "fact": "UK Optima JF2018–2020 Theta2 T-GDi2.0:4.8L ACEAA5 5W30",
+      "limitation": "UK model-level document; VIN market and drain/filter procedure applicability not established by this turn"
+    },
+    {
+      "url": "https://www.acea.auto/files/ACEA_European_oil_sequences_2016_update_REV_2.pdf",
+      "fact": "A/B gasoline and light-duty diesel oil categories; no universal numerical higher-class substitution"
+    },
+    {
+      "url": "https://www.kia.com/content/dam/kwcms/kme/at/de/assets/contents/service/Langanleitungen/Optima-Typ-JF.pdf",
+      "pdfPage": 760,
+      "printedPage": "9-16",
+      "pageCount": 798,
+      "sha256": "7be982c56720052ca941aabfa4bfd713c1287adcd01371c97500f376ac3709a1",
+      "visualInspection": "complete relevant table inspected; footnotes on printed page9-19 read",
+      "model": "Optima JF",
+      "engine": "Theta II 2.0 T-GDI",
+      "fact": {
+        "capacityLiters": 4.8,
+        "procedure": "drain and refill",
+        "specification": "ACEA A5 or higher",
+        "viscosity": "5W-30"
+      },
+      "limitation": "Primary model-level service fact. Not activated in CRM; actual VIN profile association and local stock/prices remain unverified. No claim that the table explicitly labels WITH_FILTER."
+    }
+  ],
+  "implementationCommit": "af04625e7bf658dfbe264a3753d351070f20e2c7",
+  "ci": {
+    "run": 34470923457,
+    "sourceJob": 102850662655,
+    "source": "success",
+    "sourceUrl": "https://github.com/tamgdemaslo/vin_oil_mann/actions/runs/34470923457/job/102850662655",
+    "migrationGate": "pre-existing failure, unchanged; no migrations in this PR",
+    "previousRun": 34470672023,
+    "previousSource": "cancelled after test commit update"
+  }
+}

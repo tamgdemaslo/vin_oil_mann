@@ -1,0 +1,234 @@
+{
+  "asOfUtc": "2026-09-09T22:28:00Z",
+  "timezone": "Europe/Kaliningrad",
+  "environment": {
+    "host": "www.tamgdemaslocrm.ru",
+    "branch": "Дачная 6В",
+    "access": "authenticated browser UI",
+    "modelShown": "gpt-5.6-terra",
+    "reasoningShown": "max",
+    "deployedCommit": null,
+    "localFixesDeployed": false
+  },
+  "scope": {
+    "newInternalTestDialogs": 4,
+    "newRuns": 10,
+    "sampleType": "purposive customer-dialogue replay derived from existing active and archived conversations",
+    "completeSevenDayDatabaseSample": false,
+    "databaseRunTablesReadDirectly": false,
+    "safeCompleteCustomerDialogs": 0,
+    "clientMessagesSent": 0,
+    "businessDocumentsCreated": 0,
+    "catalogCardsModified": 0
+  },
+  "runs": [
+    {
+      "case": "C1",
+      "step": "initial",
+      "uiDurationSeconds": 51.3,
+      "inputTokensApprox": 93100,
+      "outputTokensApprox": 3000,
+      "uiStatus": "Проверка завершена"
+    },
+    {
+      "case": "C1",
+      "step": "clarification",
+      "uiDurationSeconds": 41.5,
+      "inputTokensApprox": 73300,
+      "outputTokensApprox": 2500,
+      "uiStatus": "Проверка завершена"
+    },
+    {
+      "case": "C2",
+      "step": "initial_route_failure",
+      "uiDurationSeconds": 0.1,
+      "inputTokensApprox": null,
+      "outputTokensApprox": null,
+      "uiStatus": "Проверка завершена"
+    },
+    {
+      "case": "C2",
+      "step": "calculate_button",
+      "uiDurationSeconds": 37.9,
+      "inputTokensApprox": 49100,
+      "outputTokensApprox": 2200,
+      "uiStatus": "Проверка завершена"
+    },
+    {
+      "case": "C3",
+      "step": "initial",
+      "uiDurationSeconds": 69.6,
+      "inputTokensApprox": 87100,
+      "outputTokensApprox": 4600,
+      "uiStatus": "Проверка завершена"
+    },
+    {
+      "case": "C3",
+      "step": "clarification_route_failure",
+      "uiDurationSeconds": 0.1,
+      "inputTokensApprox": null,
+      "outputTokensApprox": null,
+      "uiStatus": "Проверка завершена"
+    },
+    {
+      "case": "C3",
+      "step": "calculate_button",
+      "uiDurationSeconds": 40.2,
+      "inputTokensApprox": 52200,
+      "outputTokensApprox": 2500,
+      "uiStatus": "Проверка завершена"
+    },
+    {
+      "case": "C3",
+      "step": "format_total",
+      "uiDurationSeconds": 3.5,
+      "inputTokensApprox": 12300,
+      "outputTokensApprox": 99,
+      "uiStatus": "Проверка завершена"
+    },
+    {
+      "case": "C4",
+      "step": "initial",
+      "uiDurationSeconds": 87.2,
+      "inputTokensApprox": 125400,
+      "outputTokensApprox": 6100,
+      "uiStatus": "Проверка завершена"
+    },
+    {
+      "case": "C4",
+      "step": "exclude_haldex",
+      "uiDurationSeconds": 53.8,
+      "inputTokensApprox": 49000,
+      "outputTokensApprox": 3600,
+      "uiStatus": "Проверка завершена"
+    }
+  ],
+  "metrics": {
+    "researchRuns": 7,
+    "researchMedianSeconds": 51.3,
+    "researchSampleP95NearestRankSeconds": 87.2,
+    "researchMaximumSeconds": 87.2,
+    "productionP95Seconds": null,
+    "verifiedUsefulQuoteLatency": null,
+    "modelRequestCount": null,
+    "providerRequestCount": null,
+    "unsafeTechnicalClaimRate": null,
+    "inputTokensApprox": 541500,
+    "outputTokensApprox": 24599,
+    "modelTokensUsdEstimateIgnoringCache": 1.38,
+    "toolFeesUsd": null,
+    "actualTotalRub": null,
+    "authorizedLiveBudgetRub": 500,
+    "priorSeparateSmokeModelTokensUsdUpperEstimate": 0.1599788
+  },
+  "catalogEvidence": [
+    {
+      "case": "C2",
+      "product": "Eurol Syntence LV 0W-20, 5 л",
+      "packLiters": 5,
+      "unitPriceRub": 9990,
+      "availableSaleUnits": 1,
+      "quotedRequiredLiters": 4,
+      "quotedMaterialTotalRub": 39960,
+      "arithmeticSaleUnitsRequired": 1,
+      "arithmeticMaterialTotalRub": 9990,
+      "applicabilityIndependentlyVerified": false
+    },
+    {
+      "case": "C3",
+      "product": "BARDAHL 36593 ATF VI, 100 мл",
+      "uom": "шт",
+      "packLiters": 0.1,
+      "unitPriceRub": 259,
+      "availableSaleUnits": 29,
+      "availableLiters": 2.9,
+      "quotedRequiredLiters": 4,
+      "quotedSaleQuantity": 4,
+      "quotedMaterialTotalRub": 1036,
+      "quotedGrandTotalRub": 4026,
+      "arithmeticSaleUnitsRequired": 40,
+      "arithmeticMaterialTotalRubIfAvailable": 10360,
+      "stockSufficient": false,
+      "applicabilityIndependentlyVerified": false
+    }
+  ],
+  "findings": [
+    {
+      "case": "C1",
+      "codes": [
+        "technical_question_routed_to_quote",
+        "technical_answer_absent_from_client_text",
+        "unrequested_volume_and_price_change"
+      ]
+    },
+    {
+      "case": "C2",
+      "codes": [
+        "new_price_question_routed_to_formatting",
+        "litres_multiplied_by_canister_price",
+        "filter_not_included_but_disclosed"
+      ]
+    },
+    {
+      "case": "C3",
+      "codes": [
+        "clarification_routed_to_formatting",
+        "100ml_units_presented_as_litres",
+        "stock_insufficient_after_unit_conversion",
+        "diagnostics_not_explained_in_client_scope",
+        "formatting_used_model"
+      ]
+    },
+    {
+      "case": "C4",
+      "codes": [
+        "ambiguous_rear_axle_expanded_before_clarification",
+        "missing_labor_price",
+        "internal_repair_instruction_in_client_text"
+      ],
+      "positive": [
+        "vehicle_preserved",
+        "haldex_excluded_after_clarification",
+        "unknown_rear_diff_price_not_fabricated"
+      ]
+    }
+  ],
+  "limitations": [
+    "No complete read-only SQL export of the approved 100-run/7-day window.",
+    "UI token counters are rounded; missing counters are unknown.",
+    "Tool/source panels contain prior dialogue entries and cannot measure per-run provider calls.",
+    "No factory-procedure validation of every vehicle or independent customer-message adjudication.",
+    "Test date text contaminated C1/C2 booking-date interpretation.",
+    "The actual catalog was verified separately in the same branch, without saving edits.",
+    "Local frozen tests do not establish correctness of the next deployed model outputs."
+  ],
+  "localValidation": {
+    "suiteCount": 17,
+    "frozenE2eScenarios": 27,
+    "frozenHoldoutScenarios": 4,
+    "customerDialogueRegressionAdded": true,
+    "testResults": "passed",
+    "buildResult": "passed with NODE_OPTIONS=--max-old-space-size=4096",
+    "suitesAsOfUtc": "2026-09-09T22:23:39.745Z",
+    "typecheck": "passed",
+    "eslint": "passed",
+    "buildCompletedAtUtc": "2026-09-09T22:27:41Z",
+    "initialBuildFailure": "Node heap limit about 2 GiB",
+    "diffCheck": "passed"
+  },
+  "sources": [
+    "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+    "https://developers.openai.com/api/docs/pricing",
+    "https://static.nhtsa.gov/odi/tsbs/2013/MC-10226506-9999.pdf",
+    "https://www.skoda-auto.com/services/designated-engine-oil"
+  ],
+  "pricingEditorEvidence": {
+    "path": "/cabinet/ai-assistant/pricing",
+    "branchHeader": "Дачная 6В",
+    "editorLocation": "Дачная",
+    "activeCustomRulesShown": 0,
+    "notice": "Правила ещё не добавлены; карточки услуг остаются fallback-источником.",
+    "rulesModified": false,
+    "defaultOrFallbackTariffsIndependentlyVerified": false
+  }
+}

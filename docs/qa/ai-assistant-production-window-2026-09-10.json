@@ -1,0 +1,116 @@
+{
+  "asOf": "2026-09-10T07:40:30.000Z",
+  "since": "2026-09-03T07:40:30.000Z",
+  "source": "Timeweb App Platform 235547 runtime, read-only transaction",
+  "available": 23,
+  "sampled": 23,
+  "completeWindow": true,
+  "statuses": {
+    "completed": 22,
+    "failed_run_timeout": 1
+  },
+  "models": {
+    "gpt-5.6-terra": 23
+  },
+  "responseMs": {
+    "p50": 37416,
+    "p95": 87210,
+    "n": 22
+  },
+  "firstPersistedQuoteMs": {
+    "p50": 41297,
+    "p95": 119086,
+    "n": 8
+  },
+  "knownQuoteRuns": 8,
+  "explicitCompleteQuoteRuns": 0,
+  "explicitSubtotalQuoteRuns": 0,
+  "auditedOptions": 8,
+  "arithmeticSumFailures": 0,
+  "repeatedIdenticalToolArguments": 0,
+  "stages": {
+    "build_quote_and_tech_card": {
+      "calls": 14,
+      "failed": 0,
+      "p50Ms": 328,
+      "p95Ms": 4611
+    },
+    "search_local_catalog": {
+      "calls": 22,
+      "failed": 0,
+      "p50Ms": 168,
+      "p95Ms": 237
+    },
+    "mandatory_technical_web_search": {
+      "calls": 16,
+      "failed": 1,
+      "p50Ms": 20644,
+      "p95Ms": 75006
+    },
+    "build_quote_and_tech_card_bundle": {
+      "calls": 3,
+      "failed": 1,
+      "p50Ms": 3260,
+      "p95Ms": 6020
+    },
+    "get_vehicle_service_history": {
+      "calls": 6,
+      "failed": 0,
+      "p50Ms": 34,
+      "p95Ms": 43
+    },
+    "lookup_vehicle": {
+      "calls": 6,
+      "failed": 0,
+      "p50Ms": 248,
+      "p95Ms": 2388
+    },
+    "find_service_options": {
+      "calls": 1,
+      "failed": 0,
+      "p50Ms": 32,
+      "p95Ms": 32
+    },
+    "search_rossko": {
+      "calls": 4,
+      "failed": 0,
+      "p50Ms": 648,
+      "p95Ms": 891
+    },
+    "get_stock": {
+      "calls": 1,
+      "failed": 0,
+      "p50Ms": 55,
+      "p95Ms": 55
+    }
+  },
+  "technicalProfileRevisionCounts": [
+    {
+      "state": "STAGED",
+      "verificationStatus": "UNVERIFIED",
+      "count": 889
+    },
+    {
+      "state": "REVIEW",
+      "verificationStatus": "UNVERIFIED",
+      "count": 561
+    },
+    {
+      "state": "STAGED",
+      "verificationStatus": "PRIMARY_SOURCE_VERIFIED_FIELDS",
+      "count": 51
+    }
+  ],
+  "dangerousTechnicalErrorFraction": null,
+  "modelRequestCount": null,
+  "providerRequestCount": null,
+  "exactCost": null,
+  "limitations": [
+    "Window is complete but mixes staff and test runs.",
+    "Snapshot persistence time is not time to trustworthy customer-visible quote.",
+    "Zero arithmetic-sum failures does not validate units, quantities, compatibility or tariffs.",
+    "Legacy snapshots lack explicit price-completeness metadata; zero explicit complete is not proof all prices were incomplete.",
+    "Exact provider/model calls and costs lack historical instrumentation.",
+    "Profile counts are revisions across the canonical catalogue, not applicable profiles for four sampled vehicles."
+  ]
+}

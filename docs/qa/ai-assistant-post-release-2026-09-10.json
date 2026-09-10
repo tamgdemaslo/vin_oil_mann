@@ -1,0 +1,242 @@
+{
+  "private": true,
+  "date": "2026-09-10",
+  "firstRelease": "328226d9a1e956f5e2a32ae61d81e4af399aa642",
+  "firstReleaseHealthyAt": "2026-09-10T07:40:09Z",
+  "attemptedRuns": 9,
+  "completedRuns": 5,
+  "networkFailedRuns": 4,
+  "completedDurationsMs": [
+    77000,
+    10700,
+    88200,
+    82300,
+    147500
+  ],
+  "costTelemetry": {
+    "since": "2026-09-10T07:40:30Z",
+    "modelCalls": 19,
+    "inputTokens": 458541,
+    "cachedInputTokens": 72722,
+    "outputTokens": 23093,
+    "webSearchCalls": 34,
+    "modelAndNativeWebUsd": 1.4032984,
+    "notInvoice": true
+  },
+  "budget": {
+    "rubTotalAuthorized": 500,
+    "previousModelOnlyEstimateUsd": 1.54,
+    "previousNativeWebFeesUnknown": true,
+    "cbrUsdRub": 85.4594,
+    "cbrDate": "2026-09-10",
+    "cbrSource": "https://cbr.ru/currency_base/dynamics/?UniDbQuery.Posted=True&UniDbQuery.VAL_NM_RQ=R01235"
+  },
+  "cases": [
+    {
+      "id": "R1",
+      "vehicle": "Audi A4 CVT",
+      "request": "Обязательность адаптации после обычной замены масла; повторный вопрос без симптомов",
+      "outcome": "В уточнении исчезла оговорка; применимая заводская процедура не подтверждена",
+      "durationMs": [
+        77000,
+        10700
+      ]
+    },
+    {
+      "id": "R2",
+      "vehicle": "Skoda Octavia A8 1.0 2020",
+      "request": "Стоимость моторного обслуживания, затем масло клиента и фильтр сервиса",
+      "outcome": "Расчёт запускается, но отсутствие локации без тарифных overrides блокирует цену; неподтверждённый объём подписан техническим",
+      "durationMs": [
+        88200,
+        82300
+      ],
+      "networkFailures": 1
+    },
+    {
+      "id": "R3",
+      "vehicle": "Hyundai Tucson АКПП",
+      "request": "Диагностика, полная замена с фильтром; затем частичная без фильтра",
+      "outcome": "Распознана только частичная, диагностика потеряна; ответ на уточнение не получен из-за сети",
+      "durationMs": [
+        147500
+      ],
+      "networkFailures": 2
+    },
+    {
+      "id": "R4",
+      "vehicle": "Skoda Kodiaq DSG и задний редуктор",
+      "request": "Два отдельных расчёта",
+      "outcome": "Первый запуск остановился на сетевой проверке",
+      "networkFailures": 1
+    }
+  ],
+  "secondRelease": {
+    "status": "deployed_healthy_live_acceptance_running",
+    "changes": [
+      "technical answer evidence guard across followups",
+      "copyable safe clarification",
+      "server branch fallback to existing system policy",
+      "unverified capacity not labelled technical",
+      "full/filter procedure and diagnostics continuation",
+      "release preflight response body"
+    ],
+    "commit": "70ce04697e6b15465f0b0e7fdc4d75df9571e772",
+    "tree": "97adaaf476060ee62e8759fe197f26f725f6051b",
+    "sourceCi": "success",
+    "sourceCiCompletedAt": "2026-09-10T08:09:08Z",
+    "localBuild": "success",
+    "healthyAt": "2026-09-10T08:14:25Z",
+    "startedAt": "2026-09-10T08:14:18.519Z",
+    "imageDigest": "sha256:11f9bc1cb86979aec3770b87d7ebd167f0a094c8d1f11fa7f740bb4c2518d932",
+    "health": {
+      "live": "ok",
+      "ready": "ready"
+    },
+    "liveCases": [
+      {
+        "id": "R4",
+        "durationMs": 193500,
+        "inputTokensApprox": 159800,
+        "outputTokensApprox": 11000,
+        "services": 2,
+        "haldexExcluded": true,
+        "customerMessageCopyable": true,
+        "fullPriceAvailable": false,
+        "remaining": [
+          "material applicability/price",
+          "rear differential labor rule",
+          "exact aggregate codes",
+          "UI fell back from unknown technical capacity to planned volume; fixed in third release"
+        ]
+      },
+      {
+        "id": "R1",
+        "durationMs": 9100,
+        "inputTokensApprox": 11900,
+        "outputTokensApprox": 343,
+        "customerMessageCopyable": true,
+        "adaptationNotAssertedWithoutEvidence": true,
+        "followupPreserved": true
+      },
+      {
+        "id": "R1-format",
+        "durationMs": 100,
+        "newModelTokensShown": false,
+        "guardedTextPreserved": true
+      },
+      {
+        "id": "excluded-test-operator-error",
+        "durationMs": 16200,
+        "inputTokensApprox": 16700,
+        "outputTokensApprox": 706,
+        "reason": "Continuation was sent to adjacent test dialogue after tab reload; excluded from Tucson acceptance, included in cost"
+      },
+      {
+        "id": "R3",
+        "status": "completed_after_network_retry",
+        "durationMs": 115000,
+        "networkFailures": 1,
+        "inputTokensApprox": 93300,
+        "outputTokensApprox": 5600,
+        "partialSelected": true,
+        "filterExcluded": true,
+        "diagnosticsPreserved": true,
+        "diagnosticsPriceExplicitlyUnknown": true,
+        "laborCents": 299000,
+        "fullPriceAvailable": false,
+        "customerMessageCopyable": true
+      },
+      {
+        "id": "R2",
+        "status": "network_failed_twice",
+        "attemptDurationsMs": [
+          8100,
+          8100
+        ],
+        "routeCheckBetweenAttempts": "success",
+        "newQuoteAvailable": false
+      }
+    ]
+  },
+  "thirdRelease": {
+    "commit": "72fdffee9c6cb21eaba298d1a15686fd2ece0132",
+    "tree": "56dad849bc2cdda8e399a20cd65a2a5d44e834b7",
+    "status": "deployed_healthy",
+    "localChecks": [
+      "actual React renderer regression",
+      "TypeScript",
+      "ESLint",
+      "Timeweb-only",
+      "diff-check"
+    ],
+    "ciSource": "success",
+    "ciSourceCompletedAt": "2026-09-10T08:27:36Z",
+    "changes": [
+      "unknown technical volume never falls back to planned liters",
+      "subtotal explicitly labelled",
+      "unverified specification explicitly labelled"
+    ],
+    "startedAt": "2026-09-10T08:39:57.937Z",
+    "imageDigest": "sha256:eb63c750894d6d21f53317a7505d3177f6744730ab99122151467a325c0666c5",
+    "health": {
+      "live": "ok",
+      "ready": "ready"
+    },
+    "uiObserved": {
+      "kodiaqSeparateServices": 2,
+      "unknownVolumeExplicit": true,
+      "unverifiedSpecificationExplicit": true,
+      "customerMessageCopyable": true,
+      "desktopScreenshotReviewed": true,
+      "copyButtonConfirmedCopied": true
+    },
+    "limitations": [
+      "live subtotal label has no priced subtotal in this final sample; verified through actual component regression",
+      "no new paid calls on UI-only release"
+    ]
+  },
+  "finalCostTelemetry": {
+    "since": "2026-09-10T07:40:30Z",
+    "runs": 17,
+    "statuses": {
+      "failed": 7,
+      "completed": 10
+    },
+    "modelCalls": 33,
+    "inputTokens": 740299,
+    "cachedInputTokens": 137433,
+    "outputTokens": 40724,
+    "webSearchCalls": 54,
+    "modelAndNativeWebUsd": 2.2619066,
+    "notInvoice": true,
+    "earlierModelOnlyEstimateUsd": 1.54,
+    "knownTotalEstimateRub": 324.91,
+    "remainingBudgetBeforeEarlierUnknownWebFeesAndConversionRub": 175.09
+  },
+  "acceptance": {
+    "fullBusinessReadiness": false,
+    "remaining": [
+      "unstable OpenAI proxy connection",
+      "no active verified technical profile revisions",
+      "incomplete material applicability/prices and some labor rules",
+      "external research exceeds speed targets",
+      "fresh Octavia response unavailable due network"
+    ]
+  },
+  "finalUnauthenticatedProxyProbes": {
+    "tool": "curl through required loopback proxy",
+    "http": [
+      401,
+      401,
+      401
+    ],
+    "seconds": [
+      0.333134,
+      0.27442,
+      0.337577
+    ],
+    "nativeModelCalls": 0,
+    "limitations": "Fresh connections after deployment; does not establish long-term route stability or same SDK pool behavior"
+  }
+}
