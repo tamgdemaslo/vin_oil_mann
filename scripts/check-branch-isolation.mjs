@@ -103,6 +103,7 @@ for (const route of filesUnder("src/app/api/diagnostics")
   .filter((file) => path.basename(file) === "route.ts" && !file.includes(`${path.sep}public${path.sep}`))) {
   requireText(route, [/withDiagnosticBranchRoute/]);
 }
+requireText("src/app/api/messenger/storage/probe/route.ts", [/withDiagnosticBranchRoute/]);
 requireText("src/lib/request-tenant.ts", [/timingSafeEqual/, /businessGroupMembership/, /branchMembership/]);
 requireText("src/lib/request-tenant-store.ts", [/Branch context is required/, /runWithRequestTenant/]);
 requireText("src/lib/external-side-effects.ts", [/branch-migration-rehearsal/, /EXTERNAL_SIDE_EFFECTS_ENABLED/]);
