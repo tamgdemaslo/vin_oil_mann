@@ -100,4 +100,22 @@ blocked.techCard.serviceName='Замена масла заднего редук�
 blocked.quoteSet.options.forEach(o=>{o.status='blocked';o.totalCents=null;o.blockers=[{code:'MISSING_LABOR_RULE',message:'Нет тарифа',requiredToContinue:'Настроить тарифное правило или указать подтверждённую стоимость работы.'}];});
 const mixedText=buildQuoteAndTechCardBundleCustomerMessage({vehicle:priced.vehicle,results:[priced,blocked]}).text;
 assert.doesNotMatch(mixedText,/Настроить|тарифное правило/);assert.match(mixedText,/Стоимость этой работы пока не подтверждена/);assert.match(mixedText,/не включена/);
+
+// Render the real customer UI: a null technical volume must not fall back to
+// the planned consumption, and a subtotal must not be labelled a final total.
+const {createJiti}=await import('jiti');
+const {createElement}=await import('react');
+const {renderToStaticMarkup}=await import('react-dom/server');
+const uiJiti=createJiti(import.meta.url,{alias:{'@':process.cwd()+'/src'},jsx:{runtime:'automatic'}});
+const {default:AnswerRenderer}=await uiJiti.import(process.cwd()+'/src/app/ai-assistant/AIAssistantAnswerRenderer.tsx');
+const rendered=structuredClone(priced);
+rendered.quoteSet.options.forEach(o=>{o.technicalQuantityLiters=null;o.priceCompleteness='subtotal';});
+rendered.techCard.procedureVolumes.forEach(o=>{o.technicalQuantityLiters=null;});
+rendered.techCard.verifiedFacts=[];
+const html=renderToStaticMarkup(createElement(AnswerRenderer,{content:'',status:'completed',quoteAndTechCard:rendered}));
+assert.match(html,/Технический объём не подтверждён/);
+assert.match(html,/к расчёту 4 л/);
+assert.doesNotMatch(html,/Техн\. 4 л|<span>Итого<\/span>/);
+assert.match(html,/Известная часть стоимости/);
+assert.match(html,/применимость не подтверждена/);
 console.log('Customer dialogue replay: routing, follow-ups, changed VIN, no unsolicited quote, 100 ml packaging and customer-safe blockers passed.');

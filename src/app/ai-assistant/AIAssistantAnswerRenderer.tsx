@@ -78,6 +78,11 @@ function quantity(value: number) {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(value);
 }
 
+function volumeSummary(option: { technicalQuantityLiters: number | null; billableQuantityLiters: number | null }) {
+  const technical = option.technicalQuantityLiters == null ? "Технический объём не подтверждён" : `Техн. ${quantity(option.technicalQuantityLiters)} л`;
+  return option.billableQuantityLiters == null ? technical : `${technical} · к расчёту ${quantity(option.billableQuantityLiters)} л`;
+}
+
 function safeUrl(value: string | undefined) {
   if (!value) return "";
   if (value.startsWith("/") || value.startsWith("#")) return value;
@@ -165,11 +170,11 @@ function QuoteAndTechCardOption({ option }: { option: QuoteAndTechCardResult["qu
   const visibleLines = option.lines.filter((line) => !line.internalOnly);
   return <section className={`eco-ai-answer__quote eco-ai-answer__quote-option is-${option.status}`} aria-label={option.customerDisplayName}>
     <header className="eco-ai-answer__quote-head">
-      <div><ReceiptText size={18} aria-hidden /><div><strong>{option.customerDisplayName}</strong><span>{option.billableQuantityLiters != null ? `Техн. ${quantity(option.technicalQuantityLiters ?? option.billableQuantityLiters)} л · к расчёту ${quantity(option.billableQuantityLiters)} л` : "Объём требует уточнения"}</span></div></div>
-      <span className="eco-ai-answer__quote-status">{option.status === "ready" ? "Подтверждено" : option.status === "preliminary" ? "Предварительно" : "Нужны данные"}</span>
+      <div><ReceiptText size={18} aria-hidden /><div><strong>{option.customerDisplayName}</strong><span>{volumeSummary(option)}</span></div></div>
+      <span className="eco-ai-answer__quote-status">{option.status === "ready" ? "Рассчитано" : option.status === "preliminary" ? "Предварительно" : "Нужны данные"}</span>
     </header>
     {visibleLines.length > 0 && <div className="eco-ai-answer__quote-table-wrap"><table className="eco-ai-answer__quote-table"><thead><tr><th scope="col">Позиция</th><th scope="col">Кол-во</th><th scope="col">Сумма</th></tr></thead><tbody>{visibleLines.map((line, index) => <tr key={`${line.catalogName}-${line.article ?? index}`}><td><strong>{line.customerDisplayName}</strong></td><td>{quantity(line.quantity)}</td><td>{money(line.totalCents)}</td></tr>)}</tbody></table></div>}
-    {option.totalCents != null && <div className="eco-ai-answer__quote-total"><span>{range ? "Диапазон стоимости" : "Итого"}</span><strong>{range ? `${money(option.totalCents)} — ${money(option.maximumTotalCents!)}` : money(option.totalCents)}</strong></div>}
+    {option.totalCents != null && <div className="eco-ai-answer__quote-total"><span>{option.priceCompleteness === "subtotal" ? "Известная часть стоимости" : range ? "Диапазон стоимости" : "Итого"}</span><strong>{range ? `${money(option.totalCents)} — ${money(option.maximumTotalCents!)}` : money(option.totalCents)}</strong></div>}
     {option.blockers.length > 0 && <div className="eco-ai-answer__blockers">{option.blockers.map((blocker) => <p key={blocker.code}><strong>{blocker.message}</strong><span>{blocker.requiredToContinue}</span></p>)}</div>}
     {option.warnings.length > 0 && <details><summary>Проверить перед работой · {option.warnings.length}</summary><ul>{option.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
   </section>;
@@ -179,12 +184,12 @@ function QuoteAndTechCardView({ result, showCustomerMessage = true }: { result: 
   const techRows: Array<[string, string | null]> = [
     ["Автомобиль", result.vehicle.displayName],
     ["Агрегат", result.vehicle.aggregate],
-    ["Спецификация", result.techCard.requiredFluidSpec],
+    ["Спецификация", result.techCard.requiredFluidSpec ? `${result.techCard.requiredFluidSpec}${result.techCard.verifiedFacts?.some(fact => fact.field === "specification" && fact.value === result.techCard.requiredFluidSpec) ? "" : " — применимость не подтверждена"}` : null],
     ["Материал", result.techCard.selectedMaterial ? `${result.techCard.selectedMaterial.customerDisplayName} · ${quantity(result.techCard.selectedMaterial.quantity)} л` : null],
     ["Температура уровня", result.techCard.levelTemperature],
     ["Выставление уровня", result.techCard.levelProcedure],
     ["Фильтр", result.techCard.filterSummary],
-    ...result.techCard.procedureVolumes.map((option) => [option.customerDisplayName, option.billableQuantityLiters != null ? `Техн. ${quantity(option.technicalQuantityLiters ?? option.billableQuantityLiters)} л · к расчёту ${quantity(option.billableQuantityLiters)} л` : "Объём требует уточнения"] as [string, string]),
+    ...result.techCard.procedureVolumes.map((option) => [option.customerDisplayName, volumeSummary(option)] as [string, string]),
   ].filter((row): row is [string, string] => Boolean(row[1]));
   return <>
     <section className="eco-ai-answer__techcard" aria-label="Техническая карта">
