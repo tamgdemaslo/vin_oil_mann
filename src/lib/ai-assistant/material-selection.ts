@@ -249,7 +249,30 @@ function engineOilRequirements(requirements: string): EngineOilRequirement[] {
 }
 
 export function engineOilSpecificationSearchTokenGroups(requirements: string) {
-  return [engineOilRequirements(requirements).flatMap(({ value }) => fluidSpecificationTokens(value))].filter(tokens => tokens.length > 0);
+  return engineOilRequirementGroups(requirements)
+    .filter(group => group.every(isConcreteEngineOilRequirement))
+    .map(group => group.flatMap(({ value }) => fluidSpecificationTokens(value)))
+    .filter(tokens => tokens.length > 0);
+}
+
+/** Semicolon/comma clauses are cumulative; explicit labelled alternatives are
+ * local to their clause. Thus SAE remains mandatory on every alternative. */
+function engineOilRequirementGroups(requirements: string): EngineOilRequirement[][] {
+  const clauses = parseStoredAttributeValues(requirements.replace(/,\s*(?=(?:SAE|ACEA|API|ILSAC)\s)/giu, "; "));
+  let groups: EngineOilRequirement[][] = [[]];
+  for (const clause of clauses) {
+    const alternatives = clause.split(/\s+(?:либо|или|or)\s+(?=(?:SAE|ACEA|API|ILSAC)\s)/iu).map(engineOilRequirements);
+    // Do not silently discard constraints from an over-complex expression.
+    if (groups.length * alternatives.length > 16) return [];
+    groups = groups.flatMap(group => alternatives.map(alternative => [...group, ...alternative]));
+  }
+  return groups.filter(group => group.length > 0);
+}
+
+function isConcreteEngineOilRequirement(requirement: EngineOilRequirement) {
+  // "Latest" is a manual placeholder, not an approval or a class. Even a
+  // catalogue row with that same placeholder cannot establish compatibility.
+  return !/(?:\b(?:latest|current|unknown|unspecified)\b|последн|актуальн|не\s+указан)/iu.test(requirement.value);
 }
 
 function engineOilDeclarationMatches(source: string | null | undefined, required: EngineOilRequirement, field: ProductAttributeField) {
@@ -267,10 +290,12 @@ function engineOilDeclarationMatches(source: string | null | undefined, required
 }
 
 export function engineOilSpecificationMatches(candidate: Pick<LocalFluidCandidate, "sae" | "oem" | "acea" | "apiSpec" | "ilsac"> & Partial<Pick<LocalFluidCandidate, "searchText">>, requirements: string) {
-  const required = engineOilRequirements(requirements);
+  const groups = engineOilRequirementGroups(requirements);
   const statements = parseStoredAttributeValues([...ENGINE_OIL_FIELDS.map(([key]) => candidate[key]), candidate.searchText].filter(Boolean).join("; "));
-  if (NEGATIVE_DECLARATION.test(requirements) || statements.some(segment => NEGATIVE_DECLARATION.test(segment) && (required.some(spec => fluidSpecificationMatchesSingle(segment, spec.value)) || /^применение запрещено$/iu.test(segment)))) return false;
-  return required.length > 0 && required.every(spec => ENGINE_OIL_FIELDS.some(([key, field]) => (!spec.field || spec.field === field) && engineOilDeclarationMatches(candidate[key], spec, field)));
+  if (NEGATIVE_DECLARATION.test(requirements) || statements.some(segment => /^применение запрещено$/iu.test(segment))) return false;
+  return groups.some(required => required.every(isConcreteEngineOilRequirement)
+    && !statements.some(segment => NEGATIVE_DECLARATION.test(segment) && required.some(spec => fluidSpecificationMatchesSingle(segment, spec.value)))
+    && required.every(spec => ENGINE_OIL_FIELDS.some(([key, field]) => (!spec.field || spec.field === field) && engineOilDeclarationMatches(candidate[key], spec, field))));
 }
 
 function localizedNumber(value: string) {

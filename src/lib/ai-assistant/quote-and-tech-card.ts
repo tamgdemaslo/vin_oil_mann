@@ -793,6 +793,7 @@ function pendingEngineOilFilterText(input: Pick<QuoteAndTechCardResult, "quoteSe
 
 function customerFluidRequirement(serviceType: QuoteAndTechCardResult["techCard"]["serviceType"], specification: string | null) {
   if (!specification) return " подготовлен расчёт";
+  if (serviceType === "engine_oil" && /\b(?:latest|current|unspecified|unknown)\b/iu.test(specification)) return " подготовлен предварительный расчёт замены моторного масла";
   if (serviceType === "engine_oil") return ` расчёт по предположению: моторное масло ${specification}`;
   return ` расчёт по предположению: жидкость ${specification}`;
 }

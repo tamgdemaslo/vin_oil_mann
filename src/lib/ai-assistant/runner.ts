@@ -18,6 +18,7 @@ import { employeeRequestedOriginalFluidOnly } from "./material-selection";
 import { buildQuoteAndTechCardArtifactCustomerMessage, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardToolResult, type QuoteAndTechCardArtifact } from "./quote-and-tech-card";
 import { getAgentSettings } from "@/lib/ai-agent/settings";
 import { jsonSafe } from "./json-safe";
+import { catalogueVehicleFromRequest, assertRequestedVehicleConsistent } from "./request-vehicle";
 
 const MAX_MESSAGE_CHARS = 12_000;
 // Six turns preserve room for independent catalogue, MANN, ROSSKO and quote checks
@@ -147,7 +148,7 @@ function citationsFromResponse(response: unknown): Citation[] {
   return citations.filter((item, index, list) => list.findIndex((other) => other.url === item.url) === index).slice(0, 30);
 }
 
-function sourcesFromResponses(responses: unknown[], toolSources: AssistantToolSource[]): PersistedSource[] {
+export function sourcesFromResponses(responses: unknown[], toolSources: AssistantToolSource[]): PersistedSource[] {
   const sources: PersistedSource[] = [...toolSources];
   for (const response of responses) {
     for (const citation of citationsFromResponse(response)) sources.push({ sourceType: "web", title: citation.title || "Web search", url: citation.url, metadata: { citation: true } });
@@ -161,7 +162,20 @@ function sourcesFromResponses(responses: unknown[], toolSources: AssistantToolSo
       }
     }
   }
-  return sources.filter((source, index) => sources.findIndex((other) => `${other.sourceType}:${other.url ?? ""}:${other.title}` === `${source.sourceType}:${source.url ?? ""}:${source.title}`) === index).slice(0, 60);
+  const unique = new Map<string, PersistedSource>();
+  for (const source of sources) {
+    const key = `${source.sourceType}:${source.url || source.title}`;
+    const previous = unique.get(key);
+    // The same URL appears in citations and search discovery, sometimes with
+    // a different or missing title. Preserve one entry, preferring the citation.
+    if (previous && (previous.metadata?.citation || !source.metadata?.citation)) continue;
+    let title = source.title;
+    if ((!title || title === "Web search") && source.url) {
+      try { title = new URL(source.url).hostname || "Веб-источник"; } catch { title = "Веб-источник"; }
+    }
+    unique.set(key, { ...source, title });
+  }
+  return [...unique.values()].sort((a, b) => Number(a.sourceType === "web") - Number(b.sourceType === "web") || Number(Boolean(b.metadata?.citation)) - Number(Boolean(a.metadata?.citation))).slice(0, 60);
 }
 
 function sourcesFromResponse(response: unknown, toolSources: AssistantToolSource[]): PersistedSource[] {
@@ -556,6 +570,8 @@ async function runAssistantThreadInternal(input: { threadId: string; organizatio
       toolSources.push(...vinContext.sources);
       toolSummaries.push(...vinContext.summaries);
     }
+    const requestedVehicleSnapshot = catalogueVehicleFromRequest(scenarioRequest, vinFromMessage(scenarioRequest));
+    assertRequestedVehicleConsistent(requestedVehicleSnapshot, verifiedVehicleSnapshot);
     const responses: unknown[] = [];
     let response = await createInitialResponse(client, {
       lastResponseId: continuationRequested ? thread.lastResponseId : null,
@@ -637,6 +653,7 @@ async function runAssistantThreadInternal(input: { threadId: string; organizatio
             requestMessage: scenarioRequest,
             currentRequestMessage: message,
             verifiedVehicleSnapshot,
+            requestedVehicleSnapshot,
             previousQuoteAndTechCard,
             technicalLookup,
           });

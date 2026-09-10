@@ -1,5 +1,5 @@
 import { normalizeVehicleModel } from "@/lib/vehicle-normalization";
-import { resolveMannVehicle } from "@/lib/mann-vehicle-resolver";
+import { resolveMannVehicle, type MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import { getMannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { NormalizedVehicleIdentity } from "@/lib/vehicle-identity";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
@@ -14,9 +14,28 @@ export function mannContext(organizationId: string, vehicle: NormalizedVehicleId
     return { resolution, profile };
   });
 }
+
+export function mannResolutionDiagnostic(resolution: MannVehicleResolution) {
+  const candidates = resolution.candidates.slice(0, 3).map(candidate => ({
+    model: candidate.model, vehicleText: candidate.effectiveVehicleText ?? candidate.vehicleText,
+    confidence: candidate.confidence, matchedFields: candidate.matchedFields,
+    mismatchedFields: candidate.mismatchedFields, missingFields: candidate.missingFields,
+  }));
+  const confirmationRequired = resolution.status !== "resolved" && candidates.some(candidate => candidate.confidence === "high" && candidate.mismatchedFields.length === 0);
+  const code = resolution.status === "resolved" ? "MANN_VARIANT_CONFIRMED" : confirmationRequired ? "MANN_CONFIRMATION_REQUIRED" : candidates.length ? "MANN_VARIANT_AMBIGUOUS" : "MANN_NO_VARIANT";
+  const message = resolution.status === "resolved" ? "Модификация MANN подтверждена."
+    : confirmationRequired ? "В MANN найден подходящий кандидат, но связь с автомобилем ещё не подтверждена в каталоге. Подбор фильтра не завершён."
+    : candidates.length ? "В MANN есть кандидаты с неоднозначными характеристиками. Модификация для подбора фильтра не подтверждена."
+    : "В локальном MANN не найдена модификация по переданным характеристикам. Подбор фильтра не завершён.";
+  return { code, message, status: resolution.status, decision: resolution.decision, candidates };
+}
 /** A decoder's missing fields must not erase supplied catalogue attributes. */
-export function mergeAssistantVehicleSnapshot(submitted: Record<string, unknown>, verified?: Record<string, unknown> | null) {
-  return { ...submitted, ...Object.fromEntries(Object.entries(verified ?? {}).filter(([, value]) => value != null && (typeof value !== "string" || value.trim() !== ""))) };
+export function mergeAssistantVehicleSnapshot(submitted: Record<string, unknown>, verified?: Record<string, unknown> | null, requested: Record<string, unknown> = {}) {
+  return { ...submitted, ...requested, ...Object.fromEntries(Object.entries(verified ?? {}).filter(([, value]) => value != null && (typeof value !== "string" || value.trim() !== ""))),
+    // The request was checked against the decoder before the model loop. Its
+    // full catalogue label keeps generation/platform details a bare VIN model
+    // label would erase; this does not confirm technical service facts.
+    ...(requested.modelRaw ? { modelRaw: requested.modelRaw } : {}) };
 }
 export function assistantVehicle(snapshot: Record<string, unknown>): NormalizedVehicleIdentity {
   // A richer model label can carry the generation, but cannot replace a

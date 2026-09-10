@@ -1,0 +1,91 @@
+// Production runner and MANN resolver with a frozen database, model responses,
+// stock and prices. No live VIN, provider call, or database connection.
+import assert from 'node:assert/strict';
+import {createJiti} from 'jiti';
+import {reset,input,product,call,run,artifact,jiti} from './fixtures/ai-assistant/harness.mjs';
+const {engineOilSpecificationMatches:matches,engineOilSpecificationSearchTokenGroups:groups}=await jiti.import(process.cwd()+'/src/lib/ai-assistant/material-selection.ts');
+const {catalogueVehicleFromRequest,assertRequestedVehicleConsistent}=await jiti.import(process.cwd()+'/src/lib/ai-assistant/request-vehicle.ts');
+const {sourcesFromResponses}=await jiti.import(process.cwd()+'/src/lib/ai-assistant/runner.ts');
+const requirement='SAE 5W-30; API Latest / ILSAC Latest либо ACEA A5/B5';
+const oil={sae:'5W-30',acea:'A5/B5',apiSpec:'SN',ilsac:'GF-5'};
+assert.equal(matches(oil,requirement),true);
+assert.deepEqual(groups(requirement),[['5w','30','a5','b5']]);
+assert.equal(matches({...oil,sae:'0W-30'},requirement),false,'SAE applies to every alternative');
+assert.equal(matches({...oil,acea:'C3'},requirement),false,'a concrete class cannot be invented for Latest');
+assert.equal(matches({sae:'5W-30',apiSpec:'Latest'},'SAE 5W-30; API Latest'),false);
+assert.equal(matches({sae:'5W-30',ilsac:'Latest'},'SAE 5W-30; ILSAC Latest'),false);
+assert.equal(matches(oil,'SAE 5W-30; API SP либо ACEA A5/B5; ILSAC GF-6A'),false,'trailing clauses stay mandatory');
+assert.equal(matches(oil,'SAE 5W-30; API SN or ACEA C3'),true);
+assert.equal(matches({...oil,acea:'Не соответствует A5/B5'},requirement),false);
+assert.equal(matches({...oil,searchText:'Применение запрещено'},requirement),false);
+assert.equal(matches({...oil,acea:null,searchText:'ACEA A5/B5'},requirement),false,'discovery text is not compatibility evidence');
+assert.equal(matches(oil,'SAE 5W-30; ACEA A5/B5; неизвестное обязательное требование'),false);
+
+const vin='0'.repeat(17);
+const descriptor='KIA MOTORS Optima IV(JF) · 2.0T-GDI · Theta2 · 180 kW · 245 hp · 09/16 -> ';
+const message='Вы · 10 сент., 13:38 '+descriptor+vin+' Замена моторного масла';
+const requested=catalogueVehicleFromRequest(message,vin);
+assert.equal(requested.modelRaw,'OPTIMA IV(JF)');
+assert.equal(requested.engineSeries,'Theta2');
+assert.equal(requested.powerKw,180);
+assert.equal(requested.powerHp,245);
+assert.equal(requested.engineVolumeLiters,2);
+assert.equal(requested.year,undefined,'catalogue start date is not the car year');
+assert.equal(requested.engineCode,undefined,'a series is not an EPC-confirmed engine code');
+assert.deepEqual(catalogueVehicleFromRequest(message,'1'.repeat(17)),{});
+assert.deepEqual(catalogueVehicleFromRequest('KIA Optima 2.0 245 hp'),{});
+assert.deepEqual(catalogueVehicleFromRequest(message+'\n'+descriptor.replace('180 kW','138 kW')+vin,vin),{});
+assert.throws(()=>assertRequestedVehicleConsistent(requested,{makeCanonical:'KIA',modelCanonical:'RIO'}),/VEHICLE_CONTEXT_CONFLICT/);
+assert.throws(()=>assertRequestedVehicleConsistent(requested,{makeCanonical:'KIA',modelCanonical:'OPTIMA',powerKw:138}),/VEHICLE_CONTEXT_CONFLICT/);
+assert.throws(()=>assertRequestedVehicleConsistent(requested,{engineVolumeCc:2400}),/VEHICLE_CONTEXT_CONFLICT/);
+assert.doesNotThrow(()=>assertRequestedVehicleConsistent(requested,{engineVolumeCc:1998}));
+
+// Unlike the earlier frozen happy path, this calls the real MANN resolver.
+// Its current policy requires a persisted confirmation even for HIGH matches.
+const real=createJiti(import.meta.url,{alias:{'@':process.cwd()+'/src','@/lib/db':process.cwd()+'/scripts/fixtures/ai-assistant/db.mjs'},moduleCache:false});
+const {resolveMannVehicle}=await real.import(process.cwd()+'/src/lib/mann-vehicle-resolver.ts');
+const f=reset();
+f.resolveMannVehicle=resolveMannVehicle;
+f.vehicle={makeCanonical:'KIA',modelCanonical:'OPTIMA',modelRaw:'OPTIMA',year:2019,engineCode:'G4KH'};
+const mannRow={vehicleVariantKey:'synthetic-optima-turbo',make:'KIA MOTORS',makeNormalized:'KIA MOTORS',model:'Optima IV(JF)',modelNormalized:'OPTIMA',vehicleText:'2.0T-GDI',effectiveVehicleText:'2.0T-GDI',engineCode:'Theta2',engineCodeNormalized:'THETA2',kw:'180',hp:'245',vehicleYears:'09/16 ->',vehicleYearFrom:2016,vehicleYearTo:null,condition:null};
+f.tables.mannFilterApplication=[mannRow,{...mannRow,vehicleVariantKey:'synthetic-optima-other',vehicleText:'2.4 GDI',effectiveVehicleText:'2.4 GDI',kw:'138',hp:'188'}];
+f.tables.localProduct=[product('oil',{...oil,oem:null,atf:null,searchText:'fixture engine oil'}),product('wrong-oil',{...oil,acea:'C3',oem:null,atf:null,salePriceCents:200000})];
+f.responses=[call('lookup_technical_data',{serviceType:'engine_oil',vehicle:{makeCanonical:'KIA',modelCanonical:'OPTIMA'},missingFields:[]}),call('build_quote_and_tech_card',{input:input({vehicle:{snapshot:{makeCanonical:'KIA',modelCanonical:'OPTIMA'}},selectedProducts:[],service:{...input().service,requiredFluidSpec:requirement,filterAccess:'external_replaceable'}})})];
+await run(message);
+const answer=artifact(f),option=answer.quoteSet.options[0];
+assert.equal(f.mannVehicles[0].engineSeries,'Theta2','no model-supplied catalogue attributes');
+assert.equal(f.mannVehicles[0].powerKw,180);
+assert.equal(f.mannCalls,1,'technical lookup and quote reuse the same resolver context');
+const diagnostic=f.tables.aIAssistantToolCall.find(row=>row.toolName==='lookup_technical_data').resultSummary.vehicleResolution;
+assert.equal(diagnostic.code,'MANN_CONFIRMATION_REQUIRED');
+assert.equal(diagnostic.candidates[0].confidence,'high');
+assert.deepEqual(diagnostic.candidates[0].mismatchedFields,[]);
+assert.equal(option.materialSelectionTrace.selectedLocalCandidate.productId,'oil');
+assert.equal(option.lines.find(line=>line.role==='fluid').quantity,1);
+assert.equal(option.totalCents,300000);
+assert.equal(option.priceCompleteness,'subtotal','an unpriced filter prevents a complete total');
+assert.match(answer.customerMessage.text,/Известная часть суммы/);
+assert.doesNotMatch(answer.customerMessage.text,/Latest|Итого:/);
+assert.equal(option.technicalQuantityLiters,null);
+assert.match(JSON.stringify(answer.techCard),/связь с автомобилем ещё не подтверждена/);
+assert.equal(answer.techCard.verifiedFacts.length,0,'employee attributes and search results are not technical evidence');
+assert.equal(f.providerCalls,0);
+assert.equal(f.dbCalls.some(row=>!row.name.startsWith('aIAssistant')&&['create','createMany','update','updateMany'].includes(row.method)),false);
+assert.match(JSON.stringify(f.tables.aIAssistantQuote[0].customerSafeWarningsJson),/без масляного фильтра/);
+
+f.responses=[call('build_quote_and_tech_card',{input:input({vehicle:{snapshot:{makeCanonical:'KIA',modelCanonical:'OPTIMA'}},selectedProducts:[],service:{...input().service,requiredFluidSpec:requirement,filterAccess:'unknown'}})})];
+await run(message);
+assert.equal(artifact(f).quoteSet.options[0].priceCompleteness,'subtotal','unknown filter construction cannot make the package complete');
+
+const url='https://example.test/manual.pdf';
+const sourceResponse={output:[{type:'message',content:[{annotations:[{type:'url_citation',url,title:'Manual'}]}]},{type:'web_search_call',action:{sources:[{url},{url,title:'Another title'},{url:'https://other.test/info'}]}}]};
+const sources=sourcesFromResponses([sourceResponse],[{sourceType:'web',title:'Web search',url}]);
+assert.equal(sources.length,2);
+assert.equal(sources[0].title,'Manual');
+assert.equal(sources[0].metadata.citation,true);
+assert.equal(sources[1].title,'other.test');
+assert.equal(sources[1].metadata.citation,undefined);
+const crowded=sourcesFromResponses(Array.from({length:3},(_,i)=>({output:[{type:'message',content:[{annotations:Array.from({length:30},(_,j)=>({type:'url_citation',url:`https://example.test/${i}/${j}`,title:'Manual'}))}]}]})),[{sourceType:'mann',title:'Local profile',metadata:{status:'none'}}]);
+assert.equal(crowded.length,60);
+assert.equal(crowded[0].sourceType,'mann','web citations must not evict local evidence');
+console.log('Oil request replay passed: explicit alternatives, preserved catalogue fields, real MANN confirmation policy, conditional price, and unique named sources.');
