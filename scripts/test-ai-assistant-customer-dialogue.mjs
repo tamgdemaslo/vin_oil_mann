@@ -165,6 +165,73 @@ await run("Рассчитай замену моторного масла");
 assert.equal(artifact(f).quoteSet.options[0].totalCents,300000);
 console.log("Optima replay: composite oil requirements, filter, package quantity, retained vehicle attributes, formatting and API/ILSAC-only discovery passed.");
 
+// Reported bulk-oil dialogue, with fictional prices and parts. Exercise the
+// real runner and tools before testing the deterministic formatting actions.
+const {buildQuoteAndTechCardCustomerMessage:renderCustomer}=await jiti.import(process.cwd()+'/src/lib/ai-assistant/quote-and-tech-card.ts');
+f=reset();
+f.tables.localProduct=[product('oil',{name:'Fixture A5/B5 5W-30, моторное масло на розлив, 1 л.',uomName:'л',packageVolume:'1 л',markingMode:'BULK_OIL_FROM_MARKED_BARREL',salePriceCents:90000,acea:'A5/B5'})];
+f.responses=[call('build_quote_and_tech_card',{input:input({selectedProducts:[],service:{...input().service,requiredFluidSpec:'SAE 5W-30, ACEA A5',filterAccess:'external_replaceable',serviceHardware:[{type:'Прокладка сливной пробки TEST-GASKET',quantity:1,requirement:'mandatory',requiredForQuote:true,evidence:null}]}})})];
+await run('Рассчитай замену моторного масла и фильтра с вашими материалами');
+const bulk=artifact(f),bulkOption=bulk.quoteSet.options[0],bulkSnapshot=structuredClone(bulk);
+assert.equal(bulkOption.totalCents,450000);
+assert.equal(bulkOption.lines.find(line=>line.role==='fluid').quantity,5);
+assert.equal(bulkOption.technicalQuantityLiters,null);
+assert.deepEqual(bulk.techCard.verifiedFacts,[]);
+assert.equal(bulkOption.priceCompleteness,'subtotal');
+assert.match(bulk.customerMessage.text,/Fixture A5\/B5 5W-30, моторное масло на розлив — в расчёте 5 л/);
+assert.match(bulk.customerMessage.text,/Работа — без доплаты в этом расчёте/);
+assert.doesNotMatch(bulk.customerMessage.text,/к покупке 5 л|остаток.*0 л|на розлив, 1 л|Работа — 0 ₽|шт\.\./);
+const callsBeforeFormatting={model:f.modelCalls.length,provider:f.providerCalls,mann:f.mannCalls,vehicle:f.vehicleCalls,probes:f.connectionProbes};
+for (const [request,showPrice] of [['Короткое сообщение',true],['Короткое сообщение для клиента без цены',false],['Подробное сообщение для клиента с расчётом',true],['Только итоговая цена',true],['Добавь рекомендацию к сообщению клиенту',false]]) {
+  await run(request);
+  const copy=f.tables.aIAssistantMessage.at(-1).content;
+  assert.match(copy,/Применимость масла и объём замены пока не подтверждены/);
+  assert.match(copy,/масляного фильтра|Масляный фильтр ещё не подобран/);
+  assert.match(copy,/Прокладка сливной пробки TEST-GASKET — 1 шт\./);
+  assert.doesNotMatch(copy,/Итого:|шт\.\.|к покупке 5 л|остаток.*0 л/);
+  if(showPrice){assert.match(copy,/известная часть суммы/iu);assert.match(copy,/4[\s\u00a0]?500 ₽/);}
+  else assert.doesNotMatch(copy,/₽/);
+}
+assert.deepEqual({model:f.modelCalls.length,provider:f.providerCalls,mann:f.mannCalls,vehicle:f.vehicleCalls,probes:f.connectionProbes},callsBeforeFormatting,'formatting must not repeat research or call providers');
+assert.deepEqual(bulk,bulkSnapshot,'copy edits cannot alter the quote or its technical evidence');
+
+const candidateCopy=structuredClone(bulk);
+candidateCopy.techCard.filterSummary='Варианты фильтра: MANN TEST-FILTER — 650 ₽ · подтвердить по VIN.';
+for (const mode of ['short_without_price','recommendation']) {
+  assert.doesNotMatch(renderCustomer(candidateCopy,mode).text,/₽/,'candidate summary must not leak a price into no-price copy');
+  assert.doesNotMatch(buildQuoteAndTechCardBundleCustomerMessage({vehicle:bulk.vehicle,results:[candidateCopy]},mode).text,/₽/);
+}
+const bundleBulk=buildQuoteAndTechCardBundleCustomerMessage({vehicle:bulk.vehicle,results:[bulk]}).text;
+assert.match(bundleBulk,/Применимость масла и объём замены пока не подтверждены/);
+assert.match(bundleBulk,/Известная часть суммы: 4[\s\u00a0]?500 ₽/);
+assert.doesNotMatch(bundleBulk,/к покупке 5 л|остаток.*0 л|Работа — 0 ₽|шт\.\./);
+
+const verifiedCopy=structuredClone(bulk);
+verifiedCopy.techCard.verifiedFacts=[{field:'specification',value:bulk.techCard.requiredFluidSpec,source:'Reviewed fixture',url:null,vehicleVariantKey:'fixture',aggregate:'E1'}];
+assert.match(renderCustomer(verifiedCopy).text,/Объём замены пока не подтверждён/);
+assert.doesNotMatch(renderCustomer(verifiedCopy).text,/Применимость масла.*не подтвержден/);
+verifiedCopy.quoteSet.options[0].technicalQuantityLiters=5;
+assert.doesNotMatch(renderCustomer(verifiedCopy).text,/пока не подтвержд/);
+verifiedCopy.techCard.verifiedFacts=[];
+assert.match(renderCustomer(verifiedCopy).text,/Применимость масла пока не подтверждена/);
+
+// Paid labour, exact kopecks and genuine package leftovers stay visible.
+const paidCopy=structuredClone(bulk),paidOption=paidCopy.quoteSet.options[0];
+paidOption.lines.find(line=>line.role==='labor').totalCents=12345;
+paidOption.totalCents+=12345;
+assert.match(renderCustomer(paidCopy).text,/Работа — 123,45 ₽/);
+assert.match(renderCustomer(paidCopy).text,/Известная часть суммы: 4[\s\u00a0]?623,45 ₽/);
+f=reset();f.responses=[call('build_quote_and_tech_card',{input:input({service:{...input().service,standardTechnicalQuantityLiters:6}})})];
+await run('Рассчитай замену моторного масла');
+const sealed=artifact(f);
+assert.equal(sealed.quoteSet.options[0].totalCents,600000);
+assert.equal(sealed.quoteSet.options[0].lines.find(line=>line.role==='fluid').saleQuantity.packageRemainderLiters,4);
+for(const copy of [sealed.customerMessage.text,buildQuoteAndTechCardBundleCustomerMessage({vehicle:sealed.vehicle,results:[sealed]}).text]){
+  assert.match(copy,/Valvoline SynPower 5W-30, 5 л/);
+  assert.match(copy,/к покупке 2 шт \(10 л\); остаток 4 л/);
+}
+console.log('Customer copy replay: bulk oil, unpriced parts, technical unknowns, all formatting modes, exact money, sealed leftovers and zero repeated calls passed.');
+
 // The public tool schema must accept the supplied catalogue attributes, and
 // normalised oil type must match the catalogue's display label.
 f=reset();f.mann={status:"resolved",decision:"MATCH",selectedApplication:{variantIds:["synthetic-optima-turbo"]},candidates:[],filters:[{filterType:"Oil Filter",mannArticle:"W 811/80"}],localMatches:[]};

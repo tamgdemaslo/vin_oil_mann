@@ -773,6 +773,40 @@ function customerVehicleDisplayName(value: string) {
 
 function customerQuantity(value: number | null) { return value == null ? "—" : String(value); }
 
+function customerFluidLine(option: QuoteAndTechCardQuoteOption, detailed: boolean) {
+  const material = option.lines.find((line) => line.role === "fluid" && !line.internalOnly);
+  if (!material) return "Основная жидкость не включена в сумму";
+  const sale = material.saleQuantity;
+  const soldByLiter = sale?.litersPerSaleUnit === 1 && /^(?:л|литр(?:а|ов)?|l|liter|litre)$/iu.test(sale.saleUnit.trim());
+  // A bulk catalogue's trailing unit is redundant here. Sealed package names,
+  // product lines, viscosity and articles remain unchanged.
+  const name = soldByLiter && /на розлив/iu.test(material.customerDisplayName)
+    ? material.customerDisplayName.replace(/,\s*1\s*(?:л|l)\.?\s*$/iu, "")
+    : material.customerDisplayName;
+  const quantity = `${name} — в расчёте ${customerQuantity(option.billableQuantityLiters)} л`;
+  if (!detailed || !sale) return quantity;
+  const purchase = !soldByLiter || sale.purchasedVolumeLiters !== option.billableQuantityLiters
+    ? `; к покупке ${material.quantity} ${sale.saleUnit} (${sale.purchasedVolumeLiters} л)` : "";
+  const remainder = sale.packageRemainderLiters > 0 ? `; остаток ${sale.packageRemainderLiters} л` : "";
+  return quantity + purchase + remainder;
+}
+
+function customerLaborLine(option: QuoteAndTechCardQuoteOption) {
+  const labor = option.lines.find((line) => (line.role === "labor" || line.type === "labor") && !line.internalOnly);
+  if (!labor) return "";
+  return labor.totalCents === 0 ? "Работа — без доплаты в этом расчёте." : `Работа — ${customerMoneyFromCents(labor.totalCents)}`;
+}
+
+function customerEngineOilVerification(input: Pick<QuoteAndTechCardResult, "techCard">, options: QuoteAndTechCardQuoteOption[]) {
+  if (input.techCard.serviceType !== "engine_oil") return "";
+  const specificationVerified = input.techCard.verifiedFacts?.some(fact => fact.field === "specification" && fact.value === input.techCard.requiredFluidSpec && fact.source && fact.vehicleVariantKey);
+  const volumeVerified = options.every(option => option.technicalQuantityLiters != null);
+  if (specificationVerified && volumeVerified) return "";
+  const missing = !specificationVerified && !volumeVerified ? "Применимость масла и объём замены пока не подтверждены"
+    : !specificationVerified ? "Применимость масла пока не подтверждена" : "Объём замены пока не подтверждён";
+  return `${missing}; уточним перед окончательным согласованием.`;
+}
+
 function customerAdditionalPartLines(option: QuoteAndTechCardQuoteOption, showPrice: boolean) {
   return option.lines
     .filter((line) => ["external_filter", "pan", "hardware", "consumable"].includes(line.role ?? "") && !line.internalOnly)
@@ -783,18 +817,22 @@ function customerAdditionalPartLines(option: QuoteAndTechCardQuoteOption, showPr
     });
 }
 
-function pendingEngineOilFilterText(input: Pick<QuoteAndTechCardResult, "quoteSet" | "techCard">, ready: QuoteAndTechCardQuoteOption[]) {
+function pendingEngineOilFilterText(input: Pick<QuoteAndTechCardResult, "quoteSet" | "techCard">, ready: QuoteAndTechCardQuoteOption[], showPrice: boolean, detailed: boolean) {
   const filterPending = ready.some((option) => option.warnings.includes(ENGINE_OIL_FILTER_PRICE_PENDING_WARNING));
   const hardwarePending = ready.flatMap((option) => option.warnings).filter((warning) => /^Предварительная сумма пока без обязательного крепежа:/u.test(warning));
   if (!filterPending && !hardwarePending.length) return "";
-  const candidates = filterPending ? input.techCard.filterSummary.match(/Варианты фильтра:.+?(?= Крепёж по процедуре:|$)/u)?.[0] ?? "" : "";
-  return [candidates, filterPending ? ENGINE_OIL_FILTER_PRICE_PENDING_WARNING : "", ...hardwarePending].filter(Boolean).join("\n");
+  const candidates = filterPending && showPrice && detailed ? input.techCard.filterSummary.match(/Варианты фильтра:.+?(?= Крепёж по процедуре:|$)/u)?.[0] ?? "" : "";
+  const filter = filterPending ? showPrice ? "Расчёт пока без масляного фильтра: его точный номер и цену уточним по VIN." : "Масляный фильтр ещё не подобран; точный номер уточним по VIN." : "";
+  const hardware = [...new Set(hardwarePending)].map(warning => warning
+    .replace(/^Предварительная сумма пока без обязательного крепежа:/u, showPrice ? "Расходники ещё уточняются и в сумму не включены:" : "Ещё нужно уточнить расходники:")
+    .replace(/[.!?]+\s*$/u, "") + ".");
+  return [candidates, filter, ...hardware].filter(Boolean).join("\n");
 }
 
 function customerFluidRequirement(serviceType: QuoteAndTechCardResult["techCard"]["serviceType"], specification: string | null) {
   if (!specification) return " подготовлен расчёт";
-  if (serviceType === "engine_oil" && /\b(?:latest|current|unspecified|unknown)\b/iu.test(specification)) return " подготовлен предварительный расчёт замены моторного масла";
-  if (serviceType === "engine_oil") return ` расчёт по предположению: моторное масло ${specification}`;
+  if (serviceType === "engine_oil" && /\b(?:latest|current|unspecified|unknown)\b/iu.test(specification)) return " подготовлен расчёт замены моторного масла";
+  if (serviceType === "engine_oil") return ` подготовлен расчёт: моторное масло ${specification}`;
   return ` расчёт по предположению: жидкость ${specification}`;
 }
 
@@ -817,17 +855,14 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
   const showPrice = mode !== "short_without_price" && mode !== "recommendation";
   const detailed = mode === "detailed_with_price" || mode === "recommendation";
   const optionText = ready.map((option) => {
-    const material = option.lines.find((line) => line.role === "fluid");
-    const labor = option.lines.find((line) => line.role === "labor" || line.type === "labor");
-    const materialName = material?.customerDisplayName ?? "Основная жидкость не включена в сумму";
     if (mode === "only_final_price") return `${option.customerDisplayName}${option.priceCompleteness === "subtotal" ? " (известная часть суммы)" : ""} — ${customerMoneyFromCents(option.totalCents!)}`;
-    if (!detailed) return `${option.customerDisplayName}: ${materialName} — ${customerQuantity(option.billableQuantityLiters)} л${showPrice ? `, ${customerMoneyFromCents(option.totalCents!)}` : ""}.`;
+    if (!detailed) return `${option.customerDisplayName}: ${customerFluidLine(option, false)}${showPrice ? `, ${option.priceCompleteness === "subtotal" ? "известная часть суммы: " : ""}${customerMoneyFromCents(option.totalCents!)}` : ""}.`;
     return [
       option.customerDisplayName,
-      `${materialName} — плановый расход ${customerQuantity(option.billableQuantityLiters)} л${material?.saleQuantity ? `; к покупке ${material.quantity} ${material.saleQuantity.saleUnit} (${material.saleQuantity.purchasedVolumeLiters} л), остаток упаковки ${material.saleQuantity.packageRemainderLiters} л` : ""}`,
+      customerFluidLine(option, true),
       ...customerAdditionalPartLines(option, showPrice),
       option.code === "partial" ? "Без снятия поддона и замены фильтра." : "",
-      showPrice && labor ? `Работа — ${customerMoneyFromCents(labor.totalCents)}` : "",
+      showPrice ? customerLaborLine(option) : "",
       showPrice ? `${option.priceCompleteness === "subtotal" ? "Известная часть суммы" : "Итого"}: ${customerMoneyFromCents(option.totalCents!)}` : "",
     ].filter(Boolean).join("\n");
   });
@@ -835,10 +870,11 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
   const intro = mode === "only_final_price"
     ? `Стоимость обслуживания ${vehicle}:`
     : `Добрый день! Для вашего ${vehicle}${customerFluidRequirement(input.techCard.serviceType, input.techCard.requiredFluidSpec)}.`;
-  const preliminary = input.quoteSet.confidence === "preliminary" ? " Предварительная стоимость указана по текущим данным." : "";
+  const preliminary = input.quoteSet.confidence === "preliminary" ? " Расчёт предварительный." : "";
   const limitations = [...new Set(ready.flatMap(option => option.warnings).filter(warning => /В известную часть|остатка недостаточно|предложение условное|^Запрошена диагностика/u.test(warning)))].join("\n");
   const filter = input.techCard.filterPolicy.tgmAction === "do_not_replace" && input.techCard.filterPolicy.presence === "present" ? input.techCard.filterPolicy.customerText : "";
-  const pendingEngineOilFilter = pendingEngineOilFilterText(input, ready);
+  const pendingEngineOilFilter = pendingEngineOilFilterText(input, ready, showPrice, detailed);
+  const verification = customerEngineOilVerification(input, ready);
   const machineCondition = ready.some((option) => option.servicePackage.diagnosticsRequired) ? "Перед аппаратной заменой сначала проведём диагностику коробки; при отсутствии противопоказаний сможем выполнить замену сразу." : "";
   const dates = input.quoteSet.requestedDates ? `Вы писали про ${input.quoteSet.requestedDates} — можем проверить свободное время.` : "Подберём удобное время и подтвердим запись.";
   // The recommendation action may not invent an upsell.  With no explicit
@@ -846,7 +882,7 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
   // condition for an аппаратная replacement.
   const safeRecommendation = recommendation ?? (mode === "recommendation" && ready.some((option) => option.code === "machine" || option.code === "machine_filter_service") ? "Рекомендуем начать с диагностики АКПП перед аппаратной заменой." : null);
   const recommendationText = mode === "recommendation" && safeRecommendation ? `Дополнительно: ${safeRecommendation}` : "";
-  return { status: "ready", text: [intro + preliminary, ...optionText, limitations, filter, pendingEngineOilFilter, machineCondition, recommendationText, dates].filter(Boolean).join("\n\n") };
+  return { status: "ready", text: [intro + preliminary, ...optionText, verification, limitations, filter, pendingEngineOilFilter, machineCondition, recommendationText, dates].filter(Boolean).join("\n\n") };
 }
 
 /** A single customer message for several independently calculated services. */
@@ -859,24 +895,22 @@ export function buildQuoteAndTechCardBundleCustomerMessage(input: Pick<QuoteAndT
   const showPrice = mode !== "short_without_price" && mode !== "recommendation";
   const detailed = mode === "detailed_with_price" || mode === "recommendation";
   const sections = readyCards.flatMap(({ card, options }) => options.map((option) => {
-    const material = option.lines.find((line) => line.role === "fluid");
-    const labor = option.lines.find((line) => line.role === "labor" || line.type === "labor");
-    const materialName = material?.customerDisplayName ?? "Основная жидкость не включена в сумму";
     const title = input.results.length > 1 ? `${card.techCard.serviceName}\n${option.customerDisplayName}` : option.customerDisplayName;
     if (mode === "only_final_price") return `${title}${option.priceCompleteness === "subtotal" ? " (известная часть суммы)" : ""} — ${customerMoneyFromCents(option.totalCents!)}`;
-    if (!detailed) return `${title}: ${materialName} — ${customerQuantity(option.billableQuantityLiters)} л${showPrice ? `, ${customerMoneyFromCents(option.totalCents!)}` : ""}.`;
+    if (!detailed) return `${title}: ${customerFluidLine(option, false)}${showPrice ? `, ${option.priceCompleteness === "subtotal" ? "известная часть суммы: " : ""}${customerMoneyFromCents(option.totalCents!)}` : ""}.`;
     return [
       title,
-      `${materialName} — плановый расход ${customerQuantity(option.billableQuantityLiters)} л${material?.saleQuantity ? `; к покупке ${material.quantity} ${material.saleQuantity.saleUnit} (${material.saleQuantity.purchasedVolumeLiters} л), остаток упаковки ${material.saleQuantity.packageRemainderLiters} л` : ""}`,
+      customerFluidLine(option, true),
       ...customerAdditionalPartLines(option, showPrice),
-      showPrice && labor ? `Работа — ${customerMoneyFromCents(labor.totalCents)}` : "",
+      showPrice ? customerLaborLine(option) : "",
       showPrice ? `${option.priceCompleteness === "subtotal" ? "Известная часть суммы" : "Итого"}: ${customerMoneyFromCents(option.totalCents!)}` : "",
     ].filter(Boolean).join("\n");
   }));
-  const preliminary = readyCards.some(({ card }) => card.quoteSet.confidence === "preliminary") ? " Предварительная стоимость указана по текущим данным." : "";
+  const preliminary = readyCards.some(({ card }) => card.quoteSet.confidence === "preliminary") ? " Расчёт предварительный." : "";
   const limitations = [...new Set(readyCards.flatMap(({options}) => options.flatMap(option => option.warnings)).filter(warning => /В известную часть|остатка недостаточно|предложение условное|^Запрошена диагностика/u.test(warning)))].join("\n");
   const filter = readyCards.map(({ card }) => card.techCard.filterPolicy.tgmAction === "do_not_replace" && card.techCard.filterPolicy.presence === "present" ? card.techCard.filterPolicy.customerText : "").filter(Boolean);
-  const pendingEngineOilFilter = readyCards.map(({ card, options }) => pendingEngineOilFilterText(card, options)).filter(Boolean).join("\n");
+  const pendingEngineOilFilter = readyCards.map(({ card, options }) => pendingEngineOilFilterText(card, options, showPrice, detailed)).filter(Boolean).join("\n");
+  const verification = [...new Set(readyCards.map(({ card, options }) => customerEngineOilVerification(card, options)).filter(Boolean))].join("\n");
   const machineCondition = readyCards.some(({ options }) => options.some((option) => option.servicePackage.diagnosticsRequired)) ? "Перед аппаратной заменой сначала проведём диагностику коробки; при отсутствии противопоказаний сможем выполнить замену сразу." : "";
   const unresolvedServices = input.results
     .filter((card) => !readyCards.some((entry) => entry.card === card))
@@ -889,7 +923,7 @@ export function buildQuoteAndTechCardBundleCustomerMessage(input: Pick<QuoteAndT
   const recommendationText = mode === "recommendation" && recommendation ? `Дополнительно: ${recommendation}` : "";
   const vehicle = customerVehicleDisplayName(input.vehicle.displayName);
   const intro = mode === "only_final_price" ? `Стоимость обслуживания ${vehicle}:` : `Добрый день! Для вашего ${vehicle} подготовили расчёт по нескольким работам.`;
-  return { status: "ready", text: [intro + preliminary, ...sections, limitations, ...filter, pendingEngineOilFilter, machineCondition, ...unresolvedServices, recommendationText, dates].filter(Boolean).join("\n\n") };
+  return { status: "ready", text: [intro + preliminary, ...sections, verification, limitations, ...filter, pendingEngineOilFilter, machineCondition, ...unresolvedServices, recommendationText, dates].filter(Boolean).join("\n\n") };
 }
 
 export function buildQuoteAndTechCardArtifactCustomerMessage(input: QuoteAndTechCardArtifact, mode: QuoteAndTechCardCustomerMessageMode = "detailed_with_price", recommendation: string | null = null) {
