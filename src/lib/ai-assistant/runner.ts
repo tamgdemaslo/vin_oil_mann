@@ -281,9 +281,11 @@ async function threadOrThrow(threadId: string, organizationId: string) {
   return thread;
 }
 
-async function activeRun(runId: string) {
+async function assertRunActive(runId: string) {
   const run = await prisma.aIAssistantRun.findUnique({ where: { id: runId }, select: { status: true, cancelledAt: true } });
-  return (run?.status === "running" || run?.status === "queued") && !run.cancelledAt;
+  if (run?.cancelledAt) throw new AssistantBoundaryError("RUN_CANCELLED", "Запрос отменён сотрудником");
+  if (run?.status === "failed_run_timeout") throw new AssistantBoundaryError("RUN_TIMEOUT", "Общий срок выполнения запроса истёк");
+  if (run?.status !== "running" && run?.status !== "queued") throw new AssistantBoundaryError("RUN_INTERRUPTED", "Выполнение запроса прервано; команда отмены сотрудником не получена");
 }
 
 async function closeStaleAssistantRuns(threadId: string, organizationId: string) {
@@ -483,7 +485,7 @@ export async function getAssistantThread(threadId: string, organizationId: strin
   const [thread, messages, latestRun, sources, toolCalls, quotes] = await Promise.all([
     prisma.aIAssistantThread.findFirst({ where: { id: threadId, organizationId, branchId: getScopedBranchId() }, select: { id: true, branchId: true, title: true, createdById: true, status: true, lastMessageAt: true, createdAt: true, updatedAt: true } }),
     prisma.aIAssistantMessage.findMany({ where: { threadId, organizationId }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, role: true, content: true, citationsJson: true, attachmentsJson: true, runId: true, createdById: true, createdAt: true } }),
-    prisma.aIAssistantRun.findFirst({ where: { threadId, organizationId }, orderBy: { createdAt: "desc" }, select: { id: true, status: true, model: true, reasoning: true, errorMessage: true, inputTokens: true, outputTokens: true, durationMs: true, startedAt: true, completedAt: true, cancelledAt: true, toolSummaryJson: true } }),
+    prisma.aIAssistantRun.findFirst({ where: { threadId, organizationId }, orderBy: { createdAt: "desc" }, select: { id: true, inputMessageId: true, status: true, model: true, reasoning: true, errorMessage: true, inputTokens: true, outputTokens: true, durationMs: true, startedAt: true, completedAt: true, cancelledAt: true, toolSummaryJson: true } }),
     prisma.aIAssistantSource.findMany({ where: { run: { threadId, organizationId } }, orderBy: { createdAt: "desc" }, take: 80, select: { id: true, messageId: true, sourceType: true, title: true, url: true, excerpt: true, metadataJson: true, createdAt: true } }),
     prisma.aIAssistantToolCall.findMany({ where: { run: { threadId, organizationId } }, orderBy: { startedAt: "desc" }, take: 40, select: { id: true, runId: true, toolName: true, status: true, argumentsJson: true, resultSummary: true, errorMessage: true, durationMs: true, startedAt: true, completedAt: true } }),
     prisma.aIAssistantQuote.findMany({ where: { threadId, organizationId }, orderBy: [{ isSelected: "desc" }, { createdAt: "desc" }], take: 12, select: { id: true, status: true, vehicleDisplayName: true, serviceName: true, selectedScenario: true, appliedRuleId: true, appliedRuleSnapshotJson: true, includedItemsJson: true, optionalItemsJson: true, baseTotalCents: true, maximumTotalCents: true, assumptionsJson: true, internalWarningsJson: true, customerSafeWarningsJson: true, validUntil: true, isSelected: true, createdAt: true } }),
@@ -543,7 +545,10 @@ async function runAssistantThreadInternal(input: { threadId: string; organizatio
   const cancelPoll = setInterval(async () => {
     if (polling || execution?.controller.signal.aborted) return;
     polling = true;
-    try { if (!await activeRun(run.id)) execution?.controller.abort(new AssistantBoundaryError("RUN_CANCELLED", "Запрос отменён сотрудником")); } catch { /* The deadline still bounds a database outage. */ } finally { polling = false; }
+    try { await assertRunActive(run.id); } catch (error) {
+      if (error instanceof AssistantBoundaryError) execution?.controller.abort(error);
+      // A database outage is bounded by the run deadline, not called a user cancellation.
+    } finally { polling = false; }
   }, 500);
   try {
     // A failed WireGuard/DNS route must be reported immediately. Without this
@@ -594,14 +599,14 @@ async function runAssistantThreadInternal(input: { threadId: string; organizatio
     let toolCallCount = await prisma.aIAssistantToolCall.count({ where: { runId: run.id } });
     let limitReason: "tool_calls" | "iterations" | "duration" | null = null;
     agentLoop: for (let turn = 0; turn < MAX_AGENT_ITERATIONS; turn += 1) {
-      if (!await activeRun(run.id)) throw new AssistantBoundaryError("RUN_CANCELLED", "Запрос отменён сотрудником");
+      await assertRunActive(run.id);
       const calls = functionCalls(response);
       if (!calls.length) break;
       const outputs: Array<Record<string, unknown>> = [];
       let calculationCompletedThisTurn = false;
       let quoteSavedThisTurn = false;
       for (const call of calls) {
-        if (!await activeRun(run.id)) throw new AssistantBoundaryError("RUN_CANCELLED", "Запрос отменён сотрудником");
+        await assertRunActive(run.id);
         let argumentsValue: unknown;
         try { argumentsValue = parseAssistantToolArguments(call.arguments); }
         catch (error) {
@@ -783,7 +788,7 @@ async function runAssistantThreadInternal(input: { threadId: string; organizatio
     if (!quoteAndTechCard && functionCalls(response).length) {
       throw new AssistantRunLimitError("failed_tool_limit", "ИИ-помощник не сформировал итог после отключения инструментов");
     }
-    if (!await activeRun(run.id)) throw new AssistantBoundaryError("RUN_CANCELLED", "Запрос отменён сотрудником");
+    await assertRunActive(run.id);
     const rawAnswer = outputText(response);
     const technicalAnswer = intent === "technical_question" ? buildTechnicalCustomerAnswer(scenarioRequest, (assistantExecution()?.partialResults ?? []).filter(item => item.toolName === "lookup_technical_data").flatMap(item => Array.isArray(record(item.result)?.verifiedFacts) ? record(item.result)!.verifiedFacts as VerifiedTechnicalFact[] : [])) : null;
     const structuredResponse = quoteAndTechCard ? null : savedQuoteIds.length ? parseAIAssistantStructuredResponse(rawAnswer) : null;
@@ -819,16 +824,21 @@ async function runAssistantThreadInternal(input: { threadId: string; organizatio
     if (boundary instanceof AssistantBoundaryError) {
       const partial = assistantExecution()?.partialResults ?? [];
       const recovered = quoteAndTechCard ? [quoteAndTechCard] : partial.map(item => parseQuoteAndTechCardArtifact(item.result)).filter((item): item is QuoteAndTechCardArtifact => item != null);
-      const stopped = "Запрос остановлен. Сохранён предварительный расчёт; поиск недостающих технических данных не завершён. Техкарта требует проверки.";
+      const stopReason = boundary.code === "RUN_CANCELLED"
+        ? "Запрос остановлен по команде сотрудника."
+        : boundary.code === "RUN_TIMEOUT"
+          ? "Истекло время выполнения запроса."
+          : "Выполнение запроса прервано без команды отмены сотрудником.";
+      const stopped = `${stopReason} Сохранён предварительный расчёт; поиск недостающих технических данных не завершён. Техкарта требует проверки.`;
       let partialMessageId: string | undefined;
       // Use the existing native artifact contract so a saved partial price is
       // visible and can be formatted again, including every completed service.
       for (const artifact of recovered.length ? recovered : [null]) {
-        const content = artifact ? `${artifact.customerMessage.text}\n\n${stopped}` : "Запрос остановлен до получения результата.";
+        const content = artifact ? `${artifact.customerMessage.text}\n\n${stopped}` : `${stopReason} Готовый результат не получен.`;
         const saved = await prisma.aIAssistantMessage.create({ data: { branchId, threadId: thread.id, organizationId: input.organizationId, role: "assistant", content, attachmentsJson: json({ kind: artifact ? "quote_and_tech_card" : "partial_result", quoteAndTechCard: artifact, partialResults: partial, boundary: boundary.code }), runId: run.id, createdById: "ai_assistant" } });
         partialMessageId = saved.id;
       }
-      await prisma.aIAssistantRun.update({ where: { id: run.id }, data: { status: boundary.code === "RUN_CANCELLED" ? "cancelled" : "failed_run_timeout", errorCode: boundary.code, errorMessage: boundary.message, toolSummaryJson: json([...toolSummaries, ...(assistantExecution()?.events ?? [])]), durationMs: Date.now() - startedAt, completedAt: new Date() } });
+      await prisma.aIAssistantRun.update({ where: { id: run.id }, data: { status: boundary.code === "RUN_CANCELLED" ? "cancelled" : boundary.code === "RUN_TIMEOUT" ? "failed_run_timeout" : "failed", errorCode: boundary.code, errorMessage: boundary.message, toolSummaryJson: json([...toolSummaries, ...(assistantExecution()?.events ?? [])]), durationMs: Date.now() - startedAt, completedAt: new Date() } });
       return { runId: run.id, messageId: partialMessageId, cancelled: boundary.code === "RUN_CANCELLED", partial: partial.length > 0 };
     }
     const errorMessage = publicRunError(error);

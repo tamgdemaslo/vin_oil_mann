@@ -24,7 +24,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       organizationId: access.organizationId,
       actor: { id: access.actorId, name: access.session.user.name, role: access.session.user.role },
       message: body.message,
-      signal: request.signal,
+      // A browser/proxy disconnect is not a stop command. In the persistent
+      // Timeweb runtime the stored run continues within its own deadline;
+      // explicit cancellation goes through the authorized /cancel endpoint.
       selectedQuoteId: body.selectedQuoteId,
       quoteSetMessageId: body.quoteSetMessageId,
       clientMessageMode: body.clientMessageMode,

@@ -5,12 +5,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AIAssistantAnswerRenderer, { type AIServiceQuote } from "./AIAssistantAnswerRenderer";
 import { parseQuoteAndTechCardArtifact, type QuoteAndTechCardArtifact } from "@/lib/ai-assistant/quote-and-tech-card";
 import { parseAIAssistantStructuredResponse, type AIAssistantStructuredResponse } from "@/lib/ai-assistant/structured-response";
+import { assistantDeliveryError, assistantMessageWasAccepted } from "@/lib/ai-assistant/message-delivery";
 
 type Thread = { id: string; branchId: string; title: string; status: "active" | "archived"; createdById: string; lastMessageAt: string; createdAt: string; _count?: { messages: number } };
 type Message = { id: string; role: "user" | "assistant"; content: string; citationsJson: Citation[]; attachmentsJson: unknown; createdAt: string; runId: string | null };
 type Citation = { title: string | null; url: string };
 type Quote = AIServiceQuote & { appliedRuleId: string | null; isSelected: boolean; createdAt: string };
-type Run = { id: string; status: string; model: string; reasoning: string; errorMessage: string | null; inputTokens: number | null; outputTokens: number | null; durationMs: number | null; startedAt: string; completedAt: string | null; cancelledAt: string | null } | null;
+type Run = { id: string; inputMessageId?: string | null; status: string; model: string; reasoning: string; errorMessage: string | null; inputTokens: number | null; outputTokens: number | null; durationMs: number | null; startedAt: string; completedAt: string | null; cancelledAt: string | null } | null;
 type Source = { id: string; sourceType: string; title: string | null; url: string | null; excerpt: string | null; createdAt: string };
 type ToolCall = { id: string; toolName: string; status: string; errorMessage: string | null; durationMs: number | null; resultSummary: unknown; startedAt: string };
 type ThreadData = { thread: Thread | null; branch?: ActiveBranch; messages: Message[]; latestRun: Run; sources: Source[]; toolCalls: ToolCall[]; quotes: Quote[] };
@@ -160,6 +161,7 @@ export default function AIAssistantClient() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(asError(payload));
     setData(payload as ThreadData);
+    return payload as ThreadData;
   }, []);
 
   useEffect(() => {
@@ -249,8 +251,10 @@ export default function AIAssistantClient() {
       if (!response.ok) throw new Error(asError(payload));
       await Promise.all([loadThread(thread.id), loadThreads()]);
     } catch (reason) {
-      setDraft(message);
-      setError(reason instanceof Error ? reason.message : "Не удалось отправить запрос");
+      const recovered = await loadThread(thread.id).catch(() => null);
+      const accepted = assistantMessageWasAccepted(recovered, { threadId: thread.id, message, previousMessageIds: new Set() });
+      if (!accepted) setDraft(message);
+      setError(accepted ? null : assistantDeliveryError(reason));
     } finally {
       setSending(false);
     }
@@ -265,6 +269,7 @@ export default function AIAssistantClient() {
       return;
     }
     let requestedThreadId = activeThreadId;
+    const previousMessageIds = new Set(data?.thread?.id === activeThreadId ? data.messages.map(item => item.id) : []);
     setSending(true);
     setError(null);
     setDraft("");
@@ -280,11 +285,12 @@ export default function AIAssistantClient() {
       if (!response.ok) throw new Error(asError(payload));
       await Promise.all([loadThread(thread.id), loadThreads()]);
     } catch (reason) {
-      setDraft(message);
-      setError(reason instanceof Error ? reason.message : "Не удалось отправить запрос");
-      if (requestedThreadId) await loadThread(requestedThreadId).catch(() => undefined);
+      const recovered = requestedThreadId ? await loadThread(requestedThreadId).catch(() => null) : null;
+      const accepted = requestedThreadId && assistantMessageWasAccepted(recovered, { threadId: requestedThreadId, message, previousMessageIds });
+      if (!accepted) setDraft(message);
+      setError(accepted ? null : assistantDeliveryError(reason));
     } finally { setSending(false); }
-  }, [activeThreadId, activeThreadIsArchived, branchSelectionRequired, createThread, draft, loadThread, loadThreads, working]);
+  }, [activeThreadId, activeThreadIsArchived, branchSelectionRequired, createThread, data, draft, loadThread, loadThreads, working]);
 
   const requestClientMessage = useCallback(async (quoteId: string, mode: "short_with_price" | "short_without_price" | "detailed_with_price" | "only_final_price") => {
     if (!activeThreadId || working || activeThreadIsArchived) return;
@@ -301,7 +307,8 @@ export default function AIAssistantClient() {
       if (!response.ok) throw new Error(asError(payload));
       await Promise.all([loadThread(activeThreadId), loadThreads()]);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Не удалось подготовить клиентский текст");
+      await loadThread(activeThreadId).catch(() => null);
+      setError(assistantDeliveryError(reason));
     } finally { setSending(false); }
   }, [activeThreadId, activeThreadIsArchived, loadThread, loadThreads, working]);
 
@@ -326,7 +333,8 @@ export default function AIAssistantClient() {
       if (!response.ok) throw new Error(asError(payload));
       await Promise.all([loadThread(activeThreadId), loadThreads()]);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Не удалось подготовить клиентский текст");
+      await loadThread(activeThreadId).catch(() => null);
+      setError(assistantDeliveryError(reason));
     } finally { setSending(false); }
   }, [activeThreadId, activeThreadIsArchived, loadThread, loadThreads, working]);
 

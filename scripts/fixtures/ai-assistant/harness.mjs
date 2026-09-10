@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { createJiti } from 'jiti';
 const root=process.cwd(), fixture=name=>resolve(root,'scripts/fixtures/ai-assistant',name);
 const aliases={'@':resolve(root,'src'),'@/lib/db':fixture('db.mjs'),'@/lib/openai-client':fixture(process.env.TGM_AI_LIVE_SMOKE === '1' ? 'openai-live.mjs' : 'openai.mjs')};
+if (process.env.TGM_AI_LIVE_SMOKE !== '1') aliases['@/lib/ai-assistant/access']=fixture('access.mjs');
 for(const path of ['ai-agent/settings','rossko','mann-vehicle-resolver','mann-unified-technical-profile','vehicle-identity']) aliases[`@/lib/${path}`]=fixture('integrations.mjs');
 const jiti=createJiti(import.meta.url,{alias:aliases,moduleCache:true});
 if (process.env.TGM_AI_LIVE_SMOKE !== '1') process.env.OPENAI_API_KEY='frozen-test-never-sent';

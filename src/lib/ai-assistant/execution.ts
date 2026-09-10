@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export class AssistantBoundaryError extends Error {
-  constructor(public readonly code: "RUN_TIMEOUT" | "RUN_CANCELLED", message: string) { super(message); }
+  constructor(public readonly code: "RUN_TIMEOUT" | "RUN_CANCELLED" | "RUN_INTERRUPTED", message: string) { super(message); }
 }
 export type AssistantExecution = {
   deadline: number;
@@ -20,7 +20,9 @@ export function assistantRemainingMs(fallback = 240_000) {
 export async function withAssistantExecution<T>(durationMs: number, signal: AbortSignal | undefined, work: () => Promise<T>): Promise<T> {
   if (assistantExecution()) return work();
   const controller = new AbortController();
-  const cancel = () => controller.abort(new AssistantBoundaryError("RUN_CANCELLED", "Запрос отменён сотрудником"));
+  const cancel = () => controller.abort(signal?.reason instanceof AssistantBoundaryError
+    ? signal.reason
+    : new AssistantBoundaryError("RUN_INTERRUPTED", "Выполнение запроса прервано; команда отмены сотрудником не получена"));
   if (signal?.aborted) cancel();
   signal?.addEventListener("abort", cancel, { once: true });
   const timer = setTimeout(() => controller.abort(new AssistantBoundaryError("RUN_TIMEOUT", "Общий срок выполнения запроса истёк")), durationMs);
