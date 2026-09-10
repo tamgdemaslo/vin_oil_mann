@@ -127,7 +127,7 @@ assert.deepEqual(plan.options.map((option) => option.quantityTrace), repeatedPla
 assert.equal(plan.options.length, 2, "both requested variants remain in the quote");
 assert.deepEqual(plan.options.map((option) => option.code), ["partial", "machine"], "customer-facing quote options have stable partial → machine order");
 assert.equal(plan.options[0].billableQuantityLiters, 5, "partial quantity is rounded by the common quantity engine");
-assert.equal(plan.options[1].technicalQuantityLiters, 7.3, "factory capacity stays separate from planned machine consumption");
+assert.equal(plan.options[1].technicalQuantityLiters, null, "a model-supplied capacity is only a planning assumption");
 assert.equal(plan.options[1].billableQuantityLiters, 13, "12.41 litres becomes exactly 13 billable litres");
 assert.deepEqual(plan.options[1].quantityTrace, {
   sourceCapacity: 7.3,
@@ -138,9 +138,13 @@ assert.deepEqual(plan.options[1].quantityTrace, {
   rawCalculatedQuantity: 12.41,
   packageStep: 1,
   roundingRule: "Округление вверх до шага 1 л; минимум 0 л.",
-  technicalQuantity: 7.3,
+  technicalQuantity: null,
   billableQuantity: 13,
 }, "quantity trace records capacity, settings and rounding rule");
+const verifiedCapacityPlan = createQuoteAndTechCardPlan(runtimeInput, rules, [{field:'capacity',value:7.3,procedure:'machine',source:'Reviewed OEM fixture',url:null,vehicleVariantKey:'fixture-variant',aggregate:'TEST-AT'}]);
+assert.equal(verifiedCapacityPlan.options[1].technicalQuantityLiters,7.3);
+assert.equal(verifiedCapacityPlan.options[1].billableQuantityLiters,13);
+assert.match(verifiedCapacityPlan.options[1].quantityTrace.sourceCapacityEvidence,/Reviewed OEM fixture/);
 assert.equal(plan.techCardWarnings.some((warning) => /фильтр|epc|заказ/iu.test(warning)), false, "internal-filter policy removes search instructions from tech-card warnings");
 assert.deepEqual(plan.filterPolicy, {
   presence: "present",

@@ -41,6 +41,48 @@ assert.equal(artifact(f),undefined);
 assert.equal(f.tables.aIAssistantQuote?.length??0,0);
 assert.ok(f.modelCalls.some(c=>JSON.stringify(c.body.input).includes('CALCULATION_NOT_REQUESTED')));
 
+// A confident model answer and unrelated web findings are not technical proof.
+f=reset();f.responses=[final('Нет, адаптация не обязательна. Выполняем её при необходимости.')];
+await run(technical);
+assert.match(f.tables.aIAssistantMessage.at(-1).content,/Пока не удалось подтвердить/);
+assert.doesNotMatch(f.tables.aIAssistantMessage.at(-1).content,/адаптация не обязательна|Выполняем/);
+assert.equal(f.tables.aIAssistantMessage.at(-1).attachmentsJson.kind,'client_message');
+f.responses=[final('Нет, не нужна.')];await run('А если рывков и ошибок нет? Подготовь короткий ответ клиенту.');
+assert.match(f.tables.aIAssistantMessage.at(-1).content,/Пока не удалось подтвердить/);
+assert.equal(f.modelCalls.at(-1).body.previous_response_id,undefined,'follow-up reads guarded visible history, not discarded model prose');
+const guardedText=f.tables.aIAssistantMessage.at(-1).content;
+const guardedCalls=f.modelCalls.length;await run('Короткое сообщение');
+assert.equal(f.modelCalls.length,guardedCalls);
+assert.equal(f.tables.aIAssistantMessage.at(-1).content,guardedText,'formatting retains unknown technical requirements');
+
+const {buildTechnicalCustomerAnswer}=await jiti.import(process.cwd()+'/src/lib/ai-assistant/technical-answer.ts');
+const verifiedSpec={field:'specification',value:'TEST-SPEC 123',source:'Reviewed primary source',url:'https://example.invalid/source',vehicleVariantKey:'variant-1',aggregate:'E1'};
+assert.equal(buildTechnicalCustomerAnswer('Какой допуск?', [verifiedSpec]).status,'verified');
+assert.equal(buildTechnicalCustomerAnswer('Обязательна адаптация?', [verifiedSpec]).status,'needs_verification');
+assert.equal(buildTechnicalCustomerAnswer('Какой допуск?', [verifiedSpec,{...verifiedSpec,vehicleVariantKey:'variant-2',value:'OTHER-SPEC'}]).status,'needs_verification');
+
+// Empty branch overrides must still permit existing system labour policy.
+f=reset();f.tables.aIAssistantLaborPricingRule=[];
+f.responses=[call('build_quote_and_tech_card',{input:input()})];await run(price);
+assert.equal(artifact(f).quoteSet.options[0].totalCents,300000);
+assert.equal(artifact(f).quoteSet.options[0].technicalQuantityLiters,null,'unverified plan volume is not a technical capacity');
+assert.equal(artifact(f).quoteSet.options[0].billableQuantityLiters,5);
+assert.equal(artifact(f).quoteSet.options[0].quantityTrace.sourceCapacityEvidence,null);
+assert.ok(!f.dbCalls.some(c=>c.args.where?.locationId==='attacker-location'));
+f=reset();f.tables.aIAssistantLaborPricingRule=[];
+f.responses=[call('build_quote_and_tech_card',{input:input({selectedProducts:[],service:{...input().service,materialsOwner:'customer'}})})];
+await run('Рассчитай замену моторного масла с материалами клиента');
+assert.equal(artifact(f).quoteSet.options[0].totalCents,150000);
+
+const {applyAutomaticTransmissionScenarioDefaults}=await jiti.import(process.cwd()+'/src/lib/ai-assistant/tools.ts');
+const transmissionInput={...input(),service:{...input().service,type:'automatic_transmission',filterAccess:'unknown'}};
+assert.deepEqual(applyAutomaticTransmissionScenarioDefaults(transmissionInput,'Между 100 и 200 тысячами было две частичные замены. Хочу сначала диагностику, потом по возможности полную замену с фильтром.').requestedProcedures,['machine_filter_service']);
+assert.deepEqual(applyAutomaticTransmissionScenarioDefaults(transmissionInput,'Клиент ответил: «Тогда пока частичную замену, фильтр не меняем. Диагностика остаётся».',true).requestedProcedures,['partial']);
+f=reset();f.responses=[call('build_quote_and_tech_card',{input:transmissionInput})];
+await run('Рассчитай частичную замену АКПП, фильтр не меняем, перед заменой нужна диагностика');
+assert.equal(artifact(f).quoteSet.options[0].priceCompleteness,'subtotal');
+assert.match(artifact(f).customerMessage.text,/Запрошена диагностика/);
+
 // A 100 ml packaged product must be billed in packages, not in whole litres.
 f=reset();f.tables.localProduct=[product('oil',{name:'Test ATF, 100 мл',packageVolume:'100 мл.',uomName:'шт',salePriceCents:25900,stockBalances:[{available:100}]})];
 f.responses=[call('build_quote_and_tech_card',{input:input({service:{...input().service,standardTechnicalQuantityLiters:4}})})];

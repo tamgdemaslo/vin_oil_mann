@@ -503,11 +503,12 @@ export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<
     const source = quantitySource(input, code);
     const multiplier = code === "machine" || code === "machine_filter_service" ? rules.transmissionMachineExchangeMultiplier : 1;
     const rawCalculatedQuantity = source.capacity == null ? null : source.capacity * multiplier;
-    const technicalQuantityLiters = source.capacity ?? null;
+    const capacityEvidence = sourceCapacityEvidence(input, source.capacity, verifiedFacts, code);
+    const technicalQuantityLiters = capacityEvidence ? source.capacity ?? null : null;
     const billableQuantityLiters = rawCalculatedQuantity == null ? null : roundUp(Math.max(rawCalculatedQuantity, transmission ? rules.transmissionMinimumBillableLiters : 0), rules.literRoundingStep);
     const quantityTrace: QuoteAndTechCardQuantityTrace = {
       sourceCapacity: source.capacity ?? null,
-      sourceCapacityEvidence: sourceCapacityEvidence(input, source.capacity, verifiedFacts, code),
+      sourceCapacityEvidence: capacityEvidence,
       configuredMultiplier: multiplier,
       configuredAdditionalVolume: 0,
       calculationMode: source.mode,
@@ -793,7 +794,7 @@ function customerBlockerText(blocker: { code: string } | undefined) {
 
 export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCardResult, "vehicle" | "quoteSet" | "techCard">, mode: QuoteAndTechCardCustomerMessageMode = "detailed_with_price", recommendation: string | null = null): QuoteAndTechCardResult["customerMessage"] {
   const ready = input.quoteSet.options.filter((option) => option.status !== "blocked" && option.totalCents != null);
-  if (!ready.length) { const blocker = input.quoteSet.hardBlockers[0] ?? input.quoteSet.options.flatMap((option) => option.blockers)[0]; return { status: "blocked", text: `Добрый день! Расчёт для ${customerVehicleDisplayName(input.vehicle.displayName)} пока не завершён. ${customerBlockerText(blocker)}` }; }
+  if (!ready.length) { const blocker = input.quoteSet.hardBlockers[0] ?? input.quoteSet.options.flatMap((option) => option.blockers)[0]; return { status: "ready", text: `Добрый день! Расчёт для ${customerVehicleDisplayName(input.vehicle.displayName)} пока не завершён. ${customerBlockerText(blocker)} ${input.quoteSet.warnings.filter(w => /^Запрошена диагностика/u.test(w)).join(" ")}` }; }
   const showPrice = mode !== "short_without_price" && mode !== "recommendation";
   const detailed = mode === "detailed_with_price" || mode === "recommendation";
   const optionText = ready.map((option) => {
@@ -816,7 +817,7 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
     ? `Стоимость обслуживания ${vehicle}:`
     : `Добрый день! Для вашего ${vehicle}${customerFluidRequirement(input.techCard.serviceType, input.techCard.requiredFluidSpec)}.`;
   const preliminary = input.quoteSet.confidence === "preliminary" ? " Предварительная стоимость указана по текущим данным." : "";
-  const limitations = [...new Set(ready.flatMap(option => option.warnings).filter(warning => /В известную часть|остатка недостаточно|предложение условное/u.test(warning)))].join("\n");
+  const limitations = [...new Set(ready.flatMap(option => option.warnings).filter(warning => /В известную часть|остатка недостаточно|предложение условное|^Запрошена диагностика/u.test(warning)))].join("\n");
   const filter = input.techCard.filterPolicy.tgmAction === "do_not_replace" && input.techCard.filterPolicy.presence === "present" ? input.techCard.filterPolicy.customerText : "";
   const pendingEngineOilFilter = pendingEngineOilFilterText(input, ready);
   const machineCondition = ready.some((option) => option.servicePackage.diagnosticsRequired) ? "Перед аппаратной заменой сначала проведём диагностику коробки; при отсутствии противопоказаний сможем выполнить замену сразу." : "";
@@ -834,7 +835,7 @@ export function buildQuoteAndTechCardBundleCustomerMessage(input: Pick<QuoteAndT
   const readyCards = input.results.map((card) => ({ card, options: card.quoteSet.options.filter((option) => option.status !== "blocked" && option.totalCents != null) })).filter((entry) => entry.options.length > 0);
   if (!readyCards.length) {
     const firstBlocked = input.results.flatMap((card) => [card.quoteSet.hardBlockers[0], ...card.quoteSet.options.flatMap((option) => option.blockers)]).find(Boolean);
-    return { status: "blocked", text: `Добрый день! Расчёт для ${customerVehicleDisplayName(input.vehicle.displayName)} пока не завершён. ${customerBlockerText(firstBlocked)}` };
+    return { status: "ready", text: `Добрый день! Расчёт для ${customerVehicleDisplayName(input.vehicle.displayName)} пока не завершён. ${customerBlockerText(firstBlocked)}` };
   }
   const showPrice = mode !== "short_without_price" && mode !== "recommendation";
   const detailed = mode === "detailed_with_price" || mode === "recommendation";
@@ -854,7 +855,7 @@ export function buildQuoteAndTechCardBundleCustomerMessage(input: Pick<QuoteAndT
     ].filter(Boolean).join("\n");
   }));
   const preliminary = readyCards.some(({ card }) => card.quoteSet.confidence === "preliminary") ? " Предварительная стоимость указана по текущим данным." : "";
-  const limitations = [...new Set(readyCards.flatMap(({options}) => options.flatMap(option => option.warnings)).filter(warning => /В известную часть|остатка недостаточно|предложение условное/u.test(warning)))].join("\n");
+  const limitations = [...new Set(readyCards.flatMap(({options}) => options.flatMap(option => option.warnings)).filter(warning => /В известную часть|остатка недостаточно|предложение условное|^Запрошена диагностика/u.test(warning)))].join("\n");
   const filter = readyCards.map(({ card }) => card.techCard.filterPolicy.tgmAction === "do_not_replace" && card.techCard.filterPolicy.presence === "present" ? card.techCard.filterPolicy.customerText : "").filter(Boolean);
   const pendingEngineOilFilter = readyCards.map(({ card, options }) => pendingEngineOilFilterText(card, options)).filter(Boolean).join("\n");
   const machineCondition = readyCards.some(({ options }) => options.some((option) => option.servicePackage.diagnosticsRequired)) ? "Перед аппаратной заменой сначала проведём диагностику коробки; при отсутствии противопоказаний сможем выполнить замену сразу." : "";

@@ -46,6 +46,8 @@ export async function checkOpenAIConnection(): Promise<OpenAIConnectionCheck> {
       signal: assistantSignal() ? AbortSignal.any([controller.signal, assistantSignal()!]) : controller.signal,
       ...(openAIProxyAgent() ? { dispatcher: openAIProxyAgent() } : {}),
     });
+    // Release the response body before reusing the shared proxy connection.
+    await response.body?.cancel();
     if (response.status === 401) return { ok: true, proxyConfigured, status: response.status, timeoutMs };
     return {
       ok: false,

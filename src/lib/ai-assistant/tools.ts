@@ -175,6 +175,7 @@ export type ToolContext = {
   actorRole: string;
   employeeRequestedOriginalFluidOnly?: boolean;
   requestMessage?: string;
+  currentRequestMessage?: string;
   // VIN resolution is performed before the model tool loop. It is injected
   // server-side so a model cannot silently drop a detected manual/hybrid
   // powertrain on the way to the deterministic quote builder.
@@ -1166,11 +1167,13 @@ function withProcedures(input: QuoteAndTechCardInput, procedures: QuoteAndTechCa
  * separate filter-service branch so an unresolved filter cannot disappear
  * from an otherwise valid drain-and-fill calculation.
  */
-export function applyAutomaticTransmissionScenarioDefaults(input: QuoteAndTechCardInput, requestMessage: unknown): QuoteAndTechCardInput {
+export function applyAutomaticTransmissionScenarioDefaults(input: QuoteAndTechCardInput, requestMessage: unknown, preserveExisting = false): QuoteAndTechCardInput {
   if (!isAutomaticTransmissionService(input.service.type)) return input;
-  const request = text(requestMessage, 4_000).toLocaleLowerCase("ru-RU");
+  // Earlier maintenance history is not the procedure being ordered now.
+  const request = text(requestMessage, 4_000).toLocaleLowerCase("ru-RU").split(/хочу|клиент ответил\s*:/iu).at(-1) ?? "";
   if (!request) return input;
-  const asksAnyFilterService = /фильтр|filter|поддон|pan\b/iu.test(request);
+  const excludesFilter = /без\s+(?:замены\s+)?фильтр|фильтр\S*\s+не\s+меня|не\s+меня\S*\s+фильтр/iu.test(request);
+  const asksAnyFilterService = !excludesFilter && /фильтр|filter|поддон|pan\b/iu.test(request);
   // A multi-aggregate question may ask about a Haldex pump mesh or pan. That
   // wording belongs to the clutch service; it must not turn the АКПП input
   // into a filter-only scenario. Explicit gearbox + filter wording still
@@ -1178,11 +1181,11 @@ export function applyAutomaticTransmissionScenarioDefaults(input: QuoteAndTechCa
   const hasOtherFilterBearingAggregate = /haldex|халдекс|(?:муфт|насос|сетк)\S*\s*(?:haldex|халдекс|муфт)|(?:haldex|халдекс|муфт).*?(?:насос|сетк|поддон)/iu.test(request);
   const asksAutomaticFilterService = /(?:акпп|коробк\S*|автоматическ\S*|\batf\b|aisin|ga\d{1,2}[a-z0-9-]*)(?:[^.\n]{0,60})(?:фильтр|filter|поддон|pan\b)|(?:фильтр|filter|поддон|pan\b)(?:[^.\n]{0,60})(?:акпп|коробк\S*|автоматическ\S*|\batf\b|aisin|ga\d{1,2}[a-z0-9-]*)/iu.test(request);
   const asksFilterService = asksAnyFilterService && (!hasOtherFilterBearingAggregate || asksAutomaticFilterService);
-  const asksMachine = /аппаратн|machine|полная\s+замен|full\s+(?:exchange|replacement)/iu.test(request);
+  const asksMachine = !/не\s+(?:нужна\s+)?(?:аппаратн|полн)/iu.test(request) && /аппаратн|machine|полн\S*\s+замен|full\s+(?:exchange|replacement)/iu.test(request);
   const asksPartial = /частичн|partial|слив\S*\s+(?:и\s+)?залив|drain\S*\s+(?:and\s+)?fill/iu.test(request);
   const filterServicePossible = input.service.filterAccess !== "none" && input.service.filterAccess !== "internal_requires_disassembly";
 
-  if (asksFilterService && filterServicePossible) {
+  if (asksFilterService) {
     if (asksMachine && asksPartial) return withProcedures(input, ["filter_service", "machine_filter_service"]);
     if (asksMachine) return withProcedures(input, ["machine_filter_service"]);
     return withProcedures(input, ["filter_service"]);
@@ -1190,6 +1193,7 @@ export function applyAutomaticTransmissionScenarioDefaults(input: QuoteAndTechCa
   if (asksMachine && asksPartial) return withProcedures(input, ["partial", "machine"]);
   if (asksMachine) return withProcedures(input, ["machine"]);
   if (asksPartial) return withProcedures(input, ["partial"]);
+  if (preserveExisting) return input;
   if (filterServicePossible) return withProcedures(input, ["partial", "filter_service"]);
   return withProcedures(input, ["partial"]);
 }
@@ -1219,7 +1223,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     requestedDates: text(rawInput.requestedDates, 120) || requestedDateRangeFromText(context.requestMessage) || null,
   });
   const continuedInput = restoreQuoteAndTechCardContinuationInput(submittedInput, context.previousQuoteAndTechCard);
-  const scenarioInput = applyAutomaticTransmissionScenarioDefaults(continuedInput, context.requestMessage);
+  const scenarioInput = applyAutomaticTransmissionScenarioDefaults(continuedInput, context.currentRequestMessage ?? context.requestMessage, Boolean(context.previousQuoteAndTechCard));
   const localTechnical = await verifiedLocalTechnicalInput(scenarioInput, context.organizationId);
   const plan = createQuoteAndTechCardPlan(localTechnical.input, {
     literRoundingStep: settings.calculationRules.literRoundingStep,
@@ -1228,6 +1232,8 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     maxTechnicalVerificationPasses: settings.calculationRules.maxTechnicalVerificationPasses,
   }, localTechnical.facts);
   const input = plan.input;
+  const diagnosticsRequested = isAutomaticTransmissionService(input.service.type) && /диагност/iu.test(context.requestMessage ?? "") && !/без\s+диагност|диагност\S*\s+(?:не\s+нуж|убер|отмен)|убер\S*\s+диагност/iu.test(context.currentRequestMessage ?? "");
+  if (diagnosticsRequested) plan.quoteWarnings.push("Запрошена диагностика перед заменой. Её отдельная стоимость пока не подтверждена.");
   const mannOilFilter = await resolveEngineOilMannFilter(input, context.organizationId).catch((): EngineOilMannFilterResolution => ({ candidates: [], summary: null, selectedProductId: null, sources: [], evidence: [] }));
   const baseBlockers = [...plan.hardBlockers];
   const quoteSnapshots: Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }> = [];
@@ -1341,7 +1347,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       const maximum = object(quote.maximum);
       const selectionTrace = materialSelectionTrace(quote.materialSelectionTrace, lines);
       const quoteOption: QuoteAndTechCardQuoteOption = {
-        priceCompleteness: quote.priceComplete === false ? "subtotal" : "complete",
+        priceCompleteness: quote.priceComplete === false || diagnosticsRequested ? "subtotal" : "complete",
         code: option.code,
         label: option.label,
         customerDisplayName: customerProcedureDisplayName(input.service.type, option.code),
@@ -1551,12 +1557,19 @@ async function executeAssistantToolUncached(name: string, argumentsValue: unknow
   if (!definition) throw new ToolArgumentsError("TOOL_UNKNOWN", "Инструмент недоступен");
   if (!name.startsWith("build_quote_and_tech_card")) validateAssistantToolArguments(argumentsValue, definition.parameters);
   if (name === "lookup_technical_data") {
-    const local = await mannContext(context.organizationId, assistantVehicle({ ...object(args.vehicle), ...context.verifiedVehicleSnapshot }));
+    const vehicleSnapshot = { ...object(args.vehicle), ...context.verifiedVehicleSnapshot };
+    const local = await mannContext(context.organizationId, assistantVehicle(vehicleSnapshot));
+    const serviceType = text(args.serviceType, 80);
+    const trustedSnapshot = context.verifiedVehicleSnapshot ?? {};
+    const verified = serviceType in technicalSystems ? await verifiedLocalTechnicalInput(parseQuoteAndTechCardInput({
+      vehicle: { snapshot: vehicleSnapshot, aggregateCode: text(serviceType === "engine_oil" ? trustedSnapshot.engineCode : trustedSnapshot.transmissionCode, 120) || null },
+      service: { type: serviceType, name: "Технический вопрос" },
+    }), context.organizationId) : null;
     const missingFields = Array.isArray(args.missingFields) ? args.missingFields.map(item => text(item, 100)).filter(Boolean).slice(0, 8) : [];
     const applicableItems = local.profile.items.filter(item => item.systemCode === technicalSystems[text(args.serviceType, 80)] && item.sourceStatus === "primary_source" && !item.requiresReview);
     const needsExternal = missingFields.length > 0 && (local.profile.status !== "active" || applicableItems.length !== 1 || missingFields.some(field => field === "specification" ? !applicableItems[0]?.specifications.length : field === "capacity" ? !applicableItems[0]?.capacities.some(capacity => capacity.serviceContext && capacity.serviceContext !== "UNKNOWN") : true));
     const external = needsExternal && context.technicalLookup ? await context.technicalLookup({ vehicle: { ...object(args.vehicle), ...context.verifiedVehicleSnapshot }, serviceType: args.serviceType, procedure: args.procedure, missingFields, localProfile: local.profile }) : null;
-    return { result: { vehicleDecision: local.resolution.decision, localProfile: local.profile, external: external?.result ?? null, missingFields, executionStatus: "verification_required" }, sources: [{ sourceType: "mann", title: "Локальный технический профиль", metadata: { status: local.profile.status } }, ...(external?.sources ?? [])] };
+    return { result: { vehicleDecision: local.resolution.decision, localProfile: local.profile, verifiedFacts: verified?.facts ?? [], external: external?.result ?? null, missingFields, executionStatus: "verification_required" }, sources: [{ sourceType: "mann", title: "Локальный технический профиль", metadata: { status: local.profile.status } }, ...(external?.sources ?? [])] };
   }
   if (name === "get_workspace_context") return { result: { organizationId: context.organizationId, currentUser: { id: context.actorId, name: context.actorName, role: context.actorRole }, permissions: { readData: true, writeData: false, createQuoteDraft: false, createShipmentDraft: false, createAppointment: false, placeRosskoOrder: false } } };
   if (name === "search_clients") return searchClients(args);
