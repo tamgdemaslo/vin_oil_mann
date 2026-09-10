@@ -517,3 +517,21 @@ assert.equal(shouldApplyMannRequest(4, 5), false);
 assert.equal(shouldApplyMannRequest(5, 5), true);
 
 console.log("MANN vehicle resolver regression tests — passed");
+
+// A catalogue may specify an engine series while a VIN decoder gives the exact
+// code. Both are retained; explicit series matching cannot hide a wrong variant.
+const optimaIdentity = vehicle({makeRaw:"KIA MOTORS", modelRaw:"Optima IV(JF)", year:2019, engineCode:"G4KH", engineSeries:"Theta2", engineVolumeCc:1998, powerKw:180, powerHp:245, fuelType:"gasoline"});
+const optima = normalizeDecodedVehicleForTest(optimaIdentity);
+const optimaTurbo = row({vehicleVariantKey:"synthetic-optima-turbo", make:"KIA MOTORS", model:"Optima IV(JF)", vehicleText:"2.0T-GDI", engineCode:"Theta2", kw:"180", hp:"245", vehicleYearFrom:2016});
+const optimaOther = row({...optimaTurbo, vehicleVariantKey:"synthetic-optima-other", vehicleText:"2.4 GDI", hp:"188", kw:"138"});
+const optimaRanked = rankMannCandidatesForTest(optima, [optimaOther, optimaTurbo]);
+assert.equal(optimaRanked[0].variantId, "synthetic-optima-turbo");
+assert.equal(optimaRanked[0].confidence, "high");
+assert.ok(optimaRanked[0].matchedFields.includes("семейство двигателя"));
+assert.equal(optimaRanked[0].mismatchedFields.length, 0);
+assert.ok(optimaRanked[1].mismatchedFields.includes("мощность"));
+const conflictingCode = evaluateMannCandidate(optima, row({...optimaTurbo, engineCode:"G4ND"})).candidate;
+assert.ok(conflictingCode.mismatchedFields.includes("код двигателя"));
+const missingSeries = normalizeDecodedVehicleForTest({...optimaIdentity, engineSeries:undefined});
+assert.notEqual(rankMannCandidatesForTest(missingSeries, [optimaTurbo])[0].confidence, "high", "do not infer an unverified engine-code-to-series mapping");
+assert.notEqual(rankMannCandidatesForTest(normalizeDecodedVehicleForTest({...optimaIdentity, powerKw:undefined, powerHp:undefined, engineVolumeCc:undefined}), [optimaTurbo,optimaOther])[0].confidence, "high", "shared series does not disambiguate different power variants");

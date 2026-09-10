@@ -119,3 +119,55 @@ assert.doesNotMatch(html,/Техн\. 4 л|<span>Итого<\/span>/);
 assert.match(html,/Известная часть стоимости/);
 assert.match(html,/применимость не подтверждена/);
 console.log('Customer dialogue replay: routing, follow-ups, changed VIN, no unsolicited quote, 100 ml packaging and customer-safe blockers passed.');
+
+// Replay the reported Optima request with fictional stock and prices. Real
+// resolver scoring is covered in test-mann-vehicle-resolver, not mocked here.
+const {assistantVehicle, mergeAssistantVehicleSnapshot}=await jiti.import(process.cwd()+"/src/lib/ai-assistant/technical-context.ts");
+const optimaSnapshot={makeCanonical:"KIA", modelCanonical:"OPTIMA", modelRaw:"Optima IV(JF)", engineCode:"G4KH", engineSeries:"Theta2", bodyCode:"JF", generationRaw:"IV", powerKw:180, powerHp:245, year:2019};
+const merged=mergeAssistantVehicleSnapshot(optimaSnapshot,{makeCanonical:"KIA",modelCanonical:"OPTIMA",engineSeries:null,bodyCode:"",generationRaw:undefined,powerKw:null});
+assert.equal(merged.engineSeries,"Theta2");
+assert.equal(merged.bodyCode,"JF");
+assert.equal(assistantVehicle(merged).modelRaw,"Optima IV(JF)");
+assert.equal(assistantVehicle(merged).generationRaw,"IV");
+assert.equal(assistantVehicle({...merged,modelRaw:"Rio"}).modelRaw,"OPTIMA","raw label cannot replace the verified model");
+const {normalizeMannArticle}=await jiti.import(process.cwd()+"/src/lib/mann-catalog.ts");
+const optimaRequirement="SAE 5W-30, ACEA A5 или выше";
+f=reset();
+f.tables.localProduct=[product("oil",{name:"Fixture engine oil A5/B5 5W-30, 5 л",oem:null,atf:null,acea:"A5/B5",searchText:"fixture engine oil",salePriceCents:300000}),product("wrong-oil",{name:"Fixture C3 5W-30, 5 л",oem:null,atf:null,acea:"C3",searchText:"fixture engine oil",salePriceCents:200000}),product("oil-filter",{name:"Fixture oil filter W 811/80",article:"W81180",sae:null,oem:null,atf:null,acea:null,packageVolume:null,searchText:"filter",salePriceCents:60000})];
+f.mann={status:"resolved",decision:"MATCH",selectedApplication:{variantIds:["synthetic-optima-turbo"]},candidates:[],filters:[{filterType:"Oil Filter",mannArticle:"W 811/80",condition:null}],localMatches:[{mannArticleNormalized:normalizeMannArticle("W 811/80"),compatibleProducts:[{id:"oil-filter",name:"Fixture oil filter W 811/80",price:600,available:10}]}]};
+f.responses=[call("build_quote_and_tech_card",{input:input({vehicle:{displayName:"KIA Optima 2019",snapshot:merged},selectedProducts:[],service:{...input().service,requiredFluidSpec:optimaRequirement,filterAccess:"external_replaceable"}})})];
+await run("KIA MOTORS Optima IV(JF) · 2.0T-GDI · Theta2 · 180 kW · 245 hp · 09/16 -> Замена моторного масла, материалы ваши. Подготовь ответ клиенту.");
+const optimaAnswer=artifact(f);
+assert.ok(optimaAnswer, JSON.stringify(f.tables.aIAssistantRun));
+const optimaOption=optimaAnswer.quoteSet.options[0];
+assert.equal(optimaOption.totalCents,360000,JSON.stringify(optimaOption));
+assert.match(optimaOption.materialSelectionTrace.compatibleProduct.compatibilityEvidence,/acea: A5\/B5/);
+assert.doesNotMatch(optimaOption.materialSelectionTrace.compatibleProduct.compatibilityEvidence,/или выше/);
+assert.equal(optimaOption.materialSelectionTrace.oemRequirement.evidence,null,"a product declaration does not prove OEM vehicle applicability");
+assert.equal(optimaOption.lines.find(l=>l.role==="fluid").quantity,1);
+assert.ok(optimaOption.lines.some(l=>l.productId==="oil-filter"));
+assert.ok(!optimaOption.lines.some(l=>l.productId==="wrong-oil"));
+assert.equal(optimaOption.technicalQuantityLiters,null,"a usable conditional quote must not confirm an unreviewed capacity");
+assert.equal(f.mannVehicles[0].engineSeries,"Theta2");
+assert.equal(f.mannVehicles[0].powerKw,180);
+assert.equal(f.providerCalls,0,"available compatible stock should not fall through to supplier search");
+assert.match(optimaAnswer.customerMessage.text,/Fixture engine oil|Fixture oil filter/);
+const optimaModelCalls=f.modelCalls.length;
+await run("Короткое сообщение");
+assert.equal(f.modelCalls.length,optimaModelCalls);
+assert.match(f.tables.aIAssistantMessage.at(-1).content,/3[\s\u00a0]?600/);
+// API and ILSAC may be stored only in their respective structured columns.
+f=reset(); f.tables.localProduct=[product("oil",{oem:null,atf:null,acea:null,apiSpec:"SN",ilsac:"GF-5",searchText:"fixture engine oil"})];
+f.responses=[call("build_quote_and_tech_card",{input:input({selectedProducts:[],service:{...input().service,requiredFluidSpec:"SAE 5W-30, API SN, ILSAC GF-5"}})})];
+await run("Рассчитай замену моторного масла");
+assert.equal(artifact(f).quoteSet.options[0].totalCents,300000);
+console.log("Optima replay: composite oil requirements, filter, package quantity, retained vehicle attributes, formatting and API/ILSAC-only discovery passed.");
+
+// The public tool schema must accept the supplied catalogue attributes, and
+// normalised oil type must match the catalogue's display label.
+f=reset();f.mann={status:"resolved",decision:"MATCH",selectedApplication:{variantIds:["synthetic-optima-turbo"]},candidates:[],filters:[{filterType:"Oil Filter",mannArticle:"W 811/80"}],localMatches:[]};
+f.responses=[call("find_mann_filters",{make:"KIA",model:"Optima IV(JF)",engineCode:"G4KH",engineSeries:"Theta2",powerKw:180,powerHp:245,bodyCode:"JF",generationRaw:"IV",engineVolumeCc:1998,year:2019,filterType:"oil"}),final("MANN W 811/80")];
+await run("Подбери масляный фильтр для KIA Optima IV(JF) Theta2 180 кВт 245 л.с.");
+assert.equal(f.mannVehicles[0].engineSeries,"Theta2");
+assert.equal(f.mannVehicles[0].powerKw,180);
+assert.equal(f.tables.aIAssistantToolCall.find(t=>t.name==="find_mann_filters")?.resultSummary.found ?? f.tables.aIAssistantToolCall[0]?.resultSummary.found,true);

@@ -1,7 +1,7 @@
 import { validateAssistantToolArguments, ToolArgumentsError } from "./tool-arguments";
 import { normalizePartNumberForCrossMatch } from "@/lib/part-number-cross-reference";
 import { parseAssistantRosskoOffers, sameSupplierArticle } from "./supplier-offers";
-import { mannContext, assistantVehicle, verifiedLocalTechnicalInput, technicalSystems } from "./technical-context";
+import { mannContext, mergeAssistantVehicleSnapshot, assistantVehicle, verifiedLocalTechnicalInput, technicalSystems } from "./technical-context";
 import { assistantTariffContext } from "./tariff-context";
 import { assistantEvent, assistantMemo, assistantMap, assistantExecution, assistantSignal, withinAssistantDeadline } from "./execution";
 import type { Prisma } from "@prisma/client";
@@ -16,7 +16,7 @@ import { classifyRosskoRuntimeFailure, type RosskoRuntimeFailureCode } from "@/l
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { normalizeMannArticle } from "@/lib/mann-catalog";
 import { resolveLaborPrice } from "./labor-pricing";
-import { evaluatePreferredLocalFluid, engineOilSpecificationMatches, fluidSpecificationMatches, quantityForLiters, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
+import { evaluatePreferredLocalFluid, engineOilSpecificationSearchTokenGroups, engineOilSpecificationMatches, fluidSpecificationMatches, quantityForLiters, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
 import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, ENGINE_OIL_FILTER_PRICE_PENDING_WARNING, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, quoteAndTechCardFilterPolicy, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardProcedure, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
@@ -79,8 +79,8 @@ export const assistantFunctionTools = [
   {
     type: "function",
     name: "find_mann_filters",
-    description: "Найти применяемость фильтров MANN по марке, модели, году и при необходимости коду двигателя. Результат может быть неоднозначным.",
-    parameters: { type: "object", additionalProperties: false, required: ["make", "model"], properties: { make: { type: "string", minLength: 1, maxLength: 80 }, model: { type: "string", minLength: 1, maxLength: 120 }, year: { type: ["integer", "null"], minimum: 1950, maximum: 2100 }, engineCode: { type: ["string", "null"], maxLength: 80 }, filterType: { type: ["string", "null"], maxLength: 60 } } },
+    description: "Найти применяемость фильтров MANN. Передай все явно указанные признаки: модель/поколение/кузов, код двигателя и его серию отдельно, мощность, объём, год. Результат может быть неоднозначным.",
+    parameters: { type: "object", additionalProperties: false, required: ["make", "model"], properties: { make: { type: "string", minLength: 1, maxLength: 80 }, model: { type: "string", minLength: 1, maxLength: 120 }, year: { type: ["integer", "null"], minimum: 1950, maximum: 2100 }, engineCode: { type: ["string", "null"], maxLength: 80 }, engineSeries: { type: ["string", "null"], maxLength: 80 }, generationRaw: { type: ["string", "null"], maxLength: 80 }, bodyCode: { type: ["string", "null"], maxLength: 40 }, powerKw: { type: ["number", "null"], exclusiveMinimum: 0, maximum: 2000 }, powerHp: { type: ["number", "null"], exclusiveMinimum: 0, maximum: 3000 }, engineVolumeCc: { type: ["number", "null"], exclusiveMinimum: 0, maximum: 30000 }, fuelType: { type: ["string", "null"], maxLength: 40 }, filterType: { type: ["string", "null"], maxLength: 60 } } },
   },
   {
     type: "function",
@@ -360,10 +360,10 @@ async function searchCatalog(args: Record<string, unknown>): Promise<AssistantTo
 }
 
 async function findMannFilters(args: Record<string, unknown>, context: ToolContext): Promise<AssistantToolResult> {
-  const vehicle = assistantVehicle({ ...args, ...context.verifiedVehicleSnapshot });
+  const vehicle = assistantVehicle(mergeAssistantVehicleSnapshot(args, context.verifiedVehicleSnapshot));
   const { resolution, profile } = await mannContext(context.organizationId, vehicle);
   const type = text(args.filterType, 60).toLowerCase();
-  const filters = resolution.filters.filter(row => !type || row.filterType.toLowerCase() === type);
+  const filters = resolution.filters.filter(row => !type || row.filterType.toLowerCase() === type || (MANN_OIL_FILTER_TYPE.test(type) && MANN_OIL_FILTER_TYPE.test(row.filterType)));
   return {
     result: { found: filters.length > 0, ambiguous: resolution.decision === "AMBIGUOUS", decision: resolution.decision, vehicleStatus: resolution.status, selectedApplication: resolution.selectedApplication, candidates: resolution.candidates, filters, localMatches: resolution.localMatches.map(row => ({ ...row, compatibleProducts: row.compatibleProducts.map(product => ({ id: product.id, name: product.name, article: product.article, brand: product.brand, price: product.price, available: product.available, matchType: product.matchType, matchReason: product.matchReason })) })), technicalProfile: profile },
     sources: [{ sourceType: "mann", title: "Канонический resolver MANN → OEM Parts → LocalProduct", metadata: { decision: resolution.decision, profileStatus: profile.status } }],
@@ -389,7 +389,7 @@ type EngineOilMannFilterResolution = {
   evidence: Array<{ source: string; fact: string; status: "confirmed" | "needs_verification" }>;
 };
 
-const MANN_OIL_FILTER_TYPE = /(?:\boil\s*filter\b|маслян\S*\s+фильтр|\blube\b)/iu;
+const MANN_OIL_FILTER_TYPE = /(?:^oil$|\boil\s*filter\b|маслян\S*\s+фильтр|\blube\b)/iu;
 
 export function uniqueMannFilterRows<T extends { mannArticle: string }>(rows: T[]) {
   return rows.filter((row, index) => rows.findIndex((other) => normalizeMannArticle(other.mannArticle) === normalizeMannArticle(row.mannArticle)) === index);
@@ -592,15 +592,17 @@ async function automaticLocalFluidResolutionUncached(args: Record<string, unknow
   if (originalOnlyOverride) return { selection: null, candidates: [], fallbackReason: "Сотрудник явно запросил оригинальную жидкость.", originalOnlyOverride: true };
   const requiredSpec = text(args.requiredFluidSpec, 160);
   const requiredLiters = number(args.requiredFluidVolumeLiters);
-  const alternativeTokens = fluidSpecificationSearchTokenGroups(requiredSpec);
+  const alternativeTokens = args.serviceFamily === "engine_oil" ? engineOilSpecificationSearchTokenGroups(requiredSpec) : fluidSpecificationSearchTokenGroups(requiredSpec);
   if (!requiredSpec || requiredLiters <= 0 || !alternativeTokens.length) {
-    throw new Error("Для трансмиссионного расчёта укажите requiredFluidSpec и requiredFluidVolumeLiters, чтобы backend проверил локальное масло");
+    throw new Error("Для расчёта жидкости укажите requiredFluidSpec и requiredFluidVolumeLiters, чтобы backend проверил локальное масло");
   }
   const branchId = getScopedBranchId();
   const fields = (token: string): Prisma.LocalProductWhereInput[] => [
     { sae: { contains: token, mode: "insensitive" } },
     { oem: { contains: token, mode: "insensitive" } },
     { acea: { contains: token, mode: "insensitive" } },
+    { apiSpec: { contains: token, mode: "insensitive" } },
+    { ilsac: { contains: token, mode: "insensitive" } },
     { atf: { contains: token, mode: "insensitive" } },
     { oemAtf: { contains: token, mode: "insensitive" } },
     { searchText: { contains: token, mode: "insensitive" } },
@@ -869,6 +871,7 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
       } : null,
       materialSelectionTrace: {
         requiredSpecification: text(args.requiredFluidSpec, 160) || null,
+        compatibilityEvidence: automaticFluid?.compatibilityEvidence ?? null,
         oemReference: { brand: "OEM", article: text(args.requiredFluidOemArticle, 80) || null },
         localCandidates: automaticFluidResolution.candidates,
         selectedLocalCandidate: automaticFluid ? automaticFluidResolution.candidates.find((candidate) => candidate.productId === automaticFluid.productId) ?? null : null,
@@ -1014,7 +1017,7 @@ function materialSelectionTrace(value: unknown, lines: QuoteAndTechCardQuoteOpti
     requiredSpecification: text(raw.requiredSpecification, 160) || null,
     oemRequirement: {
       specification: text(raw.requiredSpecification, 160) || null,
-      evidence: text(object(raw.oemRequirement).evidence ?? raw.compatibilityEvidence, 700) || null,
+      evidence: text(object(raw.oemRequirement).evidence, 700) || null,
     },
     oemReference: { brand: text(object(raw.oemReference).brand, 100) || null, article: text(object(raw.oemReference).article, 80) || null },
     localCandidates: candidates,
@@ -1215,10 +1218,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     vehicle: {
       ...rawVehicle,
       ...(trustedDisplayName ? { displayName: trustedDisplayName } : {}),
-      snapshot: {
-        ...object(rawVehicle.snapshot),
-        ...verifiedVehicleSnapshot,
-      },
+      snapshot: mergeAssistantVehicleSnapshot(submittedSnapshot, verifiedVehicleSnapshot),
     },
     requestedDates: text(rawInput.requestedDates, 120) || requestedDateRangeFromText(context.requestMessage) || null,
   });
@@ -1557,7 +1557,7 @@ async function executeAssistantToolUncached(name: string, argumentsValue: unknow
   if (!definition) throw new ToolArgumentsError("TOOL_UNKNOWN", "Инструмент недоступен");
   if (!name.startsWith("build_quote_and_tech_card")) validateAssistantToolArguments(argumentsValue, definition.parameters);
   if (name === "lookup_technical_data") {
-    const vehicleSnapshot = { ...object(args.vehicle), ...context.verifiedVehicleSnapshot };
+    const vehicleSnapshot = mergeAssistantVehicleSnapshot(object(args.vehicle), context.verifiedVehicleSnapshot);
     const local = await mannContext(context.organizationId, assistantVehicle(vehicleSnapshot));
     const serviceType = text(args.serviceType, 80);
     const trustedSnapshot = context.verifiedVehicleSnapshot ?? {};
@@ -1568,7 +1568,7 @@ async function executeAssistantToolUncached(name: string, argumentsValue: unknow
     const missingFields = Array.isArray(args.missingFields) ? args.missingFields.map(item => text(item, 100)).filter(Boolean).slice(0, 8) : [];
     const applicableItems = local.profile.items.filter(item => item.systemCode === technicalSystems[text(args.serviceType, 80)] && item.sourceStatus === "primary_source" && !item.requiresReview);
     const needsExternal = missingFields.length > 0 && (local.profile.status !== "active" || applicableItems.length !== 1 || missingFields.some(field => field === "specification" ? !applicableItems[0]?.specifications.length : field === "capacity" ? !applicableItems[0]?.capacities.some(capacity => capacity.serviceContext && capacity.serviceContext !== "UNKNOWN") : true));
-    const external = needsExternal && context.technicalLookup ? await context.technicalLookup({ vehicle: { ...object(args.vehicle), ...context.verifiedVehicleSnapshot }, serviceType: args.serviceType, procedure: args.procedure, missingFields, localProfile: local.profile }) : null;
+    const external = needsExternal && context.technicalLookup ? await context.technicalLookup({ vehicle: mergeAssistantVehicleSnapshot(object(args.vehicle), context.verifiedVehicleSnapshot), serviceType: args.serviceType, procedure: args.procedure, missingFields, localProfile: local.profile }) : null;
     return { result: { vehicleDecision: local.resolution.decision, localProfile: local.profile, verifiedFacts: verified?.facts ?? [], external: external?.result ?? null, missingFields, executionStatus: "verification_required" }, sources: [{ sourceType: "mann", title: "Локальный технический профиль", metadata: { status: local.profile.status } }, ...(external?.sources ?? [])] };
   }
   if (name === "get_workspace_context") return { result: { organizationId: context.organizationId, currentUser: { id: context.actorId, name: context.actorName, role: context.actorRole }, permissions: { readData: true, writeData: false, createQuoteDraft: false, createShipmentDraft: false, createAppointment: false, placeRosskoOrder: false } } };

@@ -6,6 +6,8 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { alias: { "@": resolve(process.cwd(), "src") } });
 const {
+  engineOilSpecificationMatches,
+  engineOilSpecificationSearchTokenGroups,
   fluidSpecificationMatches,
   fluidSpecificationExcerpt,
   fluidSpecificationAlternatives,
@@ -93,4 +95,22 @@ const fourLiterCan = {
 assert.equal(packageVolumeLiters(fourLiterCan), 4);
 assert.equal(selectPreferredLocalFluid([fourLiterCan], "Toyota CVTF FE", 8)?.quantity, 2);
 
+// Labelled engine-oil requirements must survive canonical matching without
+// treating ACEA classes as an ordered quality ladder.
+const engineOil = { sae: "5W-30", acea: "A5/B5", apiSpec: "SN", ilsac: "GF-5" };
+for (const requirement of ["5W-30; A5/B5", "SAE 5W-30, ACEA A5/B5", "SAE 5W-30, ACEA A5 или выше", "SAE 5W-30, API SN, ILSAC GF-5"]) {
+  assert.equal(engineOilSpecificationMatches(engineOil, requirement), true, requirement);
+}
+assert.equal(engineOilSpecificationMatches({...engineOil, sae:"5W-40"}, "SAE 5W-30, ACEA A5 или выше"), false);
+for (const acea of ["C3", "A3/B4", "A7/B7", "A5/B5-23", "не соответствует A5/B5"]) {
+  assert.equal(engineOilSpecificationMatches({...engineOil, acea}, "SAE 5W-30, ACEA A5 или выше"), false, acea);
+}
+assert.equal(engineOilSpecificationMatches({...engineOil, searchText:"Не соответствует ACEA A5/B5"}, "SAE 5W-30, ACEA A5 или выше"), false);
+assert.equal(engineOilSpecificationMatches({...engineOil, acea:null, searchText:"ACEA A5/B5"}, "SAE 5W-30, ACEA A5"), false);
+assert.equal(engineOilSpecificationMatches(engineOil, "SAE 5W-30, ACEA A5 или выше; VW 504.00"), false);
+assert.equal(engineOilSpecificationMatches(engineOil, "SAE 5W-30, ACEA A5 или C3"), false);
+assert.equal(engineOilSpecificationMatches(engineOil, "SAE 5W-30, ACEA A5/B5/C3"), false);
+assert.equal(engineOilSpecificationMatches(engineOil, "SAE 5W-30, API SP"), false);
+assert.equal(engineOilSpecificationMatches({oem:"ACEA A5/B5", sae:"5W-30"}, "SAE 5W-30, ACEA A5/B5"), false);
+assert.deepEqual(engineOilSpecificationSearchTokenGroups("SAE 5W-30, ACEA A5 или выше"), [["5w", "30", "a5"]]);
 console.log("AI material selection tests — passed");

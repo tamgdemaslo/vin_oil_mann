@@ -1,3 +1,4 @@
+import { normalizeVehicleModel } from "@/lib/vehicle-normalization";
 import { resolveMannVehicle } from "@/lib/mann-vehicle-resolver";
 import { getMannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { NormalizedVehicleIdentity } from "@/lib/vehicle-identity";
@@ -13,12 +14,22 @@ export function mannContext(organizationId: string, vehicle: NormalizedVehicleId
     return { resolution, profile };
   });
 }
+/** A decoder's missing fields must not erase supplied catalogue attributes. */
+export function mergeAssistantVehicleSnapshot(submitted: Record<string, unknown>, verified?: Record<string, unknown> | null) {
+  return { ...submitted, ...Object.fromEntries(Object.entries(verified ?? {}).filter(([, value]) => value != null && (typeof value !== "string" || value.trim() !== ""))) };
+}
 export function assistantVehicle(snapshot: Record<string, unknown>): NormalizedVehicleIdentity {
+  // A richer model label can carry the generation, but cannot replace a
+  // conflicting decoder model. Use the existing canonical normaliser.
+  const make = String(snapshot.makeCanonical ?? snapshot.make ?? snapshot.makeRaw ?? "");
+  const canonicalModel = String(snapshot.modelCanonical ?? snapshot.model ?? snapshot.modelRaw ?? "");
+  const rawModel = String(snapshot.modelRaw ?? snapshot.model ?? canonicalModel);
+  const sameModel = normalizeVehicleModel(rawModel, make).canonical === normalizeVehicleModel(canonicalModel, make).canonical;
   // Reuse resolver normalisation; a model-supplied variant key is never selection.
   return {
-    ...Object.fromEntries(Object.entries(snapshot).filter(([key]) => ["vin", "makeCanonical", "modelCanonical", "generationCanonical", "bodyCode", "engineCode", "engineSeries", "engineVolumeLiters", "engineVolumeCc", "powerHp", "powerKw", "fuelType", "transmissionType", "transmissionName", "driveType", "market"].includes(key))),
-    makeRaw: String(snapshot.makeCanonical ?? snapshot.make ?? snapshot.makeRaw ?? ""),
-    modelRaw: String(snapshot.modelCanonical ?? snapshot.model ?? snapshot.modelRaw ?? ""),
+    ...Object.fromEntries(Object.entries(snapshot).filter(([key]) => ["vin", "makeCanonical", "modelCanonical", "generationCanonical", "generationRaw", "bodyCode", "bodyName", "engineCode", "engineSeries", "engineVolumeLiters", "engineVolumeCc", "powerHp", "powerKw", "powerPs", "fuelType", "transmissionType", "transmissionName", "driveType", "market"].includes(key))),
+    makeRaw: make,
+    modelRaw: sameModel ? rawModel : canonicalModel,
     year: typeof snapshot.year === "number" ? snapshot.year : undefined,
     sourceMethods: [], rawResultIds: [], vinStatus: "unknown", confidence: "medium",
   } as NormalizedVehicleIdentity;

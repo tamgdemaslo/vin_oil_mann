@@ -231,12 +231,46 @@ export function fluidSpecificationMatches(candidate: Pick<LocalFluidCandidate, "
   if (statements.some(segment => NEGATIVE_DECLARATION.test(segment) && (fluidSpecificationMatchesSingle(segment, requiredSpec) || /^применение запрещено$/iu.test(segment)))) return false;
   return positiveDeclarationMatches(candidate.atf, requiredSpec, "atf") || positiveDeclarationMatches(candidate.oemAtf, requiredSpec, "transmissionOem");
 }
+const ENGINE_OIL_FIELDS = [["sae", "engineSae"], ["oem", "engineOem"], ["acea", "acea"], ["apiSpec", "engineApi"], ["ilsac", "ilsac"]] as const;
+type EngineOilRequirement = { value: string; field?: ProductAttributeField };
+
+function engineOilRequirements(requirements: string): EngineOilRequirement[] {
+  // Commas separate labelled requirements, never an OEM decimal or an atomic
+  // slash. Unrecognised clauses remain mandatory; do not extract just the SAE.
+  return parseStoredAttributeValues(requirements.replace(/,\s*(?=(?:SAE|ACEA|API|ILSAC)\s)/giu, "; ")).map(value => {
+    const labelled = value.match(/^(SAE|ACEA|API|ILSAC)\s+(.+)$/iu);
+    const field = labelled ? ({ SAE: "engineSae", ACEA: "acea", API: "engineApi", ILSAC: "ilsac" } as const)[labelled[1].toUpperCase() as "SAE" | "ACEA" | "API" | "ILSAC"] : undefined;
+    let bare = labelled?.[2] ?? value;
+    // Accept the explicitly requested base class only. ACEA has no universal
+    // "higher" ordering: this must never substitute C3 or A7/B7 for A5.
+    if (field === "acea") bare = bare.replace(/^(A5(?:\/B5)?)\s+(?:или\s+выше|or\s+(?:higher|above|better))$/iu, "$1");
+    return { value: bare, field };
+  });
+}
+
+export function engineOilSpecificationSearchTokenGroups(requirements: string) {
+  return [engineOilRequirements(requirements).flatMap(({ value }) => fluidSpecificationTokens(value))].filter(tokens => tokens.length > 0);
+}
+
+function engineOilDeclarationMatches(source: string | null | undefined, required: EngineOilRequirement, field: ProductAttributeField) {
+  return parseStoredAttributeValues(source).some(segment => {
+    const declaration = engineOilRequirements(segment)[0];
+    if (!declaration || (declaration.field && declaration.field !== field) || NEGATIVE_DECLARATION.test(segment)) return false;
+    const key = safeSpecKey(declaration.value, field);
+    const requiredKey = safeSpecKey(required.value, field);
+    if (key === requiredKey) return true;
+    // A5 is the gasoline component of the combined ACEA A5/B5 declaration.
+    // Preserve all other slash classes and edition suffixes as atomic values.
+    // Source: ACEA 2016 Oil Sequences, A/B gasoline and light-duty diesel oils.
+    return field === "acea" && requiredKey === "A5" && key === "A5/B5";
+  });
+}
+
 export function engineOilSpecificationMatches(candidate: Pick<LocalFluidCandidate, "sae" | "oem" | "acea" | "apiSpec" | "ilsac"> & Partial<Pick<LocalFluidCandidate, "searchText">>, requirements: string) {
-  const fields = [["sae", "engineSae"], ["oem", "engineOem"], ["acea", "acea"], ["apiSpec", "engineApi"], ["ilsac", "ilsac"]] as const;
-  const required = parseStoredAttributeValues(requirements);
-  const statements = parseStoredAttributeValues([...fields.map(([key]) => candidate[key]), candidate.searchText].filter(Boolean).join("; "));
-  if (required.some(spec => NEGATIVE_DECLARATION.test(spec)) || statements.some(segment => NEGATIVE_DECLARATION.test(segment) && (required.some(spec => fluidSpecificationMatchesSingle(segment, spec)) || /^применение запрещено$/iu.test(segment)))) return false;
-  return required.length > 0 && required.every(spec => fields.some(([key, field]) => positiveDeclarationMatches(candidate[key], spec, field)));
+  const required = engineOilRequirements(requirements);
+  const statements = parseStoredAttributeValues([...ENGINE_OIL_FIELDS.map(([key]) => candidate[key]), candidate.searchText].filter(Boolean).join("; "));
+  if (NEGATIVE_DECLARATION.test(requirements) || statements.some(segment => NEGATIVE_DECLARATION.test(segment) && (required.some(spec => fluidSpecificationMatchesSingle(segment, spec.value)) || /^применение запрещено$/iu.test(segment)))) return false;
+  return required.length > 0 && required.every(spec => ENGINE_OIL_FIELDS.some(([key, field]) => (!spec.field || spec.field === field) && engineOilDeclarationMatches(candidate[key], spec, field)));
 }
 
 function localizedNumber(value: string) {
@@ -325,7 +359,7 @@ export function evaluatePreferredLocalFluid(candidates: LocalFluidCandidate[], r
     availableUnits: selected.candidate.availableUnits,
     packageLiters: selected.litersPerUnit!,
     totalCents: selected.totalCents,
-    compatibilityEvidence: `LocalProduct ${selected.candidate.id}: структурированное заявление совместимости. ${evidenceFor(selected.candidate, requiredSpec)}`,
+    compatibilityEvidence: `LocalProduct ${selected.candidate.id}: структурированное заявление совместимости. ${family === "engine_oil" ? ENGINE_OIL_FIELDS.filter(([key]) => selected.candidate[key]).map(([key, field]) => `${field}: ${selected.candidate[key]}`).join("; ") : evidenceFor(selected.candidate, requiredSpec)}`,
   }, candidates: evaluated.map((entry) => entry.trace) };
 }
 

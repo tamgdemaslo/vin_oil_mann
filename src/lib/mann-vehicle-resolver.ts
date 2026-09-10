@@ -16,6 +16,7 @@ export type NormalizedMannVehicle = {
   year?: number;
   exactEngineCode?: string;
   engineFamily?: string;
+  engineSeries?: string;
   engineVolumeCc?: number;
   powerKw?: number;
   powerHp?: number;
@@ -383,6 +384,7 @@ export async function normalizeDecodedVehicle(vehicle: DecodedVehicle): Promise<
     year: safeYear(vehicle.year),
     exactEngineCode: normalizeEngineCode(vehicle.engineCode ?? vehicle.engineSeries),
     engineFamily: engineFamily(vehicle.engineCode ?? vehicle.engineSeries),
+    engineSeries: normalizeEngineCode(vehicle.engineSeries),
     engineVolumeCc: vehicle.engineVolumeCc ?? (vehicle.engineVolumeLiters ? Math.round(vehicle.engineVolumeLiters * 1000) : undefined),
     powerKw: vehicle.powerKw ? Math.round(vehicle.powerKw) : undefined,
     powerHp: vehicle.powerHp ? Math.round(vehicle.powerHp) : vehicle.powerPs ? Math.round(vehicle.powerPs) : undefined,
@@ -493,7 +495,7 @@ function rowAnchorStrength(vehicle: NormalizedMannVehicle, row: MannRow): number
   const codes = engineCodes(row.engineCode);
   const families = unique(codes.map(engineFamily));
   if (vehicle.exactEngineCode && codes.includes(vehicle.exactEngineCode)) strength += 4;
-  else if (vehicle.engineFamily && families.includes(vehicle.engineFamily)) strength += 3;
+  else if ((vehicle.engineFamily && families.includes(vehicle.engineFamily)) || (vehicle.engineSeries && codes.includes(vehicle.engineSeries))) strength += 3;
   const vehicleCodes = vehicle.bodyCodes.filter((code) => normalizeMannSearchText(code) !== vehicle.baseModel);
   const candidateCodes = rowBodyCodes(row).filter((code) => normalizeMannSearchText(code) !== vehicle.baseModel);
   if (vehicleCodes.some((vehicleCode) => candidateCodes.some((candidateCode) => bodyCodesCompatible(vehicleCode, candidateCode)))) strength += 3;
@@ -573,15 +575,19 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
   const candidateFamilies = unique(candidateCodes.map(engineFamily));
   const hasSpecificCandidateEngineCode = candidateCodes.some((code) => code.replace(/[^A-Z0-9]/g, "").length >= 4);
   const exactEngineMatch = Boolean(vehicle.exactEngineCode && candidateCodes.includes(vehicle.exactEngineCode));
-  const familyEngineMatch = Boolean(vehicle.engineFamily && candidateFamilies.includes(vehicle.engineFamily));
+  // Catalogue rows may name an explicitly supplied series (e.g. Theta2)
+  // instead of the decoder's engine code. This does not infer a code-to-series
+  // mapping; different actual engine codes still conflict.
+  const seriesEngineMatch = Boolean(vehicle.engineSeries && candidateCodes.includes(vehicle.engineSeries));
+  const familyEngineMatch = Boolean(vehicle.engineFamily && candidateFamilies.includes(vehicle.engineFamily)) || seriesEngineMatch;
   if (vehicle.exactEngineCode) {
     if (exactEngineMatch) contribute("точный код двигателя", `${vehicle.exactEngineCode}`, 24, "match");
-    else if (familyEngineMatch) contribute("семейство двигателя", `${vehicle.engineFamily}`, 17, "match");
+    else if (familyEngineMatch) contribute("семейство двигателя", `${seriesEngineMatch ? vehicle.engineSeries : vehicle.engineFamily}`, 17, "match");
     else if (candidateCodes.length > 0 && hasSpecificCandidateEngineCode) contribute("код двигателя", `${vehicle.exactEngineCode} ≠ ${candidateCodes.join(",")}`, -24, "mismatch");
     else if (candidateCodes.length > 0) contribute("код двигателя MANN", `${candidateCodes.join(",")} — общее обозначение семейства`, 0, "missing");
     else contribute("код двигателя MANN", "код отсутствует", 0, "missing");
   } else if (vehicle.engineFamily) {
-    if (familyEngineMatch) contribute("семейство двигателя", `${vehicle.engineFamily}`, 17, "match");
+    if (familyEngineMatch) contribute("семейство двигателя", `${seriesEngineMatch ? vehicle.engineSeries : vehicle.engineFamily}`, 17, "match");
     else if (candidateFamilies.length > 0 && hasSpecificCandidateEngineCode) contribute("семейство двигателя", `${vehicle.engineFamily} ≠ ${candidateFamilies.join(",")}`, -18, "mismatch");
   }
 
@@ -678,6 +684,7 @@ export function normalizeDecodedVehicleForTest(vehicle: DecodedVehicle): Normali
     year: safeYear(vehicle.year),
     exactEngineCode: normalizeEngineCode(vehicle.engineCode ?? vehicle.engineSeries),
     engineFamily: engineFamily(vehicle.engineCode ?? vehicle.engineSeries),
+    engineSeries: normalizeEngineCode(vehicle.engineSeries),
     engineVolumeCc: vehicle.engineVolumeCc ?? (vehicle.engineVolumeLiters ? Math.round(vehicle.engineVolumeLiters * 1000) : undefined),
     powerKw: vehicle.powerKw ? Math.round(vehicle.powerKw) : undefined,
     powerHp: vehicle.powerHp ? Math.round(vehicle.powerHp) : vehicle.powerPs ? Math.round(vehicle.powerPs) : undefined,
