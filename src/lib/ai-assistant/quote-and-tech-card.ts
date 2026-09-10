@@ -1,4 +1,4 @@
-import { ToolArgumentsError } from "./tool-arguments";
+import { ToolArgumentsError, SERVICE_TYPE_ERROR_MESSAGE, QUOTE_INPUT_ERROR_MESSAGE, type ToolArgumentIssue } from "./tool-arguments";
 import { z } from "zod";
 
 const text = (value: unknown, max = 240) => typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -71,12 +71,19 @@ export type QuoteAndTechCardInput = z.infer<typeof QuoteAndTechCardInputSchema>;
 
 const SERVICE_ALIASES: Record<string, QuoteAndTechCardServiceType> = {
   engine_oil: "engine_oil", engine: "engine_oil", motor_oil: "engine_oil", oil_change: "engine_oil",
+  engine_oil_change: "engine_oil", engine_oil_replacement: "engine_oil", motor_oil_change: "engine_oil", motor_oil_replacement: "engine_oil",
+  замена_моторного_масла: "engine_oil", замена_масла_двигателя: "engine_oil", замена_масла_в_двигателе: "engine_oil", моторное_масло: "engine_oil",
   automatic_transmission: "automatic_transmission", transmission_fluid: "automatic_transmission", atf: "automatic_transmission", automatic_gearbox: "automatic_transmission", automatic: "automatic_transmission", akpp: "automatic_transmission",
   cvt: "cvt", variator: "cvt", dsg: "dsg", dct: "dsg", robot: "dsg",
   manual_transmission: "manual_transmission", manual_gearbox: "manual_transmission", mt: "manual_transmission",
   transfer_case: "transfer_case", transfer: "transfer_case", differential: "differential", front_differential: "differential", rear_differential: "differential",
   awd_clutch: "awd_clutch", haldex: "awd_clutch", haldex_clutch: "awd_clutch", awd_coupling: "awd_clutch", four_wheel_drive_clutch: "awd_clutch",
   coolant: "coolant", antifreeze: "coolant", brake_fluid: "brake_fluid", brake: "brake_fluid",
+  automatic_transmission_fluid: "automatic_transmission", automatic_transmission_oil_change: "automatic_transmission", atf_change: "automatic_transmission", акпп: "automatic_transmission",
+  cvt_transmission: "cvt", cvt_fluid: "cvt", cvt_oil_change: "cvt", вариатор: "cvt",
+  dsg_transmission: "dsg", dct_transmission: "dsg", robotic_transmission: "dsg", робот: "dsg",
+  manual_transmission_fluid: "manual_transmission", manual_transmission_oil: "manual_transmission", manual_transmission_oil_change: "manual_transmission", мкпп: "manual_transmission",
+  haldex_oil_change: "awd_clutch", муфта_haldex: "awd_clutch", муфта_халдекс: "awd_clutch",
 };
 const PROCEDURE_ALIASES: Record<string, QuoteAndTechCardProcedure> = {
   partial: "partial", partial_change: "partial", drain_and_fill: "partial", partial_replacement: "partial",
@@ -96,7 +103,7 @@ delete generatedToolParameters.$schema;
 const generatedInput = object(object(generatedToolParameters.properties).input);
 const generatedService = object(object(generatedInput.properties).service);
 const generatedServiceProperties = object(generatedService.properties);
-generatedServiceProperties.type = { type: "string", description: `Canonical or upstream service type; normalized server-side. Supported aliases include ${Object.keys(SERVICE_ALIASES).join(", ")}.` };
+generatedServiceProperties.type = { type: "string", enum: [...QUOTE_AND_TECH_CARD_SERVICE_TYPES], description: "Выбери канонический тип услуги. Замена моторного масла — engine_oil. Название работы передай отдельно в name." };
 generatedServiceProperties.procedures = { type: "array", minItems: 1, maxItems: 2, items: { type: "string", description: `Canonical or upstream procedure; normalized server-side. Aliases include ${Object.keys(PROCEDURE_ALIASES).join(", ")}.` } };
 generatedService.properties = generatedServiceProperties;
 generatedInput.properties = { ...object(generatedInput.properties), service: generatedService };
@@ -127,12 +134,13 @@ function normalizeToken(value: unknown) { return text(value, 120).toLowerCase().
 
 export function normalizeQuoteAndTechCardServiceType(value: unknown, context: Record<string, unknown> = {}): QuoteAndTechCardServiceType | null {
   const candidates = [value, context.type, context.serviceType, context.serviceFamily, context.category, context.aggregateType].map(normalizeToken).filter(Boolean);
-  for (const candidate of candidates) if (SERVICE_ALIASES[candidate]) return SERVICE_ALIASES[candidate];
-  const joined = candidates.join("_");
-  if (/cvt|вариатор/.test(joined)) return "cvt";
-  if (/dsg|dct|робот/.test(joined)) return "dsg";
-  if (/haldex|халдекс|awd.*(?:clutch|coupl)|(?:clutch|coupl).*awd|муфт/.test(joined)) return "awd_clutch";
-  if (/atf|акпп|automatic|transmission/.test(joined)) return "automatic_transmission";
+  for (const candidate of candidates) if (Object.hasOwn(SERVICE_ALIASES, candidate)) return SERVICE_ALIASES[candidate];
+  if (!candidates.length) {
+    const name = normalizeToken(context.name ?? context.serviceName);
+    if (Object.hasOwn(SERVICE_ALIASES, name)) return SERVICE_ALIASES[name];
+  }
+  // Exact aliases only: "engine_oil_and_atf" describes multiple services,
+  // while an unknown manual-transmission type must never become an automatic.
   return null;
 }
 export function normalizeQuoteAndTechCardProcedure(value: unknown): QuoteAndTechCardProcedure | null {
@@ -218,7 +226,17 @@ export function normalizeQuoteAndTechCardInput(value: unknown): Record<string, u
     requestedProcedures: procedures, requestedDates: text(row.requestedDates ?? row.requestedDateRange ?? sourceService.requestedDates, 120) || null, selectedProducts: normalizeProductRows(row.selectedProducts), consumables: normalizeProductRows(row.consumables), rosskoItems: normalizeRosskoRows(row.rosskoItems), localCatalogChecked: row.localCatalogChecked === true, fluidMissingLocally: row.fluidMissingLocally === true, softWarnings: stringList(row.softWarnings, 16, 360), evidence: normalizeEvidence(row.evidence),
   };
 }
-export function parseQuoteAndTechCardInput(value: unknown): QuoteAndTechCardInput { return QuoteAndTechCardInputSchema.parse(normalizeQuoteAndTechCardInput(value)); }
+export function parseQuoteAndTechCardInput(value: unknown): QuoteAndTechCardInput {
+  const normalized = normalizeQuoteAndTechCardInput(value);
+  const parsed = QuoteAndTechCardInputSchema.safeParse(normalized);
+  if (parsed.success) return parsed.data;
+  const issues: ToolArgumentIssue[] = parsed.error.issues.slice(0, 8).map(issue => ({
+    path: issue.path.join("."), code: issue.code,
+    ...(issue.path.join(".") === "service.type" ? { received: text(object(normalized.service).type, 120) || null, allowed: [...QUOTE_AND_TECH_CARD_SERVICE_TYPES] } : {}),
+  }));
+  const invalidService = issues.some(issue => issue.path === "service.type");
+  throw new ToolArgumentsError(invalidService ? "QUOTE_SERVICE_TYPE_INVALID" : "QUOTE_INPUT_INVALID", invalidService ? SERVICE_TYPE_ERROR_MESSAGE : QUOTE_INPUT_ERROR_MESSAGE, issues);
+}
 
 /** Enforces local-first and the TGM internal-filter policy before pricing. */
 export function quoteAndTechCardMaterials(input: QuoteAndTechCardInput, localFluidFound: boolean) {

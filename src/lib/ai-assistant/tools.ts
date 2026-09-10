@@ -1202,7 +1202,6 @@ export function applyAutomaticTransmissionScenarioDefaults(input: QuoteAndTechCa
 }
 
 async function buildQuoteAndTechCard(args: Record<string, unknown>, context: ToolContext) {
-  const settings = await getAgentSettings(context.organizationId);
   const rawInput = object(args.input);
   const rawVehicle = object(rawInput.vehicle);
   const verifiedVehicleSnapshot = object(context.verifiedVehicleSnapshot);
@@ -1222,6 +1221,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     },
     requestedDates: text(rawInput.requestedDates, 120) || requestedDateRangeFromText(context.requestMessage) || null,
   });
+  const settings = await getAgentSettings(context.organizationId);
   const continuedInput = restoreQuoteAndTechCardContinuationInput(submittedInput, context.previousQuoteAndTechCard);
   const scenarioInput = applyAutomaticTransmissionScenarioDefaults(continuedInput, context.currentRequestMessage ?? context.requestMessage, Boolean(context.previousQuoteAndTechCard));
   const localTechnical = await verifiedLocalTechnicalInput(scenarioInput, context.organizationId);

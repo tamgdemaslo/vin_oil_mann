@@ -2,8 +2,22 @@
 // this common transport limit. Schema validation then checks each service.
 export const MAX_TOOL_ARGUMENT_BYTES = 512 * 1024;
 export const MAX_TOOL_ARGUMENT_DEPTH = 24;
+export type ToolArgumentIssue = { path: string; code: string; received?: string | null; allowed?: readonly string[] };
 export class ToolArgumentsError extends Error {
-  constructor(public readonly code: string, message: string) { super(message); }
+  constructor(public readonly code: string, message: string, public readonly issues: ToolArgumentIssue[] = []) { super(message); this.name = "ToolArgumentsError"; }
+}
+export const SERVICE_TYPE_ERROR_MESSAGE = "Помощник не смог определить вид работы для расчёта. Итоговая стоимость не рассчитана.";
+export const QUOTE_INPUT_ERROR_MESSAGE = "Помощник передал некорректные данные для расчёта. Смета не сформирована.";
+
+/** Also formats stored legacy Zod errors on read; never rewrites run history. */
+export function assistantSchemaErrorMessage(error: unknown): string | null {
+  if (error instanceof ToolArgumentsError && ["QUOTE_SERVICE_TYPE_INVALID", "QUOTE_INPUT_INVALID"].includes(error.code)) return error.message;
+  const value = error instanceof Error ? error.message : error;
+  if (typeof value !== "string" || value.length > MAX_TOOL_ARGUMENT_BYTES) return null;
+  let issues: unknown;
+  try { issues = JSON.parse(value); } catch { return null; }
+  if (!Array.isArray(issues) || !issues.length || !issues.every(issue => issue && typeof issue === "object" && typeof issue.code === "string" && Array.isArray(issue.path))) return null;
+  return issues.some(issue => issue.path.join(".") === "service.type") ? SERVICE_TYPE_ERROR_MESSAGE : QUOTE_INPUT_ERROR_MESSAGE;
 }
 export function parseAssistantToolArguments(payload: unknown): Record<string, unknown> {
   if (typeof payload !== "string") throw new ToolArgumentsError("TOOL_ARGUMENTS_NOT_JSON", "Аргументы инструмента должны быть JSON-строкой");

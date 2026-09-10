@@ -2,7 +2,7 @@ import { assistantEvent, assistantExecution, assistantSignal, assistantRemaining
 import { assistantIntent } from "./intent";
 import { buildTechnicalCustomerAnswer } from "./technical-answer";
 import type { VerifiedTechnicalFact } from "./quote-and-tech-card";
-import { parseAssistantToolArguments, ToolArgumentsError } from "./tool-arguments";
+import { parseAssistantToolArguments, ToolArgumentsError, assistantSchemaErrorMessage } from "./tool-arguments";
 import type OpenAI from "openai";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -77,6 +77,8 @@ function runDurationExceeded(startedAt: number) {
 }
 
 function publicRunError(error: unknown) {
+  const schemaMessage = assistantSchemaErrorMessage(error);
+  if (schemaMessage) return schemaMessage;
   if (error instanceof OpenAIConnectionError) return error.message;
   const message = text(error instanceof Error ? error.message : String(error), 1_200);
   if (/connection error|fetch failed|econnrefused|enotfound|network/i.test(message)) {
@@ -467,7 +469,7 @@ export async function getAssistantThread(threadId: string, organizationId: strin
     prisma.aIAssistantToolCall.findMany({ where: { run: { threadId, organizationId } }, orderBy: { startedAt: "desc" }, take: 40, select: { id: true, runId: true, toolName: true, status: true, argumentsJson: true, resultSummary: true, errorMessage: true, durationMs: true, startedAt: true, completedAt: true } }),
     prisma.aIAssistantQuote.findMany({ where: { threadId, organizationId }, orderBy: [{ isSelected: "desc" }, { createdAt: "desc" }], take: 12, select: { id: true, status: true, vehicleDisplayName: true, serviceName: true, selectedScenario: true, appliedRuleId: true, appliedRuleSnapshotJson: true, includedItemsJson: true, optionalItemsJson: true, baseTotalCents: true, maximumTotalCents: true, assumptionsJson: true, internalWarningsJson: true, customerSafeWarningsJson: true, validUntil: true, isSelected: true, createdAt: true } }),
   ]);
-  return { thread, messages, latestRun, sources, toolCalls, quotes };
+  return { thread, messages, latestRun: latestRun ? { ...latestRun, errorMessage: assistantSchemaErrorMessage(latestRun.errorMessage) ?? latestRun.errorMessage } : null, sources, toolCalls: toolCalls.map(call => ({ ...call, errorMessage: assistantSchemaErrorMessage(call.errorMessage) ?? call.errorMessage })), quotes };
 }
 
 export async function cancelAssistantRun(input: { threadId: string; organizationId: string }) {
@@ -693,10 +695,12 @@ async function runAssistantThreadInternal(input: { threadId: string; organizatio
           const auditErrorMessage = diagnosticMessage ? `${errorMessage}\nТехническая причина: ${diagnosticMessage}` : errorMessage;
           await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "failed", errorMessage: auditErrorMessage, durationMs: Date.now() - toolStartedAt, completedAt: new Date() } });
           const schemaError = error instanceof ToolArgumentsError || (error instanceof Error && error.name === "ZodError");
-          if (schemaError && schemaRepairs++ >= 1) throw error;
           const code = error instanceof AssistantToolError || error instanceof ToolArgumentsError ? error.code : schemaError ? "TOOL_SCHEMA_INVALID" : undefined;
-          toolSummaries.push({ toolName, status: "failed", error: errorMessage, ...(code ? { code } : {}) });
-          outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify({ error: errorMessage, ...(code ? { code } : {}) }) });
+          const issues = error instanceof ToolArgumentsError ? error.issues : [];
+          const repairAllowed = schemaError && schemaRepairs++ < 1;
+          toolSummaries.push({ toolName, status: "failed", error: errorMessage, ...(code ? { code } : {}), ...(issues.length ? { issues: mask(issues) } : {}) });
+          if (schemaError && !repairAllowed) throw error;
+          outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify({ error: errorMessage, ...(code ? { code } : {}), ...(schemaError ? { issues, repairAllowed, instruction: "Исправь указанные поля того же расчёта, выбрав допустимое значение. Для замены моторного масла service.type=engine_oil. Сохрани остальные данные; не повторяй VIN, каталоги или исследование." } : {}) }) });
         }
       }
       if (quoteAndTechCard) break agentLoop;
@@ -815,7 +819,7 @@ async function runAssistantThreadInternal(input: { threadId: string; organizatio
       where: { id: run.id },
       data: {
         status: limitCode ?? "failed",
-        errorCode: limitCode ?? "assistant_run_failed",
+        errorCode: limitCode ?? (error instanceof ToolArgumentsError ? error.code : "assistant_run_failed"),
         errorMessage,
         toolSummaryJson: json([...toolSummaries, ...(assistantExecution()?.events ?? [])]),
         durationMs: Date.now() - startedAt,

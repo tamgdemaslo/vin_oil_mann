@@ -106,7 +106,7 @@ const runtimeInput = {
 const normalized = normalizeQuoteAndTechCardInput(runtimeInput);
 const toolService = QUOTE_AND_TECH_CARD_TOOL_PARAMETERS.properties.input.properties.service;
 const toolEvidence = QUOTE_AND_TECH_CARD_TOOL_PARAMETERS.properties.input.properties.evidence.items;
-assert.equal(toolService.properties.type.type, "string", "tool intake accepts upstream service aliases before normalization");
+assert.equal(toolService.properties.type.type, "string", "model service type is a string constrained to canonical values");
 assert.equal(toolService.properties.procedures.items.type, "string", "tool intake accepts upstream procedure aliases before normalization");
 assert.equal(toolEvidence.properties.status.type, "string", "tool intake accepts observed evidence statuses before normalization");
 assert.equal(QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS.properties.inputs.maxItems, 6, "a complex visit can retain up to six independent aggregates");
