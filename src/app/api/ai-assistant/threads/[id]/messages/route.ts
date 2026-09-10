@@ -24,6 +24,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       organizationId: access.organizationId,
       actor: { id: access.actorId, name: access.session.user.name, role: access.session.user.role },
       message: body.message,
+      signal: request.signal,
       selectedQuoteId: body.selectedQuoteId,
       quoteSetMessageId: body.quoteSetMessageId,
       clientMessageMode: body.clientMessageMode,

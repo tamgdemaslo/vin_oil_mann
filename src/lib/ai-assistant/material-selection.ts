@@ -1,3 +1,5 @@
+import { normalizeAttributeValue, parseStoredAttributeValues, type ProductAttributeField } from "@/lib/product-attribute-values";
+
 const FLUID_STOP_WORDS = new Set([
   "genuine",
   "original",
@@ -23,6 +25,11 @@ export type LocalFluidCandidate = {
   oemAtf: string | null;
   searchText: string | null;
   availableUnits: number;
+  sae?: string | null;
+  oem?: string | null;
+  acea?: string | null;
+  apiSpec?: string | null;
+  ilsac?: string | null;
 };
 
 export type LocalFluidSelection = {
@@ -41,11 +48,11 @@ export type LocalFluidCandidateTrace = {
   catalogName: string;
   compatible: boolean;
   availableQuantity: number;
-  requiredQuantity: number;
-  packageLiters: number;
+  requiredQuantity: number | null;
+  packageLiters: number | null;
   unitPriceCents: number;
   eligible: boolean;
-  exclusionReason: "incompatible_specification" | "price_missing" | "stock_insufficient" | null;
+  exclusionReason: "incompatible_specification" | "price_missing" | "stock_insufficient" | "package_unknown" | null;
 };
 
 export type LocalFluidSelectionEvaluation = {
@@ -163,7 +170,7 @@ function specificationCodes(value: string) {
 }
 
 function technicalText(candidate: Pick<LocalFluidCandidate, "atf" | "oemAtf" | "searchText">) {
-  return [candidate.atf, candidate.oemAtf, candidate.searchText].filter(Boolean).join("\n");
+  return [candidate.atf, candidate.oemAtf].filter(Boolean).join("\n");
 }
 
 function containsTokenSequence(source: string, needle: string) {
@@ -202,9 +209,34 @@ function fluidSpecificationMatchesSingle(source: string, requiredSpec: string) {
   return nonNumericTokens.length === 0 || nonNumericTokens.every((token) => normalizedSource.includes(token));
 }
 
+// Candidate discovery can be fuzzy. Compatibility uses positive structured
+// declarations only; punctuation and suffixes remain significant.
+const NEGATIVE_DECLARATION = /(?:не\s+(?:соответств|подход|совместим|рекоменд|одобрен)|запрещ|кроме|исключая|not\s+(?:approved|compatible|suitable|recommended)|incompatible|except|exclude|prohibit)/iu;
+function safeSpecKey(value: string, field: ProductAttributeField) {
+  const normalized = normalizeAttributeValue(field, value);
+  const safe = ["CANONICAL", "SAFE_NORMALIZED", "VERIFIED_ALIAS"].includes(normalized.status) ? normalized.value : value;
+  return safe.normalize("NFKC").toLocaleUpperCase("en-US").replace(/\s+/g, " ").trim();
+}
+function positiveDeclarationMatches(source: string | null | undefined, required: string, field: ProductAttributeField) {
+  const requiredKey = safeSpecKey(required, field);
+  const segments = parseStoredAttributeValues(source);
+  // A negative statement for the required specification overrides positives.
+  if (segments.some(segment => NEGATIVE_DECLARATION.test(segment) && fluidSpecificationMatchesSingle(segment, required))) return false;
+  return segments.filter(segment => !NEGATIVE_DECLARATION.test(segment)).some(segment =>
+    safeSpecKey(segment, field) === requiredKey);
+}
 export function fluidSpecificationMatches(candidate: Pick<LocalFluidCandidate, "atf" | "oemAtf" | "searchText">, requiredSpec: string) {
-  const source = technicalText(candidate);
-  return fluidSpecificationAlternatives(requiredSpec).some((alternative) => fluidSpecificationMatchesSingle(source, alternative));
+  if (NEGATIVE_DECLARATION.test(requiredSpec)) return false;
+  const statements = parseStoredAttributeValues(technicalText(candidate));
+  if (statements.some(segment => NEGATIVE_DECLARATION.test(segment) && (fluidSpecificationMatchesSingle(segment, requiredSpec) || /^применение запрещено$/iu.test(segment)))) return false;
+  return positiveDeclarationMatches(candidate.atf, requiredSpec, "atf") || positiveDeclarationMatches(candidate.oemAtf, requiredSpec, "transmissionOem");
+}
+export function engineOilSpecificationMatches(candidate: Pick<LocalFluidCandidate, "sae" | "oem" | "acea" | "apiSpec" | "ilsac"> & Partial<Pick<LocalFluidCandidate, "searchText">>, requirements: string) {
+  const fields = [["sae", "engineSae"], ["oem", "engineOem"], ["acea", "acea"], ["apiSpec", "engineApi"], ["ilsac", "ilsac"]] as const;
+  const required = parseStoredAttributeValues(requirements);
+  const statements = parseStoredAttributeValues([...fields.map(([key]) => candidate[key]), candidate.searchText].filter(Boolean).join("; "));
+  if (required.some(spec => NEGATIVE_DECLARATION.test(spec)) || statements.some(segment => NEGATIVE_DECLARATION.test(segment) && (required.some(spec => fluidSpecificationMatchesSingle(segment, spec)) || /^применение запрещено$/iu.test(segment)))) return false;
+  return required.length > 0 && required.every(spec => fields.some(([key, field]) => positiveDeclarationMatches(candidate[key], spec, field)));
 }
 
 function localizedNumber(value: string) {
@@ -214,26 +246,29 @@ function localizedNumber(value: string) {
 
 export function packageVolumeLiters(candidate: Pick<LocalFluidCandidate, "uomName" | "packageVolume" | "markingMode">) {
   const uom = String(candidate.uomName ?? "").trim().toLocaleLowerCase("ru-RU");
-  if (candidate.markingMode === "BULK_OIL_FROM_MARKED_BARREL" || /^(?:л|литр(?:а|ов)?|l|liter|litre)$/iu.test(uom)) return 1;
+  if (/^(?:л|литр(?:а|ов)?|l|liter|litre)$/iu.test(uom)) return 1;
+  if (candidate.markingMode === "BULK_OIL_FROM_MARKED_BARREL") return null;
   const source = String(candidate.packageVolume ?? "");
-  const match = source.match(/(\d+(?:[.,]\d+)?)\s*(?:л|l|liter|litre)(?=\s|$|[,;/)])/iu);
-  return match ? localizedNumber(match[1]) ?? 1 : 1;
+  const match = source.match(/(\d+(?:[.,]\d+)?)\s*(мл|ml|milliliters?|millilitres?|л|l|liters?|litres?)(?=\s|$|[.,;/)])/iu);
+  if (!match) return null;
+  const amount = localizedNumber(match[1]);
+  return amount == null ? null : /^(?:мл|ml|milli)/iu.test(match[2]) ? amount / 1000 : amount;
 }
 
-function quantityForLiters(candidate: LocalFluidCandidate, requiredLiters: number) {
+export function quantityForLiters(candidate: Pick<LocalFluidCandidate, "uomName" | "packageVolume" | "markingMode">, requiredLiters: number) {
   const litersPerUnit = packageVolumeLiters(candidate);
+  if (litersPerUnit == null || !Number.isFinite(requiredLiters) || requiredLiters <= 0) return { litersPerUnit: null, quantity: null, purchasedVolumeLiters: null, packageRemainderLiters: null };
   const isLiterUnit = litersPerUnit === 1 && (
     candidate.markingMode === "BULK_OIL_FROM_MARKED_BARREL" ||
     /^(?:л|литр(?:а|ов)?|l|liter|litre)$/iu.test(String(candidate.uomName ?? "").trim())
   );
-  return {
-    litersPerUnit,
-    quantity: isLiterUnit ? Math.round(requiredLiters * 1000) / 1000 : Math.ceil(requiredLiters / litersPerUnit),
-  };
+  const quantity = isLiterUnit ? Math.ceil((requiredLiters - 1e-8) * 1000) / 1000 : Math.ceil((requiredLiters - 1e-8) / litersPerUnit);
+  const purchasedVolumeLiters = Math.round(quantity * litersPerUnit * 1000) / 1000;
+  return { litersPerUnit, quantity, purchasedVolumeLiters, packageRemainderLiters: Math.round((purchasedVolumeLiters - requiredLiters) * 1000) / 1000 };
 }
 
 function evidenceFor(candidate: LocalFluidCandidate, requiredSpec: string) {
-  const source = technicalText(candidate);
+  const source = [candidate.atf, candidate.oemAtf, candidate.oem, candidate.sae, candidate.acea, candidate.apiSpec, candidate.ilsac].filter(Boolean).join("; ");
   const exactExcerpt = fluidSpecificationExcerpt(source, requiredSpec, 240);
   if (exactExcerpt) return exactExcerpt;
   const tokens = fluidSpecificationTokens(requiredSpec);
@@ -246,14 +281,16 @@ function evidenceFor(candidate: LocalFluidCandidate, requiredSpec: string) {
   return words.slice(Math.max(0, before - 3), Math.min(words.length, before + tokens.length + 4)).join(" ");
 }
 
-export function evaluatePreferredLocalFluid(candidates: LocalFluidCandidate[], requiredSpec: string, requiredLiters: number): LocalFluidSelectionEvaluation {
+export function evaluatePreferredLocalFluid(candidates: LocalFluidCandidate[], requiredSpec: string, requiredLiters: number, family = "transmission_fluid"): LocalFluidSelectionEvaluation {
   if (!Number.isFinite(requiredLiters) || requiredLiters <= 0 || !normalizeFluidSpecification(requiredSpec)) return { selected: null, candidates: [] };
   const evaluated = candidates.map((candidate) => {
     const { litersPerUnit, quantity } = quantityForLiters(candidate, requiredLiters);
-    const compatible = fluidSpecificationMatches(candidate, requiredSpec);
+    const compatible = family === "engine_oil" ? engineOilSpecificationMatches(candidate, requiredSpec) : fluidSpecificationMatches(candidate, requiredSpec);
     const exclusionReason = !compatible
       ? "incompatible_specification" as const
-      : candidate.salePriceCents <= 0
+      : quantity == null
+        ? "package_unknown" as const
+        : candidate.salePriceCents <= 0
         ? "price_missing" as const
         : candidate.availableUnits + 0.0001 < quantity
           ? "stock_insufficient" as const
@@ -262,7 +299,7 @@ export function evaluatePreferredLocalFluid(candidates: LocalFluidCandidate[], r
       candidate,
       litersPerUnit,
       quantity,
-      totalCents: Math.round(candidate.salePriceCents * quantity),
+      totalCents: Math.round(candidate.salePriceCents * (quantity ?? 0)),
       trace: {
         productId: candidate.id,
         catalogName: candidate.name,
@@ -284,11 +321,11 @@ export function evaluatePreferredLocalFluid(candidates: LocalFluidCandidate[], r
     source: "local_catalog",
     productId: selected.candidate.id,
     productName: selected.candidate.name,
-    quantity: selected.quantity,
+    quantity: selected.quantity!,
     availableUnits: selected.candidate.availableUnits,
-    packageLiters: selected.litersPerUnit,
+    packageLiters: selected.litersPerUnit!,
     totalCents: selected.totalCents,
-    compatibilityEvidence: evidenceFor(selected.candidate, requiredSpec),
+    compatibilityEvidence: `LocalProduct ${selected.candidate.id}: структурированное заявление совместимости. ${evidenceFor(selected.candidate, requiredSpec)}`,
   }, candidates: evaluated.map((entry) => entry.trace) };
 }
 

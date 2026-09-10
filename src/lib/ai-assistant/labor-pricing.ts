@@ -105,6 +105,7 @@ export function systemPolicyLaborRule(input: Pick<LaborPricingRequest, "serviceF
 }
 
 export async function resolveLaborPrice(input: LaborPricingRequest): Promise<AppliedLaborRule> {
+  if (!input.locationId) return { id: null, name: "Тарифная локация не определена", source: "confirmation_required", laborPriceCents: null, priceFromCents: null, priceToCents: null, requiresHumanConfirmation: true, selectionReason: "Не найдена однозначная серверная связь филиала и тарифной локации.", comment: null };
   if (input.materialsOwner === "mixed" || input.materialsOwner === "unknown") {
     return {
       id: null,

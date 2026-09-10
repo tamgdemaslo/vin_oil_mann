@@ -1,3 +1,4 @@
+import { assistantEvent, assistantSignal, assistantRemainingMs } from "@/lib/ai-assistant/execution";
 import { z } from "zod";
 
 const TRONK_BASE_URL = (process.env.TRONK_BASE_URL ?? "https://data.tronk.info").replace(/\/$/, "");
@@ -73,13 +74,15 @@ async function request(method: TronkMethod, params: Record<string, string>): Pro
 
   let lastFailure: TronkCallFailure | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    assistantSignal()?.throwIfAborted();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT_MS, assistantRemainingMs()));
     try {
+      assistantEvent({ toolName: "provider_request", provider: "tronk", operation: method, attempt: attempt + 1 });
       const response = await fetch(url, {
         method: "GET",
         headers: { Accept: "application/json" },
-        signal: controller.signal,
+        signal: assistantSignal() ? AbortSignal.any([controller.signal, assistantSignal()!]) : controller.signal,
         cache: "no-store",
       });
       const text = await response.text();

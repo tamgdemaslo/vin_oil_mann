@@ -1,3 +1,4 @@
+import { assistantSignal, assistantRemainingMs } from "./ai-assistant/execution";
 import OpenAI from "openai";
 import { fetch as undiciFetch, ProxyAgent } from "undici";
 
@@ -36,13 +37,13 @@ export function createOpenAIClient(apiKey: string, options?: { timeout?: number;
 }
 
 export async function checkOpenAIConnection(): Promise<OpenAIConnectionCheck> {
-  const timeoutMs = 8_000;
+  const timeoutMs = Math.min(8_000, assistantRemainingMs());
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const proxyConfigured = Boolean(process.env.OPENAI_PROXY_URL?.trim());
   try {
     const response = await undiciFetch("https://api.openai.com/v1/models", {
-      signal: controller.signal,
+      signal: assistantSignal() ? AbortSignal.any([controller.signal, assistantSignal()!]) : controller.signal,
       ...(openAIProxyAgent() ? { dispatcher: openAIProxyAgent() } : {}),
     });
     if (response.status === 401) return { ok: true, proxyConfigured, status: response.status, timeoutMs };

@@ -1,16 +1,18 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { SaleQuantitySchema } from "./quote-and-tech-card";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type JsonRecord = Record<string, unknown>;
 
+type PreviewLine = { name?: unknown; quantity?: unknown; totalCents?: unknown; type?: unknown; article?: unknown; unitPriceCents?: unknown; role?: unknown; productId?: unknown; saleQuantity?: unknown; supplierOffer?: unknown };
 export type QuotePreviewResult = {
-  lines?: Array<{ name?: unknown; quantity?: unknown; totalCents?: unknown; type?: unknown; article?: unknown }>;
+  lines?: PreviewLine[];
   totalCents?: unknown;
   validUntil?: unknown;
   note?: unknown;
   maximum?: {
-    lines?: Array<{ name?: unknown; quantity?: unknown; totalCents?: unknown; type?: unknown; article?: unknown }>;
+    lines?: PreviewLine[];
     totalCents?: unknown;
     validUntil?: unknown;
   } | null;
@@ -39,6 +41,11 @@ function stringList(value: unknown, maxItems = 12, maxLength = 360) {
   return value.map((item) => clean(item, maxLength)).filter(Boolean).slice(0, maxItems);
 }
 
+function saleQuantitySnapshot(value: unknown) {
+  const parsed = SaleQuantitySchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 function lineSnapshot(lines: QuotePreviewResult["lines"]) {
   return (Array.isArray(lines) ? lines : []).map((line) => ({
     name: clean(line?.name, 220) || "Позиция",
@@ -46,6 +53,11 @@ function lineSnapshot(lines: QuotePreviewResult["lines"]) {
     type: clean(line?.type, 60) || null,
     article: clean(line?.article, 120) || null,
     totalCents: integer(line?.totalCents),
+    unitPriceCents: line?.unitPriceCents == null ? null : integer(line.unitPriceCents),
+    role: clean(line?.role, 60) || null,
+    productId: clean(line?.productId, 160) || null,
+    saleQuantity: saleQuantitySnapshot(line?.saleQuantity),
+    supplierOffer: line?.supplierOffer == null ? null : object(line.supplierOffer),
   }));
 }
 

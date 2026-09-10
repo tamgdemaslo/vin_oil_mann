@@ -1,4 +1,5 @@
 import { quoteItems, quoteStrings } from "./quotes";
+import { assistantIntent } from "./intent";
 
 export type ClientMessageMode = "short_with_price" | "short_without_price" | "detailed_with_price" | "only_final_price" | "recommendation";
 
@@ -39,9 +40,9 @@ function requestedMode(value: string): ClientMessageMode | null {
   const command = normalized(value);
   const refersToClientText = /(клиент|сообщени|текст)/.test(command);
   const correctionWithPrice = /^(?:не|нет|неа|не так)[,.! ]*(?:с )?(?:расчет|цен)/.test(command);
-  if (!refersToClientText && !correctionWithPrice) return null;
+  if (!refersToClientText && !correctionWithPrice && !/^(?:(?:покажи|сделай|дай|напиши)\s+)?(?:коротко|кратко|подробно|без цен(?:ы)?|только (?:итогов[а-я]* )?(?:цен[а-я]*|сумм[а-я]*|итог))[.!? ]*$/u.test(command)) return null;
   if (/(?:рекомендац|посоветуй)/.test(command)) return "recommendation";
-  if (/(?:только|лишь).*(?:цен|итог)|итогов(?:ая|ую)?.*цен/.test(command)) return "only_final_price";
+  if (/(?:только|лишь).*(?:цен|итог|сумм)|итогов(?:ая|ую)?.*цен/.test(command)) return "only_final_price";
   if (/(?:подробн|развернут)/.test(command)) return "detailed_with_price";
   if (/(?:без цены|без цен|без расчет|без расч)/.test(command)) return "short_without_price";
   return "short_with_price";
@@ -53,7 +54,9 @@ export function detectClientMessageMode(message: string, requested?: string | nu
   // A natural-language request may ask for both a calculation and a future
   // customer text.  It must enter the research/quote workflow first rather
   // than being mistaken for a request to format a quote that does not exist.
-  if (/(?:рассч|подбор|техническ|vin\b|вина\b|замен\w*\s+(?:масл|фильтр)|акпп|вариатор|\bcvt\b|\bdsg\b)/i.test(message)) return null;
+  if (["new_quote", "edit_quote", "technical_question", "filter_selection"].includes(assistantIntent(message))) return null;
+  if (/клиент\s+(?:уточнил|ответил|спрашивает|пишет)|сообщение\s+клиента\s*:/iu.test(message)) return null;
+  if (/(?:подбор|техническ|vin\b|вина\b|акпп|вариатор|\bcvt\b|\bdsg\b)/i.test(message)) return null;
   return requestedMode(message);
 }
 

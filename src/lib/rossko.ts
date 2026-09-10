@@ -1,3 +1,4 @@
+import { assistantEvent, assistantSignal, assistantRemainingMs } from "./ai-assistant/execution";
 import * as soap from "soap";
 import { createHash } from "node:crypto";
 import { assertExternalSideEffectAllowed } from "@/lib/external-side-effects";
@@ -31,7 +32,7 @@ export class RosskoError extends Error {
 }
 
 type SoapClient = soap.Client & {
-  GetSearchAsync?: (args: Record<string, unknown>) => Promise<unknown[]>;
+  GetSearchAsync?: (args: Record<string, unknown>, options?: { timeout?: number; signal?: AbortSignal }) => Promise<unknown[]>;
   GetCheckoutDetailsAsync?: (args: Record<string, unknown>) => Promise<unknown[]>;
   GetCheckoutAsync?: (args: Record<string, unknown>) => Promise<unknown[]>;
   GetOrdersAsync?: (args: Record<string, unknown>) => Promise<unknown[]>;
@@ -87,7 +88,8 @@ function limiter(cfg: RosskoConfig): RateLimiter {
 async function createClient(service: string, cfg: RosskoConfig): Promise<SoapClient> {
   const client = (await soap.createClientAsync(wsdlUrl(service), {
     wsdl_options: {
-      timeout: cfg.timeoutMs,
+      timeout: Math.min(cfg.timeoutMs, assistantRemainingMs()),
+      ...(assistantSignal() ? { signal: assistantSignal() } : {}),
     },
   })) as SoapClient;
   return client;
@@ -235,7 +237,7 @@ export async function rosskoSearch(
   if (opts.addressId) params.address_id = opts.addressId;
   try {
     const client = await getSearchClient(cfg);
-    const resp = await limiter(cfg).run(() => client.GetSearchAsync!(params));
+    const resp = await limiter(cfg).run(() => { assistantSignal()?.throwIfAborted(); assistantEvent({ toolName: "provider_request", provider: "rossko", operation: "search" }); return client.GetSearchAsync!(params, { timeout: Math.min(cfg.timeoutMs, assistantRemainingMs()), signal: assistantSignal() }); });
     return prioritizeRosskoSearch(assertSuccess(firstResult(resp), "ROSSKO GetSearch failed"), cfg.offerPriority);
   } catch (e) {
     throw formatRosskoError(e);

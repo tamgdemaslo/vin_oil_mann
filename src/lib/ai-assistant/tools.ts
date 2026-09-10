@@ -1,21 +1,31 @@
+import { validateAssistantToolArguments, ToolArgumentsError } from "./tool-arguments";
+import { normalizePartNumberForCrossMatch } from "@/lib/part-number-cross-reference";
+import { parseAssistantRosskoOffers, sameSupplierArticle } from "./supplier-offers";
+import { mannContext, assistantVehicle, verifiedLocalTechnicalInput, technicalSystems } from "./technical-context";
+import { assistantTariffContext } from "./tariff-context";
+import { assistantEvent, assistantMemo, assistantMap, assistantExecution, assistantSignal, withinAssistantDeadline } from "./execution";
 import type { Prisma } from "@prisma/client";
 import { anonymousRetailCounterpartyExclusion } from "@/lib/anonymous-retail-counterparty";
 import { prisma } from "@/lib/db";
-import { DEFAULT_ROSSKO_MARKUP_RULES, getAgentSettings } from "@/lib/ai-agent/settings";
+import { DEFAULT_ROSSKO_MARKUP_RULES, getAgentSettings as loadAgentSettings } from "@/lib/ai-agent/settings";
 import type { AIRosskoMarkupRule } from "@/lib/ai-agent/types";
 import { IntegrationNotConfiguredForBranch } from "@/lib/branch-integration-credentials";
-import { lookupVehicle, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-identity";
+import { lookupVehicle } from "@/lib/vehicle-identity";
 import { RosskoError, rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { classifyRosskoRuntimeFailure, type RosskoRuntimeFailureCode } from "@/lib/rossko-error-classification";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
-import { matchMannArticlesToLocalProducts, normalizeMannArticle, normalizeMannSearchText } from "@/lib/mann-catalog";
+import { normalizeMannArticle } from "@/lib/mann-catalog";
 import { resolveLaborPrice } from "./labor-pricing";
-import { evaluatePreferredLocalFluid, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
-import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, ENGINE_OIL_FILTER_PRICE_PENDING_WARNING, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardProcedure, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
+import { evaluatePreferredLocalFluid, engineOilSpecificationMatches, fluidSpecificationMatches, quantityForLiters, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
+import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, ENGINE_OIL_FILTER_PRICE_PENDING_WARNING, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, quoteAndTechCardFilterPolicy, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardProcedure, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
+function getAgentSettings(organizationId: string) {
+  return assistantMemo("agent-settings", { organizationId, branchId: getScopedBranchId() }, () => loadAgentSettings(organizationId));
+}
+
 export type AssistantToolSource = {
-  sourceType: "internal_catalog" | "mann" | "tronk" | "rossko";
+  sourceType: "internal_catalog" | "mann" | "tronk" | "rossko" | "web";
   title: string;
   url?: string | null;
   excerpt?: string | null;
@@ -25,7 +35,7 @@ export type AssistantToolSource = {
 export type AssistantToolResult = { result: Record<string, unknown>; sources?: AssistantToolSource[] };
 
 /** A safe, user-facing failure passed into both trace and the model response. */
-export type AssistantToolErrorCode = "ROSSKO_NOT_CONFIGURED" | "ROSSKO_NO_RESULTS" | RosskoRuntimeFailureCode;
+export type AssistantToolErrorCode = "ROSSKO_NOT_CONFIGURED" | "ROSSKO_NO_RESULTS" | "ROSSKO_PARSING_ERROR" | RosskoRuntimeFailureCode;
 
 export class AssistantToolError extends Error {
   constructor(public readonly code: AssistantToolErrorCode, message: string, public readonly diagnosticMessage: string | null = null) {
@@ -35,6 +45,7 @@ export class AssistantToolError extends Error {
 }
 
 export const assistantFunctionTools = [
+  { type: "function", name: "lookup_technical_data", description: "Сначала прочитать локальный технический профиль по каноническому resolver; затем точечно получить недостающие поля (допуск, тип объёма, процедура, температура, момент) с источниками. Результат web требует проверки применимости.", parameters: { type: "object", additionalProperties: false, required: ["vehicle", "missingFields"], properties: { serviceType: { type: "string", maxLength: 80 }, procedure: { type: "string", maxLength: 80 }, vehicle: { type: "object" }, missingFields: { type: "array", maxItems: 8, items: { type: "string", maxLength: 100 } } } } },
   {
     type: "function",
     name: "get_workspace_context",
@@ -87,7 +98,7 @@ export const assistantFunctionTools = [
     type: "function",
     name: "search_rossko",
     description: "Read-only поиск предложения в ROSSKO по OEM, номеру ZF/производителя агрегата или кросс-номеру. Возвращает закупочную и рассчитанную розничную цену, наличие и срок. Не создаёт заказ.",
-    parameters: { type: "object", additionalProperties: false, required: ["article"], properties: { article: { type: "string", minLength: 2, maxLength: 80 }, brand: { type: ["string", "null"], maxLength: 80 } } },
+    parameters: { type: "object", additionalProperties: false, required: ["article"], properties: { role: { type: "string", enum: ["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "unknown"] }, maxDeliveryDays: { type: "number", minimum: 0, maximum: 365 }, article: { type: "string", minLength: 2, maxLength: 80 }, brand: { type: ["string", "null"], maxLength: 80 } } },
   },
   {
     type: "function",
@@ -99,7 +110,7 @@ export const assistantFunctionTools = [
     type: "function",
     name: "calculate_quote_preview",
     description: "Детерминированно посчитать внутренний предварительный расчёт из локальных позиций и при необходимости свежих предложений ROSSKO. Не создаёт документы или заказ. Для готового технического расчёта обязательно передай vehicleDisplayName и serviceName: система сохранит точный снимок для последующего сообщения клиенту. Для диапазона передай maximumItems/maximumRosskoItems — сумму верхней границы посчитает инструмент, а не модель.",
-    parameters: { type: "object", additionalProperties: false, required: ["items", "rosskoItems"], properties: { items: { type: "array", minItems: 0, maxItems: 30, items: { type: "object", additionalProperties: false, required: ["productId", "quantity"], properties: { productId: { type: "string", minLength: 1, maxLength: 160 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } }, rosskoItems: { type: "array", minItems: 0, maxItems: 12, items: { type: "object", additionalProperties: false, required: ["article", "brand", "quantity"], properties: { article: { type: "string", minLength: 2, maxLength: 80 }, brand: { type: ["string", "null"], maxLength: 80 }, offerId: { type: ["string", "null"], maxLength: 100 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } }, maximumItems: { type: ["array", "null"], maxItems: 30, items: { type: "object", additionalProperties: false, required: ["productId", "quantity"], properties: { productId: { type: "string", minLength: 1, maxLength: 160 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } }, maximumRosskoItems: { type: ["array", "null"], maxItems: 12, items: { type: "object", additionalProperties: false, required: ["article", "brand", "quantity"], properties: { article: { type: "string", minLength: 2, maxLength: 80 }, brand: { type: ["string", "null"], maxLength: 80 }, offerId: { type: ["string", "null"], maxLength: 100 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } }, vehicleId: { type: ["string", "null"], maxLength: 160 }, vehicleDisplayName: { type: ["string", "null"], maxLength: 180 }, vehicleSnapshot: { type: ["object", "null"], additionalProperties: true }, serviceName: { type: ["string", "null"], maxLength: 180 }, selectedScenario: { type: ["string", "null"], maxLength: 180 }, maximumPriceSentence: { type: ["string", "null"], maxLength: 360 }, optionalItems: { type: ["array", "null"], maxItems: 12, items: { type: "string", maxLength: 360 } }, assumptions: { type: ["array", "null"], maxItems: 12, items: { type: "string", maxLength: 360 } }, internalWarnings: { type: ["array", "null"], maxItems: 12, items: { type: "string", maxLength: 360 } }, customerSafeWarnings: { type: ["array", "null"], maxItems: 6, items: { type: "string", maxLength: 360 } }, note: { type: ["string", "null"], maxLength: 400 } } },
+    parameters: { type: "object", additionalProperties: false, required: ["items", "rosskoItems"], properties: { items: { type: "array", minItems: 0, maxItems: 30, items: { type: "object", additionalProperties: false, required: ["productId", "quantity"], properties: { role: { type: "string", enum: ["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "unknown"] }, requiredVolumeLiters: { type: "number", exclusiveMinimum: 0, maximum: 200 }, requiredFluidSpec: { type: "string", maxLength: 160 }, serviceFamily: { type: "string", maxLength: 60 }, productId: { type: "string", minLength: 1, maxLength: 160 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } }, rosskoItems: { type: "array", minItems: 0, maxItems: 12, items: { type: "object", additionalProperties: false, required: ["article", "brand", "quantity"], properties: { role: { type: "string", enum: ["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "unknown"] }, maxDeliveryDays: { type: "number", minimum: 0, maximum: 365 }, article: { type: "string", minLength: 2, maxLength: 80 }, brand: { type: ["string", "null"], maxLength: 80 }, offerId: { type: ["string", "null"], maxLength: 100 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } }, maximumItems: { type: ["array", "null"], maxItems: 30, items: { type: "object", additionalProperties: false, required: ["productId", "quantity"], properties: { role: { type: "string", enum: ["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "unknown"] }, requiredVolumeLiters: { type: "number", exclusiveMinimum: 0, maximum: 200 }, requiredFluidSpec: { type: "string", maxLength: 160 }, serviceFamily: { type: "string", maxLength: 60 }, productId: { type: "string", minLength: 1, maxLength: 160 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } }, maximumRosskoItems: { type: ["array", "null"], maxItems: 12, items: { type: "object", additionalProperties: false, required: ["article", "brand", "quantity"], properties: { role: { type: "string", enum: ["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "unknown"] }, maxDeliveryDays: { type: "number", minimum: 0, maximum: 365 }, article: { type: "string", minLength: 2, maxLength: 80 }, brand: { type: ["string", "null"], maxLength: 80 }, offerId: { type: ["string", "null"], maxLength: 100 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } }, vehicleId: { type: ["string", "null"], maxLength: 160 }, vehicleDisplayName: { type: ["string", "null"], maxLength: 180 }, vehicleSnapshot: { type: ["object", "null"], additionalProperties: true }, serviceName: { type: ["string", "null"], maxLength: 180 }, selectedScenario: { type: ["string", "null"], maxLength: 180 }, maximumPriceSentence: { type: ["string", "null"], maxLength: 360 }, optionalItems: { type: ["array", "null"], maxItems: 12, items: { type: "string", maxLength: 360 } }, assumptions: { type: ["array", "null"], maxItems: 12, items: { type: "string", maxLength: 360 } }, internalWarnings: { type: ["array", "null"], maxItems: 12, items: { type: "string", maxLength: 360 } }, customerSafeWarnings: { type: ["array", "null"], maxItems: 6, items: { type: "string", maxLength: 360 } }, note: { type: ["string", "null"], maxLength: 400 } } },
   },
   {
     type: "function",
@@ -107,7 +118,7 @@ export const assistantFunctionTools = [
     description: "Детерминированно рассчитать стоимость материалов и работы по тарифному правилу ИИ-помощника. Всегда используй для замены масла, АКПП/CVT и фильтров. Цена карточки услуги допускается только как явный fallback, когда специального правила нет. Итог складывает только backend; для смешанных материалов или неизвестной сложности инструмент возвращает обязательное подтверждение, а не случайную цену.",
     parameters: {
       type: "object", additionalProperties: false,
-      required: ["serviceFamily", "procedureType", "materialsOwner", "locationId", "selectedProducts", "consumables", "rosskoItems"],
+      required: ["serviceFamily", "procedureType", "materialsOwner", "selectedProducts", "consumables", "rosskoItems"],
       properties: {
         serviceFamily: { type: "string", enum: ["engine_oil", "transmission_fluid", "air_filter", "cabin_filter"] },
         procedureType: { type: "string", enum: ["oil_change", "partial", "machine", "replace"] },
@@ -122,9 +133,9 @@ export const assistantFunctionTools = [
         requiredFluidOemArticle: { type: ["string", "null"], maxLength: 80 },
         fluidPreference: { type: ["string", "null"], enum: ["prefer_local_compatible", "original_only", null] },
         locationId: { type: "string", minLength: 1, maxLength: 120 },
-        selectedProducts: { type: "array", maxItems: 30, items: { type: "object", additionalProperties: false, required: ["productId", "quantity"], properties: { productId: { type: "string", minLength: 1, maxLength: 160 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } },
-        consumables: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, required: ["productId", "quantity"], properties: { productId: { type: "string", minLength: 1, maxLength: 160 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } },
-        rosskoItems: { type: "array", maxItems: 12, items: { type: "object", additionalProperties: false, required: ["article", "brand", "quantity"], properties: { article: { type: "string", minLength: 2, maxLength: 80 }, brand: { type: ["string", "null"], maxLength: 80 }, offerId: { type: ["string", "null"], maxLength: 100 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } },
+        selectedProducts: { type: "array", maxItems: 30, items: { type: "object", additionalProperties: false, required: ["productId", "quantity"], properties: { role: { type: "string", enum: ["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "unknown"] }, requiredVolumeLiters: { type: "number", exclusiveMinimum: 0, maximum: 200 }, requiredFluidSpec: { type: "string", maxLength: 160 }, serviceFamily: { type: "string", maxLength: 60 }, productId: { type: "string", minLength: 1, maxLength: 160 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } },
+        consumables: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, required: ["productId", "quantity"], properties: { role: { type: "string", enum: ["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "unknown"] }, requiredVolumeLiters: { type: "number", exclusiveMinimum: 0, maximum: 200 }, requiredFluidSpec: { type: "string", maxLength: 160 }, serviceFamily: { type: "string", maxLength: 60 }, productId: { type: "string", minLength: 1, maxLength: 160 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } },
+        rosskoItems: { type: "array", maxItems: 12, items: { type: "object", additionalProperties: false, required: ["article", "brand", "quantity"], properties: { role: { type: "string", enum: ["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "unknown"] }, maxDeliveryDays: { type: "number", minimum: 0, maximum: 365 }, article: { type: "string", minLength: 2, maxLength: 80 }, brand: { type: ["string", "null"], maxLength: 80 }, offerId: { type: ["string", "null"], maxLength: 100 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } },
         manualLaborPriceCents: { type: ["integer", "null"], minimum: 0, maximum: 10000000 },
         fallbackServiceProductId: { type: ["string", "null"], maxLength: 160 },
         serviceName: { type: ["string", "null"], maxLength: 180 },
@@ -156,7 +167,8 @@ export const assistantFunctionTools = [
   },
 ] as const;
 
-type ToolContext = {
+export type ToolContext = {
+  technicalLookup?: (request: Record<string, unknown>) => Promise<AssistantToolResult>;
   organizationId: string;
   actorId: string;
   actorName: string;
@@ -198,21 +210,6 @@ export function requestedDateRangeFromText(value: unknown) {
 
 function safeJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
-}
-
-function offerRows(value: unknown, depth = 0): Array<Record<string, unknown>> {
-  if (depth > 6 || value == null) return [];
-  if (Array.isArray(value)) return value.flatMap((item) => offerRows(item, depth + 1));
-  if (typeof value !== "object") return [];
-  const row = object(value);
-  const keys = Object.keys(row).join(" ");
-  const looksLikeOffer = /(part|article|number|brand|price|cost|stock|delivery)/i.test(keys) && /(price|cost|stock|count|quantity)/i.test(keys);
-  return [...(looksLikeOffer ? [row] : []), ...Object.values(row).flatMap((item) => offerRows(item, depth + 1))];
-}
-
-function rubles(value: unknown) {
-  const parsed = Number(String(value ?? "").replace(/\s/g, "").replace(",", "."));
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) : null;
 }
 
 function rosskoRetailPrice(purchaseCents: number | null, rules: AIRosskoMarkupRule[]) {
@@ -361,33 +358,16 @@ async function searchCatalog(args: Record<string, unknown>): Promise<AssistantTo
   return { result: { query, count: compact.length, products: compact }, sources: [{ sourceType: "internal_catalog", title: "Локальный каталог и остатки", excerpt: `Поиск: ${query}` }] };
 }
 
-async function findMannFilters(args: Record<string, unknown>): Promise<AssistantToolResult> {
-  const make = text(args.make, 80);
-  const model = text(args.model, 120);
-  const yearValue = args.year == null ? null : Math.round(number(args.year));
-  const engineCode = text(args.engineCode, 80);
-  const filterType = text(args.filterType, 60);
-  const makeNormalized = normalizeVehicleMake(make) || make.toUpperCase();
-  const modelNormalized = normalizeVehicleModel(model, makeNormalized).canonical || model.toUpperCase();
-  const rows = await prisma.mannFilterApplication.findMany({
-    where: {
-      makeNormalized: { contains: makeNormalized, mode: "insensitive" },
-      modelNormalized: { contains: modelNormalized, mode: "insensitive" },
-      ...(filterType ? { filterType: { contains: filterType, mode: "insensitive" } } : {}),
-      ...(yearValue ? { AND: [{ OR: [{ vehicleYearFrom: null }, { vehicleYearFrom: { lte: yearValue } }] }, { OR: [{ vehicleYearTo: null }, { vehicleYearTo: { gte: yearValue } }] }] } : {}),
-      ...(engineCode ? { OR: [{ engineCode: { contains: engineCode, mode: "insensitive" } }, { detail: { contains: engineCode, mode: "insensitive" } }] } : {}),
-    },
-    select: { filterType: true, filterSubtype: true, mannArticle: true, filterNote: true, vehicleVariantKey: true, detail: true, vehicleText: true, effectiveVehicleText: true, engineCode: true, hp: true, vehicleYears: true, sourceFile: true, catalogPage: true },
-    orderBy: [{ filterType: "asc" }, { mannArticle: "asc" }],
-    take: 60,
-  });
-  const unique = rows.filter((row, index) => rows.findIndex((other) => `${other.vehicleVariantKey}:${other.filterType}:${other.mannArticle}` === `${row.vehicleVariantKey}:${row.filterType}:${row.mannArticle}`) === index);
+async function findMannFilters(args: Record<string, unknown>, context: ToolContext): Promise<AssistantToolResult> {
+  const vehicle = assistantVehicle({ ...args, ...context.verifiedVehicleSnapshot });
+  const { resolution, profile } = await mannContext(context.organizationId, vehicle);
+  const type = text(args.filterType, 60).toLowerCase();
+  const filters = resolution.filters.filter(row => !type || row.filterType.toLowerCase() === type);
   return {
-    result: { found: unique.length > 0, ambiguous: new Set(unique.map((row) => row.vehicleVariantKey)).size > 1, criteria: { make, model, year: yearValue, engineCode: engineCode || null, filterType: filterType || null }, filters: unique },
-    sources: unique.slice(0, 5).map((row) => ({ sourceType: "mann" as const, title: "Внутренняя база применяемости MANN", excerpt: `${row.filterType}: ${row.mannArticle}${row.sourceFile ? ` · ${row.sourceFile}` : ""}`, metadata: { catalogPage: row.catalogPage, vehicleVariantKey: row.vehicleVariantKey } })),
+    result: { found: filters.length > 0, ambiguous: resolution.decision === "AMBIGUOUS", decision: resolution.decision, vehicleStatus: resolution.status, selectedApplication: resolution.selectedApplication, candidates: resolution.candidates, filters, localMatches: resolution.localMatches.map(row => ({ ...row, compatibleProducts: row.compatibleProducts.map(product => ({ id: product.id, name: product.name, article: product.article, brand: product.brand, price: product.price, available: product.available, matchType: product.matchType, matchReason: product.matchReason })) })), technicalProfile: profile },
+    sources: [{ sourceType: "mann", title: "Канонический resolver MANN → OEM Parts → LocalProduct", metadata: { decision: resolution.decision, profileStatus: profile.status } }],
   };
 }
-
 
 type MannOilFilterCandidate = {
   article: string;
@@ -414,18 +394,6 @@ export function uniqueMannFilterRows<T extends { mannArticle: string }>(rows: T[
   return rows.filter((row, index) => rows.findIndex((other) => normalizeMannArticle(other.mannArticle) === normalizeMannArticle(row.mannArticle)) === index);
 }
 
-function engineOilMannVehicle(input: QuoteAndTechCardInput) {
-  const snapshot = object(input.vehicle.snapshot);
-  const displayName = text(input.vehicle.displayName, 180);
-  const displayTokens = displayName.replace(/[(),]/g, " ").split(/\s+/u).filter(Boolean);
-  const make = text(snapshot.makeCanonical ?? snapshot.make ?? snapshot.makeRaw ?? snapshot.brand, 80) || text(displayTokens[0], 80);
-  const model = text(snapshot.modelCanonical ?? snapshot.model ?? snapshot.modelRaw, 120) || text(displayTokens[1], 120);
-  const displayedYear = displayName.match(/\b(?:19|20)\d{2}\b/u)?.[0];
-  const year = Math.round(number(snapshot.year ?? snapshot.modelYear ?? displayedYear, 0)) || null;
-  const engineCode = text(snapshot.engineCode ?? snapshot.engineSeries ?? input.vehicle.aggregateCode, 80);
-  return { make, model, year, engineCode };
-}
-
 export function formatMannOilFilterCandidateSummary(candidates: MannOilFilterCandidate[]) {
   if (!candidates.length) return null;
   const entries = candidates.slice(0, 4).map((candidate) => {
@@ -446,71 +414,20 @@ export function formatMannOilFilterCandidateSummary(candidates: MannOilFilterCan
  */
 async function resolveEngineOilMannFilter(input: QuoteAndTechCardInput, organizationId: string): Promise<EngineOilMannFilterResolution> {
   const empty: EngineOilMannFilterResolution = { candidates: [], summary: null, selectedProductId: null, sources: [], evidence: [] };
-  if (input.service.type !== "engine_oil" || input.service.filterAccess !== "external_replaceable") return empty;
-  const vehicle = engineOilMannVehicle(input);
-  if (!vehicle.make || !vehicle.model) return empty;
-  const makeNormalized = normalizeVehicleMake(vehicle.make) || vehicle.make.toUpperCase();
-  const canonicalModel = normalizeVehicleModel(vehicle.model, makeNormalized).canonical || vehicle.model;
-  const modelNormalized = normalizeMannSearchText(canonicalModel);
-  const baseModel = modelNormalized.split(" ")[0] || modelNormalized;
-  const baseClauses: Prisma.MannFilterApplicationWhereInput[] = [
-    { makeNormalized: { contains: makeNormalized, mode: "insensitive" } },
-    { OR: [
-      { modelNormalized: { contains: modelNormalized, mode: "insensitive" } },
-      { modelNormalized: { startsWith: baseModel, mode: "insensitive" } },
-    ] },
-    ...(vehicle.year ? [
-      { OR: [{ vehicleYearFrom: null }, { vehicleYearFrom: { lte: vehicle.year } }] },
-      { OR: [{ vehicleYearTo: null }, { vehicleYearTo: { gte: vehicle.year } }] },
-    ] : []),
-  ];
-  const baseWhere: Prisma.MannFilterApplicationWhereInput = { AND: baseClauses };
-  const select = { filterType: true, mannArticle: true, detail: true, vehicleVariantKey: true, engineCode: true, vehicleText: true, vehicleYears: true, sourceFile: true, catalogPage: true };
-  const exactRows = vehicle.engineCode
-    ? await prisma.mannFilterApplication.findMany({
-      where: { AND: [...baseClauses, { OR: [{ engineCode: { contains: vehicle.engineCode, mode: "insensitive" } }, { detail: { contains: vehicle.engineCode, mode: "insensitive" } }] }] },
-      select,
-      orderBy: [{ mannArticle: "asc" }],
-      take: 80,
-    })
-    : [];
-  const exactOilRows = exactRows.filter((row) => MANN_OIL_FILTER_TYPE.test(row.filterType));
-  const matchingRows = exactOilRows.length
-    ? exactOilRows
-    : await prisma.mannFilterApplication.findMany({ where: baseWhere, select, orderBy: [{ mannArticle: "asc" }], take: 80 });
-  const rows = uniqueMannFilterRows(matchingRows.filter((row) => MANN_OIL_FILTER_TYPE.test(row.filterType))).slice(0, 8);
-  if (!rows.length) return empty;
-  const usesExactEngine = exactOilRows.length > 0;
-  const localMatches = await matchMannArticlesToLocalProducts({
-    mannArticles: rows.map((row) => ({ mannArticle: row.mannArticle, filterType: row.filterType })),
-    organizationId,
+  if (input.service.type !== "engine_oil" || input.service.materialsOwner !== "service") return empty;
+  const { resolution } = await mannContext(organizationId, assistantVehicle(input.vehicle.snapshot ?? {}));
+  if (resolution.status !== "resolved") return { ...empty, summary: "Модификация автомобиля требует подтверждения в MANN." };
+  const filters = resolution.filters.filter(row => MANN_OIL_FILTER_TYPE.test(row.filterType));
+  const candidates = filters.flatMap(filter => {
+    const products = resolution.localMatches.find(row => row.mannArticleNormalized === normalizeMannArticle(filter.mannArticle))?.compatibleProducts ?? [];
+    return (products.length ? products : [null]).map(local => ({
+      article: filter.mannArticle, detail: filter.filterNote, vehicleVariantKey: resolution.selectedApplication!.variantIds.join(","),
+      requiresVinConfirmation: Boolean(filter.condition), localProductId: local?.id ?? null, localProductName: local?.name ?? null,
+      localPriceCents: local ? Math.round(local.price * 100) : null, localAvailable: local?.available ?? 0,
+    }));
   });
-  const localByArticle = new Map(localMatches.map((match) => [match.mannArticleNormalized, match.bestMatch]));
-  const candidates = rows.map((row) => {
-    const local = localByArticle.get(normalizeMannArticle(row.mannArticle)) ?? null;
-    return {
-      article: row.mannArticle,
-      detail: text(row.detail ?? row.engineCode ?? row.vehicleText ?? row.vehicleYears, 180) || null,
-      vehicleVariantKey: row.vehicleVariantKey,
-      requiresVinConfirmation: !usesExactEngine || rows.length > 1,
-      localProductId: local?.id ?? null,
-      localProductName: local?.name ?? null,
-      localPriceCents: local ? Math.round(local.price * 100) : null,
-      localAvailable: local?.available ?? 0,
-    } satisfies MannOilFilterCandidate;
-  });
-  const unambiguous = candidates.length === 1 && !candidates[0].requiresVinConfirmation ? candidates[0] : null;
-  const selectedProductId = unambiguous?.localProductId && unambiguous.localPriceCents != null && unambiguous.localAvailable > 0
-    ? unambiguous.localProductId
-    : null;
-  const summary = formatMannOilFilterCandidateSummary(candidates);
-  return {
-    candidates,
-    summary,
-    selectedProductId,
-    sources: rows.slice(0, 5).map((row) => ({ sourceType: "mann" as const, title: "Внутренняя база применяемости MANN", excerpt: "Масляный фильтр: " + row.mannArticle, metadata: { catalogPage: row.catalogPage, vehicleVariantKey: row.vehicleVariantKey } })),
-    evidence: candidates.slice(0, 4).map((candidate) => ({ source: "MANN", fact: "Кандидат масляного фильтра: MANN " + candidate.article + (candidate.detail ? " · " + candidate.detail : "") + ".", status: candidate.requiresVinConfirmation ? "needs_verification" as const : "confirmed" as const })),
-  };
+  const selected = candidates.filter(row => !row.requiresVinConfirmation && row.localProductId && (row.localPriceCents ?? 0) > 0 && row.localAvailable >= 1).sort((a, b) => a.localPriceCents! - b.localPriceCents!)[0];
+  return { candidates, summary: formatMannOilFilterCandidateSummary(candidates), selectedProductId: selected?.localProductId ?? null, sources: [{ sourceType: "mann", title: "Подтверждённая модификация MANN и OEM Parts" }], evidence: [] };
 }
 
 async function lookupClientHistory(args: Record<string, unknown>) {
@@ -585,7 +502,7 @@ function scopedBranchIdForDiagnostic() {
   }
 }
 
-async function rossko(args: Record<string, unknown>, context: ToolContext) {
+async function rosskoUncached(args: Record<string, unknown>, context: ToolContext) {
   const article = text(args.article, 80);
   const brand = text(args.brand, 80);
   try {
@@ -598,22 +515,13 @@ async function rossko(args: Record<string, unknown>, context: ToolContext) {
     const addressId = config.addressId || "";
     if (!deliveryId) throw new AssistantToolError("ROSSKO_NOT_CONFIGURED", "Для ROSSKO этого филиала не настроен способ доставки.");
     const raw = await rosskoSearch(config, { text: [brand, article].filter(Boolean).join(" "), deliveryId, addressId });
-    const offers = offerRows(raw).map((row, index) => {
-      const purchasePriceCents = rubles(row.price ?? row.Price ?? row.cost ?? row.Cost);
-      const retail = rosskoRetailPrice(purchasePriceCents, settings.rosskoMarkupRules || DEFAULT_ROSSKO_MARKUP_RULES);
-      return {
-        id: text(row.id ?? row.ID, 80) || `offer-${index + 1}`,
-        brand: text(row.brand ?? row.Brand, 80) || brand || null,
-        article: text(row.partnumber ?? row.partNumber ?? row.article, 80) || article,
-        name: text(row.name ?? row.Name, 180) || null,
-        purchasePriceCents,
-        retailPriceCents: retail?.retailPriceCents ?? null,
-        retailPriceRub: retail ? retail.retailPriceCents / 100 : null,
-        appliedMarkupRule: retail?.appliedRule ?? null,
-        stock: text(row.stock ?? row.Stock ?? row.count ?? row.quantity, 80) || "уточняется",
-        delivery: text(row.delivery ?? row.delivery_time ?? row.period, 100) || "уточняется",
-      };
-    }).filter((offer, index, list) => list.findIndex((other) => `${other.brand}:${other.article}:${other.purchasePriceCents}:${other.delivery}` === `${offer.brand}:${offer.article}:${offer.purchasePriceCents}:${offer.delivery}`) === index).slice(0, 12);
+    let parsedOffers;
+    try { parsedOffers = parseAssistantRosskoOffers(raw, getScopedBranchId()); }
+    catch { throw new AssistantToolError("ROSSKO_PARSING_ERROR", "ROSSKO вернул непонятную структуру предложений"); }
+    const offers = parsedOffers.map(offer => {
+      const retail = rosskoRetailPrice(offer.purchasePriceCents, settings.rosskoMarkupRules || DEFAULT_ROSSKO_MARKUP_RULES);
+      return { ...offer, retailPriceCents: retail?.retailPriceCents ?? null, appliedMarkupRule: retail?.appliedRule ?? null };
+    });
     if (!offers.length) throw new AssistantToolError("ROSSKO_NO_RESULTS", "ROSSKO не вернул предложений по этому номеру для выбранного филиала.");
     return { result: { found: true, article, brand: brand || null, offers, validForHours: 24, mode: "read_only_search" }, sources: [{ sourceType: "rossko", title: "ROSSKO · read-only поиск", excerpt: `Артикул: ${article}` }] } satisfies AssistantToolResult;
   } catch (error) {
@@ -631,6 +539,10 @@ async function rossko(args: Record<string, unknown>, context: ToolContext) {
   }
 }
 
+async function rossko(args: Record<string, unknown>, context: ToolContext) {
+  return assistantMemo("rossko-search", { branchId: getScopedBranchId(), args }, () => rosskoUncached(args, context));
+}
+
 function serviceSearchQueries(request: string) {
   const normalized = request.toLowerCase();
   const common = [request];
@@ -645,12 +557,12 @@ async function findServiceOptions(args: Record<string, unknown>) {
   const request = text(args.request, 160);
   const limit = Math.max(1, Math.min(20, Math.round(number(args.limit, 12))));
   const queries = serviceSearchQueries(request);
-  const rows = await Promise.all(queries.map((query) => prisma.localProduct.findMany({
+  const rows = await assistantMap(queries, query => prisma.localProduct.findMany({
     where: { archived: false, entityType: "service", OR: [{ name: { contains: query, mode: "insensitive" } }, { article: { contains: query, mode: "insensitive" } }, { code: { contains: query, mode: "insensitive" } }, { searchText: { contains: query.toLowerCase(), mode: "insensitive" } }] },
     select: { id: true, name: true, article: true, code: true, salePriceCents: true },
     take: limit,
     orderBy: { name: "asc" },
-  })));
+  }), 3);
   const services = rows.flat().filter((service, index, all) => all.findIndex((other) => other.id === service.id) === index).slice(0, limit).map((service) => ({ ...service, retailPriceRub: service.salePriceCents / 100 }));
   return { result: { request, searchedSynonyms: queries, found: services.length > 0, services }, sources: [{ sourceType: "internal_catalog", title: "Локальный каталог услуг", excerpt: `Синонимы: ${queries.join(" · ")}` }] } satisfies AssistantToolResult;
 }
@@ -660,7 +572,7 @@ function quoteInputRows(value: unknown, max: number) {
 }
 
 function normalizedArticle(value: unknown) {
-  return text(value, 100).toLocaleUpperCase("ru-RU").replace(/[^A-ZА-Я0-9]/g, "");
+  return normalizePartNumberForCrossMatch(text(value, 100)).canonical;
 }
 
 type LocalFluidResolution = {
@@ -670,8 +582,8 @@ type LocalFluidResolution = {
   originalOnlyOverride: boolean;
 };
 
-async function automaticLocalFluidResolution(args: Record<string, unknown>, context: ToolContext): Promise<LocalFluidResolution> {
-  if (text(args.serviceFamily, 60) !== "transmission_fluid" || text(args.materialsOwner, 30) !== "service") return { selection: null, candidates: [], fallbackReason: "Материалы не принадлежат сервису.", originalOnlyOverride: false };
+async function automaticLocalFluidResolutionUncached(args: Record<string, unknown>, context: ToolContext): Promise<LocalFluidResolution> {
+  if (!["transmission_fluid", "engine_oil"].includes(text(args.serviceFamily, 60)) || text(args.materialsOwner, 30) !== "service") return { selection: null, candidates: [], fallbackReason: "Материалы не принадлежат сервису.", originalOnlyOverride: false };
   const originalOnlyOverride = shouldRequireOriginalFluid({
     fluidPreference: text(args.fluidPreference, 40) || null,
     employeeRequestedOriginalOnly: Boolean(context.employeeRequestedOriginalFluidOnly),
@@ -685,11 +597,14 @@ async function automaticLocalFluidResolution(args: Record<string, unknown>, cont
   }
   const branchId = getScopedBranchId();
   const fields = (token: string): Prisma.LocalProductWhereInput[] => [
+    { sae: { contains: token, mode: "insensitive" } },
+    { oem: { contains: token, mode: "insensitive" } },
+    { acea: { contains: token, mode: "insensitive" } },
     { atf: { contains: token, mode: "insensitive" } },
     { oemAtf: { contains: token, mode: "insensitive" } },
     { searchText: { contains: token, mode: "insensitive" } },
   ];
-  const rows = await prisma.localProduct.findMany({
+  const rows = await assistantMemo("fluid-candidates", { branchId, requiredSpec, family: args.serviceFamily }, () => prisma.localProduct.findMany({
     where: {
       branchId,
       archived: false,
@@ -697,9 +612,8 @@ async function automaticLocalFluidResolution(args: Record<string, unknown>, cont
       // Keep zero-price and out-of-stock matches in the trace.  The shared
       // selector below rejects them deterministically, but the employee can
       // then see why each local candidate was not eligible.
-      // A model may give documented alternatives as "SP-IV / SP4-M".  Query
-      // each alternative separately, then let the shared selector verify that
-      // the chosen product explicitly supports one of them.
+      // Broad aliases retrieve candidates only. Structured compatibility below
+      // preserves meaningful separators and requires the requested specification.
       OR: alternativeTokens.map((tokens) => ({ AND: tokens.map((token) => ({ OR: fields(token) })) })),
     },
     select: {
@@ -711,16 +625,17 @@ async function automaticLocalFluidResolution(args: Record<string, unknown>, cont
       markingMode: true,
       atf: true,
       oemAtf: true,
+      sae: true, oem: true, acea: true, apiSpec: true, ilsac: true,
       searchText: true,
       stockBalances: { where: { branchId }, select: { available: true } },
     },
     orderBy: [{ salePriceCents: "asc" }, { name: "asc" }],
     take: 100,
-  });
+  }));
   const evaluation = evaluatePreferredLocalFluid(rows.map((row) => ({
     ...row,
     availableUnits: row.stockBalances.reduce((sum, stock) => sum + Number(stock.available), 0),
-  })), requiredSpec, requiredLiters);
+  })), requiredSpec, requiredLiters, text(args.serviceFamily, 60));
   return {
     selection: evaluation.selected,
     candidates: evaluation.candidates,
@@ -729,40 +644,87 @@ async function automaticLocalFluidResolution(args: Record<string, unknown>, cont
   };
 }
 
+async function automaticLocalFluidResolution(args: Record<string, unknown>, context: ToolContext): Promise<LocalFluidResolution> {
+  return assistantMemo("fluid-resolution", { branchId: getScopedBranchId(), family: args.serviceFamily, owner: args.materialsOwner, spec: args.requiredFluidSpec, liters: args.requiredFluidVolumeLiters, preference: args.fluidPreference, originalOnly: context.employeeRequestedOriginalFluidOnly }, () => automaticLocalFluidResolutionUncached(args, context));
+}
+
 async function automaticLocalFluidSelection(args: Record<string, unknown>, context: ToolContext): Promise<LocalFluidSelection | null> {
   return (await automaticLocalFluidResolution(args, context)).selection;
 }
 
-async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItems: Array<Record<string, unknown>>, context: ToolContext) {
-  const ids = [...new Set(itemValues.map((item) => text(item.productId, 160)).filter(Boolean))];
-  const products = await prisma.localProduct.findMany({ where: { id: { in: ids }, archived: false }, select: { id: true, entityType: true, name: true, article: true, salePriceCents: true } });
-  const byId = new Map(products.map((item) => [item.id, item]));
-  const missing = ids.filter((id) => !byId.has(id));
-  if (missing.length) throw new Error(`Не найдены позиции локального каталога: ${missing.join(", ")}`);
-  const localLines = itemValues.map((item) => {
-    const productId = text(item.productId, 160);
-    const product = byId.get(productId)!;
-    const quantity = Math.round(Math.max(0.001, Math.min(100, number(item.quantity, 1))) * 1000) / 1000;
-    const totalCents = Math.round(product.salePriceCents * quantity);
-    return { source: "local", productId, role: text(item.role, 40) || "unknown", type: product.entityType, name: product.name, article: product.article, quantity, unitPriceCents: product.salePriceCents, totalCents };
+function catalogFluid(product: { atf?: unknown; oemAtf?: unknown; sae?: unknown; oem?: unknown; acea?: unknown; apiSpec?: unknown; ilsac?: unknown }) {
+  return [product.atf, product.oemAtf, product.sae, product.oem, product.acea, product.apiSpec, product.ilsac].some(value => typeof value === "string" && value.trim().length > 0);
+}
+
+export async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItems: Array<Record<string, unknown>>, context: ToolContext) {
+  const branchId = getScopedBranchId();
+  const ids = [...new Set(itemValues.map(item => text(item.productId, 160)).filter(Boolean))];
+  const products = await prisma.localProduct.findMany({ where: { branchId, id: { in: ids }, archived: false }, select: { id: true, entityType: true, name: true, article: true, salePriceCents: true, uomName: true, packageVolume: true, markingMode: true, atf: true, oemAtf: true, searchText: true, sae: true, oem: true, acea: true, apiSpec: true, ilsac: true, stockBalances: { where: { branchId }, select: { available: true } } } });
+  const byId = new Map(products.map(item => [item.id, item]));
+  const unresolvedItems: Array<{ code: string; item: string }> = [];
+  const warnings: string[] = [];
+  const localLines = itemValues.flatMap(item => {
+    const productId = text(item.productId, 160), product = byId.get(productId);
+    const fail = (code: string) => { unresolvedItems.push({ code, item: product?.name ?? productId }); return []; };
+    if (!product) return fail("LOCAL_PRODUCT_NOT_FOUND");
+    if (product.salePriceCents <= 0) return fail("LOCAL_PRICE_UNKNOWN");
+    const role = catalogFluid(product) ? "fluid" : text(item.role, 40) || "unknown";
+    if (role === "fluid") {
+      const required = text(item.requiredFluidSpec, 160);
+      const compatible = text(item.serviceFamily, 60) === "engine_oil" ? engineOilSpecificationMatches(product, required) : fluidSpecificationMatches(product, required);
+      if (!compatible) return fail("MATERIAL_COMPATIBILITY_UNVERIFIED");
+    }
+    const plannedConsumptionLiters = number(item.requiredVolumeLiters);
+    const converted = role === "fluid" && plannedConsumptionLiters > 0 ? quantityForLiters(product, plannedConsumptionLiters) : null;
+    if (role === "fluid" && !converted?.quantity) return fail("PACKAGE_OR_CONSUMPTION_UNKNOWN");
+    const quantity = converted?.quantity ?? number(item.quantity);
+    if (!(quantity > 0 && quantity <= 100)) return fail("INVALID_SALE_QUANTITY");
+    const available = product.stockBalances.reduce((sum, row) => sum + Number(row.available), 0);
+    if (available + 0.0001 < quantity) warnings.push(`${product.name}: локального остатка недостаточно; поставку нужно подтвердить.`);
+    const saleQuantity = converted?.quantity && converted.litersPerUnit ? {
+      technicalVolumeLiters: number(item.technicalVolumeLiters) || null, plannedConsumptionLiters,
+      litersPerSaleUnit: converted.litersPerUnit, saleUnitQuantity: quantity, unitPriceCents: product.salePriceCents,
+      purchasedVolumeLiters: converted.purchasedVolumeLiters!, packageRemainderLiters: converted.packageRemainderLiters!, saleUnit: product.uomName ?? "шт.",
+    } : undefined;
+    return [{ source: "local", productId, role, type: product.entityType, name: product.name, article: product.article, quantity, unitPriceCents: product.salePriceCents, totalCents: Math.round(product.salePriceCents * quantity), ...(saleQuantity ? { saleQuantity } : {}) }];
   });
-  const supplierResults = await Promise.all(rosskoItems.map(async (item) => ({ item, search: await rossko({ article: text(item.article, 80), brand: text(item.brand, 80) }, context) })));
-  const rosskoLines = supplierResults.map(({ item, search }) => {
+  const supplierProofProducts = rosskoItems.length ? await prisma.localProduct.findMany({ where: { branchId, archived: false, entityType: "product", article: { in: rosskoItems.map(item => text(item.article, 80)) } }, select: { id: true, article: true, brand: true, atf: true, oemAtf: true, searchText: true, sae: true, oem: true, acea: true, apiSpec: true, ilsac: true, uomName: true, packageVolume: true, markingMode: true } }) : [];
+  const supplierResults = await assistantMap(rosskoItems, async item => {
+    try { return { item, search: await rossko({ article: text(item.article, 80), brand: text(item.brand, 80) }, context), error: null }; }
+    catch (error) { return { item, search: { result: {}, sources: [] } as AssistantToolResult, error: error instanceof AssistantToolError ? error.code : "ROSSKO_SEARCH_FAILED" }; }
+  });
+  const rosskoLines = supplierResults.flatMap(({ item, search, error }) => {
+    const fail = (code: string) => { unresolvedItems.push({ code, item: text(item.article, 80) }); return []; };
+    if (error) return fail(error);
     const offers = Array.isArray(search.result.offers) ? search.result.offers as Array<Record<string, unknown>> : [];
-    const selectedOfferId = text(item.offerId, 100);
-    const selected = (selectedOfferId ? offers.find((offer) => text(offer.id, 100) === selectedOfferId) : undefined) ?? offers.find((offer) => number(offer.retailPriceCents) > 0);
-    if (!selected || number(selected.retailPriceCents) <= 0) throw new Error(`ROSSKO не вернуло пригодное предложение для ${text(item.article, 80)}`);
-    const quantity = Math.round(Math.max(0.001, Math.min(100, number(item.quantity, 1))) * 1000) / 1000;
+    const requestedId = text(item.offerId, 100);
+    // No fallback from a disappeared selected offer. The caller must choose again.
+    const selected = requestedId ? offers.find(offer => offer.id === requestedId) : offers.find(offer => sameSupplierArticle(offer.article, item.article) && text(offer.brand).toUpperCase() === text(item.brand).toUpperCase() && number(offer.retailPriceCents) > 0);
+    if (!selected || !selected.id) return fail(requestedId ? "ROSSKO_OFFER_NOT_FOUND" : "ROSSKO_OFFER_SELECTION_REQUIRED");
+    if (!sameSupplierArticle(selected.article, item.article) || !text(item.brand) || text(selected.brand).toUpperCase() !== text(item.brand).toUpperCase()) return fail("ROSSKO_IDENTITY_MISMATCH");
+    if (number(selected.retailPriceCents) <= 0) return fail("ROSSKO_PRICE_UNKNOWN");
+    const proofProduct = supplierProofProducts.find(product => sameSupplierArticle(product.article, selected.article) && text(product.brand).toUpperCase() === text(selected.brand).toUpperCase());
+    const role = proofProduct && catalogFluid(proofProduct) ? "fluid" : text(item.role, 40) || "unknown";
+    const planned = number(item.requiredVolumeLiters);
+    const converted = role === "fluid" ? quantityForLiters({ uomName: text(selected.uomName) || proofProduct?.uomName || null, packageVolume: text(selected.packageVolume) || proofProduct?.packageVolume || null, markingMode: null }, planned) : null;
+    if (role === "fluid" && !converted?.quantity) return fail("ROSSKO_PACKAGE_UNKNOWN");
+    // An OEM article alone does not establish a supplier product's technical declaration.
+    if (role === "fluid" && (!proofProduct || !(item.serviceFamily === "engine_oil" ? engineOilSpecificationMatches(proofProduct, text(item.requiredFluidSpec)) : fluidSpecificationMatches(proofProduct, text(item.requiredFluidSpec))))) return fail("ROSSKO_FLUID_COMPATIBILITY_UNVERIFIED");
+    const quantity = converted?.quantity ?? number(item.quantity);
+    if (!(quantity > 0 && quantity <= 100)) return fail("INVALID_SALE_QUANTITY");
+    if (selected.availableQuantity != null && number(selected.availableQuantity) < quantity) return fail("ROSSKO_INSUFFICIENT_QUANTITY");
+    if (selected.quantityMultiple != null) {
+      const multiple = number(selected.quantityMultiple), packs = quantity / multiple;
+      if (multiple <= 0 || Math.abs(packs - Math.round(packs)) > 0.000001) return fail("ROSSKO_QUANTITY_MULTIPLE");
+    }
+    if (item.maxDeliveryDays != null && (selected.deliveryDays == null || number(selected.deliveryDays) > number(item.maxDeliveryDays))) return fail("ROSSKO_DELIVERY_NOT_AGREED");
+    warnings.push(`${text(selected.brand)} ${text(selected.article)}: предложение условное, наличие, упаковку и срок подтвердить перед работой.`);
     const unitPriceCents = Math.round(number(selected.retailPriceCents));
-    const article = text(selected.article, 80) || text(item.article, 80);
-    const brand = text(selected.brand, 80) || text(item.brand, 80) || null;
-    const fallbackName = ["Запчасть", brand, article].filter(Boolean).join(" ");
-    return { source: "rossko", offerId: text(selected.id, 100), role: text(item.role, 40) || "unknown", type: "product", name: text(selected.name, 180) || fallbackName || "Запчасть по каталогу", article, brand, quantity, unitPriceCents, totalCents: Math.round(unitPriceCents * quantity), availability: text(selected.stock, 80) || "уточняется", delivery: text(selected.delivery, 100) || "уточняется" };
+    return [{ source: "rossko", offerId: text(selected.id), role, type: "product", name: text(selected.name, 180) || `Запчасть ${text(selected.brand)} ${text(selected.article)}`, article: text(selected.article), brand: text(selected.brand), quantity, unitPriceCents, totalCents: Math.round(unitPriceCents * quantity), supplierOffer: { ...selected, priceObservedAt: selected.fetchedAt, quantity, applicabilitySource: proofProduct?.id ?? null, conditional: true }, ...(converted?.quantity && converted.litersPerUnit ? { saleQuantity: { technicalVolumeLiters: number(item.technicalVolumeLiters) || null, plannedConsumptionLiters: planned, litersPerSaleUnit: converted.litersPerUnit, saleUnitQuantity: quantity, unitPriceCents, purchasedVolumeLiters: converted.purchasedVolumeLiters!, packageRemainderLiters: converted.packageRemainderLiters!, saleUnit: text(selected.uomName) || proofProduct?.uomName || "шт." } } : {}) }];
   });
   const lines = [...localLines, ...rosskoLines];
   const totalCents = lines.reduce((sum, line) => sum + line.totalCents, 0);
-  const validUntil = rosskoLines.length ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
-  return { lines, totalCents, totalRub: totalCents / 100, validUntil, localCount: localLines.length, supplierResults };
+  return { lines, totalCents, totalRub: totalCents / 100, validUntil: null, localCount: localLines.length, supplierResults, unresolvedItems, warnings, priceComplete: unresolvedItems.length === 0 };
 }
 
 async function quotePreview(args: Record<string, unknown>, context: ToolContext) {
@@ -784,6 +746,10 @@ async function quotePreview(args: Record<string, unknown>, context: ToolContext)
       validUntil: base.validUntil,
       maximum: maximum ? { lines: maximum.lines, totalCents: maximum.totalCents, totalRub: maximum.totalRub, validUntil: maximum.validUntil } : null,
       mode: "preview",
+      priceComplete: base.priceComplete,
+      unresolvedItems: base.unresolvedItems,
+      materialWarnings: base.warnings,
+      finalQuote: base.priceComplete,
     },
     sources: [
       { sourceType: "internal_catalog", title: "Детерминированный расчёт по розничным ценам", excerpt: `${base.localCount} локальных поз.` },
@@ -797,7 +763,8 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
   const serviceFamily = text(args.serviceFamily, 60);
   const procedureType = text(args.procedureType, 60);
   const materialsOwner = text(args.materialsOwner, 30);
-  const locationId = text(args.locationId, 120) || "dachnaya";
+  const tariffContext = await assistantTariffContext(context.organizationId);
+  const locationId = tariffContext.locationId ?? "";
   let selectedProducts = quoteInputRows(args.selectedProducts, 30);
   const consumables = quoteInputRows(args.consumables, 20);
   let rosskoItems = quoteInputRows(args.rosskoItems, 12);
@@ -805,9 +772,6 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
   const automaticFluid = automaticFluidResolution.selection;
   if (automaticFluid) {
     const fallbackArticle = normalizedArticle(args.requiredFluidOemArticle);
-    if (!fallbackArticle && rosskoItems.length) {
-      throw new Error("Локальное совместимое масло найдено; укажите requiredFluidOemArticle, чтобы backend безопасно исключил его ROSSKO-аналог");
-    }
     selectedProducts = [
       { productId: automaticFluid.productId, quantity: automaticFluid.quantity, role: "fluid" },
       // A required OEM article is compatibility evidence only.  Once a local
@@ -815,9 +779,11 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
       // more expensive product to the primary quote.
       ...selectedProducts.filter((item) => text(item.role, 40) !== "fluid" && text(item.productId, 160) !== automaticFluid.productId),
     ];
-    if (fallbackArticle) rosskoItems = rosskoItems.filter((item) => normalizedArticle(item.article) !== fallbackArticle);
+    rosskoItems = rosskoItems.filter(item => item.role !== "fluid" && (!fallbackArticle || normalizedArticle(item.article) !== fallbackArticle));
   }
-  const material = await quoteLines([...selectedProducts, ...consumables], rosskoItems, context);
+  const preparedProducts = [...selectedProducts, ...consumables].map(item => ({ ...item, requiredVolumeLiters: args.requiredFluidVolumeLiters, technicalVolumeLiters: args.technicalVolumeLiters, requiredFluidSpec: args.requiredFluidSpec, serviceFamily }));
+  const preparedSupplier = rosskoItems.map(item => ({ ...item, requiredVolumeLiters: args.requiredFluidVolumeLiters, technicalVolumeLiters: args.technicalVolumeLiters, serviceFamily, requiredFluidSpec: args.requiredFluidSpec }));
+  const material = await quoteLines(preparedProducts, preparedSupplier, context);
   const appliedRule = await resolveLaborPrice({
     organizationId: context.organizationId,
     locationId,
@@ -828,7 +794,7 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
     vehicleId: text(args.vehicleId, 160) || null,
     aggregateCode: text(args.aggregateCode, 120) || null,
     vehicle: object(args.vehicleSnapshot),
-    manualLaborPriceCents: args.manualLaborPriceCents == null ? null : Math.round(number(args.manualLaborPriceCents)),
+    manualLaborPriceCents: null,
     fallbackServiceProductId: text(args.fallbackServiceProductId, 160) || null,
   });
   const laborLine = appliedRule.laborPriceCents == null ? null : {
@@ -868,7 +834,7 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
       validUntil: material.validUntil,
     };
   })() : null;
-  const finalQuote = laborLine !== null && !appliedRule.requiresHumanConfirmation;
+  const finalQuote = laborLine !== null && !appliedRule.requiresHumanConfirmation && material.priceComplete;
   const selectedFluidLine = material.lines.find((line) => line.role === "fluid") ?? null;
   const fallbackSupplierUsed = !automaticFluid && material.lines.some((line) => line.source === "rossko" && line.role === "fluid");
   return {
@@ -880,8 +846,12 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
       validUntil: material.validUntil,
       mode: "assistant_rule_v2",
       finalQuote,
+      priceComplete: material.priceComplete,
+      unresolvedItems: material.unresolvedItems,
+      materialWarnings: material.warnings,
       requiresHumanConfirmation: appliedRule.requiresHumanConfirmation,
       appliedRule,
+      tariffContext,
       scenario: { serviceFamily, procedureType, transmissionConfiguration: text(args.transmissionConfiguration, 60) || null, materialsOwner, locationId },
       automaticMaterialDecision: automaticFluid ? {
         source: "local_catalog",
@@ -1018,11 +988,11 @@ function traceCandidates(value: unknown): QuoteAndTechCardMaterialSelectionTrace
     catalogName: text(candidate.catalogName, 220),
     compatible: candidate.compatible === true,
     availableQuantity: Math.max(0, number(candidate.availableQuantity)),
-    requiredQuantity: Math.max(0.001, number(candidate.requiredQuantity)),
-    packageLiters: Math.max(0.001, number(candidate.packageLiters, 1)),
+    requiredQuantity: candidate.requiredQuantity == null ? null : Math.max(0.001, number(candidate.requiredQuantity)),
+    packageLiters: candidate.packageLiters == null ? null : Math.max(0.001, number(candidate.packageLiters)),
     unitPriceCents: Math.max(0, Math.round(number(candidate.unitPriceCents))),
     eligible: candidate.eligible === true,
-    exclusionReason: ["incompatible_specification", "price_missing", "stock_insufficient"].includes(text(candidate.exclusionReason, 80)) ? text(candidate.exclusionReason, 80) as "incompatible_specification" | "price_missing" | "stock_insufficient" : null,
+    exclusionReason: ["incompatible_specification", "price_missing", "stock_insufficient", "package_unknown"].includes(text(candidate.exclusionReason, 80)) ? text(candidate.exclusionReason, 80) as "incompatible_specification" | "price_missing" | "stock_insufficient" | "package_unknown" : null,
   })).filter((candidate) => Boolean(candidate.productId) && Boolean(candidate.catalogName)).slice(0, 100);
 }
 
@@ -1066,7 +1036,7 @@ function materialSelectionTrace(value: unknown, lines: QuoteAndTechCardQuoteOpti
 export function assertLocalFirstInvariant(trace: QuoteAndTechCardMaterialSelectionTrace, originalOnlyOverride = false) {
   const local = trace.selectedLocalCandidate;
   const validLocalProductExists = Boolean(local?.compatible && local.eligible && local.unitPriceCents > 0);
-  const localStockIsEnough = Boolean(local && trace.requiredQuantity != null && local.availableQuantity + 0.0001 >= trace.requiredQuantity);
+  const localStockIsEnough = Boolean(local && trace.requiredQuantity != null && local.requiredQuantity != null && local.availableQuantity + 0.0001 >= local.requiredQuantity);
   if (validLocalProductExists && localStockIsEnough && !originalOnlyOverride && trace.selectedProduct.source !== "local_catalog") {
     throw new LocalFirstInvariantError("Найден совместимый локальный товар с достаточным остатком, но основная жидкость выбрана не из локального каталога. Расчёт не сохранён.");
   }
@@ -1076,19 +1046,19 @@ export function assertLocalFirstInvariant(trace: QuoteAndTechCardMaterialSelecti
 }
 
 /** Fails closed before the option or snapshot can expose contradictory quantities or totals. */
-export function assertQuoteAndTechCardOptionIntegrity(option: Pick<QuoteAndTechCardQuoteOption, "billableQuantityLiters" | "lines" | "totalCents">) {
+export function assertQuoteAndTechCardOptionIntegrity(option: Pick<QuoteAndTechCardQuoteOption, "billableQuantityLiters" | "lines" | "totalCents">, requirePrimaryFluid = true) {
   const lineTotal = option.lines.reduce((sum, line) => sum + line.totalCents, 0);
   if (option.totalCents == null || lineTotal !== option.totalCents) {
     throw new QuoteAndTechCardIntegrityError("Итог сметы не равен сумме строк. Расчёт не сохранён.");
   }
   for (const line of option.lines) {
-    if (line.unitPriceCents != null && line.totalCents !== line.unitPriceCents * line.quantity) {
+    if (line.unitPriceCents != null && line.totalCents !== Math.round(line.unitPriceCents * line.quantity)) {
       throw new QuoteAndTechCardIntegrityError(`Строка «${line.customerDisplayName}» имеет противоречивую цену и количество. Расчёт не сохранён.`);
     }
   }
   if (option.billableQuantityLiters != null) {
     const primaryFluid = option.lines.filter((line) => line.role === "fluid");
-    if (primaryFluid.length !== 1 || primaryFluid[0].quantity !== option.billableQuantityLiters) {
+    if (primaryFluid.length > 1 || (requirePrimaryFluid && primaryFluid.length !== 1) || (primaryFluid.length === 1 && primaryFluid[0].saleQuantity?.plannedConsumptionLiters !== option.billableQuantityLiters)) {
       throw new QuoteAndTechCardIntegrityError("Количество основной жидкости не совпадает с расчётным объёмом. Расчёт не сохранён.");
     }
   }
@@ -1161,7 +1131,7 @@ export function restoreQuoteAndTechCardContinuationInput(input: QuoteAndTechCard
   const prior = previousQuoteResultForService(previous, input.service.type);
   if (!prior) return input;
   const priorFilter = prior.techCard.filterPolicy;
-  const filterWasConfirmed = priorFilter.presence === "present" && priorFilter.access !== "unknown";
+  const filterWasConfirmed = prior.techCard.technicalStatus === "confirmed" && prior.techCard.verifiedFacts.some(fact => fact.field === "filterAccess" && fact.source) && priorFilter.presence === "present" && priorFilter.access !== "unknown";
   if (!filterWasConfirmed || input.service.filterAccess !== "unknown") return input;
   const priorProcedures = prior.quoteSet.requestedProcedures;
   return {
@@ -1229,10 +1199,18 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   const rawInput = object(args.input);
   const rawVehicle = object(rawInput.vehicle);
   const verifiedVehicleSnapshot = object(context.verifiedVehicleSnapshot);
+  const trustedMake = text(verifiedVehicleSnapshot.makeCanonical ?? verifiedVehicleSnapshot.makeRaw, 80);
+  const trustedModel = text(verifiedVehicleSnapshot.modelCanonical ?? verifiedVehicleSnapshot.modelRaw, 120);
+  const trustedDisplayName = trustedMake && trustedModel ? [trustedMake, trustedModel, verifiedVehicleSnapshot.year].filter(Boolean).join(" ") : null;
+  const submittedSnapshot = object(rawVehicle.snapshot);
+  for (const key of ["makeCanonical", "modelCanonical", "engineCode", "year", "vin", "transmissionType"]) {
+    if (submittedSnapshot[key] && verifiedVehicleSnapshot[key] && String(submittedSnapshot[key]).toUpperCase() !== String(verifiedVehicleSnapshot[key]).toUpperCase()) throw new Error("VEHICLE_CONTEXT_CONFLICT: данные автомобиля противоречат подтверждённому контексту");
+  }
   const submittedInput = parseQuoteAndTechCardInput({
     ...rawInput,
     vehicle: {
       ...rawVehicle,
+      ...(trustedDisplayName ? { displayName: trustedDisplayName } : {}),
       snapshot: {
         ...object(rawVehicle.snapshot),
         ...verifiedVehicleSnapshot,
@@ -1242,12 +1220,13 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   });
   const continuedInput = restoreQuoteAndTechCardContinuationInput(submittedInput, context.previousQuoteAndTechCard);
   const scenarioInput = applyAutomaticTransmissionScenarioDefaults(continuedInput, context.requestMessage);
-  const plan = createQuoteAndTechCardPlan(scenarioInput, {
+  const localTechnical = await verifiedLocalTechnicalInput(scenarioInput, context.organizationId);
+  const plan = createQuoteAndTechCardPlan(localTechnical.input, {
     literRoundingStep: settings.calculationRules.literRoundingStep,
     transmissionMachineExchangeMultiplier: settings.calculationRules.transmissionMachineExchangeMultiplier,
     transmissionMinimumBillableLiters: settings.calculationRules.transmissionMinimumBillableLiters,
     maxTechnicalVerificationPasses: settings.calculationRules.maxTechnicalVerificationPasses,
-  });
+  }, localTechnical.facts);
   const input = plan.input;
   const mannOilFilter = await resolveEngineOilMannFilter(input, context.organizationId).catch((): EngineOilMannFilterResolution => ({ candidates: [], summary: null, selectedProductId: null, sources: [], evidence: [] }));
   const baseBlockers = [...plan.hardBlockers];
@@ -1261,14 +1240,14 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     const blockers = [...baseBlockers];
     if (option.blocker) blockers.push(option.blocker);
     if (blockers.length) {
-      options.push({ code: option.code, label: option.label, customerDisplayName: customerProcedureDisplayName(input.service.type, option.code), status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, quantityTrace: option.quantityTrace, servicePackage: option.servicePackage, materialSelectionTrace: { requiredSpecification: input.service.requiredFluidSpec ?? null, oemRequirement: { specification: input.service.requiredFluidSpec ?? null, evidence: null }, oemReference: { brand: "OEM", article: input.service.requiredFluidOemArticle ?? null }, localCandidates: [], selectedLocalCandidate: null, compatibleProduct: { productId: null, catalogName: null, compatibilityEvidence: null }, selectedProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, selectedSellableProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, localAvailableQuantity: null, requiredQuantity: option.billableQuantityLiters, fallbackSupplierUsed: false, fallbackReason: option.blocker?.message ?? null }, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: [] });
+      options.push({ priceCompleteness: "subtotal", code: option.code, label: option.label, customerDisplayName: customerProcedureDisplayName(input.service.type, option.code), status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, quantityTrace: option.quantityTrace, servicePackage: option.servicePackage, materialSelectionTrace: { requiredSpecification: input.service.requiredFluidSpec ?? null, oemRequirement: { specification: input.service.requiredFluidSpec ?? null, evidence: null }, oemReference: { brand: "OEM", article: input.service.requiredFluidOemArticle ?? null }, localCandidates: [], selectedLocalCandidate: null, compatibleProduct: { productId: null, catalogName: null, compatibilityEvidence: null }, selectedProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, selectedSellableProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, localAvailableQuantity: null, requiredQuantity: option.billableQuantityLiters, fallbackSupplierUsed: false, fallbackReason: option.blocker?.message ?? null }, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: [] });
       continue;
     }
     // Local-first is code, not an instruction: check the compatible local ATF
     // before passing any supplier ATF into quoteLines. Internal filters never
     // enter a standard TGM calculation at all.
-    const localFluid = plan.isTransmission && input.service.materialsOwner === "service"
-      ? await automaticLocalFluidSelection({ serviceFamily: "transmission_fluid", materialsOwner: "service", requiredFluidSpec: input.service.requiredFluidSpec, requiredFluidVolumeLiters: option.billableQuantityLiters, fluidPreference }, context)
+    const localFluid = ["engine_oil", "automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential", "awd_clutch"].includes(input.service.type) && input.service.materialsOwner === "service"
+      ? await automaticLocalFluidSelection({ serviceFamily: serviceFamilyForTechCard(input.service.type), materialsOwner: "service", requiredFluidSpec: input.service.requiredFluidSpec, requiredFluidVolumeLiters: option.billableQuantityLiters, fluidPreference }, context)
       : null;
     const materials = quoteAndTechCardMaterials(input, Boolean(localFluid));
     const supplierRows = quoteAndTechCardSupplierRows(input, Boolean(localFluid), option.billableQuantityLiters);
@@ -1297,6 +1276,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       aggregateCode: input.vehicle.aggregateCode ?? input.service.aggregate ?? null,
       requiredFluidSpec: input.service.requiredFluidSpec ?? null,
       requiredFluidVolumeLiters: option.billableQuantityLiters,
+      technicalVolumeLiters: option.technicalQuantityLiters,
       requiredFluidOemArticle: input.service.requiredFluidOemArticle ?? null,
       fluidPreference,
       locationId: input.locationId,
@@ -1319,7 +1299,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         const role = ["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "labor", "rounding"].includes(text(line.role, 40)) ? text(line.role, 40) as "fluid" | "external_filter" | "pan" | "hardware" | "consumable" | "internal_filter" | "labor" | "rounding" : "unknown" as const;
         const catalogName = text(line.name, 220) || "Позиция";
         const supplierFallback = text(line.source, 80) === "rossko";
-        const customerDisplayName = role === "labor" || text(line.type, 80) === "labor" ? "Работа" : role === "rounding" || text(line.type, 80) === "rounding" ? "Округление" : customerMaterialDisplayName(catalogName, input.service.requiredFluidSpec, supplierFallback);
+        const customerDisplayName = role === "labor" || text(line.type, 80) === "labor" ? "Работа" : role === "rounding" || text(line.type, 80) === "rounding" ? "Округление" : customerMaterialDisplayName(catalogName, input.service.requiredFluidSpec, supplierFallback, role);
         return {
           source: text(line.source, 80) === "local" ? "local_catalog" : text(line.source, 80) === "rossko" ? "supplier" : text(line.source, 80) || undefined,
           type: text(line.type, 80) || null,
@@ -1329,6 +1309,8 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
           catalogName,
           customerDisplayName,
           article: text(line.article, 120) || null,
+          ...(line.supplierOffer ? { supplierOffer: object(line.supplierOffer) } : {}),
+          ...(line.saleQuantity ? { saleQuantity: line.saleQuantity as QuoteAndTechCardQuoteOption["lines"][number]["saleQuantity"] } : {}),
           quantity: Math.max(0.001, number(line.quantity, 1)),
           unitPriceCents: Math.max(0, Math.round(number(line.unitPriceCents))),
           totalCents: Math.max(0, Math.round(number(line.totalCents))),
@@ -1349,6 +1331,8 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       const preliminaryEngineOilHardware = canUsePreliminaryEngineOilQuoteWithoutHardware(input.service.type, option.servicePackage, lines);
       const optionWarnings = uniqueWarnings([
         ...plan.quoteWarnings,
+        ...(Array.isArray(quote.materialWarnings) ? quote.materialWarnings.map(item => text(item, 360)) : []),
+        ...(Array.isArray(quote.unresolvedItems) ? quote.unresolvedItems.map(item => `В известную часть суммы не входит ${text(object(item).item, 160)}: требуется проверка товара, количества и цены.`) : []),
         ...(supplierFluidWarning ? [supplierFluidWarning] : []),
         ...(preliminaryEngineOilFilter ? [ENGINE_OIL_FILTER_PRICE_PENDING_WARNING] : []),
         ...(preliminaryEngineOilHardware ? [engineOilHardwarePendingWarning(option.servicePackage) ?? ""] : []),
@@ -1357,6 +1341,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       const maximum = object(quote.maximum);
       const selectionTrace = materialSelectionTrace(quote.materialSelectionTrace, lines);
       const quoteOption: QuoteAndTechCardQuoteOption = {
+        priceCompleteness: quote.priceComplete === false ? "subtotal" : "complete",
         code: option.code,
         label: option.label,
         customerDisplayName: customerProcedureDisplayName(input.service.type, option.code),
@@ -1375,8 +1360,8 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       };
       assertLocalFirstInvariant(selectionTrace, object(quote.materialSelectionTrace).originalOnlyOverride === true);
       if (status !== "blocked") {
-        assertQuoteAndTechCardOptionIntegrity(quoteOption);
-        assertServicePackageIntegrity(quoteOption, preliminaryEngineOilFilter, preliminaryEngineOilHardware);
+        assertQuoteAndTechCardOptionIntegrity(quoteOption, input.service.materialsOwner === "service" && quoteOption.priceCompleteness === "complete");
+        if (quoteOption.priceCompleteness === "complete") assertServicePackageIntegrity(quoteOption, preliminaryEngineOilFilter, preliminaryEngineOilHardware);
       }
       options.push(quoteOption);
       if (status !== "blocked") quoteSnapshots.push({ argumentsValue: quoteArgs, preview: quote });
@@ -1386,6 +1371,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         traceDiagnostics.push({ scope: "rossko", code: error.code, message: error.message, diagnostic: error.diagnosticMessage });
       }
       options.push({
+        priceCompleteness: "subtotal",
         code: option.code,
         label: option.label,
         customerDisplayName: customerProcedureDisplayName(input.service.type, option.code),
@@ -1413,7 +1399,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   const calculatedQuoteStatus = quoteStatus(options, hardBlockers);
   // Enrichment is intentionally isolated from quote calculation: missing
   // torque/evidence/visual material degrades only the tech card.
-  const techCardStatus: "ready" | "partial" | "blocked" = calculatedQuoteStatus === "blocked" ? "blocked" : plan.techCardWarnings.length || !selectedMaterial ? "partial" : "ready";
+  const techCardStatus: "ready" | "partial" | "blocked" = calculatedQuoteStatus === "blocked" ? "blocked" : "partial";
   const draft = {
     scenario: "quote_and_tech_card" as const,
     status: "partial" as const,
@@ -1431,35 +1417,47 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       warnings: uniqueWarnings(plan.quoteWarnings),
     },
     techCard: {
+      technicalStatus: "needs_verification" as const,
+      executionStatus: "verification_required" as const,
+      verifiedFacts: localTechnical.facts,
       status: techCardStatus,
       serviceName: input.service.name,
       serviceType: input.service.type,
       requiredFluidSpec: text(input.service.requiredFluidSpec, 160) || null,
-      filterPolicy: plan.filterPolicy,
-      filterSummary: [
-        plan.filterPolicy.customerText,
-        mannOilFilter.summary,
-        input.service.type === "engine_oil" && input.service.serviceHardware.length
-          ? `Крепёж по процедуре: ${input.service.serviceHardware.map((item) => `${item.type} — ${item.quantity} шт.`).join("; ")}.`
-          : null,
-      ].filter(Boolean).join(" ").slice(0, 360),
-      filter: plan.filterPolicy,
-      procedureVolumes: options.map((option) => ({ code: option.code, customerDisplayName: option.customerDisplayName, technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters })),
-      servicePackages: options.map((option) => option.servicePackage),
-      serviceHardware: input.service.serviceHardware,
-      levelTemperature: text(input.service.levelTemperature, 180) || null,
-      levelProcedure: text(input.service.levelProcedure, 500) || null,
-      servicePoints: input.service.servicePoints.map((item) => text(item, 300)).filter(Boolean).slice(0, 16),
-      torqueNotes: input.service.torqueNotes.map((item) => text(item, 300)).filter(Boolean).slice(0, 12),
-      criticalChecks: input.service.criticalChecks.map((item) => text(item, 300)).filter((item) => Boolean(item) && !(input.service.filterAccess === "internal_requires_disassembly" && /(фильтр|filter|epc|oe[\s-]?номер|заказ)/iu.test(item))).slice(0, 3),
+      filterPolicy: quoteAndTechCardFilterPolicy("unknown"),
+      filterSummary: text(mannOilFilter.summary, 360) || "Конструкция и процедура обслуживания фильтра требуют проверки по применимому источнику.",
+      filter: quoteAndTechCardFilterPolicy("unknown"),
+      procedureVolumes: options.map(option => ({ code: option.code, customerDisplayName: option.customerDisplayName, technicalQuantityLiters: option.quantityTrace.sourceCapacityEvidence ? option.technicalQuantityLiters : null, billableQuantityLiters: option.billableQuantityLiters })),
+      servicePackages: [],
+      serviceHardware: [],
+      levelTemperature: null,
+      levelProcedure: null,
+      servicePoints: [],
+      torqueNotes: [],
+      criticalChecks: ["До начала работ проверить применимость данных к автомобилю, агрегату и выбранной процедуре."],
       selectedMaterial,
-      warnings: uniqueWarnings(plan.techCardWarnings).slice(0, 3),
+      warnings: uniqueWarnings(["Техкарта требует проверки. Выполнение работ по неподтверждённым данным не разрешено.", ...plan.techCardWarnings]).slice(0, 20),
     },
     customerMessage: { status: "blocked" as const, text: "" },
     evidence: [...input.evidence, ...mannOilFilter.evidence].slice(0, 20),
   };
-  const customerMessage = buildQuoteAndTechCardCustomerMessage(draft);
-  const resultBase = { ...draft, customerMessage, status: scenarioStatus(calculatedQuoteStatus, techCardStatus, customerMessage.status) };
+  const preliminaryMessage = buildQuoteAndTechCardCustomerMessage(draft);
+  assistantEvent({ toolName: "quote_ready", status: "completed", serviceType: input.service.type, pricedOptions: options.filter(option => option.totalCents != null).length });
+  assistantExecution()?.partialResults.push({ toolName: "preliminary_quote", result: { ...draft, customerMessage: preliminaryMessage } });
+  const missingFields = ["procedure", "levelTemperature", "torqueNotes", "filterAccess"].filter(field => !localTechnical.facts.some(fact => fact.field === field));
+  const research = context.technicalLookup && options.some(option => option.totalCents != null)
+    ? await assistantMemo("technical-enrichment", { vehicle: input.vehicle, service: input.service.type, missingFields }, async () => {
+      try { return await context.technicalLookup!({ vehicle: input.vehicle, serviceType: input.service.type, aggregate: input.service.aggregate, missingFields }); }
+      catch {
+        assistantSignal()?.throwIfAborted();
+        assistantEvent({ toolName: "technical_enrichment", status: "failed" });
+        return { result: { status: "unavailable", missingFields, findings: "Источник недоступен. Технические данные требуют проверки; предварительная цена сохранена." }, sources: [] };
+      }
+    })
+    : null;
+  const customerMessage = preliminaryMessage;
+  const researchEvidence = research?.result.findings ? [{ source: "Точечный поиск: сведения для проверки", fact: text(research.result.findings, 700), status: "needs_verification" as const, url: research.sources?.find(source => source.url)?.url ?? null }] : [];
+  const resultBase = { ...draft, evidence: [...draft.evidence.slice(0, 19), ...researchEvidence], techCard: { ...draft.techCard, research: research?.result ?? null }, customerMessage, status: scenarioStatus(calculatedQuoteStatus, techCardStatus, customerMessage.status) };
   const result = parseQuoteAndTechCardResult(resultBase);
   if (!result) throw new Error("Не удалось сформировать проверенный контракт техкарты и сметы");
   return {
@@ -1467,6 +1465,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     sources: [
       { sourceType: "internal_catalog" as const, title: "Техкарта и смета: детерминированный сценарий", excerpt: `Проверочных проходов: не более ${plan.rules.maxTechnicalVerificationPasses}; вариантов процедуры: ${options.length}.` },
       ...mannOilFilter.sources,
+      ...(research?.sources ?? []),
       ...input.evidence.map((item) => ({ sourceType: "internal_catalog" as const, title: item.source, url: item.url ?? null, excerpt: item.fact })),
     ],
   } satisfies AssistantToolResult;
@@ -1479,14 +1478,21 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
  * the transmission (or any other aggregate).
  */
 async function buildQuoteAndTechCardBundle(args: Record<string, unknown>, context: ToolContext) {
-  const rawInputs = Array.isArray(args.inputs) ? args.inputs.slice(0, 6) : [];
+  const rawInputs = Array.isArray(args.inputs) ? args.inputs : [];
+  if (rawInputs.length > 6) throw new Error("TOOL_SCHEMA_INVALID: bundle поддерживает 2–6 услуг");
   if (rawInputs.length < 2) throw new Error("Для комплексного расчёта укажите минимум две независимые услуги.");
+  const vehicleKeys = rawInputs.map(value => {
+    const vehicle = parseQuoteAndTechCardInput(value).vehicle;
+    const snapshot = object(vehicle.snapshot);
+    return JSON.stringify([vehicle.id, vehicle.displayName, snapshot.vin, snapshot.makeCanonical ?? snapshot.make, snapshot.modelCanonical ?? snapshot.model, snapshot.year]);
+  });
+  if (new Set(vehicleKeys).size !== 1) throw new ToolArgumentsError("VEHICLE_BUNDLE_CONFLICT", "Услуги комплекса должны относиться к одному автомобилю; данные автомобиля противоречивы");
   const results: QuoteAndTechCardResult[] = [];
   const quoteSnapshots: Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }> = [];
   const traceDiagnostics: Array<Record<string, unknown>> = [];
   const sources: AssistantToolSource[] = [];
-  for (const rawInput of rawInputs) {
-    const built = await buildQuoteAndTechCard({ input: rawInput }, context);
+  const builtResults = await assistantMap(rawInputs, rawInput => buildQuoteAndTechCard({ input: rawInput }, context), 2);
+  for (const built of builtResults) {
     const parsed = parseQuoteAndTechCardToolResult(built.result);
     if (!parsed || parsed.scenario !== "quote_and_tech_card") throw new Error("Одна из услуг комплекса вернула непроверенный контракт техкарты и сметы.");
     results.push(parsed);
@@ -1539,8 +1545,19 @@ async function auditLegacyClientAgent(args: Record<string, unknown>, organizatio
   } satisfies AssistantToolResult;
 }
 
-export async function executeAssistantTool(name: string, argumentsValue: unknown, context: ToolContext): Promise<AssistantToolResult> {
+async function executeAssistantToolUncached(name: string, argumentsValue: unknown, context: ToolContext): Promise<AssistantToolResult> {
   const args = object(argumentsValue);
+  const definition = assistantFunctionTools.find(tool => tool.name === name);
+  if (!definition) throw new ToolArgumentsError("TOOL_UNKNOWN", "Инструмент недоступен");
+  if (!name.startsWith("build_quote_and_tech_card")) validateAssistantToolArguments(argumentsValue, definition.parameters);
+  if (name === "lookup_technical_data") {
+    const local = await mannContext(context.organizationId, assistantVehicle({ ...object(args.vehicle), ...context.verifiedVehicleSnapshot }));
+    const missingFields = Array.isArray(args.missingFields) ? args.missingFields.map(item => text(item, 100)).filter(Boolean).slice(0, 8) : [];
+    const applicableItems = local.profile.items.filter(item => item.systemCode === technicalSystems[text(args.serviceType, 80)] && item.sourceStatus === "primary_source" && !item.requiresReview);
+    const needsExternal = missingFields.length > 0 && (local.profile.status !== "active" || applicableItems.length !== 1 || missingFields.some(field => field === "specification" ? !applicableItems[0]?.specifications.length : field === "capacity" ? !applicableItems[0]?.capacities.some(capacity => capacity.serviceContext && capacity.serviceContext !== "UNKNOWN") : true));
+    const external = needsExternal && context.technicalLookup ? await context.technicalLookup({ vehicle: { ...object(args.vehicle), ...context.verifiedVehicleSnapshot }, serviceType: args.serviceType, procedure: args.procedure, missingFields, localProfile: local.profile }) : null;
+    return { result: { vehicleDecision: local.resolution.decision, localProfile: local.profile, external: external?.result ?? null, missingFields, executionStatus: "verification_required" }, sources: [{ sourceType: "mann", title: "Локальный технический профиль", metadata: { status: local.profile.status } }, ...(external?.sources ?? [])] };
+  }
   if (name === "get_workspace_context") return { result: { organizationId: context.organizationId, currentUser: { id: context.actorId, name: context.actorName, role: context.actorRole }, permissions: { readData: true, writeData: false, createQuoteDraft: false, createShipmentDraft: false, createAppointment: false, placeRosskoOrder: false } } };
   if (name === "search_clients") return searchClients(args);
   if (name === "get_client_history") return lookupClientHistory(args);
@@ -1549,7 +1566,7 @@ export async function executeAssistantTool(name: string, argumentsValue: unknown
     const result = await lookupVehicle({ organizationId: context.organizationId, input: text(args.input, 48), inputType: text(args.inputType, 12) as "vin" | "plate" | "frame", actorLogin: context.actorId });
     return { result: { ...result, note: "Провайдерский результат не изменял карточку автомобиля." }, sources: [{ sourceType: "tronk", title: "TRONK · определение автомобиля", excerpt: result.message ?? result.status, metadata: { fromCache: result.fromCache, sourceMethods: result.sourceMethods } }] };
   }
-  if (name === "find_mann_filters") return findMannFilters(args);
+  if (name === "find_mann_filters") return findMannFilters(args, context);
   if (name === "search_local_catalog") return searchCatalog(args);
   if (name === "get_stock") return stock(args);
   if (name === "search_rossko") return rossko(args, context);
@@ -1560,6 +1577,14 @@ export async function executeAssistantTool(name: string, argumentsValue: unknown
   if (name === "build_quote_and_tech_card_bundle") return buildQuoteAndTechCardBundle(args, context);
   if (name === "audit_legacy_client_agent") return auditLegacyClientAgent(args, context.organizationId);
   throw new Error(`Недоступный инструмент: ${name}`);
+}
+
+export async function executeAssistantTool(name: string, argumentsValue: unknown, context: ToolContext): Promise<AssistantToolResult> {
+  return assistantMemo("tool:" + name, { branchId: getScopedBranchId(), organizationId: context.organizationId, argumentsValue }, async () => {
+    const result = await withinAssistantDeadline(() => executeAssistantToolUncached(name, argumentsValue, context));
+    assistantExecution()?.partialResults.push({ toolName: name, result: result.result });
+    return result;
+  });
 }
 
 export function safeAssistantJson(value: unknown) {

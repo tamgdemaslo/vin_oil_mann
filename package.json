@@ -112,7 +112,12 @@
     "check:moysklad-removed": "node scripts/check-moysklad-removed.mjs",
     "migrate:branch-integrations-from-env": "node scripts/migrate-branch-integrations-from-env.mjs",
     "backfill:anonymous-retail": "node scripts/backfill-anonymous-retail-counterparties.mjs",
-    "worker:messenger-media": "node scripts/messenger-media-worker.mjs"
+    "worker:messenger-media": "node scripts/messenger-media-worker.mjs",
+    "test:ai-assistant-e2e": "node scripts/test-ai-assistant-e2e.mjs",
+    "test:ai-assistant-holdout": "node scripts/test-ai-assistant-holdout.mjs",
+    "test:ai-assistant-metrics": "node scripts/test-ai-assistant-metrics.mjs",
+    "audit:ai-assistant-runs": "node scripts/audit-ai-assistant-runs.mjs",
+    "test:ai-assistant-audit": "node scripts/test-ai-assistant-audit-suite.mjs"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",

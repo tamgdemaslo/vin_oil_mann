@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {createJiti} from 'jiti';
+const jiti=createJiti(import.meta.url);
+const {summarizeAssistantRuns}=await jiti.import('../src/lib/ai-assistant/run-metrics.ts');
+const base={id:'secret-id',status:'completed',model:'model-unknown',startedAt:'2026-09-09T00:00:00Z',completedAt:'2026-09-09T00:00:10Z',durationMs:10000,inputTokens:null,outputTokens:null,toolSummaryJson:[],tools:[],quotes:[],messages:[]};
+const metadata={asOf:'2026-09-09T12:00:00Z',since:'2026-09-02T12:00:00Z',availableInWindow:300,limit:100,source:'synthetic'};
+const result=summarizeAssistantRuns([base,{...base,status:'failed',durationMs:5000}],metadata);
+assert.equal(result.coverage.completeWindow,false);assert.equal(result.knownQuoteRunFraction,0);assert.equal(result.dangerousTechnicalErrorFraction,null);assert.equal(result.modelRequestCount,null);assert.equal(result.fullResponseMs.p95,10000);assert.equal(result.firstPersistedQuoteMs.p95,null);assert.doesNotMatch(JSON.stringify(result),/secret-id/);
+const known=summarizeAssistantRuns([{...base,quotes:[{createdAt:'2026-09-09T00:00:02Z',baseTotalCents:300000}],toolSummaryJson:[{toolName:'assistant_instrumentation',version:1},{toolName:'model_request',status:'completed',model:'gpt-5.6-terra',inputTokens:1000,cachedInputTokens:500,outputTokens:100}]}],{...metadata,availableInWindow:1});
+assert.equal(known.firstPersistedQuoteMs.p95,2000);assert.equal(known.knownQuoteRuns,1);assert.equal(known.modelRequestCount,1);assert.equal(known.providerRequestCount,0);assert.equal(known.modelTokenCostUsd,.0023);
+const partial=summarizeAssistantRuns([{...base,messages:[{attachmentsJson:{quoteAndTechCard:{scenario:'quote_and_tech_card',quoteSet:{options:[{priceCompleteness:'subtotal',totalCents:500,lines:[{totalCents:500}]}]}}}}]}],metadata);
+assert.equal(partial.knownQuoteRuns,1);assert.equal(partial.completeQuoteRuns,0);assert.equal(partial.subtotalQuoteRuns,1);assert.equal(partial.arithmeticChecks.failures,0);
+console.log('Assistant metrics: missing data, sample coverage, business outcome and pricing tests passed.');

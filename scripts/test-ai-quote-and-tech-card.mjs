@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { createJiti } from "jiti";
 
+// Deliberately invalid WMI 000: generated test identifiers, never customer VINs.
+const syntheticVin = (index) => "0".repeat(14) + String(index).padStart(3, "0");
 const jiti = createJiti(import.meta.url, { alias: { "@": resolve(process.cwd(), "src") } });
 const {
   applyBillableQuantityToPrimaryFluid,
@@ -76,7 +78,7 @@ const compact = (value) => value.replace(/[\s\u00a0]/gu, "");
 const runtimeInput = {
   branchId: "dachnaya",
   vehicleId: "vehicle-tucson",
-  vehicleDisplayName: "Hyundai Tucson 2.0 AT · XWEJC81ADH0000196",
+  vehicleDisplayName: `Hyundai Tucson 2.0 AT · ${syntheticVin(1)}`,
   requestedProcedures: ["machine_exchange", "partial_change"],
   requestedDates: "29–30 августа",
   service: {
@@ -109,11 +111,11 @@ assert.equal(toolService.properties.procedures.items.type, "string", "tool intak
 assert.equal(toolEvidence.properties.status.type, "string", "tool intake accepts observed evidence statuses before normalization");
 assert.equal(QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS.properties.inputs.maxItems, 6, "a complex visit can retain up to six independent aggregates");
 assert.equal(normalized.service.type, "automatic_transmission", "transmission_fluid normalizes to automatic_transmission");
-assert.equal(customerMaterialDisplayName("Запчасть BMW 83222355599", "BMW ATF 6", true), "Жидкость BMW ATF 6 (поставщик)", "a nameless supplier offer is shown by its verified fluid specification, not as a synthetic part name");
+assert.equal(customerMaterialDisplayName("Запчасть BMW 83222355599", "BMW ATF 6", true, "fluid"), "Жидкость BMW ATF 6 (поставщик)", "a nameless supplier offer is shown by its verified fluid specification, not as a synthetic part name");
 assert.deepEqual(normalized.requestedProcedures, ["machine", "partial"], "requested procedures survive separately from a single scenario procedure");
 assert.equal(normalized.requestedDates, "29–30 августа", "requested dates stay in the normalized scenario input");
 const parsedInput = parseQuoteAndTechCardInput(runtimeInput);
-assert.equal(parsedInput.evidence[0].status, "confirmed", "runtime evidence status is canonical");
+assert.equal(parsedInput.evidence[0].status, "needs_verification", "a model status does not verify applicability");
 assert.equal(requestedDateRangeFromText("хочу приехать 29-30 августа"), "29–30 августа", "date range is retained when it comes from the employee request");
 
 // C, D: same config must produce the same trace and the one quantity engine
@@ -125,18 +127,18 @@ assert.deepEqual(plan.options.map((option) => option.quantityTrace), repeatedPla
 assert.equal(plan.options.length, 2, "both requested variants remain in the quote");
 assert.deepEqual(plan.options.map((option) => option.code), ["partial", "machine"], "customer-facing quote options have stable partial → machine order");
 assert.equal(plan.options[0].billableQuantityLiters, 5, "partial quantity is rounded by the common quantity engine");
-assert.equal(plan.options[1].technicalQuantityLiters, 12.41, "machine quantity uses total capacity and configured multiplier");
+assert.equal(plan.options[1].technicalQuantityLiters, 7.3, "factory capacity stays separate from planned machine consumption");
 assert.equal(plan.options[1].billableQuantityLiters, 13, "12.41 litres becomes exactly 13 billable litres");
 assert.deepEqual(plan.options[1].quantityTrace, {
   sourceCapacity: 7.3,
-  sourceCapacityEvidence: "OEM: Общий объём АКПП 7,3 л; требуется Hyundai/Kia ATF SP-IV.",
+  sourceCapacityEvidence: null,
   configuredMultiplier: 1.7,
   configuredAdditionalVolume: 0,
   calculationMode: "total_capacity_x_machine_multiplier",
   rawCalculatedQuantity: 12.41,
   packageStep: 1,
   roundingRule: "Округление вверх до шага 1 л; минимум 0 л.",
-  technicalQuantity: 12.41,
+  technicalQuantity: 7.3,
   billableQuantity: 13,
 }, "quantity trace records capacity, settings and rounding rule");
 assert.equal(plan.techCardWarnings.some((warning) => /фильтр|epc|заказ/iu.test(warning)), false, "internal-filter policy removes search instructions from tech-card warnings");
@@ -200,7 +202,7 @@ const genericAutomaticInput = parseQuoteAndTechCardInput({
   requestedProcedures: ["partial"],
   service: { ...runtimeInput.service, filterAccess: "unknown", filterEvidence: null, procedures: ["partial"] },
 });
-const genericAutomaticScenarios = applyAutomaticTransmissionScenarioDefaults(genericAutomaticInput, "JTMHV05J804089024 сделай расчёт АКПП");
+const genericAutomaticScenarios = applyAutomaticTransmissionScenarioDefaults(genericAutomaticInput, `${syntheticVin(2)} сделай расчёт АКПП`);
 assert.deepEqual(genericAutomaticScenarios.requestedProcedures, ["partial", "filter_service"], "an unspecified АКПП request always retains the independent filter-service scenario");
 const genericAutomaticPlan = createQuoteAndTechCardPlan(genericAutomaticScenarios, rules);
 assert.deepEqual(genericAutomaticPlan.options.map((option) => option.code), ["partial", "filter_service"], "drain-and-fill and filter service have distinct option codes");
@@ -213,7 +215,7 @@ const confirmedGenericScenarios = applyAutomaticTransmissionScenarioDefaults(par
   ...runtimeInput,
   requestedProcedures: ["partial"],
   service: { ...runtimeInput.service, filterAccess: "pan_service", filterEvidence: "OEM: фильтр меняется после снятия поддона.", procedures: ["partial"] },
-}), "JTMHV05J804089024 сделай расчёт АКПП");
+}), `${syntheticVin(2)} сделай расчёт АКПП`);
 const confirmedGenericPlan = createQuoteAndTechCardPlan(confirmedGenericScenarios, rules);
 assert.equal(confirmedGenericPlan.options[0].servicePackage.filterReplacement, false, "the drain-and-fill branch stays filterless even when a separate accessible-filter package is confirmed");
 assert.equal(confirmedGenericPlan.options[1].servicePackage.filterReplacement, true, "the confirmed filter branch includes the accessible filter");
@@ -242,7 +244,7 @@ assert.equal(integratedPanPlan.options[0].servicePackage.requiredParts[0]?.type,
 
 const manualMismatchPlan = createQuoteAndTechCardPlan({
   ...runtimeInput,
-  vehicleDisplayName: "Volkswagen Golf · WVWZZZ1KZBW588069",
+  vehicleDisplayName: `Volkswagen Golf · ${syntheticVin(3)}`,
   vehicle: { displayName: "Volkswagen Golf", snapshot: { transmissionType: "MECHANICAL" } },
 });
 assert.equal(manualMismatchPlan.hardBlockers[0]?.code, "TRANSMISSION_SERVICE_MISMATCH", "a VIN-resolved manual transmission cannot enter an ATF quote path");
@@ -262,7 +264,7 @@ const verifiedQ5HybridPlan = createQuoteAndTechCardPlan({
   service: { ...runtimeInput.service, aggregate: "0BW", fluidSpec: undefined, requiredFluidSpec: "VW G 060 162 A2" },
   evidence: [{ source: "Audi OEM", fact: "Audi Q5 Hybrid 0BW requires VW G 060 162 A2.", status: "confirmed", url: "https://static.nhtsa.gov/odi/tsbs/2015/MC-10120918-9999.pdf" }],
 });
-assert.equal(verifiedQ5HybridPlan.hardBlockers.some((blocker) => /HYBRID|SAFETY_CRITICAL/u.test(blocker.code)), false, "the correct hybrid family profile is allowed without a VIN-specific exception");
+assert.equal(verifiedQ5HybridPlan.hardBlockers.some((blocker) => /HYBRID|SAFETY_CRITICAL/u.test(blocker.code)), true, "untrusted source labels cannot confirm a hybrid family");
 
 const localValvoline = {
   id: "valvoline-atf",
@@ -286,17 +288,18 @@ const materials = quoteAndTechCardMaterials(parsedInput, true);
 assert.equal(materials.rosskoItems.length, 0, "A: local fluid blocks supplier fallback ATF");
 assert.equal(materials.consumables.length, 0, "J: inaccessible internal filter never enters quote materials");
 assert.deepEqual(quoteAndTechCardMaterials(parsedInput, false).rosskoItems.map((item) => item.article), ["04500-00115"], "B: OEM article is used only as verified fallback if local fluid is absent");
-assert.deepEqual(quoteAndTechCardSupplierRows({ ...parsedInput, rosskoItems: [] }, false, 5), [{ article: "04500-00115", brand: null, offerId: null, quantity: 5, role: "fluid" }], "supplier fallback is explicit and controlled");
+assert.deepEqual(quoteAndTechCardSupplierRows({ ...parsedInput, rosskoItems: [] }, false, 5), [{ article: "04500-00115", brand: null, offerId: null, maxDeliveryDays: null, quantity: 5, role: "fluid" }], "supplier fallback is explicit and controlled");
+assert.equal(quoteAndTechCardSupplierRows({ ...parsedInput, rosskoItems: [{ article: "BOLT-1", brand: "OEM", quantity: 1, role: "hardware", maxDeliveryDays: 2 }] }, false, 5).find(row => row.article === "BOLT-1").maxDeliveryDays, 2, "agreed supplier deadline survives the builder");
 assert.deepEqual(quoteAndTechCardSupplierRows(parsedInput, true, 5), [], "A: no supplier ATF is added with a local compatible product");
 
 const primaryFluid = applyBillableQuantityToPrimaryFluid([{ productId: "valvoline-atf", quantity: 12.41, role: "fluid" }], 13);
-assert.equal(primaryFluid[0].quantity, 13, "one billable value is reused by product line and quote");
+assert.equal(primaryFluid[0].requiredVolumeLiters, 13, "one billable value is reused by product line and quote");
 const enginePrimaryFluid = applyBillableQuantityToPrimaryFluid([
   { productId: "eurol-0w20", quantity: 1, role: "fluid" },
   { productId: "oil-filter", quantity: 1, role: "external_filter" },
 ], 5);
 assert.deepEqual(enginePrimaryFluid, [
-  { productId: "eurol-0w20", quantity: 5, role: "fluid" },
+  { productId: "eurol-0w20", quantity: 1, role: "fluid", requiredVolumeLiters: 5 },
   { productId: "oil-filter", quantity: 1, role: "external_filter" },
 ], "engine-oil quotes use the billable oil volume without changing the filter quantity");
 const materialTrace = {
@@ -323,6 +326,7 @@ const makeLine = ({ role, type, name, customerDisplayName, quantity, unitPriceCe
   productId,
   name,
   catalogName: name,
+  ...(role === "fluid" ? { saleQuantity: { technicalVolumeLiters: null, plannedConsumptionLiters: quantity, litersPerSaleUnit: 1, saleUnitQuantity: quantity, unitPriceCents, purchasedVolumeLiters: quantity, packageRemainderLiters: 0, saleUnit: "л" } } : {}),
   customerDisplayName,
   article: null,
   quantity,
@@ -400,13 +404,13 @@ const techCard = {
   selectedMaterial: { name: "Valvoline ATF", catalogName: localValvoline.name, customerDisplayName: "Valvoline ATF", specification: "Hyundai/Kia ATF SP-IV", quantity: 13, compatibilityEvidence: "Hyundai/Kia ATF SP-IV" },
   warnings: ["Моменты затяжки не найдены."],
 };
-const customerMessage = buildQuoteAndTechCardCustomerMessage({ vehicle: { displayName: "Hyundai Tucson 2.0 CRDi, VIN XWEJC81ADH0000196", aggregate: "A6LF2" }, quoteSet, techCard });
+const customerMessage = buildQuoteAndTechCardCustomerMessage({ vehicle: { displayName: `Hyundai Tucson 2.0 CRDi, VIN ${syntheticVin(1)}`, aggregate: "A6LF2" }, quoteSet, techCard });
 assert.equal(customerMessage.status, "ready", "F: whole QuoteSet creates a single client message");
 assert.equal(compact(customerMoneyFromCents(1_396_200)), "13962₽", "G: formatter keeps exact 13 962 ₽ amount");
 assert.equal(compact(customerMessage.text).includes("13962₽"), true, "G: customer text does not re-round 13 962 ₽ to 14 000 ₽");
 assert.equal(compact(customerMessage.text).includes("30862₽"), true, "G: customer text keeps exact 30 862 ₽ amount");
 assert.match(customerMessage.text, /Valvoline/u, "H: customer text uses the cleaned product display name");
-assert.doesNotMatch(customerMessage.text, /Масло трансмиссионное|Округление|XWEJC81ADH0000196/u, "H/I: raw ERP name, rounding line and VIN never leak into client text");
+assert.doesNotMatch(customerMessage.text, /Масло трансмиссионное|Округление|0{14}\d{3}/u, "H/I: raw ERP name, rounding line and VIN never leak into client text");
 assert.doesNotMatch(customerMessage.text, /VIN\s*(?:,|\.|!|$)/iu, "H/I: removing a VIN also removes its label");
 assert.match(customerMessage.text, /5 л/u, "F: partial option stays in one client message");
 assert.match(customerMessage.text, /13 л/u, "F: machine option stays in the same client message");
@@ -439,6 +443,8 @@ const panServiceResult = parseQuoteAndTechCardResult({
   quoteSet: { ...result.quoteSet, requestedProcedures: ["partial", "machine"] },
   techCard: {
     ...result.techCard,
+    technicalStatus: "confirmed",
+    verifiedFacts: [{ field: "filterAccess", value: "pan_service", source: "Frozen verified OEM source", url: null, vehicleVariantKey: "fixture", aggregate: null }],
     filterPolicy: panServicePlan.filterPolicy,
     filter: panServicePlan.filterPolicy,
     filterSummary: panServicePlan.filterPolicy.customerText,
@@ -508,7 +514,7 @@ const engineFilterPendingMessage = buildQuoteAndTechCardCustomerMessage({
   },
   techCard: { ...engineTechCard, serviceName: "Замена моторного масла", requiredFluidSpec: "VW 508 00", filterPolicy: quoteAndTechCardFilterPolicy("external_replaceable"), filterSummary: "Внешний фильтр заменяется при обслуживании. Варианты фильтра: MANN W 712/95 — цена уточняется · подтвердить по VIN.", filter: quoteAndTechCardFilterPolicy("external_replaceable") },
 });
-assert.match(engineFilterPendingMessage.text, /моторное масло с допуском VW 508 00/u, "engine customer text identifies motor oil rather than ATF");
+assert.match(engineFilterPendingMessage.text, /моторное масло VW 508 00/u, "engine customer text identifies motor oil rather than ATF");
 assert.match(engineFilterPendingMessage.text, /без масляного фильтра/u, "engine customer text makes the unpriced VIN-specific filter explicit");
 assert.match(engineFilterPendingMessage.text, /MANN W 712\/95/u, "engine customer text answers with available MANN candidates before VIN confirmation");
 assert.doesNotMatch(engineFilterPendingMessage.text, /поддон|креп[её]ж|снят/iu, "engine customer text never asks for a transmission pan package");
@@ -549,7 +555,8 @@ const blockedEngineResult = parseQuoteAndTechCardResult({
 });
 const partialBundleMessage = buildQuoteAndTechCardBundleCustomerMessage({ vehicle: result.vehicle, results: [blockedEngineResult, result] });
 assert.equal(partialBundleMessage.status, "ready", "a blocked engine line does not erase a ready transmission quote");
-assert.match(partialBundleMessage.text, /Замена масла в двигателе.*Укажите VIN/u, "the client message keeps the unresolved second service visible");
+assert.match(partialBundleMessage.text, /Замена масла в двигателе.*допуск масла ещё не подтверждён/u, "the client message keeps the unresolved second service and the missing fact visible");
+assert.match(partialBundleMessage.text, /Эта услуга не включена в указанную сумму/u, "the incomplete bundle never presents a partial sum as the whole visit");
 const legacyOptions = options.map((option) => {
   const legacyOption = { ...option };
   delete legacyOption.quantityTrace;
