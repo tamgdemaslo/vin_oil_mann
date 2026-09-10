@@ -390,6 +390,12 @@ const quoteSet = {
 };
 assert.equal(quoteSet.options.length, 2, "E: QuoteSet contains two immutable procedure options");
 const techCard = {
+  // Formatting fixtures have server-verified applicability and capacities;
+  // missing workshop-only details below must not block a complete price.
+  verifiedFacts: [
+    {field:'specification',value:'Hyundai/Kia ATF SP-IV',source:'Reviewed fixture',url:null,vehicleVariantKey:'fixture',aggregate:'A6LF2'},
+    ...options.map(option=>({field:'capacity',value:option.technicalQuantityLiters,procedure:option.code,source:'Reviewed fixture',url:null,vehicleVariantKey:'fixture',aggregate:'A6LF2'})),
+  ],
   status: "partial",
   serviceName: "Диагностика и замена ATF в АКПП",
   serviceType: "automatic_transmission",
@@ -494,6 +500,10 @@ const engineOption = {
 const engineQuoteSet = { id: "quote-set:vehicle-tucson:engine", vehicleId: "vehicle-tucson", serviceType: "engine_oil", requestedProcedures: ["standard"], requestedDates: "29–30 августа", status: "ready", confidence: "confirmed", options: [engineOption], hardBlockers: [], warnings: [] };
 const engineTechCard = {
   ...techCard,
+  verifiedFacts: [
+    {field:'specification',value:'PSA B71 2312',source:'Reviewed fixture',url:null,vehicleVariantKey:'fixture',aggregate:null},
+    {field:'capacity',value:4,procedure:'standard',source:'Reviewed fixture',url:null,vehicleVariantKey:'fixture',aggregate:null},
+  ],
   status: "ready",
   serviceName: "Замена масла в двигателе",
   serviceType: "engine_oil",
@@ -518,22 +528,23 @@ const engineFilterPendingMessage = buildQuoteAndTechCardCustomerMessage({
   },
   techCard: { ...engineTechCard, serviceName: "Замена моторного масла", requiredFluidSpec: "VW 508 00", filterPolicy: quoteAndTechCardFilterPolicy("external_replaceable"), filterSummary: "Внешний фильтр заменяется при обслуживании. Варианты фильтра: MANN W 712/95 — цена уточняется · подтвердить по VIN.", filter: quoteAndTechCardFilterPolicy("external_replaceable") },
 });
-assert.match(engineFilterPendingMessage.text, /моторное масло VW 508 00/u, "engine customer text identifies motor oil rather than ATF");
-assert.match(engineFilterPendingMessage.text, /без масляного фильтра/u, "engine customer text makes the unpriced VIN-specific filter explicit");
-assert.match(engineFilterPendingMessage.text, /MANN W 712\/95/u, "engine customer text answers with available MANN candidates before VIN confirmation");
+assert.equal(engineFilterPendingMessage.status, 'blocked', "filter candidates are an internal result until selection and price are complete");
+assert.match(engineFilterPendingMessage.text, /Не завершены подбор и расчёт масляного фильтра/u);
+assert.doesNotMatch(engineFilterPendingMessage.text, /Добрый день|₽/u);
 assert.doesNotMatch(engineFilterPendingMessage.text, /поддон|креп[её]ж|снят/iu, "engine customer text never asks for a transmission pan package");
 const engineHardwarePendingMessage = buildQuoteAndTechCardCustomerMessage({
   vehicle: { displayName: "Škoda Octavia IV 1.0 TSI", aggregate: "DLAA" },
   quoteSet: { ...engineQuoteSet, status: "preliminary", confidence: "preliminary", options: [{ ...engineOption, status: "preliminary", servicePackage: engineHardwarePendingPackage, warnings: ["Предварительная сумма пока без обязательного крепежа: Алюминиевый болт крепления — 3 шт."] }] },
   techCard: { ...engineTechCard, serviceName: "Замена моторного масла", requiredFluidSpec: "VW 508 00", filterPolicy: quoteAndTechCardFilterPolicy("external_replaceable"), filterSummary: "Внешний фильтр заменяется при обслуживании. Крепёж по процедуре: Алюминиевый болт крепления — 3 шт.", filter: quoteAndTechCardFilterPolicy("external_replaceable") },
 });
-assert.match(engineHardwarePendingMessage.text, /Алюминиевый болт крепления — 3 шт\./u, "the client price answer names missing mandatory engine-filter hardware and its quantity");
+assert.equal(engineHardwarePendingMessage.status, 'blocked');
+assert.match(engineHardwarePendingMessage.text, /Не завершены подбор и расчёт обязательных расходников/u);
 assert.doesNotMatch(engineHardwarePendingMessage.text, /поддон/u, "mandatory external-filter hardware is not described as a pan kit");
 const engineFilterLine = makeLine({ role: "external_filter", type: "product", productId: "mann-w71295", name: "MANN-FILTER W 712/95", customerDisplayName: "MANN-FILTER W 712/95", quantity: 1, unitPriceCents: 125000 });
 const engineWithFilterMessage = buildQuoteAndTechCardCustomerMessage({
   vehicle: { displayName: "Škoda Octavia IV 1.0 TSI", aggregate: "DLAA" },
   quoteSet: { ...engineQuoteSet, options: [{ ...engineOption, lines: [engineFluidLine, engineFilterLine, engineLaborLine], totalCents: engineFluidLine.totalCents + engineFilterLine.totalCents }] },
-  techCard: { ...engineTechCard, serviceName: "Замена моторного масла и масляного фильтра", requiredFluidSpec: "VW 508 00", filterPolicy: quoteAndTechCardFilterPolicy("external_replaceable"), filterSummary: "Внешний фильтр заменяется при обслуживании. Варианты фильтра: MANN W 712/95 — 1 250 ₽.", filter: quoteAndTechCardFilterPolicy("external_replaceable") },
+  techCard: { ...engineTechCard, serviceName: "Замена моторного масла и масляного фильтра", filterPolicy: quoteAndTechCardFilterPolicy("external_replaceable"), filterSummary: "Внешний фильтр заменяется при обслуживании. Варианты фильтра: MANN W 712/95 — 1 250 ₽.", filter: quoteAndTechCardFilterPolicy("external_replaceable") },
 });
 assert.match(engineWithFilterMessage.text, /MANN-FILTER W 712\/95 — 1 шт\., 1[\s\u00a0]?250 ₽/u, "a selected local MANN filter is itemized in the client price answer");
 const bundleMessage = buildQuoteAndTechCardBundleCustomerMessage({ vehicle: result.vehicle, results: [engineResult, result] });
@@ -558,9 +569,9 @@ const blockedEngineResult = parseQuoteAndTechCardResult({
   customerMessage: { status: "blocked", text: "Нужен VIN." },
 });
 const partialBundleMessage = buildQuoteAndTechCardBundleCustomerMessage({ vehicle: result.vehicle, results: [blockedEngineResult, result] });
-assert.equal(partialBundleMessage.status, "ready", "a blocked engine line does not erase a ready transmission quote");
-assert.match(partialBundleMessage.text, /Замена масла в двигателе.*допуск масла ещё не подтверждён/u, "the client message keeps the unresolved second service and the missing fact visible");
-assert.match(partialBundleMessage.text, /Эта услуга не включена в указанную сумму/u, "the incomplete bundle never presents a partial sum as the whole visit");
+assert.equal(partialBundleMessage.status, "blocked", "an incomplete visit retains individual quotes internally but has no copyable final answer");
+assert.match(partialBundleMessage.text, /Замена масла в двигателе/u);
+assert.doesNotMatch(partialBundleMessage.text, /Добрый день|₽/u);
 const legacyOptions = options.map((option) => {
   const legacyOption = { ...option };
   delete legacyOption.quantityTrace;

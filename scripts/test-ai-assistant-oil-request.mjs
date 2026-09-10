@@ -64,7 +64,8 @@ assert.equal(option.materialSelectionTrace.selectedLocalCandidate.productId,'oil
 assert.equal(option.lines.find(line=>line.role==='fluid').quantity,1);
 assert.equal(option.totalCents,300000);
 assert.equal(option.priceCompleteness,'subtotal','an unpriced filter prevents a complete total');
-assert.match(answer.customerMessage.text,/Известная часть суммы/);
+assert.equal(answer.customerMessage.status,'blocked','a useful internal subtotal is not a client answer');
+assert.match(answer.customerMessage.text,/Не рассчитана полная стоимость/);
 assert.doesNotMatch(answer.customerMessage.text,/Latest|Итого:/);
 assert.equal(option.technicalQuantityLiters,null);
 assert.match(JSON.stringify(answer.techCard),/связь с автомобилем ещё не подтверждена/);

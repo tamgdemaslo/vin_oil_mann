@@ -712,14 +712,17 @@ export function parseQuoteAndTechCardResult(value: unknown): QuoteAndTechCardRes
   if (Object.keys(row).some((key) => !publicKeys.has(key))) return null;
   const candidate = upgradeLegacyQuoteAndTechCard(row);
   const parsed = QuoteAndTechCardResultSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : null;
+  return parsed.success ? guardCustomerMessage(parsed.data) : null;
 }
 
 export function parseQuoteAndTechCardArtifact(value: unknown): QuoteAndTechCardArtifact | null {
   const row = object(value);
   if (row.scenario === "quote_and_tech_card_bundle") {
     const parsed = QuoteAndTechCardBundleSchema.safeParse(row);
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) return null;
+    const bundle = { ...parsed.data, results: parsed.data.results.map(guardCustomerMessage) };
+    const blocker = quoteAndTechCardCustomerMessageBlocker(bundle);
+    return blocker ? { ...bundle, customerMessage: { status: "blocked", text: blocker } } : bundle;
   }
   return parseQuoteAndTechCardResult(row);
 }
@@ -754,6 +757,39 @@ export function quoteStatus(options: Array<{ status: "ready" | "preliminary" | "
 export function scenarioStatus(quote: "ready" | "preliminary" | "blocked", techCard: "ready" | "partial" | "blocked", customerMessage: "ready" | "blocked") { if (quote === "blocked") return "blocked" as const; return quote === "ready" && techCard === "ready" && customerMessage === "ready" ? "ready" as const : "partial" as const; }
 
 export type QuoteAndTechCardCustomerMessageMode = "short_with_price" | "short_without_price" | "detailed_with_price" | "only_final_price" | "recommendation";
+
+/** A useful internal calculation is not necessarily an answer to a client. */
+export function customerMessageBlockers(input: Pick<QuoteAndTechCardResult, "quoteSet" | "techCard">) {
+  const reasons: string[] = [];
+  const options = input.quoteSet.options;
+  if (!options.length || input.quoteSet.status === "blocked" || input.quoteSet.hardBlockers.length || options.some(option => option.status === "blocked" || option.totalCents == null || option.blockers.length)) {
+    reasons.push(...input.quoteSet.hardBlockers.map(blocker => blocker.message), ...options.flatMap(option => option.blockers.map(blocker => blocker.message)));
+    if (!reasons.length) reasons.push("Не рассчитана стоимость запрошенных работ.");
+  }
+  if (options.some(option => option.priceCompleteness === "subtotal")) reasons.push("Не рассчитана полная стоимость работ и материалов.");
+  const warnings = options.flatMap(option => option.warnings);
+  if (warnings.includes(ENGINE_OIL_FILTER_PRICE_PENDING_WARNING)) reasons.push("Не завершены подбор и расчёт масляного фильтра.");
+  if (warnings.some(warning => /^Предварительная сумма пока без обязательного крепежа:/u.test(warning))) reasons.push("Не завершены подбор и расчёт обязательных расходников.");
+  const fluidOptions = options.filter(option => option.lines.some(line => line.role === "fluid" && !line.internalOnly));
+  if (fluidOptions.length) {
+    const facts = input.techCard.verifiedFacts ?? [];
+    if (!facts.some(fact => fact.field === "specification" && fact.value === input.techCard.requiredFluidSpec && fact.source && fact.vehicleVariantKey)) reasons.push("Не подтверждена применимость выбранной жидкости к автомобилю.");
+    if (fluidOptions.some(option => option.technicalQuantityLiters == null || !facts.some(fact => fact.field === "capacity" && fact.value === option.technicalQuantityLiters && fact.procedure === option.code && fact.source && fact.vehicleVariantKey))) reasons.push("Не подтверждён объём для выбранной процедуры.");
+  }
+  return [...new Set(reasons)].slice(0, 6).map(reason => reason.slice(0, 260));
+}
+
+export function quoteAndTechCardCustomerMessageBlocker(input: QuoteAndTechCardArtifact): string | null {
+  const reasons = input.scenario === "quote_and_tech_card_bundle"
+    ? input.results.map(card => { const reasons = customerMessageBlockers(card); return reasons.length ? `${card.techCard.serviceName}: ${reasons.join(" ")}` : ""; }).filter(Boolean)
+    : customerMessageBlockers(input);
+  return reasons.length ? reasons.join(" ") : null;
+}
+
+function guardCustomerMessage(result: QuoteAndTechCardResult): QuoteAndTechCardResult {
+  const blocker = quoteAndTechCardCustomerMessageBlocker(result);
+  return blocker ? { ...result, customerMessage: { status: "blocked", text: blocker } } : result;
+}
 
 /** Formatting only: quote values arrive already calculated and are never re-rounded here. */
 export function customerMoneyFromCents(cents: number) {
@@ -850,8 +886,10 @@ function customerBlockerText(blocker: { code: string } | undefined) {
 }
 
 export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCardResult, "vehicle" | "quoteSet" | "techCard">, mode: QuoteAndTechCardCustomerMessageMode = "detailed_with_price", recommendation: string | null = null): QuoteAndTechCardResult["customerMessage"] {
+  const blockers = customerMessageBlockers(input);
+  if (blockers.length) return { status: "blocked", text: blockers.join(" ") };
   const ready = input.quoteSet.options.filter((option) => option.status !== "blocked" && option.totalCents != null);
-  if (!ready.length) { const blocker = input.quoteSet.hardBlockers[0] ?? input.quoteSet.options.flatMap((option) => option.blockers)[0]; return { status: "ready", text: `Добрый день! Расчёт для ${customerVehicleDisplayName(input.vehicle.displayName)} пока не завершён. ${customerBlockerText(blocker)} ${input.quoteSet.warnings.filter(w => /^Запрошена диагностика/u.test(w)).join(" ")}` }; }
+  if (!ready.length) return { status: "blocked", text: "Нет рассчитанных вариантов обслуживания." };
   const showPrice = mode !== "short_without_price" && mode !== "recommendation";
   const detailed = mode === "detailed_with_price" || mode === "recommendation";
   const optionText = ready.map((option) => {
@@ -887,10 +925,12 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
 
 /** A single customer message for several independently calculated services. */
 export function buildQuoteAndTechCardBundleCustomerMessage(input: Pick<QuoteAndTechCardBundle, "vehicle" | "results">, mode: QuoteAndTechCardCustomerMessageMode = "detailed_with_price", recommendation: string | null = null): QuoteAndTechCardBundle["customerMessage"] {
+  const blockers = input.results.map(card => { const reasons = customerMessageBlockers(card); return reasons.length ? `${card.techCard.serviceName}: ${reasons.join(" ")}` : ""; }).filter(Boolean);
+  if (blockers.length) return { status: "blocked", text: blockers.join(" ") };
   const readyCards = input.results.map((card) => ({ card, options: card.quoteSet.options.filter((option) => option.status !== "blocked" && option.totalCents != null) })).filter((entry) => entry.options.length > 0);
   if (!readyCards.length) {
     const firstBlocked = input.results.flatMap((card) => [card.quoteSet.hardBlockers[0], ...card.quoteSet.options.flatMap((option) => option.blockers)]).find(Boolean);
-    return { status: "ready", text: `Добрый день! Расчёт для ${customerVehicleDisplayName(input.vehicle.displayName)} пока не завершён. ${customerBlockerText(firstBlocked)}` };
+    return { status: "blocked", text: firstBlocked?.message ?? "Нет рассчитанных услуг." };
   }
   const showPrice = mode !== "short_without_price" && mode !== "recommendation";
   const detailed = mode === "detailed_with_price" || mode === "recommendation";

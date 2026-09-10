@@ -6,7 +6,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cleanAssistantMarkdown } from "@/lib/ai-assistant/markdown";
 import type { AIAssistantStructuredResponse } from "@/lib/ai-assistant/structured-response";
-import type { QuoteAndTechCardArtifact, QuoteAndTechCardBundle, QuoteAndTechCardResult } from "@/lib/ai-assistant/quote-and-tech-card";
+import { quoteAndTechCardCustomerMessageBlocker, type QuoteAndTechCardArtifact, type QuoteAndTechCardBundle, type QuoteAndTechCardResult } from "@/lib/ai-assistant/quote-and-tech-card";
 
 export type AIAssistantSource = {
   id?: string;
@@ -181,6 +181,7 @@ function QuoteAndTechCardOption({ option }: { option: QuoteAndTechCardResult["qu
 }
 
 function QuoteAndTechCardView({ result, showCustomerMessage = true }: { result: QuoteAndTechCardResult; showCustomerMessage?: boolean }) {
+  const customerBlocker = quoteAndTechCardCustomerMessageBlocker(result);
   const techRows: Array<[string, string | null]> = [
     ["Автомобиль", result.vehicle.displayName],
     ["Агрегат", result.vehicle.aggregate],
@@ -204,18 +205,19 @@ function QuoteAndTechCardView({ result, showCustomerMessage = true }: { result: 
       {(result.techCard.warnings.length > 0 || result.evidence.length > 0) && <details><summary>Исследование и источники · {result.techCard.warnings.length + result.evidence.length}</summary><ul>{result.techCard.warnings.map((warning, index) => <li key={`warning-${index}`}>{warning}</li>)}{result.evidence.map((item, index) => <li key={`evidence-${index}`}>{item.source}: {item.fact}</li>)}</ul></details>}
     </section>
     <section className="eco-ai-answer__quote-options" aria-label="Варианты сметы"><header><ReceiptText size={17} aria-hidden /><strong>Смета</strong><span>{result.quoteSet.status === "blocked" ? "Расчёт заблокирован" : result.quoteSet.confidence === "confirmed" ? "Стоимость подтверждена" : "Предварительный расчёт"}</span></header>{result.quoteSet.options.map((option) => <QuoteAndTechCardOption key={option.code} option={option} />)}</section>
-    {showCustomerMessage && (result.customerMessage.status === "ready" ? <ClientMessageCard message={result.customerMessage.text} /> : <div className="eco-ai-answer__blockers"><p><strong>Текст клиенту пока не готов.</strong><span>{result.customerMessage.text}</span></p></div>)}
+    {showCustomerMessage && (!customerBlocker && result.customerMessage.status === "ready" ? <ClientMessageCard message={result.customerMessage.text} /> : <div className="eco-ai-answer__blockers"><p><strong>Подбор и расчёт не завершены.</strong><span>{customerBlocker || result.customerMessage.text}</span></p></div>)}
   </>;
 }
 
 function QuoteAndTechCardBundleView({ result }: { result: QuoteAndTechCardBundle }) {
+  const customerBlocker = quoteAndTechCardCustomerMessageBlocker(result);
   return <>
     <section className="eco-ai-answer__techcard" aria-label="Комплексное обслуживание">
       <header><ShieldAlert size={18} aria-hidden /><div><strong>Комплексное обслуживание</strong><span>{result.vehicle.displayName}</span></div><b className={`is-${result.status}`}>{result.status === "ready" ? "готово" : result.status === "partial" ? "частично" : "нужны данные"}</b></header>
       <dl><div><dt>Услуг в расчёте</dt><dd>{result.results.length}</dd></div></dl>
     </section>
     {result.results.map((item, index) => <QuoteAndTechCardView key={`${item.quoteSet.id}-${index}`} result={item} showCustomerMessage={false} />)}
-    {result.customerMessage.status === "ready" ? <ClientMessageCard message={result.customerMessage.text} /> : <div className="eco-ai-answer__blockers"><p><strong>Текст клиенту пока не готов.</strong><span>{result.customerMessage.text}</span></p></div>}
+    {!customerBlocker && result.customerMessage.status === "ready" ? <ClientMessageCard message={result.customerMessage.text} /> : <div className="eco-ai-answer__blockers"><p><strong>Подбор и расчёт не завершены.</strong><span>{customerBlocker || result.customerMessage.text}</span></p></div>}
   </>;
 }
 

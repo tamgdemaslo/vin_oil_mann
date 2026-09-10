@@ -1534,7 +1534,7 @@ async function buildQuoteAndTechCardBundle(args: Record<string, unknown>, contex
     evidence: results.flatMap((result) => result.evidence).filter((item, index, list) => list.findIndex((other) => `${other.source}:${other.url ?? ""}:${other.fact}` === `${item.source}:${item.url ?? ""}:${item.fact}`) === index).slice(0, 60),
   };
   const customerMessage = buildQuoteAndTechCardBundleCustomerMessage(draft);
-  const result = parseQuoteAndTechCardArtifact({ ...draft, customerMessage, status: customerMessage.status === "ready" ? bundleStatus : "blocked" });
+  const result = parseQuoteAndTechCardArtifact({ ...draft, customerMessage, status: bundleStatus });
   if (!result || result.scenario !== "quote_and_tech_card_bundle") throw new Error("Не удалось сформировать проверенный контракт комплексного расчёта.");
   return {
     result: { ...result, quoteSnapshots, traceDiagnostics, finalQuote: false },

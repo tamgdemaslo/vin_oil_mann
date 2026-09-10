@@ -1,7 +1,7 @@
 // Frozen routing replay of utterance shapes found in live customer dialogues.
 // No real VINs or customer records. Fictional catalog rows reproduce the observed unit shapes.
 import assert from 'node:assert/strict';
-import {reset,input,product,call,final,run,artifact,assistantIntent,jiti} from './fixtures/ai-assistant/harness.mjs';
+import {reset,input,product,call,final,run,artifact,assistantIntent,jiti,actor,tenant,runWithRequestTenant,runAssistantThread} from './fixtures/ai-assistant/harness.mjs';
 // Deliberately invalid WMI 000: generated test identifiers, never customer VINs.
 const syntheticVin = (index) => "0".repeat(14) + String(index).padStart(3, "0");
 const {detectClientMessageMode}=await jiti.import(process.cwd()+'/src/lib/ai-assistant/client-message.ts');
@@ -81,7 +81,8 @@ assert.deepEqual(applyAutomaticTransmissionScenarioDefaults(transmissionInput,'�
 f=reset();f.responses=[call('build_quote_and_tech_card',{input:transmissionInput})];
 await run('Рассчитай частичную замену АКПП, фильтр не меняем, перед заменой нужна диагностика');
 assert.equal(artifact(f).quoteSet.options[0].priceCompleteness,'subtotal');
-assert.match(artifact(f).customerMessage.text,/Запрошена диагностика/);
+assert.equal(artifact(f).customerMessage.status,'blocked');
+assert.match(artifact(f).customerMessage.text,/Не рассчитана полная стоимость/);
 
 // A 100 ml packaged product must be billed in packages, not in whole litres.
 f=reset();f.tables.localProduct=[product('oil',{name:'Test ATF, 100 мл',packageVolume:'100 мл.',uomName:'шт',salePriceCents:25900,stockBalances:[{available:100}]})];
@@ -99,7 +100,7 @@ const priced=artifact(f), blocked=structuredClone(priced);
 blocked.techCard.serviceName='Замена масла заднего редуктора';
 blocked.quoteSet.options.forEach(o=>{o.status='blocked';o.totalCents=null;o.blockers=[{code:'MISSING_LABOR_RULE',message:'Нет тарифа',requiredToContinue:'Настроить тарифное правило или указать подтверждённую стоимость работы.'}];});
 const mixedText=buildQuoteAndTechCardBundleCustomerMessage({vehicle:priced.vehicle,results:[priced,blocked]}).text;
-assert.doesNotMatch(mixedText,/Настроить|тарифное правило/);assert.match(mixedText,/Стоимость этой работы пока не подтверждена/);assert.match(mixedText,/не включена/);
+assert.doesNotMatch(mixedText,/Настроить|тарифное правило/);assert.match(mixedText,/Нет тарифа/);assert.doesNotMatch(mixedText,/Добрый день|₽/);
 
 // Render the real customer UI: a null technical volume must not fall back to
 // the planned consumption, and a subtotal must not be labelled a final total.
@@ -153,11 +154,11 @@ assert.equal(f.vehicleCalls,1,"exercise server VIN lookup before merging catalog
 assert.equal(f.mannVehicles[0].engineSeries,"Theta2");
 assert.equal(f.mannVehicles[0].powerKw,180);
 assert.equal(f.providerCalls,0,"available compatible stock should not fall through to supplier search");
-assert.match(optimaAnswer.customerMessage.text,/Fixture engine oil|Fixture oil filter/);
+assert.equal(optimaAnswer.customerMessage.status,'blocked');
 const optimaModelCalls=f.modelCalls.length;
 await run("Короткое сообщение");
 assert.equal(f.modelCalls.length,optimaModelCalls);
-assert.match(f.tables.aIAssistantMessage.at(-1).content,/3[\s\u00a0]?600/);
+assert.equal(f.tables.aIAssistantMessage.at(-1).attachmentsJson.kind,'quote_needs_completion');
 // API and ILSAC may be stored only in their respective structured columns.
 f=reset(); f.tables.localProduct=[product("oil",{oem:null,atf:null,acea:null,apiSpec:"SN",ilsac:"GF-5",searchText:"fixture engine oil"})];
 f.responses=[call("build_quote_and_tech_card",{input:input({selectedProducts:[],service:{...input().service,requiredFluidSpec:"SAE 5W-30, API SN, ILSAC GF-5"}})})];
@@ -165,78 +166,99 @@ await run("Рассчитай замену моторного масла");
 assert.equal(artifact(f).quoteSet.options[0].totalCents,300000);
 console.log("Optima replay: composite oil requirements, filter, package quantity, retained vehicle attributes, formatting and API/ILSAC-only discovery passed.");
 
-// Reported bulk-oil dialogue, with fictional prices and parts. Exercise the
-// real runner and tools before testing the deterministic formatting actions.
-const {buildQuoteAndTechCardCustomerMessage:renderCustomer}=await jiti.import(process.cwd()+'/src/lib/ai-assistant/quote-and-tech-card.ts');
+// Reported incomplete bulk-oil quote is useful to the employee only.
+const {buildQuoteAndTechCardCustomerMessage:renderCustomer,parseQuoteAndTechCardArtifact}=await jiti.import(process.cwd()+'/src/lib/ai-assistant/quote-and-tech-card.ts');
 f=reset();
 f.tables.localProduct=[product('oil',{name:'Fixture A5/B5 5W-30, моторное масло на розлив, 1 л.',uomName:'л',packageVolume:'1 л',markingMode:'BULK_OIL_FROM_MARKED_BARREL',salePriceCents:90000,acea:'A5/B5'})];
 f.responses=[call('build_quote_and_tech_card',{input:input({selectedProducts:[],service:{...input().service,requiredFluidSpec:'SAE 5W-30, ACEA A5',filterAccess:'external_replaceable',serviceHardware:[{type:'Прокладка сливной пробки TEST-GASKET',quantity:1,requirement:'mandatory',requiredForQuote:true,evidence:null}]}})})];
 await run('Рассчитай замену моторного масла и фильтра с вашими материалами');
-const bulk=artifact(f),bulkOption=bulk.quoteSet.options[0],bulkSnapshot=structuredClone(bulk);
-assert.equal(bulkOption.totalCents,450000);
-assert.equal(bulkOption.lines.find(line=>line.role==='fluid').quantity,5);
-assert.equal(bulkOption.technicalQuantityLiters,null);
-assert.deepEqual(bulk.techCard.verifiedFacts,[]);
-assert.equal(bulkOption.priceCompleteness,'subtotal');
-assert.match(bulk.customerMessage.text,/Fixture A5\/B5 5W-30, моторное масло на розлив — в расчёте 5 л/);
-assert.match(bulk.customerMessage.text,/Работа — без доплаты в этом расчёте/);
-assert.doesNotMatch(bulk.customerMessage.text,/к покупке 5 л|остаток.*0 л|на розлив, 1 л|Работа — 0 ₽|шт\.\./);
-const callsBeforeFormatting={model:f.modelCalls.length,provider:f.providerCalls,mann:f.mannCalls,vehicle:f.vehicleCalls,probes:f.connectionProbes};
-for (const [request,showPrice] of [['Короткое сообщение',true],['Короткое сообщение для клиента без цены',false],['Подробное сообщение для клиента с расчётом',true],['Только итоговая цена',true],['Добавь рекомендацию к сообщению клиенту',false]]) {
-  await run(request);
-  const copy=f.tables.aIAssistantMessage.at(-1).content;
-  assert.match(copy,/Применимость масла и объём замены пока не подтверждены/);
-  assert.match(copy,/масляного фильтра|Масляный фильтр ещё не подобран/);
-  assert.match(copy,/Прокладка сливной пробки TEST-GASKET — 1 шт\./);
-  assert.doesNotMatch(copy,/Итого:|шт\.\.|к покупке 5 л|остаток.*0 л/);
-  if(showPrice){assert.match(copy,/известная часть суммы/iu);assert.match(copy,/4[\s\u00a0]?500 ₽/);}
-  else assert.doesNotMatch(copy,/₽/);
+const incomplete=artifact(f),incompleteSnapshot=structuredClone(incomplete);
+assert.equal(incomplete.quoteSet.options[0].totalCents,450000);
+assert.equal(incomplete.quoteSet.options[0].technicalQuantityLiters,null);
+assert.equal(incomplete.customerMessage.status,'blocked');
+for(const reason of [/полная стоимость/,/масляного фильтра/,/обязательных расходников/,/применимость/,/объём/])assert.match(incomplete.customerMessage.text,reason);
+assert.doesNotMatch(incomplete.customerMessage.text,/Добрый день|₽|Подберём удобное время/);
+const formattingRequests=['Короткое сообщение','Короткое сообщение для клиента без цены','Подробное сообщение для клиента с расчётом','Только итоговая цена','Добавь рекомендацию к сообщению клиенту'];
+const callCounts=()=>({model:f.modelCalls.length,provider:f.providerCalls,mann:f.mannCalls,vehicle:f.vehicleCalls,probes:f.connectionProbes});
+const beforeBlockedFormatting=callCounts();
+for(const request of formattingRequests){
+  const result=await run(request),message=f.tables.aIAssistantMessage.at(-1);
+  assert.equal(result.clientMessage,false);
+  assert.equal(message.attachmentsJson.kind,'quote_needs_completion');
+  assert.match(message.content,/Расчёт сохранён для мастера/);
+  assert.doesNotMatch(message.content,/Добрый день|₽|Сначала выполнить расчёт/);
 }
-assert.deepEqual({model:f.modelCalls.length,provider:f.providerCalls,mann:f.mannCalls,vehicle:f.vehicleCalls,probes:f.connectionProbes},callsBeforeFormatting,'formatting must not repeat research or call providers');
-assert.deepEqual(bulk,bulkSnapshot,'copy edits cannot alter the quote or its technical evidence');
+assert.deepEqual(callCounts(),beforeBlockedFormatting);
+assert.deepEqual(incomplete,incompleteSnapshot);
+const selectedIncompleteQuote=f.tables.aIAssistantQuote[0];
+await runWithRequestTenant(tenant,()=>runAssistantThread({threadId:'thread',organizationId:'org-a',actor,message:'Только итоговая цена',selectedQuoteId:selectedIncompleteQuote.id}));
+assert.equal(f.tables.aIAssistantMessage.at(-1).attachmentsJson.kind,'quote_needs_completion','selecting a saved price must not bypass its source QuoteSet');
+assert.deepEqual(callCounts(),beforeBlockedFormatting);
+// Old stored ready flags must not bypass the new policy on read or render.
+const stale=structuredClone(incomplete);
+stale.customerMessage={status:'ready',text:'Добрый день! Стоимость — 4500 ₽.'};
+assert.equal(parseQuoteAndTechCardArtifact(stale).customerMessage.status,'blocked');
+const staleHtml=renderToStaticMarkup(createElement(AnswerRenderer,{content:'',status:'completed',quoteAndTechCard:stale}));
+assert.match(staleHtml,/Известная часть стоимости/);
+assert.match(staleHtml,/Подбор и расчёт не завершены/);
+assert.doesNotMatch(staleHtml,/Готово для копирования|>Скопировать<|Добрый день/);
 
-const candidateCopy=structuredClone(bulk);
-candidateCopy.techCard.filterSummary='Варианты фильтра: MANN TEST-FILTER — 650 ₽ · подтвердить по VIN.';
-for (const mode of ['short_without_price','recommendation']) {
-  assert.doesNotMatch(renderCustomer(candidateCopy,mode).text,/₽/,'candidate summary must not leak a price into no-price copy');
-  assert.doesNotMatch(buildQuoteAndTechCardBundleCustomerMessage({vehicle:bulk.vehicle,results:[candidateCopy]},mode).text,/₽/);
+// A complete quote with a reviewed active profile and a resolved filter still
+// produces usable copy, even while workshop instructions remain incomplete.
+async function completeOilFixture(volume=5,bulk=true){
+  f=reset();
+  f.tables.localProduct=[
+    product('oil',bulk?{name:'Fixture 5W-30, моторное масло на розлив, 1 л.',uomName:'л',packageVolume:'1 л',markingMode:'BULK_OIL_FROM_MARKED_BARREL',salePriceCents:90000}:{}),
+    product('filter',{name:'Fixture oil filter',article:'TEST-FILTER',sae:null,oem:null,atf:null,packageVolume:null,salePriceCents:50000}),
+    product('gasket',{name:'Fixture gasket',article:'TEST-GASKET',sae:null,oem:null,atf:null,packageVolume:null,salePriceCents:10000}),
+  ];
+  f.mann={status:'resolved',decision:'MATCH',selectedApplication:{variantIds:['reviewed-fixture']},candidates:[],filters:[{filterType:'Oil Filter',mannArticle:'TEST-FILTER',condition:null}],localMatches:[{mannArticleNormalized:normalizeMannArticle('TEST-FILTER'),compatibleProducts:[{id:'filter',name:'Fixture oil filter',price:500,available:10}]}]};
+  f.profile={status:'active',items:[{systemCode:'ENGINE_OIL',revisionId:'reviewed-fixture',sourceStatus:'primary_source',requiresReview:false,specifications:['TEST-SPEC 123'],viscosityGrades:[],capacities:[{nominalLiters:volume,serviceContext:'WITH_FILTER'}],evidence:[{publisher:'Reviewed OEM fixture',url:'https://example.test/manual'}]}]};
+  f.responses=[call('build_quote_and_tech_card',{input:input({selectedProducts:[],consumables:[{productId:'gasket',quantity:1,role:'hardware'}],service:{...input().service,standardTechnicalQuantityLiters:volume,filterAccess:'external_replaceable',serviceHardware:[{type:'Fixture gasket',quantity:1,requirement:'mandatory',requiredForQuote:true,evidence:null}]}})})];
+  await run('Рассчитай замену моторного масла и фильтра с вашими материалами');
+  return artifact(f);
 }
-const bundleBulk=buildQuoteAndTechCardBundleCustomerMessage({vehicle:bulk.vehicle,results:[bulk]}).text;
-assert.match(bundleBulk,/Применимость масла и объём замены пока не подтверждены/);
-assert.match(bundleBulk,/Известная часть суммы: 4[\s\u00a0]?500 ₽/);
-assert.doesNotMatch(bundleBulk,/к покупке 5 л|остаток.*0 л|Работа — 0 ₽|шт\.\./);
+const complete=await completeOilFixture(),completeSnapshot=structuredClone(complete);
+assert.equal(complete.quoteSet.options[0].totalCents,510000);
+assert.equal(complete.techCard.status,'partial','missing workshop-only instructions do not withhold a complete price');
+assert.equal(complete.customerMessage.status,'ready');
+assert.match(complete.customerMessage.text,/на розлив — в расчёте 5 л/);
+assert.match(complete.customerMessage.text,/Работа — без доплаты в этом расчёте/);
+assert.doesNotMatch(complete.customerMessage.text,/к покупке 5 л|остаток.*0 л|на розлив, 1 л|Работа — 0 ₽|не подтвержд/);
+const beforeReadyFormatting=callCounts();
+for(const [index,request] of formattingRequests.entries()){
+  const result=await run(request),message=f.tables.aIAssistantMessage.at(-1);
+  assert.equal(result.clientMessage,true);
+  assert.equal(message.attachmentsJson.kind,'client_message');
+  if([1,4].includes(index))assert.doesNotMatch(message.content,/₽/);
+  else assert.match(message.content,/5[\s\u00a0]?100 ₽/);
+}
+assert.deepEqual(callCounts(),beforeReadyFormatting);
+assert.deepEqual(complete,completeSnapshot);
+for(const field of ['specification','capacity']){
+  const missing=structuredClone(complete);
+  missing.techCard.verifiedFacts=missing.techCard.verifiedFacts.filter(fact=>fact.field!==field);
+  assert.equal(renderCustomer(missing).status,'blocked','a bare non-null value is not proof of '+field);
+}
+const mixed={scenario:'quote_and_tech_card_bundle',status:'partial',vehicle:complete.vehicle,results:[complete,stale],customerMessage:{status:'ready',text:'Добрый день!'},evidence:[]};
+const parsedMixed=parseQuoteAndTechCardArtifact(mixed);
+assert.equal(parsedMixed.customerMessage.status,'blocked');
+assert.equal(parsedMixed.results[0].customerMessage.status,'ready');
+assert.equal(parsedMixed.results[1].quoteSet.options[0].totalCents,450000);
+assert.equal(parsedMixed.status,'partial');
+assert.equal(buildQuoteAndTechCardBundleCustomerMessage(mixed).status,'blocked');
 
-const verifiedCopy=structuredClone(bulk);
-verifiedCopy.techCard.verifiedFacts=[{field:'specification',value:bulk.techCard.requiredFluidSpec,source:'Reviewed fixture',url:null,vehicleVariantKey:'fixture',aggregate:'E1'}];
-assert.match(renderCustomer(verifiedCopy).text,/Объём замены пока не подтверждён/);
-assert.doesNotMatch(renderCustomer(verifiedCopy).text,/Применимость масла.*не подтвержден/);
-verifiedCopy.quoteSet.options[0].technicalQuantityLiters=5;
-assert.doesNotMatch(renderCustomer(verifiedCopy).text,/пока не подтвержд/);
-verifiedCopy.techCard.verifiedFacts=[];
-assert.match(renderCustomer(verifiedCopy).text,/Применимость масла пока не подтверждена/);
-
-// Paid labour, exact kopecks and genuine package leftovers stay visible.
-const paidCopy=structuredClone(bulk),paidOption=paidCopy.quoteSet.options[0];
+// Exact money and real sealed-package leftovers remain in complete messages.
+const paidCopy=structuredClone(complete),paidOption=paidCopy.quoteSet.options[0];
 paidOption.lines.find(line=>line.role==='labor').totalCents=12345;
 paidOption.totalCents+=12345;
 assert.match(renderCustomer(paidCopy).text,/Работа — 123,45 ₽/);
-assert.match(renderCustomer(paidCopy).text,/Известная часть суммы: 4[\s\u00a0]?623,45 ₽/);
-f=reset();f.responses=[call('build_quote_and_tech_card',{input:input({service:{...input().service,standardTechnicalQuantityLiters:6}})})];
-await run('Рассчитай замену моторного масла');
-const sealed=artifact(f);
-assert.equal(sealed.quoteSet.options[0].totalCents,600000);
-assert.equal(sealed.quoteSet.options[0].lines.find(line=>line.role==='fluid').saleQuantity.packageRemainderLiters,4);
+assert.match(renderCustomer(paidCopy).text,/Итого: 5[\s\u00a0]?223,45 ₽/);
+const sealed=await completeOilFixture(6,false);
+assert.equal(sealed.quoteSet.options[0].totalCents,660000);
+assert.equal(sealed.customerMessage.status,'ready');
 for(const copy of [sealed.customerMessage.text,buildQuoteAndTechCardBundleCustomerMessage({vehicle:sealed.vehicle,results:[sealed]}).text]){
   assert.match(copy,/Valvoline SynPower 5W-30, 5 л/);
   assert.match(copy,/к покупке 2 шт \(10 л\); остаток 4 л/);
 }
-console.log('Customer copy replay: bulk oil, unpriced parts, technical unknowns, all formatting modes, exact money, sealed leftovers and zero repeated calls passed.');
-
-// The public tool schema must accept the supplied catalogue attributes, and
-// normalised oil type must match the catalogue's display label.
-f=reset();f.mann={status:"resolved",decision:"MATCH",selectedApplication:{variantIds:["synthetic-optima-turbo"]},candidates:[],filters:[{filterType:"Oil Filter",mannArticle:"W 811/80"}],localMatches:[]};
-f.responses=[call("find_mann_filters",{make:"KIA",model:"Optima IV(JF)",engineCode:"G4KH",engineSeries:"Theta2",powerKw:180,powerHp:245,bodyCode:"JF",generationRaw:"IV",engineVolumeCc:1998,year:2019,filterType:"oil"}),final("MANN W 811/80")];
-await run("Подбери масляный фильтр для KIA Optima IV(JF) Theta2 180 кВт 245 л.с.");
-assert.equal(f.mannVehicles[0].engineSeries,"Theta2");
-assert.equal(f.mannVehicles[0].powerKw,180);
-assert.equal(f.tables.aIAssistantToolCall.find(t=>t.name==="find_mann_filters")?.resultSummary.found ?? f.tables.aIAssistantToolCall[0]?.resultSummary.found,true);
+console.log('Customer readiness replay: internal incomplete quotes, guarded saved messages, all five modes, complete reviewed quotes, exact prices and package leftovers passed.');

@@ -471,7 +471,7 @@ export default function AIAssistantClient() {
                   quote={quoteAndTechCard ? undefined : linkedQuotes[0]}
                 /> : <div className="eco-aiw-message__body">{message.content}</div>}
                 {!quoteAndTechCard && linkedQuotes.slice(1).map((quote) => <AIAssistantAnswerRenderer key={quote.id} content="" status="completed" quote={quote} />)}
-                {quoteAndTechCard && <div className="eco-aiw-quote-actions">
+                {quoteAndTechCard?.customerMessage.status === "ready" && <div className="eco-aiw-quote-actions">
                   <div className="eco-aiw-quote-actions__buttons">
                     <button type="button" onClick={() => void requestQuoteSetClientMessage(message.id, "short_with_price")} disabled={working || activeThreadIsArchived}>Короткое сообщение</button>
                     <button type="button" onClick={() => void requestQuoteSetClientMessage(message.id, "short_with_price")} disabled={working || activeThreadIsArchived}>С расчётом</button>

@@ -229,14 +229,19 @@ async function createDeterministicClientMessage(input: {
   startedAt: number;
 }) {
   const branchId = getScopedBranchId();
-  const quoteSetMessages = await prisma.aIAssistantMessage.findMany({ where: { ...(input.quoteSetMessageId ? { id: input.quoteSetMessageId } : {}), threadId: input.threadId, organizationId: input.organizationId, role: "assistant" }, select: { attachmentsJson: true }, orderBy: { createdAt: "desc" }, take: input.quoteSetMessageId ? 1 : 20 });
+  const selectedQuote = input.selectedQuoteId && !input.quoteSetMessageId ? await getSelectedAssistantQuote({ organizationId: input.organizationId, threadId: input.threadId, quoteId: input.selectedQuoteId }) : null;
+  // A saved quote from the structured workflow keeps its source readiness
+  // checks, even when explicitly selected outside the recent-message window.
+  const quoteSetMessages = await prisma.aIAssistantMessage.findMany({ where: { ...(input.quoteSetMessageId ? { id: input.quoteSetMessageId } : selectedQuote?.runId ? { runId: selectedQuote.runId } : {}), threadId: input.threadId, organizationId: input.organizationId, role: "assistant" }, select: { attachmentsJson: true }, orderBy: { createdAt: "desc" }, take: input.quoteSetMessageId || selectedQuote?.runId ? 1 : 20 });
   const technicalAnswer = input.selectedQuoteId || input.quoteSetMessageId ? null : record(record(quoteSetMessages[0]?.attachmentsJson)?.technicalAnswer);
   const technicalText = technicalAnswer?.version === 1 ? text(technicalAnswer.text, 4000) : "";
-  const quoteSet = technicalText || input.selectedQuoteId && !input.quoteSetMessageId ? null : quoteSetMessages.map(item => parseQuoteAndTechCardArtifact(record(item.attachmentsJson)?.quoteAndTechCard)).find(Boolean) ?? null;
-  const quote = quoteSet || technicalText ? null : await getSelectedAssistantQuote({ organizationId: input.organizationId, threadId: input.threadId, quoteId: input.selectedQuoteId });
+  const quoteSet = technicalText || input.selectedQuoteId && !input.quoteSetMessageId && !selectedQuote?.runId ? null : quoteSetMessages.map(item => parseQuoteAndTechCardArtifact(record(item.attachmentsJson)?.quoteAndTechCard)).find(Boolean) ?? null;
+  const quote = quoteSet || technicalText || input.quoteSetMessageId ? null : selectedQuote ?? (input.selectedQuoteId ? null : await getSelectedAssistantQuote({ organizationId: input.organizationId, threadId: input.threadId }));
+  let incompleteQuoteReason: string | null = null;
   const content = technicalText ? { message: input.mode === "only_final_price" ? "Стоимость по этому техническому вопросу не рассчитывалась." : technicalText, quoteId: null, quoteSetId: null, mode: input.mode, includedPrice: false, usedBaseTotal: null, usedMaximumTotal: null, includedInternalWarnings: [], includedCustomerWarnings: [], callToAction: "" } : quoteSet
     ? (() => {
       const customerMessage = buildQuoteAndTechCardArtifactCustomerMessage(quoteSet, input.mode, input.mode === "recommendation" ? explicitCustomerRecommendation(input.message) : null);
+      if (customerMessage.status === "blocked") incompleteQuoteReason = customerMessage.text;
       const firstQuoteSet = quoteSet.scenario === "quote_and_tech_card_bundle" ? quoteSet.results[0]?.quoteSet : quoteSet.quoteSet;
       const requestedDates = quoteSet.scenario === "quote_and_tech_card_bundle" ? quoteSet.results.map((result) => result.quoteSet.requestedDates).find(Boolean) : quoteSet.quoteSet.requestedDates;
       return customerMessage.status === "ready" ? { message: customerMessage.text, quoteId: null, quoteSetId: firstQuoteSet?.id ?? null, mode: input.mode, includedPrice: input.mode !== "short_without_price" && input.mode !== "recommendation", usedBaseTotal: null, usedMaximumTotal: null, includedInternalWarnings: [], includedCustomerWarnings: [], callToAction: requestedDates ? `Проверить свободное время на ${requestedDates}` : "Подобрать удобное время" } : null;
@@ -248,16 +253,16 @@ async function createDeterministicClientMessage(input: {
       threadId: input.threadId,
       organizationId: input.organizationId,
       role: "assistant",
-      content: content ? content.message : "По этому запросу ещё нет готового расчёта. Сначала выполнить расчёт?",
+      content: content ? content.message : incompleteQuoteReason ? `Расчёт сохранён для мастера. Сообщение клиенту пока не готово: ${incompleteQuoteReason}` : "По этому запросу ещё нет готового расчёта. Сначала выполнить расчёт?",
       citationsJson: json([]),
-      attachmentsJson: json(content ? { kind: "client_message", ...content, ...(technicalText ? { technicalAnswer } : {}) } : { kind: "missing_quote", requestedMode: input.mode }),
+      attachmentsJson: json(content ? { kind: "client_message", ...content, ...(technicalText ? { technicalAnswer } : {}) } : { kind: incompleteQuoteReason ? "quote_needs_completion" : "missing_quote", requestedMode: input.mode }),
       runId: input.runId,
       createdById: "ai_assistant",
     },
   });
   const summary = content
     ? [{ toolName: "generate_client_message", status: "completed", quoteId: content.quoteId, quoteSetId: content.quoteSetId, mode: content.mode, includedPrice: content.includedPrice, baseTotalCents: content.usedBaseTotal, maximumTotalCents: content.usedMaximumTotal }]
-    : [{ toolName: "generate_client_message", status: "needs_quote", mode: input.mode }];
+    : [{ toolName: "generate_client_message", status: incompleteQuoteReason ? "needs_completion" : "needs_quote", mode: input.mode }];
   await Promise.all([
     prisma.aIAssistantRun.update({
       where: { id: input.runId },
@@ -267,7 +272,7 @@ async function createDeterministicClientMessage(input: {
     // rather than chaining an older Responses item which does not contain it.
     prisma.aIAssistantThread.update({ where: { id: input.threadId }, data: { lastResponseId: null, lastMessageAt: new Date() } }),
   ]);
-  return { runId: input.runId, messageId: assistantMessage.id, cancelled: false, clientMessage: true, quoteId: content?.quoteId ?? null, quoteSetId: content?.quoteSetId ?? null };
+  return { runId: input.runId, messageId: assistantMessage.id, cancelled: false, clientMessage: Boolean(content), quoteId: content?.quoteId ?? null, quoteSetId: content?.quoteSetId ?? null };
 }
 
 async function threadOrThrow(threadId: string, organizationId: string) {
