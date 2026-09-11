@@ -10,6 +10,15 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const jiti = createJiti(import.meta.url, { alias: { "@": resolve(root, "src") } });
 const identity = await jiti.import("../src/lib/storefront-product-identity.ts");
 const publicOilModule = await jiti.import("../src/lib/public-oil.ts");
+const storefrontImage = await jiti.import("../src/lib/storefront-image.ts");
+
+const selectedImageHref = storefrontImage.storefrontPublicImageHref("stable-public-id", "photo-id");
+assert.equal(storefrontImage.isSafeStorefrontImageContentType("image/jpeg"), true);
+assert.equal(storefrontImage.isSafeStorefrontImageContentType("image/svg+xml"), false);
+assert.equal(selectedImageHref, "/api/public/oils/stable-public-id/image/photo-id");
+assert.equal(storefrontImage.selectedStorefrontPublicPhotoId("stable-public-id", selectedImageHref), "photo-id");
+assert.equal(storefrontImage.selectedStorefrontPublicPhotoId("another-product", selectedImageHref), null);
+assert.equal(storefrontImage.selectedStorefrontPublicPhotoId("stable-public-id", `${selectedImageHref}?raw=1`), null);
 
 const base = {
   id: "left",
@@ -120,6 +129,8 @@ assert.equal(publicCard.price, null, "a shared price is not invented when branch
 assert.deepEqual(publicCard.offers.map((offer) => offer.price), [4990, 5290]);
 assert.equal("buyPrice" in publicCard, false, "cost data is not exposed");
 assert.equal("supplier" in publicCard, false, "supplier data is not exposed");
+const imageCard = publicOilModule.mapStorefrontOilCard({ ...row, publicImageHref: selectedImageHref }, storefront);
+assert.equal(imageCard.imageHref, selectedImageHref, "only the explicitly selected public image href reaches the DTO");
 const renamedCard = publicOilModule.mapStorefrontOilCard({ ...row, contentSource: { ...row.contentSource, name: "Новое название" } }, storefront);
 assert.equal(renamedCard.id, publicCard.id, "renaming the source never changes the public id");
 const missingBindingCard = publicOilModule.mapStorefrontOilCard({ ...row, bindings: row.bindings.slice(0, 1) }, storefront);

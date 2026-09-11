@@ -20,6 +20,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const jiti = createJiti(import.meta.url, { alias: { "@": resolve(root, "src") } });
 const publication = await jiti.import("../src/lib/storefront-publication.ts");
 const publicOil = await jiti.import("../src/lib/public-oil.ts");
+const publicStorefrontImage = await jiti.import("../src/lib/public-storefront-image.ts");
 const tenantStore = await jiti.import("../src/lib/request-tenant-store.ts");
 const dbModule = await jiti.import("../src/lib/db.ts");
 const setup = new PrismaClient();
@@ -120,6 +121,17 @@ const [dachaOil, gagarinaOil] = await Promise.all([
   setup.localProduct.create({ data: oil("oil-dacha", dacha.id) }),
   setup.localProduct.create({ data: oil("oil-gagarina", gagarina.id, { salePriceCents: 529_000 }) }),
 ]);
+const dachaPhoto = await setup.localProductPhoto.create({
+  data: {
+    id: "photo-dacha-public",
+    branchId: dacha.id,
+    productId: dachaOil.id,
+    fileName: "shell-helix.jpg",
+    contentType: "image/jpeg",
+    sizeBytes: 4,
+    data: Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+  },
+});
 await setup.localStockBalance.createMany({
   data: [
     { id: "balance-dacha-public", branchId: dacha.id, productId: dachaOil.id, storeId: dachaPublicStore.id, quantity: "30.000", reserve: "2.600", available: "27.400" },
@@ -192,9 +204,18 @@ await inBranch(gagarina, (ctx) => publication.applyStorefrontPublication(ctx, se
 assert.equal(await setup.storefrontProduct.count({ where: { storefrontId: storefront.id } }), 1);
 assert.equal(await setup.storefrontProductBinding.count(), 2);
 
+const imageStatus = await inBranch(dacha, (ctx) => publication.setStorefrontPublicImage(ctx, dachaOil.id, dachaPhoto.id));
+assert.equal(imageStatus.publicImagePhotoId, dachaPhoto.id);
+assert.equal(imageStatus.photoCandidates.length, 1);
+assert.equal(imageStatus.photoCandidates[0].id, dachaPhoto.id);
+const selectedImage = await publicStorefrontImage.getSelectedPublicStorefrontImage(imageStatus.storefrontProductId, dachaPhoto.id);
+assert.equal(selectedImage.contentType, "image/jpeg");
+assert.deepEqual(Buffer.from(selectedImage.data), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+
 let list = await publicOil.listPublicOils({ limit: 10 });
 assert.equal(list.total, 1);
 const stableId = list.oils[0].id;
+assert.equal(list.oils[0].imageHref, `/api/public/oils/${stableId}/image/${dachaPhoto.id}`);
 assert.deepEqual(list.oils[0].offers.map((offer) => offer.available), [27.4, 8.6]);
 assert.deepEqual(list.oils[0].offers.map((offer) => offer.price), [4990, 5290]);
 assert.equal(list.oils[0].price, null);
@@ -232,6 +253,7 @@ const hidePreview = await inBranch(gagarina, (ctx) => publication.previewStorefr
 await inBranch(gagarina, (ctx) => publication.applyStorefrontPublication(ctx, hidePreview.batchId));
 assert.equal((await publicOil.listPublicOils({ limit: 10 })).total, 0);
 assert.equal(await publicOil.getPublicOilById(stableId), null);
+assert.equal(await publicStorefrontImage.getSelectedPublicStorefrontImage(stableId, dachaPhoto.id), null);
 assert.deepEqual((await publicOil.getPublicOilFilters()).brands, []);
 
 const republishPreview = await inBranch(dacha, (ctx) => publication.previewStorefrontPublication(ctx, {

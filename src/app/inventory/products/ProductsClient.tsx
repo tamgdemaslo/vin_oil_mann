@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   AlertCircle,
   Archive,
@@ -279,6 +280,17 @@ type StorefrontPublicationStatus = {
   storefrontProductId: string | null;
   publicUrl: string | null;
   contentSourceProductId: string | null;
+  publicImageHref: string | null;
+  publicImagePhotoId: string | null;
+  photoCandidates: Array<{
+    id: string;
+    localProductId: string;
+    fileName: string | null;
+    contentType: string;
+    sizeBytes: number;
+    createdAt: string;
+    previewUrl: string;
+  }>;
   bindingCandidates: Array<{
     storefrontProductId: string;
     name: string;
@@ -1762,6 +1774,7 @@ export default function ProductsClient() {
   const [storefrontPreviewOpen, setStorefrontPreviewOpen] = useState(false);
   const [storefrontBindingCandidateId, setStorefrontBindingCandidateId] = useState("");
   const [storefrontBindingSaving, setStorefrontBindingSaving] = useState(false);
+  const [storefrontImageSaving, setStorefrontImageSaving] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -3088,6 +3101,29 @@ export default function ProductsClient() {
       setFormError(sourceError instanceof Error ? sourceError.message : String(sourceError));
     } finally {
       setStorefrontBindingSaving(false);
+    }
+  }
+
+  async function updateStorefrontPublicImage(photoId: string | null) {
+    if (!editingId || !storefrontStatus?.storefrontProductId || storefrontImageSaving) return;
+    setStorefrontImageSaving(true);
+    setFormError(null);
+    try {
+      const response = await fetch(`/api/storefront/products/${encodeURIComponent(editingId)}/image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoId }),
+      });
+      const data = await readJson<StorefrontPublicationStatus & { error?: string }>(response);
+      if (!response.ok) throw new Error(data?.error ?? "Не удалось обновить публичное фото");
+      if (!data) throw new Error("Сервер не вернул состояние витрины");
+      setStorefrontStatus(data);
+      setStorefrontPublicationDraft(data.state);
+      setToast({ message: photoId ? "Фото опубликовано на клиентском сайте" : "Фото убрано с клиентского сайта" });
+    } catch (imageError) {
+      setFormError(imageError instanceof Error ? imageError.message : String(imageError));
+    } finally {
+      setStorefrontImageSaving(false);
     }
   }
 
@@ -5454,6 +5490,60 @@ export default function ProductsClient() {
                           <span><em>Общая карточка</em><b>{storefrontStatus.storefrontProductId ?? "создастся при публикации"}</b></span>
                           <span><em>Источник описания</em><b>{storefrontStatus.contentSourceProductId === editingId ? "эта карточка" : storefrontStatus.contentSourceProductId ?? "эта карточка"}</b></span>
                         </div>
+
+                        {storefrontStatus.storefrontProductId ? (
+                          <div className="product-editor-storefront-image">
+                            <div className="product-editor-storefront-image-head">
+                              <span>
+                                <b>Фото на сайте</b>
+                                <small>Публичным становится только выбранное изображение. Остальные фото CRM остаются закрытыми.</small>
+                              </span>
+                              {storefrontStatus.publicImagePhotoId ? (
+                                <button
+                                  type="button"
+                                  className="eco-btn eco-btn--sm"
+                                  disabled={!storefrontStatus.canManage || storefrontImageSaving}
+                                  onClick={() => void updateStorefrontPublicImage(null)}
+                                >
+                                  Убрать фото
+                                </button>
+                              ) : null}
+                            </div>
+                            {storefrontStatus.photoCandidates.length ? (
+                              <div className="product-editor-storefront-image-list">
+                                {storefrontStatus.photoCandidates.map((photo) => {
+                                  const selected = storefrontStatus.publicImagePhotoId === photo.id;
+                                  return (
+                                    <div key={photo.id} className={selected ? "is-selected" : undefined}>
+                                      <Image
+                                        src={photo.previewUrl}
+                                        alt={photo.fileName || "Фото товара"}
+                                        width={64}
+                                        height={64}
+                                        loading="lazy"
+                                        unoptimized
+                                      />
+                                      <span>
+                                        <b>{photo.fileName || "Фото товара"}</b>
+                                        <small>{Math.max(1, Math.round(photo.sizeBytes / 1024))} КБ</small>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="eco-btn eco-btn--sm"
+                                        disabled={selected || !storefrontStatus.canManage || storefrontImageSaving}
+                                        onClick={() => void updateStorefrontPublicImage(photo.id)}
+                                      >
+                                        {selected ? "Опубликовано" : "Показать на сайте"}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="product-editor-empty-note">У этой карточки CRM нет загруженных фотографий.</div>
+                            )}
+                          </div>
+                        ) : null}
 
                         {storefrontStatus.storefrontProductId
                           && storefrontStatus.contentSourceProductId !== editingId

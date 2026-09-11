@@ -5,6 +5,11 @@ import { resolveCatalogProductSelection } from "@/lib/catalog-search";
 import { prisma } from "@/lib/db";
 import { productIdentityKey } from "@/lib/product-identity";
 import {
+  isSafeStorefrontImageContentType,
+  selectedStorefrontPublicPhotoId,
+  storefrontPublicImageHref,
+} from "@/lib/storefront-image";
+import {
   storefrontIdentityEvidence,
   storefrontPublicationReadiness,
   storefrontTechnicalConflicts,
@@ -664,6 +669,9 @@ export async function getStorefrontPublicationStatus(context: BranchContext, loc
         storefrontProductId: null,
         publicUrl: null,
         contentSourceProductId: null,
+        publicImageHref: null,
+        publicImagePhotoId: null,
+        photoCandidates: [],
         bindingCandidates: [],
         branches: [],
       };
@@ -672,6 +680,12 @@ export async function getStorefrontPublicationStatus(context: BranchContext, loc
   }
   const product = await prisma.localProduct.findFirst({
     where: { branchId: context.branchId, id: localProductId },
+    include: {
+      photos: {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
+      },
+    },
   });
   if (!product) return null;
   const binding = await prisma.storefrontProductBinding.findUnique({
@@ -755,6 +769,19 @@ export async function getStorefrontPublicationStatus(context: BranchContext, loc
     storefrontProductId: publicProduct?.id ?? null,
     publicUrl: publicProduct ? `/client-site/#/product/${publicProduct.id}` : null,
     contentSourceProductId: publicProduct?.contentSourceProductId ?? product.id,
+    publicImageHref: publicProduct?.publicImageHref ?? null,
+    publicImagePhotoId: publicProduct ? selectedStorefrontPublicPhotoId(publicProduct.id, publicProduct.publicImageHref) : null,
+    photoCandidates: publicProduct
+      ? product.photos.map((photo) => ({
+          id: photo.id,
+          localProductId: product.id,
+          fileName: photo.fileName,
+          contentType: photo.contentType,
+          sizeBytes: photo.sizeBytes,
+          createdAt: photo.createdAt.toISOString(),
+          previewUrl: `/api/local-inventory/products/${encodeURIComponent(product.id)}/photos/${encodeURIComponent(photo.id)}`,
+        }))
+      : [],
     bindingCandidates: [...bindingCandidates.values()].sort((left, right) =>
       candidatePriority(left.evidence) - candidatePriority(right.evidence) || left.name.localeCompare(right.name, "ru")
     ).slice(0, 20),
@@ -779,6 +806,79 @@ export async function getStorefrontPublicationStatus(context: BranchContext, loc
       };
     }),
   };
+}
+
+export async function setStorefrontPublicImage(
+  context: BranchContext,
+  localProductIdValue: unknown,
+  photoIdValue: unknown
+) {
+  requirePublicationPermission(context);
+  const localProductId = typeof localProductIdValue === "string" ? localProductIdValue.trim() : "";
+  const photoId = typeof photoIdValue === "string" ? photoIdValue.trim() : "";
+  if (!context.branchId || !localProductId) {
+    throw new StorefrontPublicationError("Не выбран товар для публичного фото.", 400, "storefront_image_product_required");
+  }
+  const storefront = await activeStorefrontForGroup(context.businessGroupId);
+  if (!storefront.branches.some((configured) => configured.branchId === context.branchId)) {
+    throw new StorefrontPublicationError("Текущий филиал не включён в клиентскую витрину.", 409, "branch_not_in_storefront");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const binding = await tx.storefrontProductBinding.findUnique({
+      where: { localProductId },
+      include: { storefrontProduct: true },
+    });
+    if (!binding || binding.branchId !== context.branchId || binding.storefrontProduct.storefrontId !== storefront.id) {
+      throw new StorefrontPublicationError("Сначала свяжите товар с общей карточкой.", 409, "storefront_binding_required");
+    }
+
+    const previousHref = binding.storefrontProduct.publicImageHref;
+    let nextHref: string | null = null;
+    let selectedPhoto: { id: string; fileName: string | null; contentType: string; sizeBytes: number } | null = null;
+    if (photoId) {
+      selectedPhoto = await tx.localProductPhoto.findFirst({
+        where: { id: photoId, branchId: context.branchId, productId: localProductId },
+        select: { id: true, fileName: true, contentType: true, sizeBytes: true },
+      });
+      if (!selectedPhoto) {
+        throw new StorefrontPublicationError("Фото не найдено в выбранной CRM-карточке.", 404, "storefront_image_not_found");
+      }
+      if (!isSafeStorefrontImageContentType(selectedPhoto.contentType)) {
+        throw new StorefrontPublicationError(
+          "Для сайта разрешены фотографии JPEG, PNG или WebP.",
+          409,
+          "storefront_image_invalid_type"
+        );
+      }
+      nextHref = storefrontPublicImageHref(binding.storefrontProductId, selectedPhoto.id);
+    }
+
+    if (previousHref === nextHref) return;
+    await tx.storefrontProduct.update({
+      where: { id: binding.storefrontProductId },
+      data: { publicImageHref: nextHref, version: { increment: 1 } },
+    });
+    await tx.storefrontProductAudit.create({
+      data: {
+        storefrontProductId: binding.storefrontProductId,
+        actorLogin: context.user.login,
+        action: nextHref ? "SET_PUBLIC_IMAGE" : "CLEAR_PUBLIC_IMAGE",
+        metadata: {
+          localProductId,
+          branchId: context.branchId,
+          photoId: selectedPhoto?.id ?? null,
+          fileName: selectedPhoto?.fileName ?? null,
+          contentType: selectedPhoto?.contentType ?? null,
+          sizeBytes: selectedPhoto?.sizeBytes ?? null,
+          previousHref,
+          nextHref,
+        },
+      },
+    });
+  });
+
+  return getStorefrontPublicationStatus(context, localProductId);
 }
 
 export async function bindStorefrontProductCandidate(
