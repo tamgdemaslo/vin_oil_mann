@@ -17,7 +17,7 @@ import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { normalizeMannArticle } from "@/lib/mann-catalog";
 import { resolveLaborPrice } from "./labor-pricing";
 import { evaluatePreferredLocalFluid, engineOilSpecificationSearchTokenGroups, engineOilSpecificationMatches, fluidSpecificationMatches, quantityForLiters, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
-import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, ENGINE_OIL_FILTER_PRICE_PENDING_WARNING, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, quoteAndTechCardFilterPolicy, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardProcedure, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
+import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, ENGINE_OIL_FILTER_PRICE_PENDING_WARNING, normalizeQuoteAndTechCardServiceType, normalizeQuoteAndTechCardProcedure, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, quoteAndTechCardFilterPolicy, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardProcedure, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
 function getAgentSettings(organizationId: string) {
@@ -44,8 +44,10 @@ export class AssistantToolError extends Error {
   }
 }
 
+const TECHNICAL_QUESTION_MAX_LENGTH = 500;
+
 export const assistantFunctionTools = [
-  { type: "function", name: "lookup_technical_data", description: "Сначала прочитать локальный технический профиль по каноническому resolver; затем точечно получить недостающие поля (допуск, тип объёма, процедура, температура, момент) с источниками. Результат web требует проверки применимости.", parameters: { type: "object", additionalProperties: false, required: ["vehicle", "missingFields"], properties: { serviceType: { type: "string", maxLength: 80 }, procedure: { type: "string", maxLength: 80 }, vehicle: { type: "object" }, missingFields: { type: "array", maxItems: 8, items: { type: "string", maxLength: 100 } } } } },
+  { type: "function", name: "lookup_technical_data", description: "Сначала прочитать локальный технический профиль по каноническому resolver; затем точечно получить недостающие поля (допуск, тип объёма, процедура, температура, момент) с источниками. Для двух вариантов передай procedures. В missingFields используй specification, capacity, procedure, filterAccess, levelTemperature, torqueNotes либо конкретный вопрос до 500 символов. Результат web требует проверки применимости.", parameters: { type: "object", additionalProperties: false, required: ["vehicle", "missingFields"], properties: { serviceType: { type: "string", maxLength: 80 }, procedure: { type: "string", maxLength: 80 }, procedures: { type: "array", minItems: 1, maxItems: 2, items: { type: "string", enum: ["partial", "filter_service", "machine", "machine_filter_service", "standard"] } }, vehicle: { type: "object" }, missingFields: { type: "array", maxItems: 8, items: { type: "string", maxLength: TECHNICAL_QUESTION_MAX_LENGTH } } } } },
   {
     type: "function",
     name: "get_workspace_context",
@@ -1181,7 +1183,7 @@ export function applyAutomaticTransmissionScenarioDefaults(input: QuoteAndTechCa
   // Earlier maintenance history is not the procedure being ordered now.
   const request = text(requestMessage, 4_000).toLocaleLowerCase("ru-RU").split(/хочу|клиент ответил\s*:/iu).at(-1) ?? "";
   if (!request) return input;
-  const excludesFilter = /без\s+(?:замены\s+)?фильтр|фильтр\S*\s+не\s+меня|не\s+меня\S*\s+фильтр/iu.test(request);
+  const excludesFilter = /без\s+(?:замены\s+)?фильтр|фильтр\S*\s+не\s+меня|не\s+меня\S*\s+фильтр|без\s+(?:сняти[яе]\s+)?поддон|поддон\S*\s+не\s+сним|не\s+снима\S*\s+поддон/iu.test(request);
   const asksAnyFilterService = !excludesFilter && /фильтр|filter|поддон|pan\b/iu.test(request);
   // A multi-aggregate question may ask about a Haldex pump mesh or pan. That
   // wording belongs to the clutch service; it must not turn the АКПП input
@@ -1201,7 +1203,7 @@ export function applyAutomaticTransmissionScenarioDefaults(input: QuoteAndTechCa
   }
   if (asksMachine && asksPartial) return withProcedures(input, ["partial", "machine"]);
   if (asksMachine) return withProcedures(input, ["machine"]);
-  if (asksPartial) return withProcedures(input, ["partial"]);
+  if (asksPartial || excludesFilter) return withProcedures(input, ["partial"]);
   if (preserveExisting) return input;
   if (filterServicePossible) return withProcedures(input, ["partial", "filter_service"]);
   return withProcedures(input, ["partial"]);
@@ -1280,7 +1282,9 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       // pan/filter policy cannot accidentally receive the cheaper
       // drain-and-fill tariff merely because an upstream source omitted the
       // configuration field.
-      transmissionConfiguration: option.servicePackage.panRemoval ? "pan_and_filter" : input.service.transmissionConfiguration ?? "not_applicable",
+      transmissionConfiguration: option.servicePackage.panRemoval
+        ? input.service.transmissionConfiguration === "two_coarse_filters" ? "two_coarse_filters" : "pan_and_filter"
+        : ["automatic_transmission", "cvt", "dsg"].includes(input.service.type) ? "no_pan" : "not_applicable",
       materialsOwner: input.service.materialsOwner,
       vehicleId: input.vehicle.id ?? null,
       vehicleDisplayName: input.vehicle.displayName ?? null,
@@ -1571,19 +1575,25 @@ async function executeAssistantToolUncached(name: string, argumentsValue: unknow
   if (!definition) throw new ToolArgumentsError("TOOL_UNKNOWN", "Инструмент недоступен");
   if (!name.startsWith("build_quote_and_tech_card")) validateAssistantToolArguments(argumentsValue, definition.parameters);
   if (name === "lookup_technical_data") {
-    const vehicleSnapshot = mergeAssistantVehicleSnapshot(object(args.vehicle), context.verifiedVehicleSnapshot, context.requestedVehicleSnapshot);
+    const requestedVehicle = object(args.vehicle);
+    const vehicleSnapshot = mergeAssistantVehicleSnapshot({ ...requestedVehicle, ...object(requestedVehicle.snapshot) }, context.verifiedVehicleSnapshot, context.requestedVehicleSnapshot);
     const local = await mannContext(context.organizationId, assistantVehicle(vehicleSnapshot));
-    const serviceType = text(args.serviceType, 80);
+    const serviceType = normalizeQuoteAndTechCardServiceType(args.serviceType) ?? text(args.serviceType, 80);
+    const procedures = [...new Set((Array.isArray(args.procedures) ? args.procedures : text(args.procedure, 80).split(/[,;]/u)).map(normalizeQuoteAndTechCardProcedure).filter((value): value is QuoteAndTechCardProcedure => value !== null))].sort();
     const trustedSnapshot = context.verifiedVehicleSnapshot ?? {};
     const verified = serviceType in technicalSystems ? await verifiedLocalTechnicalInput(parseQuoteAndTechCardInput({
       vehicle: { snapshot: vehicleSnapshot, aggregateCode: text(serviceType === "engine_oil" ? trustedSnapshot.engineCode : trustedSnapshot.transmissionCode, 120) || null },
       service: { type: serviceType, name: "Технический вопрос" },
     }), context.organizationId) : null;
-    const missingFields = Array.isArray(args.missingFields) ? args.missingFields.map(item => text(item, 100)).filter(Boolean).slice(0, 8) : [];
-    const applicableItems = local.profile.items.filter(item => item.systemCode === technicalSystems[text(args.serviceType, 80)] && item.sourceStatus === "primary_source" && !item.requiresReview);
-    const needsExternal = missingFields.length > 0 && (local.profile.status !== "active" || applicableItems.length !== 1 || missingFields.some(field => field === "specification" ? !applicableItems[0]?.specifications.length : field === "capacity" ? !applicableItems[0]?.capacities.some(capacity => capacity.serviceContext && capacity.serviceContext !== "UNKNOWN") : true));
-    const external = needsExternal && context.technicalLookup ? await context.technicalLookup({ vehicle: vehicleSnapshot, serviceType: args.serviceType, procedure: args.procedure, missingFields, localProfile: local.profile }) : null;
-    return { result: { vehicleDecision: local.resolution.decision, vehicleResolution: mannResolutionDiagnostic(local.resolution), localProfile: local.profile, verifiedFacts: verified?.facts ?? [], external: external?.result ?? null, missingFields, executionStatus: "verification_required" }, sources: [{ sourceType: "mann", title: "Локальный технический профиль", metadata: { status: local.profile.status, vehicleResolution: mannResolutionDiagnostic(local.resolution) } }, ...(external?.sources ?? [])] };
+    const requestedFields = Array.isArray(args.missingFields) ? [...new Set(args.missingFields.map(item => text(item, TECHNICAL_QUESTION_MAX_LENGTH)).filter(Boolean))].slice(0, 8) : [];
+    const missingFields = requestedFields.filter(field => field === "capacity" && procedures.length
+      ? !procedures.every(procedure => verified?.facts.some(fact => fact.field === "capacity" && fact.procedure === procedure))
+      : !verified?.facts.some(fact => fact.field === field));
+    const externalRequest = { vehicle: vehicleSnapshot, serviceType, procedure: procedures.length === 1 ? procedures[0] : null, procedures, missingFields: [...missingFields].sort(), localProfile: local.profile };
+    const external = missingFields.length && context.technicalLookup
+      ? await assistantMemo("technical-lookup-external", externalRequest, () => context.technicalLookup!(externalRequest))
+      : null;
+    return { result: { vehicleDecision: local.resolution.decision, vehicleResolution: mannResolutionDiagnostic(local.resolution), localProfile: local.profile, verifiedFacts: verified?.facts ?? [], requirements: verified?.facts.length ? verified.input.service : null, external: external?.result ?? null, requestedFields, missingFields, executionStatus: "verification_required" }, sources: [{ sourceType: "mann", title: "Локальный технический профиль", metadata: { status: local.profile.status, vehicleResolution: mannResolutionDiagnostic(local.resolution) } }, ...(external?.sources ?? [])] };
   }
   if (name === "get_workspace_context") return { result: { organizationId: context.organizationId, currentUser: { id: context.actorId, name: context.actorName, role: context.actorRole }, permissions: { readData: true, writeData: false, createQuoteDraft: false, createShipmentDraft: false, createAppointment: false, placeRosskoOrder: false } } };
   if (name === "search_clients") return searchClients(args);

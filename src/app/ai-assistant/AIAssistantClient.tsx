@@ -3,6 +3,7 @@
 import { Archive, ArchiveRestore, Bot, Building2, ChevronRight, CircleStop, Clipboard, ExternalLink, FileSearch, LoaderCircle, MessageSquarePlus, Send, ShieldCheck, Sparkles, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AIAssistantAnswerRenderer, { type AIServiceQuote } from "./AIAssistantAnswerRenderer";
+import PricingRepair from "./PricingRepair";
 import { parseQuoteAndTechCardArtifact, type QuoteAndTechCardArtifact } from "@/lib/ai-assistant/quote-and-tech-card";
 import { parseAIAssistantStructuredResponse, type AIAssistantStructuredResponse } from "@/lib/ai-assistant/structured-response";
 import { assistantDeliveryError, assistantMessageWasAccepted } from "@/lib/ai-assistant/message-delivery";
@@ -424,7 +425,7 @@ export default function AIAssistantClient() {
           <h1 className="eco-page-title">ИИ-помощник</h1>
           <p className="eco-page-subtitle">Внутренний эксперт для поиска, проверки данных и предварительных расчётов. Ничего не отправляет клиентам и не меняет учёт.</p>
         </div>
-        <div className="eco-aiw-guard"><ShieldCheck size={17} aria-hidden /> Только чтение · owner/admin</div>
+        <div className="eco-aiw-guard"><ShieldCheck size={17} aria-hidden /> Настройки — по вашему решению · owner/admin</div>
       </header>
 
       {error && <div className="eco-aiw-error" role="alert">{error}<button type="button" onClick={() => setError(null)}>Закрыть</button></div>}
@@ -502,6 +503,12 @@ export default function AIAssistantClient() {
                 {isMissingQuote && <div className="eco-aiw-client-message-actions"><button type="button" onClick={() => setDraft("Выполни технический подбор и предварительный расчёт по текущему запросу")}>Рассчитать</button></div>}
               </article>;
             })}
+            {!working && !activeThreadIsArchived && (activeThreadId || activeBranch) && <PricingRepair
+              key={activeThreadId ?? activeBranch!.id}
+              scopeQuery={activeThreadId ? `threadId=${encodeURIComponent(activeThreadId)}` : `branchId=${encodeURIComponent(activeBranch!.id)}`}
+              refreshKey={data?.latestRun?.id ?? ""}
+              onRecalculate={activeThreadId ? () => { setDraft("Повтори расчёт по последнему запросу с учётом исправленных тарифов. Проверь применимость материалов и технические данные перед подготовкой сообщения клиенту."); focusComposer(); } : undefined}
+            />}
             {clientPreview && <section className="eco-aiw-client-preview" aria-label="Предпросмотр сообщения для CRM"><div><strong>Предпросмотр для CRM</strong><span>Текст ещё не отправлен клиенту.</span></div><textarea value={clientPreview} onChange={(event) => setClientPreview(event.target.value)} rows={5} /><footer><button type="button" onClick={() => void copyText(clientPreview)}><Clipboard size={14} /> Скопировать</button><button type="button" className="is-primary" onClick={openCrmDialog}>Открыть в CRM-диалоге</button><button type="button" onClick={() => setClientPreview(null)}>Закрыть</button></footer></section>}
             {working && <div className="eco-aiw-thinking"><LoaderCircle size={17} /> Идёт исследование: web-поиск, каталоги и источники появятся справа.</div>}
           </div>

@@ -2,7 +2,7 @@
 // Reproducible frozen acceptance. No live model, business database or network.
 import { spawn } from 'node:child_process';
 const scripts = [
-  'test-ai-assistant-oil-request', 'test-ai-assistant-service-type', 'test-ai-assistant-e2e', 'test-ai-assistant-disconnect', 'test-ai-assistant-holdout', 'test-ai-assistant-metrics', 'test-ai-assistant-customer-dialogue',
+  'test-ai-assistant-oil-request', 'test-ai-assistant-service-type', 'test-ai-assistant-service-capacities', 'test-ai-assistant-e2e', 'test-ai-assistant-disconnect', 'test-ai-assistant-holdout', 'test-ai-assistant-pricing-repair', 'test-ai-assistant-metrics', 'test-ai-assistant-customer-dialogue',
   'test-ai-material-selection', 'test-ai-quote-and-tech-card', 'test-ai-quote-and-tech-card-field-suite',
   'test-ai-answer-formatting', 'test-ai-tool-loop-policy', 'test-ai-assistant-branch-context',
   'test-mann-vehicle-resolver', 'test-mann-unified-technical-profile', 'test-product-attribute-dictionaries',
