@@ -63,6 +63,10 @@ const controlPlaneModels = new Set([
   "BranchCommunicationSettings",
   "BranchTelegramIntegration",
   "BranchAuditLog",
+  "StorefrontBranch",
+  "StorefrontBranchStore",
+  "StorefrontProductBinding",
+  "StorefrontPublicationBatchItem",
 ]);
 for (const match of schema.matchAll(/model\s+(\w+)\s*\{([\s\S]*?)\n\}/g)) {
   const [, model, body] = match;

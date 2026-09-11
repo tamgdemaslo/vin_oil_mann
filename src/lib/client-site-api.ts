@@ -1,5 +1,7 @@
-import type { PublicOilCard } from "@/lib/public-oil";
+import type { PublicOilCard, PublicOilOffer } from "@/lib/public-oil";
 import {
+  getPublicOilById,
+  getPublicOilFilters,
   getPublicVinOilRecommendation,
   listPublicOils,
   normalizePublicVin,
@@ -8,6 +10,7 @@ import clientSiteData from "@/lib/client-site-data.json";
 
 type ClientOil = {
   id: string;
+  article?: string;
   brand: string;
   line: string;
   visc: string;
@@ -15,35 +18,22 @@ type ClientOil = {
   type: string;
   volume: string;
   base?: string;
-  price: number;
+  price: number | null;
   workPrice?: number;
   badge?: string;
   note?: string;
   color: string;
   stock: number;
+  pricesDiffer: boolean;
+  offers: PublicOilOffer[];
+  updatedAt: string;
   imageHref?: string;
+  uom?: string;
 };
 
 type ClientData = {
-  DEMO_OILS: ClientOil[];
   CASES: Record<string, unknown>[];
   SERVICES: Record<string, unknown>[];
-  VIN_DEMO: Record<string, unknown> & {
-    vin?: string;
-    brand?: string;
-    model?: string;
-    generation?: string;
-    year?: number;
-    engine?: string;
-    oilCapacity?: string;
-    oilSpec?: string;
-    filter?: string;
-    airFilter?: string;
-    cabinFilter?: string;
-    drainPlug?: string;
-    recommended?: string;
-    alternatives?: string[];
-  };
   ACCOUNT: Record<string, unknown>;
 };
 
@@ -69,7 +59,6 @@ type ClientAppointment = {
 };
 
 const DATA = clientSiteData as ClientData;
-const DEMO_OILS = DATA.DEMO_OILS ?? [];
 const ECO_OIL_TIMEOUT_MS = 25_000;
 const BRAND_COLORS: Record<string, string> = {
   bardahl: "#D08A2C",
@@ -132,64 +121,56 @@ export async function getClientOils(searchParams?: URLSearchParams) {
 }
 
 export async function getClientOilById(id: string) {
-  const oils = await loadClientOils();
-  return oils.find((oil) => oil.id === id) ?? null;
+  const oil = await getPublicOilById(id);
+  return oil ? publicOilToClientOil(oil) : null;
 }
 
 export async function getClientOilFilters() {
-  const oils = await loadClientOils();
+  const filters = await getPublicOilFilters();
   return {
-    brands: unique(oils.map((oil) => oil.brand)),
-    viscs: unique(oils.map((oil) => oil.visc)),
-    volumes: unique(oils.map((oil) => oil.volume)),
-    types: ["Бензин", "Дизель", "Гибрид", "DPF"],
+    brands: filters.brands,
+    viscs: filters.sae,
+    volumes: filters.packageVolumes,
+    types: [],
   };
 }
 
 export async function buildClientVinLookup(rawVin: unknown) {
   const vin = normalizePublicVin(rawVin);
-  const fallback = fallbackVinLookup(vin);
 
   if (vin.length !== 17) {
-    return {
-      ...fallback,
-      warning: "VIN должен состоять из 17 символов. Показываем демо-подбор.",
-    };
+    return emptyVinLookup(vin, "VIN должен состоять из 17 символов.");
   }
 
   try {
     const publicResult = await getPublicVinOilRecommendation({ vin });
-    const oils = await loadClientOils();
-    const byId = new Map(oils.map((oil) => [oil.id, oil]));
     const recommended = publicResult.recommended
-      .map((oil) => byId.get(oil.id) ?? publicOilToClientOil(oil))
+      .map((oil) => publicOilToClientOil(oil))
       .filter(Boolean);
     const alternatives = publicResult.alternatives
-      .map((oil) => byId.get(oil.id) ?? publicOilToClientOil(oil))
+      .map((oil) => publicOilToClientOil(oil))
       .filter(Boolean);
-
-    if (recommended.length === 0) return fallback;
 
     return {
       car: {
-        brand: publicResult.vehicle?.make ?? fallback.car.brand,
-        model: publicResult.vehicle?.model ?? fallback.car.model,
-        generation: publicResult.vehicle?.series ?? fallback.car.generation,
-        year: publicResult.vehicle?.year ?? fallback.car.year,
-        engine: publicResult.vehicle?.engine ?? fallback.car.engine,
+        brand: publicResult.vehicle?.make,
+        model: publicResult.vehicle?.model,
+        generation: publicResult.vehicle?.series,
+        year: publicResult.vehicle?.year,
+        engine: publicResult.vehicle?.engine,
       },
       maintenance: {
-        ...fallback.maintenance,
-        oilSpec: oilSpecFromRequirements(publicResult.requirements) ?? fallback.maintenance.oilSpec,
+        oilSpec: oilSpecFromRequirements(publicResult.requirements),
+        filters: {},
       },
-      recommended: recommended[0],
+      recommended: recommended[0] ?? null,
       alternatives: alternatives.length ? alternatives : recommended.slice(1),
       source: { vin: "eco-platform", oilRequirements: "openai+local-rules" },
       warning: publicResult.warning,
     };
   } catch (error) {
     console.warn("[client-site/vin]", error);
-    return fallback;
+    return emptyVinLookup(vin, "Подбор по VIN временно недоступен. Повторите запрос позже.");
   }
 }
 
@@ -246,22 +227,14 @@ export class ClientApiError extends Error {
   }
 }
 
-async function loadClientOils(limit = 1000) {
-  try {
-    const publicResult = await withTimeout(listPublicOils({ limit }), ECO_OIL_TIMEOUT_MS);
-    if (publicResult.oils.length > 0) {
-      return uniqueById(publicResult.oils.map(publicOilToClientOil)).sort(compareClientOils);
-    }
-  } catch (error) {
-    console.warn("[client-site/oils]", error);
-  }
-
-  return DEMO_OILS;
+async function loadClientOils(limit = 100) {
+  const publicResult = await withTimeout(listPublicOils({ limit }), ECO_OIL_TIMEOUT_MS);
+  return uniqueById(publicResult.oils.map(publicOilToClientOil)).sort(compareClientOils);
 }
 
 function clientOilLimit(searchParams?: URLSearchParams) {
   const parsed = Number.parseInt(searchParams?.get("limit") ?? "", 10);
-  return Number.isFinite(parsed) ? Math.min(1000, Math.max(1, parsed)) : 1000;
+  return Number.isFinite(parsed) ? Math.min(100, Math.max(1, parsed)) : 30;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
@@ -294,68 +267,56 @@ function filterClientOils(oils: ClientOil[], searchParams?: URLSearchParams) {
     return true;
   });
 
-  if (sort === "cheap") return filtered.toSorted((a, b) => a.price - b.price);
-  if (sort === "exp") return filtered.toSorted((a, b) => b.price - a.price);
+  if (sort === "cheap") return filtered.toSorted((a, b) => compareNullablePrices(a.price, b.price));
+  if (sort === "exp") return filtered.toSorted((a, b) => compareNullablePrices(b.price, a.price));
   if (sort === "stock") return filtered.toSorted((a, b) => b.stock - a.stock);
   return filtered;
 }
 
 function publicOilToClientOil(card: PublicOilCard, index = 0): ClientOil {
   const brand = normalizeOilBrand(card);
-  const visc = extractSae(card.name) || clean(card.sae) || "5W-40";
+  const visc = extractSae(card.name) || clean(card.sae);
   const nameVolume = extractVolume(card.name);
   const packageVolume = clean(card.packageVolume);
-  const volume = (/розлив/i.test(card.name) && nameVolume ? nameVolume : packageVolume) || nameVolume || "4 л";
-  const line = deriveOilLine(card.name, brand, visc, volume) || clean(card.name) || "Motor Oil";
-  const stock = Math.max(0, Math.floor(Number(card.available) || 0));
+  const volume = (/розлив/i.test(card.name) && nameVolume ? nameVolume : packageVolume) || nameVolume;
+  const line = deriveOilLine(card.name, brand, visc, volume) || clean(card.name);
+  const stock = Math.max(0, Number(card.available) || 0);
 
   return {
     id: card.id,
+    article: clean(card.article) || undefined,
     brand,
     line,
     visc,
     spec: buildSpec(card),
     type: inferOilType(card),
     volume,
-    base: "Данные эко-платформы",
-    price: Number(card.price) || 0,
-    workPrice: 0,
-    note: card.article ? `Артикул ${card.article}. Данные из эко-платформы.` : "Данные из эко-платформы.",
+    price: card.pricesDiffer || card.price == null ? null : Number(card.price),
+    note: clean(card.description) || (card.article ? `Артикул ${card.article}.` : undefined),
     color: BRAND_COLORS[brand.toLowerCase()] ?? paletteColor(index),
     stock,
+    pricesDiffer: card.pricesDiffer,
+    offers: card.offers,
+    updatedAt: card.updatedAt,
     imageHref: card.imageHref,
+    uom: clean(card.uom) || undefined,
   };
 }
 
-function fallbackVinLookup(vin: string) {
-  const recommended = DEMO_OILS.find((oil) => oil.id === DATA.VIN_DEMO.recommended) ?? DEMO_OILS[0];
-  const alternatives = (DATA.VIN_DEMO.alternatives ?? [])
-    .map((id) => DEMO_OILS.find((oil) => oil.id === id))
-    .filter((oil): oil is ClientOil => Boolean(oil));
+function compareNullablePrices(left: number | null, right: number | null) {
+  if (left == null) return right == null ? 0 : 1;
+  if (right == null) return -1;
+  return left - right;
+}
 
+function emptyVinLookup(vin: string, warning: string) {
   return {
-    car: {
-      brand: DATA.VIN_DEMO.brand ?? "BMW",
-      model: DATA.VIN_DEMO.model ?? "X5",
-      generation: DATA.VIN_DEMO.generation ?? "G05",
-      year: DATA.VIN_DEMO.year ?? 2021,
-      engine: DATA.VIN_DEMO.engine ?? "B58B30",
-    },
-    maintenance: {
-      oilCapacity: DATA.VIN_DEMO.oilCapacity ?? "6.5 л",
-      oilSpec: DATA.VIN_DEMO.oilSpec ?? "BMW Longlife-01 / 5W-30",
-      oilCapacityLiters: parseLiters(DATA.VIN_DEMO.oilCapacity),
-      filters: {
-        oil: { title: "Масляный фильтр", article: DATA.VIN_DEMO.filter ?? "MANN / OEM по VIN", price: 950 },
-        air: { title: "Воздушный фильтр", article: DATA.VIN_DEMO.airFilter ?? "MANN / OEM по VIN", price: 1350 },
-        cabin: { title: "Салонный фильтр", article: DATA.VIN_DEMO.cabinFilter ?? "MANN / OEM по VIN", price: 1650 },
-      },
-      drainPlug: DATA.VIN_DEMO.drainPlug ?? "M14x1.5",
-    },
-    recommended,
-    alternatives,
-    source: { vin: vin ? "fallback" : "demo", oilRequirements: "local-demo" },
-    warning: undefined,
+    car: {},
+    maintenance: { filters: {} },
+    recommended: null,
+    alternatives: [],
+    source: { vin: vin ? "unavailable" : "empty", oilRequirements: "none" },
+    warning,
   };
 }
 
@@ -426,10 +387,6 @@ function splitParam(value: string) {
     .filter(Boolean);
 }
 
-function unique(items: string[]) {
-  return [...new Set(items)].sort((a, b) => a.localeCompare(b, "ru"));
-}
-
 function uniqueById(items: ClientOil[]) {
   const seen = new Set<string>();
   return items.filter((item) => {
@@ -439,16 +396,12 @@ function uniqueById(items: ClientOil[]) {
   });
 }
 
-function firstWord(value: string) {
-  return clean(value).split(/\s+/)[0] ?? "";
-}
-
 function normalizeOilBrand(card: PublicOilCard) {
   const rawBrand = clean(card.brand);
   if (rawBrand && !GENERIC_BRANDS.has(rawBrand.toLowerCase())) {
     return knownOilBrand(rawBrand) || rawBrand;
   }
-  return knownOilBrand(card.name) || rawBrand || firstWord(card.name) || "TGM";
+  return rawBrand;
 }
 
 function knownOilBrand(value: unknown) {
@@ -472,13 +425,14 @@ function buildSpec(card: PublicOilCard) {
     clean(card.acea) ? `ACEA ${clean(card.acea).replace(/^ACEA\s+/i, "")}` : "",
   ]
     .filter(Boolean)
-    .join(" / ") || "API SP / ACEA";
+    .join(" / ");
 }
 
 function inferOilType(card: PublicOilCard) {
   const text = `${card.name ?? ""} ${card.acea ?? ""} ${card.apiSpec ?? ""}`.toLowerCase();
-  const parts = ["Бензин"];
-  if (/diesel|диз|c\d|a3\/b4|b\d/.test(text)) parts.push("Дизель");
+  const parts: string[] = [];
+  if (/\bapi\s+s[a-p]\b|бензин|gasoline|petrol/i.test(text)) parts.push("Бензин");
+  if (/diesel|диз|\bc\d\b|a3\/b4|\bb\d\b/.test(text)) parts.push("Дизель");
   if (/dpf|c\d|low saps|mid saps/.test(text)) parts.push("DPF");
   return [...new Set(parts)].join(" · ");
 }
@@ -509,13 +463,6 @@ function deriveOilLine(name: string, brand: string, visc: string, volume: string
     .replace(/\s+/g, " ")
     .replace(/[,\s.]+$/g, "")
     .trim();
-}
-
-function parseLiters(value: unknown) {
-  const matched = String(value ?? "").match(/\d+(?:[.,]\d+)?/);
-  if (!matched) return undefined;
-  const parsed = Number.parseFloat(matched[0].replace(",", "."));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function extractSae(value: string) {

@@ -11,6 +11,7 @@ import {
 import { splitProductCrossReferences } from "@/lib/product-cross-references";
 import { parseStoredAttributeValues } from "@/lib/product-attribute-values";
 import { resolveProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
+import { storefrontPublicationReadiness } from "@/lib/storefront-product-identity";
 
 type LocalEntityMeta = {
   href: string;
@@ -24,6 +25,7 @@ export type CatalogSearchContext = "products" | "shipment";
 export type CatalogSearchType = "product" | "service" | "all";
 export type CatalogOemPartsFilter = "all" | "filled" | "missing";
 export type CatalogOemEnrichmentResultFilter = "all" | "remaining" | "error" | "no_results" | "missing_source";
+export type CatalogPublicationFilter = "all" | "published" | "hidden" | "needs_attention";
 
 export type CatalogSearchParams = {
   q?: string;
@@ -46,6 +48,7 @@ export type CatalogSearchParams = {
   stock?: string;
   markingProblems?: boolean;
   priceMissing?: boolean;
+  publication?: CatalogPublicationFilter;
   oemParts?: CatalogOemPartsFilter;
   oemBatchId?: string;
   oemEnrichmentResult?: CatalogOemEnrichmentResultFilter;
@@ -88,6 +91,9 @@ type CatalogProduct = Prisma.LocalProductGetPayload<{
         cell: true;
         store: { select: { id: true; name: true; isMain: true; archived: true } };
       };
+    };
+    storefrontBindings: {
+      include: { storefrontProduct: { select: { id: true; publicationState: true; contentSourceProductId: true } } };
     };
   };
 }>;
@@ -210,6 +216,10 @@ export type CatalogSearchItem = {
   copyBatchId: string | null;
   copiedAt: string | null;
   priceNeedsSetup: boolean;
+  storefrontPublicationState: "HIDDEN" | "PUBLISHED";
+  storefrontProductId: string | null;
+  storefrontContentSourceProductId: string | null;
+  storefrontPublicationProblems: string[];
   stockQuantity: number;
   reserveQuantity: number;
   availableQuantity: number;
@@ -263,6 +273,7 @@ export type CatalogSearchResult = {
       stock: StockFilter;
       markingProblems: boolean;
       priceMissing: boolean;
+      publication: CatalogPublicationFilter;
       oemParts: CatalogOemPartsFilter;
     };
     filterOptions: {
@@ -850,6 +861,9 @@ function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult
     return false;
   }
   if (filters.priceMissing && !item.priceNeedsSetup) return false;
+  if (filters.publication === "published" && item.storefrontPublicationState !== "PUBLISHED") return false;
+  if (filters.publication === "hidden" && item.storefrontPublicationState !== "HIDDEN") return false;
+  if (filters.publication === "needs_attention" && item.storefrontPublicationProblems.length === 0) return false;
   if (filters.oemParts === "filled" && item.oemPartsCount === 0) return false;
   if (filters.oemParts === "missing" && item.oemPartsCount > 0) return false;
   return true;
@@ -947,6 +961,8 @@ function compareItems(a: CatalogSearchItem, b: CatalogSearchItem, sort: SortKey,
 }
 
 function mapProduct(product: CatalogProduct, relevance: number, matchedFields: CatalogMatchedField[]): CatalogSearchItem {
+  const storefrontBinding = product.storefrontBindings.find((binding) => binding.status === "CONFIRMED") ?? null;
+  const storefrontPublicationProblems = storefrontPublicationReadiness(product);
   const normalizedOemParts = splitProductCrossReferences(product.oemParts);
   const stock = product.stockBalances.map((balance) => ({
     storeId: balance.storeId,
@@ -1049,6 +1065,10 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     copyBatchId: product.copyBatchId,
     copiedAt: product.copiedAt?.toISOString() ?? null,
     priceNeedsSetup: product.priceNeedsSetup,
+    storefrontPublicationState: storefrontBinding?.storefrontProduct.publicationState === "PUBLISHED" ? "PUBLISHED" : "HIDDEN",
+    storefrontProductId: storefrontBinding?.storefrontProduct.id ?? null,
+    storefrontContentSourceProductId: storefrontBinding?.storefrontProduct.contentSourceProductId ?? null,
+    storefrontPublicationProblems,
     stockQuantity: firstStock?.quantity ?? 0,
     reserveQuantity: firstStock?.reserve ?? 0,
     availableQuantity: firstStock?.available ?? 0,
@@ -1113,6 +1133,9 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     stock: params.inStock ? "inStock" : normalizeStockFilter(params.stock),
     markingProblems: params.markingProblems === true,
     priceMissing: params.priceMissing === true,
+    publication: params.publication === "published" || params.publication === "hidden" || params.publication === "needs_attention"
+      ? params.publication
+      : "all",
     oemParts: normalizeOemPartsFilter(params.oemParts),
   };
   const storeId = await resolveStoreId(params);
@@ -1153,6 +1176,9 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
             supplierCounterparty: { select: { name: true, displayName: true } },
             storageAssignments: {
               include: { cell: true, store: { select: { id: true, name: true, isMain: true, archived: true } } },
+            },
+            storefrontBindings: {
+              include: { storefrontProduct: { select: { id: true, publicationState: true, contentSourceProductId: true } } },
             },
           },
           orderBy: [{ name: "asc" }],
@@ -1215,7 +1241,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
   // Without a search query, facets and totals must be calculated across the
   // whole branch catalog. Limiting candidates before applying filters makes
   // exact totals depend on the first alphabetical page (often exactly 100).
-  const needsCompleteOemResult = filters.oemParts !== "all" || normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult) !== "all" || params.internalLimit != null;
+  const needsCompleteOemResult = filters.oemParts !== "all" || filters.publication !== "all" || normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult) !== "all" || params.internalLimit != null;
   const candidateTake = needsCompleteOemResult ? undefined : catalogCandidateTake(tokens.length, limit);
   const products = await prisma.localProduct.findMany({
     where,
@@ -1233,6 +1259,9 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
       supplierCounterparty: { select: { name: true, displayName: true } },
       storageAssignments: {
         include: { cell: true, store: { select: { id: true, name: true, isMain: true, archived: true } } },
+      },
+      storefrontBindings: {
+        include: { storefrontProduct: { select: { id: true, publicationState: true, contentSourceProductId: true } } },
       },
     },
     orderBy: [{ name: "asc" }],
@@ -1305,6 +1334,9 @@ export function normalizeCatalogProductSelectionSnapshot(value: unknown): Catalo
   const stock = input.stock === "inStock" || input.stock === "outOfStock" || input.stock === "all" ? input.stock : undefined;
   const oemParts = normalizeOemPartsFilter(selectionString(input.oemParts));
   const oemEnrichmentResult = normalizeOemEnrichmentResultFilter(selectionString(input.oemEnrichmentResult));
+  const publication = ["published", "hidden", "needs_attention"].includes(String(input.publication ?? ""))
+    ? input.publication as CatalogPublicationFilter
+    : "all";
   const origin = ["MANUAL", "BRANCH_COPY", "IMPORT", "SYNC"].includes(String(input.origin ?? "")) ? String(input.origin) : undefined;
   const sort = selectionString(input.sort, 30);
   const direction = input.direction === "desc" ? "desc" : input.direction === "asc" ? "asc" : undefined;
@@ -1327,6 +1359,7 @@ export function normalizeCatalogProductSelectionSnapshot(value: unknown): Catalo
     stock,
     markingProblems: input.markingProblems === true,
     priceMissing: input.priceMissing === true,
+    publication,
     oemParts,
     oemBatchId: selectionString(input.oemBatchId),
     oemEnrichmentResult,

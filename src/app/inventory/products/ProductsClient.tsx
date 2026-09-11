@@ -163,6 +163,10 @@ type ProductRow = {
   copyBatchId?: string | null;
   copiedAt?: string | null;
   priceNeedsSetup?: boolean;
+  storefrontPublicationState?: "HIDDEN" | "PUBLISHED";
+  storefrontProductId?: string | null;
+  storefrontContentSourceProductId?: string | null;
+  storefrontPublicationProblems?: string[];
 };
 
 type ProductFormErrors = Partial<Record<keyof ProductForm, string>>;
@@ -180,6 +184,7 @@ type ProductSortKey =
 type SortDirection = "asc" | "desc";
 type StockFilter = "all" | "inStock" | "outOfStock";
 type OemPartsFilter = "all" | "filled" | "missing";
+type PublicationFilter = "all" | "published" | "hidden" | "needs_attention";
 type OemEnrichmentResultFilter = "remaining" | "error" | "no_results" | "missing_source";
 type ProductOriginFilter = "all" | "MANUAL" | "BRANCH_COPY" | "IMPORT" | "SYNC";
 
@@ -204,6 +209,7 @@ type ProductFilters = {
   markingProblems: boolean;
   priceMissing: boolean;
   oemParts: OemPartsFilter;
+  publication: PublicationFilter;
 };
 
 type ProductFacetOption = {
@@ -262,6 +268,61 @@ type ProductCopyDialogState = {
   productIds: string[];
   selection?: Record<string, unknown>;
   selectionCount: number;
+};
+type StorefrontPublicationState = "HIDDEN" | "PUBLISHED";
+type StorefrontPublicationStatus = {
+  configured: boolean;
+  canManage: boolean;
+  state: StorefrontPublicationState;
+  ready: boolean;
+  problems: string[];
+  storefrontProductId: string | null;
+  publicUrl: string | null;
+  contentSourceProductId: string | null;
+  bindingCandidates: Array<{
+    storefrontProductId: string;
+    name: string;
+    state: StorefrontPublicationState;
+    evidence: string;
+    branches: string[];
+  }>;
+  branches: Array<{
+    id: string;
+    name: string;
+    address: string | null;
+    linked: boolean;
+    isContentSource: boolean;
+    localProductId: string | null;
+    available: number | null;
+    uom: string | null;
+    price: number | null;
+  }>;
+};
+type StorefrontPublicationPreview = {
+  batchId: string;
+  state: StorefrontPublicationState;
+  selectedRows: number;
+  uniqueProducts: number;
+  alreadyDesired: number;
+  readyItems: number;
+  blockedItems: number;
+  branches: Array<{ id: string; name: string; address: string | null; stores: Array<{ id: string; name: string }> }>;
+  items: Array<{
+    localProductId: string;
+    name: string;
+    currentState: StorefrontPublicationState;
+    storefrontProductId: string | null;
+    matchingEvidence: string | null;
+    ready: boolean;
+    problems: string[];
+  }>;
+};
+type StorefrontPublicationDialog = {
+  state: StorefrontPublicationState;
+  loading: boolean;
+  applying: boolean;
+  error: string | null;
+  preview: StorefrontPublicationPreview | null;
 };
 type OemEnrichmentResultState = { batchId: string; result: OemEnrichmentResultFilter } | null;
 type ProductGroupKind = "oil" | "filter" | "other";
@@ -423,7 +484,7 @@ type ProductEditorBufferedInputProps = {
   disabled?: boolean;
 };
 
-type ProductEditorSectionId = "main" | "pricing" | "marking" | "codes" | "oil" | "extra" | "technical";
+type ProductEditorSectionId = "main" | "pricing" | "site" | "marking" | "codes" | "oil" | "extra" | "technical";
 
 const emptyForm: ProductForm = {
   name: "",
@@ -522,6 +583,11 @@ const productEditorSections: Array<{ id: ProductEditorSectionId; label: string; 
     aliases: ["остаток", "доступно", "резерв", "ячейк", "склад", "минимальный остаток"],
   },
   {
+    id: "site",
+    label: "Клиентский сайт",
+    aliases: ["сайт", "публикация", "витрина", "филиал", "наличие на сайте"],
+  },
+  {
     id: "marking",
     label: "Маркировка",
     aliases: ["маркировка", "честный знак", "aqsi", "разлив", "розлив", "бочка", "код маркировки", "gtin"],
@@ -573,6 +639,7 @@ const emptyFilters: ProductFilters = {
   markingProblems: false,
   priceMissing: false,
   oemParts: "all",
+  publication: "all",
 };
 
 const emptyFilterOptions: ProductFilterOptions = {
@@ -892,7 +959,7 @@ function uniqueGroupsByLabel(groups: string[]) {
   return result;
 }
 
-type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems" | "priceMissing" | "oemParts">;
+type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems" | "priceMissing" | "oemParts" | "publication">;
 type FacetKey = "group" | "brand" | "sae" | "supplier" | "apiSpec" | "acea" | "packageVolume" | "entityType";
 type FacetOrderState = Record<FacetKey, Map<string, number>>;
 type FacetPreviewPinState = Record<FacetKey, Set<string>>;
@@ -1688,6 +1755,13 @@ export default function ProductsClient() {
   const [bulkActionsPosition, setBulkActionsPosition] = useState<ActionMenuPosition | null>(null);
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
   const [bulkArchiveSaving, setBulkArchiveSaving] = useState(false);
+  const [publicationDialog, setPublicationDialog] = useState<StorefrontPublicationDialog | null>(null);
+  const [storefrontStatus, setStorefrontStatus] = useState<StorefrontPublicationStatus | null>(null);
+  const [storefrontStatusLoading, setStorefrontStatusLoading] = useState(false);
+  const [storefrontPublicationDraft, setStorefrontPublicationDraft] = useState<StorefrontPublicationState>("HIDDEN");
+  const [storefrontPreviewOpen, setStorefrontPreviewOpen] = useState(false);
+  const [storefrontBindingCandidateId, setStorefrontBindingCandidateId] = useState("");
+  const [storefrontBindingSaving, setStorefrontBindingSaving] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -1878,6 +1952,7 @@ export default function ProductsClient() {
     () => Object.entries(filters).reduce((count, [key, value]) => {
       if (key === "stock") return count + (value !== "all" ? 1 : 0);
       if (key === "oemParts") return count + (value !== "all" ? 1 : 0);
+      if (key === "publication") return count + (value !== "all" ? 1 : 0);
       if (key === "markingProblems" || key === "priceMissing") return count + (value === true ? 1 : 0);
       return count + (Array.isArray(value) ? value.length : 0);
     }, storageCellFilter !== "all" ? 1 : 0),
@@ -2011,8 +2086,8 @@ export default function ProductsClient() {
   }, [handleOemBatchChange, knownOemBatch]);
 
   const formDirty = useMemo(
-    () => isProductFormDirty(form, formBaseline),
-    [form, formBaseline]
+    () => isProductFormDirty(form, formBaseline) || Boolean(storefrontStatus && storefrontPublicationDraft !== storefrontStatus.state),
+    [form, formBaseline, storefrontPublicationDraft, storefrontStatus]
   );
   const changedCriticalFields = useMemo(
     () => Object.entries(criticalFieldLabels)
@@ -2101,6 +2176,9 @@ export default function ProductsClient() {
       } else if (key === "oemParts") {
         const oemPartsValue = value as OemPartsFilter;
         if (oemPartsValue !== "all") params.set(key, oemPartsValue);
+      } else if (key === "publication") {
+        const publicationValue = value as PublicationFilter;
+        if (publicationValue !== "all") params.set(key, publicationValue);
       } else if (key === "markingProblems") {
         if (value === true) params.set(key, "1");
       } else if (key === "priceMissing") {
@@ -2529,6 +2607,26 @@ export default function ProductsClient() {
     updateForm(patch);
   }
 
+  async function loadStorefrontStatus(productId: string) {
+    setStorefrontStatusLoading(true);
+    try {
+      const response = await fetch(`/api/storefront/products/${encodeURIComponent(productId)}/status`, { cache: "no-store" });
+      const data = await readJson<StorefrontPublicationStatus & { error?: string }>(response);
+      if (!response.ok) throw new Error(data?.error ?? "Не удалось прочитать публикацию");
+      if (!data) throw new Error("Сервер не вернул статус витрины");
+      setStorefrontStatus(data);
+      setStorefrontPublicationDraft(data.state);
+      setStorefrontBindingCandidateId("");
+      return data;
+    } catch (statusError) {
+      setStorefrontStatus(null);
+      setFormError(statusError instanceof Error ? statusError.message : String(statusError));
+      return null;
+    } finally {
+      setStorefrontStatusLoading(false);
+    }
+  }
+
   function handleGroupPathChange(groupPath: string) {
     const groupDefault = productMarkingDefaultForGroup(groupPath);
     if (groupDefault === "NONE") {
@@ -2585,6 +2683,11 @@ export default function ProductsClient() {
     setDeletingPhotoId(null);
     setFormOpen(false);
     setMobileEditorView("details");
+    setStorefrontStatus(null);
+    setStorefrontPublicationDraft("HIDDEN");
+    setStorefrontPreviewOpen(false);
+    setStorefrontBindingCandidateId("");
+    setStorefrontBindingSaving(false);
   }
 
   function openNewProduct() {
@@ -2605,6 +2708,11 @@ export default function ProductsClient() {
     setError(null);
     setFormOpen(true);
     setMobileEditorView("details");
+    setStorefrontStatus(null);
+    setStorefrontPublicationDraft("HIDDEN");
+    setStorefrontPreviewOpen(false);
+    setStorefrontBindingCandidateId("");
+    setStorefrontBindingSaving(false);
   }
 
   function openSimilarProduct(product: ProductRow) {
@@ -2636,6 +2744,11 @@ export default function ProductsClient() {
     setError(null);
     setFormOpen(true);
     setMobileEditorView("details");
+    setStorefrontStatus(null);
+    setStorefrontPublicationDraft("HIDDEN");
+    setStorefrontPreviewOpen(false);
+    setStorefrontBindingCandidateId("");
+    setStorefrontBindingSaving(false);
   }
 
   function openProductEditor(product: ProductRow) {
@@ -2657,6 +2770,12 @@ export default function ProductsClient() {
     setError(null);
     setFormOpen(true);
     setMobileEditorView("details");
+    setStorefrontStatus(null);
+    setStorefrontPublicationDraft(product.storefrontPublicationState === "PUBLISHED" ? "PUBLISHED" : "HIDDEN");
+    setStorefrontPreviewOpen(false);
+    setStorefrontBindingCandidateId("");
+    setStorefrontBindingSaving(false);
+    void loadStorefrontStatus(product.id);
   }
 
   function closeForm() {
@@ -2769,6 +2888,9 @@ export default function ProductsClient() {
         if (key === "stock") {
           const stockValue = value as StockFilter;
           if (stockValue !== "all") params.set(key, stockValue);
+        } else if (key === "publication") {
+          const publicationValue = value as PublicationFilter;
+          if (publicationValue !== "all") params.set(key, publicationValue);
         } else if (key === "markingProblems" || key === "priceMissing") {
           if (value === true) params.set(key, "1");
         } else if (Array.isArray(value)) {
@@ -2824,6 +2946,149 @@ export default function ProductsClient() {
     setBulkActionsOpen(false);
     setBulkArchiveOpen(true);
     setError(null);
+  }
+
+  async function requestStorefrontPublicationPreview(
+    state: StorefrontPublicationState,
+    input: { productIds?: string[]; selection?: Record<string, unknown> }
+  ) {
+    const response = await fetch("/api/storefront/publication/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state, ...input }),
+    });
+    const payload = await readJson<StorefrontPublicationPreview & { error?: string }>(response);
+    if (!response.ok) throw new Error(payload?.error ?? "Не удалось подготовить предпросмотр");
+    if (!payload) throw new Error("Сервер не вернул предпросмотр");
+    return payload;
+  }
+
+  async function applyStorefrontPublicationBatch(batchId: string) {
+    const response = await fetch("/api/storefront/publication/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ batchId }),
+    });
+    const payload = await readJson<{
+      appliedItems?: number;
+      skippedItems?: number;
+      failedItems?: number;
+      blockedItems?: number;
+      error?: string;
+    }>(response);
+    if (!response.ok) throw new Error(payload?.error ?? "Не удалось изменить публикацию");
+    if (!payload) throw new Error("Сервер не вернул итог операции");
+    return payload;
+  }
+
+  async function openStorefrontPublicationDialog(state: StorefrontPublicationState) {
+    if (!selectedProductsCount) return;
+    setBulkActionsOpen(false);
+    setPublicationDialog({ state, loading: true, applying: false, error: null, preview: null });
+    try {
+      const preview = await requestStorefrontPublicationPreview(state, {
+        productIds: allFilteredProductsSelected ? undefined : selectedProductIds,
+        selection: allFilteredProductsSelected ? buildCatalogSelectionSnapshot() : undefined,
+      });
+      setPublicationDialog({ state, loading: false, applying: false, error: null, preview });
+    } catch (previewError) {
+      setPublicationDialog({
+        state,
+        loading: false,
+        applying: false,
+        error: previewError instanceof Error ? previewError.message : String(previewError),
+        preview: null,
+      });
+    }
+  }
+
+  async function confirmStorefrontPublication() {
+    const preview = publicationDialog?.preview;
+    if (!preview) return;
+    setPublicationDialog((current) => current ? { ...current, applying: true, error: null } : current);
+    try {
+      const result = await applyStorefrontPublicationBatch(preview.batchId);
+      const applied = result.appliedItems ?? 0;
+      const skipped = result.skippedItems ?? 0;
+      const blocked = result.blockedItems ?? 0;
+      const failed = result.failedItems ?? 0;
+      setPublicationDialog(null);
+      clearProductSelection();
+      setToast({ message: `Витрина: ${applied} изменено · ${skipped} без изменений · ${blocked + failed} с проблемами` });
+      await load(search, sort, direction, filters);
+    } catch (applyError) {
+      setPublicationDialog((current) => current ? {
+        ...current,
+        applying: false,
+        error: applyError instanceof Error ? applyError.message : String(applyError),
+      } : current);
+    }
+  }
+
+  async function synchronizeSingleProductPublication(productId: string) {
+    if (!storefrontStatus) return;
+    const currentState = storefrontStatus.state;
+    if (storefrontPublicationDraft === currentState) return;
+    const preview = await requestStorefrontPublicationPreview(storefrontPublicationDraft, { productIds: [productId] });
+    const item = preview.items[0];
+    if (!item?.ready) throw new Error(item?.problems.join(" ") || "Карточка не готова к публикации.");
+    const result = await applyStorefrontPublicationBatch(preview.batchId);
+    if ((result.failedItems ?? 0) > 0 || (result.blockedItems ?? 0) > 0) {
+      throw new Error("Публикация не изменена: обновите карточку и повторите.");
+    }
+    await loadStorefrontStatus(productId);
+  }
+
+  async function bindSelectedStorefrontCandidate() {
+    if (!editingId || !storefrontBindingCandidateId || storefrontBindingSaving) return;
+    const candidate = storefrontStatus?.bindingCandidates.find((item) => item.storefrontProductId === storefrontBindingCandidateId);
+    if (!candidate) return;
+    const publishedWarning = candidate.state === "PUBLISHED"
+      ? " Карточка уже опубликована: после связи предложение текущей точки станет публичным сразу."
+      : "";
+    if (!window.confirm(`Связать товар с общей карточкой «${candidate.name}»?${publishedWarning}`)) return;
+    setStorefrontBindingSaving(true);
+    setFormError(null);
+    try {
+      const response = await fetch(`/api/storefront/products/${encodeURIComponent(editingId)}/binding`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storefrontProductId: candidate.storefrontProductId }),
+      });
+      const data = await readJson<StorefrontPublicationStatus & { error?: string }>(response);
+      if (!response.ok) throw new Error(data?.error ?? "Не удалось связать общую карточку");
+      if (!data) throw new Error("Сервер не вернул состояние витрины");
+      setStorefrontStatus(data);
+      setStorefrontPublicationDraft(data.state);
+      setStorefrontBindingCandidateId("");
+      setToast({ message: `Товар связан с общей карточкой «${candidate.name}»` });
+      await load(search, sort, direction, filters);
+    } catch (bindingError) {
+      setFormError(bindingError instanceof Error ? bindingError.message : String(bindingError));
+    } finally {
+      setStorefrontBindingSaving(false);
+    }
+  }
+
+  async function selectCurrentStorefrontContentSource() {
+    if (!editingId || storefrontBindingSaving) return;
+    if (!window.confirm("Использовать эту филиальную карточку как источник названия и характеристик общей карточки? Изменение будет записано в аудит.")) return;
+    setStorefrontBindingSaving(true);
+    setFormError(null);
+    try {
+      const response = await fetch(`/api/storefront/products/${encodeURIComponent(editingId)}/source`, { method: "POST" });
+      const data = await readJson<StorefrontPublicationStatus & { error?: string }>(response);
+      if (!response.ok) throw new Error(data?.error ?? "Не удалось изменить источник общей карточки");
+      if (!data) throw new Error("Сервер не вернул состояние витрины");
+      setStorefrontStatus(data);
+      setStorefrontPublicationDraft(data.state);
+      setToast({ message: "Источник общей карточки изменён" });
+      await load(search, sort, direction, filters);
+    } catch (sourceError) {
+      setFormError(sourceError instanceof Error ? sourceError.message : String(sourceError));
+    } finally {
+      setStorefrontBindingSaving(false);
+    }
   }
 
   async function setBulkProductsArchived(productIds: string[], archived: boolean) {
@@ -3225,6 +3490,18 @@ export default function ProductsClient() {
         onRemove: () => changeOemPartsFilter("all"),
       });
     }
+    if (filters.publication !== "all") {
+      const label = filters.publication === "published"
+        ? "Опубликовано"
+        : filters.publication === "hidden"
+          ? "Скрыто"
+          : "Требует внимания";
+      chips.push({
+        key: "publication",
+        label: `Сайт: ${label}`,
+        onRemove: () => setFilters((prev) => ({ ...prev, publication: "all" })),
+      });
+    }
     if (storageCellFilter !== "all") {
       const selectedCell = storageCells.find((cell) => cell.id === storageCellFilter);
       chips.push({
@@ -3297,7 +3574,7 @@ export default function ProductsClient() {
   function renderSkeletonRows() {
     return Array.from({ length: 7 }, (_, index) => (
       <tr key={`skeleton-${index}`} className="eco-product-skeleton-row">
-        {Array.from({ length: 10 }, (_cell, cellIndex) => (
+        {Array.from({ length: 11 }, (_cell, cellIndex) => (
           <td key={cellIndex}>
             <span className="eco-product-skeleton-line" />
           </td>
@@ -3475,6 +3752,14 @@ export default function ProductsClient() {
             <span><b>Копировать в филиал</b><small>Без остатков и истории движений</small></span>
           </button>
         ) : null}
+        <button type="button" role="menuitem" onClick={() => void openStorefrontPublicationDialog("PUBLISHED")}>
+          <Upload aria-hidden className="eco-icon" />
+          <span><b>Показать на сайте</b><small>Сначала предпросмотр и проверка</small></span>
+        </button>
+        <button type="button" role="menuitem" onClick={() => void openStorefrontPublicationDialog("HIDDEN")}>
+          <X aria-hidden className="eco-icon" />
+          <span><b>Скрыть с сайта</b><small>Общая карточка исчезнет из витрины</small></span>
+        </button>
         <button type="button" role="menuitem" onClick={exportSelectedProducts}>
           <FileSpreadsheet aria-hidden className="eco-icon" />
           <span><b>Экспортировать</b><small>Скачать выбранные карточки в Excel</small></span>
@@ -3659,6 +3944,7 @@ export default function ProductsClient() {
       setFormBaseline(savedForm);
       setMarkingTouched(false);
       setFormErrors({});
+      await synchronizeSingleProductPublication(data.id);
       if (closeAfter) {
         setInfo(editingId ? "Товар обновлён" : "Товар добавлен");
         resetForm();
@@ -5127,6 +5413,124 @@ export default function ProductsClient() {
                     </div>
                   </section>
 
+                  <section id={productEditorSectionElementId("site")} className="product-editor-section product-editor-storefront-card">
+                    <div className="product-editor-section-head">
+                      <div>
+                        <h3>Клиентский сайт</h3>
+                        <p>Одна общая карточка, цена и наличие отдельно по точкам</p>
+                      </div>
+                      <span className={`eco-product-marking-badge ${storefrontPublicationDraft === "PUBLISHED" ? "is-ready" : "is-muted"}`}>
+                        {storefrontPublicationDraft === "PUBLISHED" ? "Опубликовано" : "Скрыто"}
+                      </span>
+                    </div>
+
+                    {!editingId ? (
+                      <div className="product-editor-empty-note">Сначала сохраните новый товар. После этого его можно будет опубликовать.</div>
+                    ) : storefrontStatusLoading ? (
+                      <div className="product-editor-empty-note"><Loader2 aria-hidden className="eco-icon animate-spin" /> Проверяем витрину…</div>
+                    ) : storefrontStatus ? (
+                      <>
+                        <label className="product-editor-storefront-toggle">
+                          <span>
+                            <b>Показывать на сайте</b>
+                            <small>Изменение применится вместе с обычным сохранением карточки.</small>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={storefrontPublicationDraft === "PUBLISHED"}
+                            disabled={!storefrontStatus.configured || !storefrontStatus.canManage || editingProduct?.archived}
+                            onChange={(event) => setStorefrontPublicationDraft(event.target.checked ? "PUBLISHED" : "HIDDEN")}
+                          />
+                        </label>
+
+                        {!storefrontStatus.configured || storefrontStatus.problems.length ? (
+                          <div className={`product-editor-alert ${storefrontStatus.ready ? "" : "is-warning"}`}>
+                            <AlertCircle aria-hidden className="eco-icon" />
+                            <span>{storefrontStatus.problems.join(" ") || "Витрина ещё не настроена."}</span>
+                          </div>
+                        ) : null}
+
+                        <div className="product-editor-summary-grid product-editor-storefront-summary">
+                          <span><em>Общая карточка</em><b>{storefrontStatus.storefrontProductId ?? "создастся при публикации"}</b></span>
+                          <span><em>Источник описания</em><b>{storefrontStatus.contentSourceProductId === editingId ? "эта карточка" : storefrontStatus.contentSourceProductId ?? "эта карточка"}</b></span>
+                        </div>
+
+                        {storefrontStatus.storefrontProductId
+                          && storefrontStatus.contentSourceProductId !== editingId
+                          && storefrontStatus.branches.some((branch) => branch.localProductId === editingId) ? (
+                            <button
+                              type="button"
+                              className="eco-btn eco-btn--sm product-editor-storefront-source-action"
+                              disabled={!storefrontStatus.canManage || storefrontBindingSaving}
+                              onClick={() => void selectCurrentStorefrontContentSource()}
+                            >
+                              {storefrontBindingSaving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : null}
+                              Сделать эту карточку источником
+                            </button>
+                          ) : null}
+
+                        <div className="product-editor-storefront-branches">
+                          {storefrontStatus.branches.map((branch) => (
+                            <div key={branch.id}>
+                              <span><b>{branch.name}</b><small>{branch.address || "адрес не указан"}</small></span>
+                              <em>{branch.linked ? `${branch.available == null ? "наличие неизвестно" : `${formatQty(branch.available)} ${branch.uom || ""}`.trim()} · ${branch.price == null ? "цена не задана" : `${formatMoneyWhole(branch.price)} ₽`}` : "товар не связан"}</em>
+                            </div>
+                          ))}
+                        </div>
+
+                        {!storefrontStatus.storefrontProductId && storefrontStatus.bindingCandidates.length ? (
+                          <div className="product-editor-storefront-linker">
+                            <label>
+                              <span>Безопасные совпадения общей карточки</span>
+                              <select
+                                value={storefrontBindingCandidateId}
+                                onChange={(event) => setStorefrontBindingCandidateId(event.target.value)}
+                                disabled={!storefrontStatus.canManage || storefrontBindingSaving}
+                              >
+                                <option value="">Выберите подтверждённую карточку</option>
+                                {storefrontStatus.bindingCandidates.map((candidate) => (
+                                  <option key={candidate.storefrontProductId} value={candidate.storefrontProductId}>
+                                    {candidate.name} · {candidate.branches.join(", ")} · {candidate.evidence}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <button
+                              type="button"
+                              className="eco-btn eco-btn--sm"
+                              disabled={!storefrontStatus.canManage || !storefrontBindingCandidateId || storefrontBindingSaving}
+                              onClick={() => void bindSelectedStorefrontCandidate()}
+                            >
+                              {storefrontBindingSaving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : null}
+                              Связать
+                            </button>
+                            <small>Только точные совпадения SKU, фасовки и единицы. Остальные товары сначала исправьте в CRM.</small>
+                          </div>
+                        ) : null}
+
+                        <div className="product-editor-storefront-actions">
+                          <button type="button" className="eco-btn eco-btn--sm" onClick={() => setStorefrontPreviewOpen((current) => !current)}>
+                            {storefrontPreviewOpen ? "Скрыть предпросмотр" : "Предпросмотр"}
+                          </button>
+                          {storefrontStatus.state === "PUBLISHED" && storefrontStatus.publicUrl ? (
+                            <a className="eco-btn eco-btn--sm" href={storefrontStatus.publicUrl} target="_blank" rel="noreferrer">Открыть на сайте</a>
+                          ) : null}
+                        </div>
+
+                        {storefrontPreviewOpen ? (
+                          <div className="product-editor-storefront-preview" aria-label="Предпросмотр карточки">
+                            <span>Предпросмотр в CRM · доступен только авторизованному сотруднику</span>
+                            <h4>{form.name || editingProduct?.name}</h4>
+                            <p>{[form.brand, form.sae, form.packageVolume, form.apiSpec, form.acea].filter(Boolean).join(" · ")}</p>
+                            <b>{form.salePrice ? `${formatMoneyWhole(parseMoneyInput(form.salePrice))} ₽ в текущей точке` : "Цена не задана"}</b>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div className="product-editor-empty-note">Статус витрины недоступен. Обновите карточку.</div>
+                    )}
+                  </section>
+
                   {renderStorageAssignmentSection()}
 
                   {renderMarkingSection()}
@@ -5404,6 +5808,74 @@ export default function ProductsClient() {
         </div>
       )}
 
+      {publicationDialog && (
+        <div
+          className="eco-product-confirm-backdrop"
+          onMouseDown={() => {
+            if (!publicationDialog.applying) setPublicationDialog(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="eco-storefront-publication-title"
+            className="eco-product-confirm eco-product-bulk-confirm"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="eco-product-confirm-icon">
+              {publicationDialog.loading || publicationDialog.applying
+                ? <Loader2 aria-hidden className="eco-icon animate-spin" />
+                : <Upload aria-hidden className="eco-icon" />}
+            </div>
+            <div className="eco-product-confirm-copy">
+              <h3 id="eco-storefront-publication-title">
+                {publicationDialog.state === "PUBLISHED" ? "Показать на клиентском сайте?" : "Скрыть с клиентского сайта?"}
+              </h3>
+              {publicationDialog.loading ? <p>Фиксируем выборку и проверяем карточки…</p> : null}
+              {publicationDialog.error ? <div className="product-editor-alert is-error">{publicationDialog.error}</div> : null}
+              {publicationDialog.preview ? (
+                <div className="eco-storefront-publication-preview">
+                  <p>
+                    Выбрано строк: <b>{publicationDialog.preview.selectedRows}</b> ·
+                    общих карточек: <b>{publicationDialog.preview.uniqueProducts}</b> ·
+                    готово: <b>{publicationDialog.preview.readyItems}</b> ·
+                    с проблемами: <b>{publicationDialog.preview.blockedItems}</b>.
+                  </p>
+                  <p>
+                    Точки: {publicationDialog.preview.branches.map((branch) => `${branch.name} (${branch.stores.map((store) => store.name).join(", ")})`).join("; ")}.
+                  </p>
+                  {publicationDialog.preview.items.some((item) => !item.ready) ? (
+                    <div className="eco-storefront-publication-problems">
+                      {publicationDialog.preview.items.filter((item) => !item.ready).slice(0, 20).map((item) => (
+                        <div key={item.localProductId}>
+                          <b>{item.name}</b>
+                          <span>{item.problems.join(" ")}</span>
+                        </div>
+                      ))}
+                      {publicationDialog.preview.blockedItems > 20 ? <small>И ещё {publicationDialog.preview.blockedItems - 20}…</small> : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <footer className="eco-product-confirm-actions">
+              <button type="button" className="eco-btn" onClick={() => setPublicationDialog(null)} disabled={publicationDialog.applying}>
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="eco-btn eco-btn--primary"
+                onClick={() => void confirmStorefrontPublication()}
+                disabled={!publicationDialog.preview || publicationDialog.applying}
+              >
+                {publicationDialog.applying ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Upload aria-hidden className="eco-icon" />}
+                {publicationDialog.applying ? "Применяем…" : publicationDialog.state === "PUBLISHED" ? "Опубликовать" : "Скрыть"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
       {renderRosskoPreviewModal()}
 
       {renderImportWizard()}
@@ -5606,6 +6078,24 @@ export default function ProductsClient() {
             </div>
 
             <div className="eco-filter-group">
+              <div className="eco-filter-title">Клиентский сайт</div>
+              <select
+                className="eco-input"
+                value={filters.publication}
+                onChange={(event) => {
+                  setFilters((prev) => ({ ...prev, publication: event.target.value as PublicationFilter }));
+                  closeFilterDrawerOnMobile();
+                }}
+                aria-label="Фильтр по публикации на сайте"
+              >
+                <option value="all">Все товары</option>
+                <option value="published">Опубликовано</option>
+                <option value="hidden">Скрыто</option>
+                <option value="needs_attention">Требует внимания</option>
+              </select>
+            </div>
+
+            <div className="eco-filter-group">
               <div className="eco-filter-title">Ячейка хранения</div>
               <select
                 className="eco-input"
@@ -5787,6 +6277,7 @@ export default function ProductsClient() {
                 <th>{sortHeader("Название / категория", "name")}</th>
                 <th>Ячейка</th>
                 <th>OEM</th>
+                <th>Сайт</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Остаток", "quantity", "right")}</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Доступно", "available", "right")}</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Посл. закупка", "buyPrice", "right")}</th>
@@ -5801,7 +6292,7 @@ export default function ProductsClient() {
               )}
               {!loading && error === "Не удалось выполнить поиск" && rows.length === 0 && (
                 <tr>
-                  <td colSpan={10}>
+                  <td colSpan={11}>
                     <div className="eco-products-empty is-error">
                       <strong>Не удалось выполнить поиск</strong>
                       <span>Попробуйте обновить страницу или изменить запрос.</span>
@@ -5814,7 +6305,7 @@ export default function ProductsClient() {
               )}
               {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.length === 0 && (
                 <tr>
-                  <td colSpan={10}>
+                  <td colSpan={11}>
                     <div className="eco-products-empty">
                       <strong>{emptyStateCopy().title}</strong>
                       <span>{emptyStateCopy().text}</span>
@@ -5885,6 +6376,14 @@ export default function ProductsClient() {
                   </td>
                   <td className="eco-product-oem-cell">
                     {normalizedOemParts.length ? <button type="button" onClick={() => setOemDetailsProduct(row)} aria-label={`Показать ${normalizedOemParts.length} OEM для ${row.name}`}>{normalizedOemParts.length} OEM</button> : <span title="OEM Parts не заполнены">—</span>}
+                  </td>
+                  <td>
+                    <span
+                      className={`eco-product-marking-badge ${row.storefrontPublicationState === "PUBLISHED" ? "is-ready" : row.storefrontPublicationProblems?.length ? "is-warning" : "is-muted"}`}
+                      title={row.storefrontPublicationProblems?.join(" ") || undefined}
+                    >
+                      {row.storefrontPublicationState === "PUBLISHED" ? "На сайте" : row.storefrontPublicationProblems?.length ? "Проверить" : "Скрыт"}
+                    </span>
                   </td>
                   <td className="eco-product-number">
                     <span className={`eco-stock-badge ${row.totalQuantity > 0 ? "is-positive" : "is-empty"}`}>{formatQty(row.totalQuantity)}</span>

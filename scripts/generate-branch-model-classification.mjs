@@ -30,6 +30,10 @@ const explicitNonBranchModels = {
   FluidSourceRow: ["GLOBAL", "Необработанные общие строки каталога жидкостей."],
   VehicleFluidRequirement: ["GLOBAL", "Общие технические требования автомобиля к жидкостям."],
   MannFluidRequirementLink: ["GLOBAL", "Общая техническая связь MANN и требований к жидкостям."],
+  Storefront: ["BUSINESS_GROUP_SCOPED", "Корень публичной витрины принадлежит одной бизнес-группе."],
+  StorefrontProduct: ["BUSINESS_GROUP_SCOPED", "Общая публичная карточка наследует scope через Storefront."],
+  StorefrontProductAudit: ["BUSINESS_GROUP_SCOPED", "Аудит публикации наследует scope общей публичной карточки."],
+  StorefrontPublicationBatch: ["BUSINESS_GROUP_SCOPED", "Пакет публикации наследует scope через Storefront."],
 };
 
 const branchControlPlaneModels = new Set([
@@ -38,6 +42,10 @@ const branchControlPlaneModels = new Set([
   "BranchCommunicationSettings",
   "BranchTelegramIntegration",
   "BranchAuditLog",
+  "StorefrontBranch",
+  "StorefrontBranchStore",
+  "StorefrontProductBinding",
+  "StorefrontPublicationBatchItem",
 ]);
 
 function modelPurpose(name) {

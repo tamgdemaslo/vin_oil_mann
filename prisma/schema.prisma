@@ -23,6 +23,7 @@ model BusinessGroup {
   branches               Branch[]
   memberships            BusinessGroupMembership[]
   integrationCredentials IntegrationCredential[]
+  storefronts            Storefront[]
 
   @@index([status])
   @@map("business_groups")
@@ -89,6 +90,8 @@ model Branch {
   bookings               Booking[]
   bookingServiceItems    BookingServiceItem[]
   salesPlans             BranchSalesPlan[]
+  storefrontBranches     StorefrontBranch[]
+  storefrontBindings     StorefrontProductBinding[]
 
   @@unique([businessGroupId, slug])
   @@index([businessGroupId, status])
@@ -2510,6 +2513,7 @@ model LocalStore {
   inventoryLocks         InventoryLock[]
   storageCells           StorageCell[]
   storageAssignments     ProductStorageAssignment[]
+  storefrontBranchStores StorefrontBranchStore[]
 
   @@unique([branchId, id])
   @@index([name])
@@ -2611,6 +2615,9 @@ model LocalProduct {
   storageAssignments         ProductStorageAssignment[]
   group                      LocalCatalogGroup?               @relation("CatalogGroupProducts", fields: [branchId, groupId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   supplierCounterparty       LocalCounterparty?               @relation("ProductSupplierCounterparty", fields: [branchId, supplierCounterpartyId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  storefrontBindings         StorefrontProductBinding[]       @relation("StorefrontBindingProduct")
+  storefrontContentSources   StorefrontProduct[]              @relation("StorefrontContentSource")
+  storefrontBatchItems       StorefrontPublicationBatchItem[] @relation("StorefrontBatchLocalProduct")
 
   @@unique([branchId, id])
   @@index([entityType])
@@ -2645,6 +2652,194 @@ model LocalProduct {
   @@index([branchId, barcodeCode128])
   @@index([updatedAt])
   @@map("local_products")
+}
+
+/// One explicitly configured public storefront for a business group. Public
+/// routes resolve this server-side and never accept a browser-provided branch.
+model Storefront {
+  id              String        @id @default(cuid())
+  businessGroupId String        @map("business_group_id")
+  businessGroup   BusinessGroup @relation(fields: [businessGroupId], references: [id], onDelete: Restrict)
+  slug            String
+  name            String
+  status          String        @default("ACTIVE")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  branches           StorefrontBranch[]
+  products           StorefrontProduct[]
+  publicationBatches StorefrontPublicationBatch[]
+
+  @@unique([businessGroupId, slug])
+  @@index([status])
+  @@map("storefronts")
+}
+
+/// Allowlisted branch presentation for one storefront. Address, phone and
+/// identity are sourced from Branch unless an explicit public override exists.
+model StorefrontBranch {
+  id            String     @id @default(cuid())
+  storefrontId  String     @map("storefront_id")
+  storefront    Storefront @relation(fields: [storefrontId], references: [id], onDelete: Cascade)
+  branchId      String     @map("branch_id")
+  branch        Branch     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  status        String     @default("ACTIVE")
+  publicName    String?    @map("public_name")
+  publicAddress String?    @map("public_address") @db.Text
+  publicPhone   String?    @map("public_phone")
+  sortOrder     Int        @default(0) @map("sort_order")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  stores StorefrontBranchStore[]
+
+  @@unique([storefrontId, branchId])
+  @@unique([id, branchId])
+  @@index([storefrontId, status, sortOrder])
+  @@index([branchId])
+  @@map("storefront_branches")
+}
+
+/// Only balances from these explicitly allowlisted physical stores may reach
+/// the public API.
+model StorefrontBranchStore {
+  id                 String           @id @default(cuid())
+  storefrontBranchId String           @map("storefront_branch_id")
+  branchId           String           @map("branch_id")
+  storeId            String           @map("store_id")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  storefrontBranch   StorefrontBranch @relation(fields: [storefrontBranchId, branchId], references: [id, branchId], onDelete: Cascade, onUpdate: Cascade)
+  store              LocalStore       @relation(fields: [branchId, storeId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([storefrontBranchId, storeId])
+  @@index([branchId, storeId])
+  @@map("storefront_branch_stores")
+}
+
+/// Stable public product. Shared content comes from one explicitly selected
+/// CRM card; branch bindings remain the source of price and availability.
+model StorefrontProduct {
+  id                     String       @id @default(cuid())
+  storefrontId           String       @map("storefront_id")
+  storefront             Storefront   @relation(fields: [storefrontId], references: [id], onDelete: Cascade)
+  slug                   String
+  publicationState       String       @default("HIDDEN") @map("publication_state")
+  contentSourceBranchId  String       @map("content_source_branch_id")
+  contentSourceProductId String       @map("content_source_product_id")
+  contentSource          LocalProduct @relation("StorefrontContentSource", fields: [contentSourceBranchId, contentSourceProductId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  publicName             String?      @map("public_name")
+  publicDescription      String?      @map("public_description") @db.Text
+  publicImageHref        String?      @map("public_image_href") @db.Text
+  version                Int          @default(1)
+  publishedAt            DateTime?    @map("published_at")
+  createdAt              DateTime     @default(now()) @map("created_at")
+  updatedAt              DateTime     @updatedAt @map("updated_at")
+
+  bindings   StorefrontProductBinding[]
+  audits     StorefrontProductAudit[]
+  batchItems StorefrontPublicationBatchItem[]
+
+  @@unique([storefrontId, slug])
+  @@index([storefrontId, publicationState, updatedAt])
+  @@index([contentSourceBranchId, contentSourceProductId])
+  @@map("storefront_products")
+}
+
+/// Confirmed link between a public SKU and one filial CRM card. A filial card
+/// cannot be linked twice, and a public SKU has at most one offer per branch.
+model StorefrontProductBinding {
+  id                  String            @id @default(cuid())
+  storefrontProductId String            @map("storefront_product_id")
+  storefrontProduct   StorefrontProduct @relation(fields: [storefrontProductId], references: [id], onDelete: Cascade)
+  branchId            String            @map("branch_id")
+  branch              Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  localProductId      String            @map("local_product_id")
+  localProduct        LocalProduct      @relation("StorefrontBindingProduct", fields: [branchId, localProductId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  status              String            @default("CONFIRMED")
+  identityEvidence    String            @default("MANUAL") @map("identity_evidence")
+  confirmedByLogin    String?           @map("confirmed_by_login")
+  confirmedAt         DateTime?         @map("confirmed_at")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  @@unique([storefrontProductId, branchId])
+  @@unique([localProductId])
+  @@index([branchId, localProductId])
+  @@index([status])
+  @@map("storefront_product_bindings")
+}
+
+/// Immutable audit trail for publication, binding and content-source changes.
+model StorefrontProductAudit {
+  id                  String            @id @default(cuid())
+  storefrontProductId String            @map("storefront_product_id")
+  storefrontProduct   StorefrontProduct @relation(fields: [storefrontProductId], references: [id], onDelete: Cascade)
+  actorLogin          String            @map("actor_login")
+  action              String
+  beforeState         String?           @map("before_state")
+  afterState          String?           @map("after_state")
+  metadata            Json?
+  createdAt           DateTime          @default(now()) @map("created_at")
+
+  @@index([storefrontProductId, createdAt])
+  @@index([actorLogin, createdAt])
+  @@map("storefront_product_audits")
+}
+
+/// A preview freezes the exact local-card set and versions. Applying the same
+/// batch is idempotent and reports per-item outcomes instead of partial success.
+model StorefrontPublicationBatch {
+  id             String     @id @default(cuid())
+  storefrontId   String     @map("storefront_id")
+  storefront     Storefront @relation(fields: [storefrontId], references: [id], onDelete: Restrict)
+  requestedState String     @map("requested_state")
+  selectionJson  Json       @map("selection_json")
+  selectionHash  String     @map("selection_hash")
+  selectedRows   Int        @default(0) @map("selected_rows")
+  uniqueProducts Int        @default(0) @map("unique_products")
+  alreadyDesired Int        @default(0) @map("already_desired")
+  readyItems     Int        @default(0) @map("ready_items")
+  blockedItems   Int        @default(0) @map("blocked_items")
+  appliedItems   Int        @default(0) @map("applied_items")
+  skippedItems   Int        @default(0) @map("skipped_items")
+  failedItems    Int        @default(0) @map("failed_items")
+  status         String     @default("PREVIEW")
+  createdByLogin String     @map("created_by_login")
+  expiresAt      DateTime   @map("expires_at")
+  appliedAt      DateTime?  @map("applied_at")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  items StorefrontPublicationBatchItem[]
+
+  @@index([storefrontId, createdAt])
+  @@index([createdByLogin, status, expiresAt])
+  @@map("storefront_publication_batches")
+}
+
+model StorefrontPublicationBatchItem {
+  id                       String                     @id @default(cuid())
+  batchId                  String                     @map("batch_id")
+  batch                    StorefrontPublicationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  branchId                 String                     @map("branch_id")
+  localProductId           String                     @map("local_product_id")
+  localProduct             LocalProduct               @relation("StorefrontBatchLocalProduct", fields: [branchId, localProductId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  localProductUpdatedAt    DateTime                   @map("local_product_updated_at")
+  storefrontProductId      String?                    @map("storefront_product_id")
+  storefrontProduct        StorefrontProduct?         @relation(fields: [storefrontProductId], references: [id], onDelete: SetNull)
+  storefrontProductVersion Int?                       @map("storefront_product_version")
+  readinessJson            Json                       @default("[]") @map("readiness_json")
+  result                   String                     @default("PENDING")
+  errorCode                String?                    @map("error_code")
+  errorMessage             String?                    @map("error_message") @db.Text
+  createdAt                DateTime                   @default(now()) @map("created_at")
+  updatedAt                DateTime                   @updatedAt @map("updated_at")
+
+  @@unique([batchId, localProductId])
+  @@index([storefrontProductId])
+  @@index([branchId, localProductId])
+  @@index([result])
+  @@map("storefront_publication_batch_items")
 }
 
 /// Audit and idempotency boundary for copying catalog cards between branches.

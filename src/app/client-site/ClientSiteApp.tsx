@@ -59,164 +59,9 @@ const MASTERS = [
   },
 ];
 
-const DEMO_OILS = [
-  {
-    id: 'shell-helix-ultra-5w40',
-    brand: 'Shell',
-    line: 'Helix Ultra',
-    visc: '5W-40',
-    spec: 'API SP / ACEA A3/B4',
-    type: 'Бензин · Дизель',
-    volume: '4 л',
-    base: 'PurePlus (синтетика)',
-    price: 4990,
-    workPrice: 0,
-    badge: 'Чемпион Ле-Мана',
-    note: 'Та самая, на которой Ferrari ездит в Ле-Мане.',
-    color: '#C2410C',
-    stock: 24,
-  },
-  {
-    id: 'shell-helix-ultra-0w40',
-    brand: 'Shell',
-    line: 'Helix Ultra',
-    visc: '0W-40',
-    spec: 'API SN / ACEA A3/B4',
-    type: 'Бензин · Холодный пуск',
-    volume: '4 л',
-    base: 'PurePlus (синтетика)',
-    price: 5690,
-    workPrice: 0,
-    note: 'Для машин, которые ночуют на улице.',
-    color: '#C2410C',
-    stock: 12,
-  },
-  {
-    id: 'mobil-1-esp-5w30',
-    brand: 'Mobil',
-    line: 'Mobil 1 ESP',
-    visc: '5W-30',
-    spec: 'API SN / ACEA C3 / MB 229.51',
-    type: 'Бензин · Дизель с DPF',
-    volume: '4 л',
-    base: 'Полная синтетика',
-    price: 5290,
-    workPrice: 0,
-    badge: 'OEM рекомендация',
-    note: 'Заводская спецификация BMW LL-04 и MB 229.51.',
-    color: '#1A4480',
-    stock: 18,
-  },
-  {
-    id: 'mobil-1-0w20',
-    brand: 'Mobil',
-    line: 'Mobil 1',
-    visc: '0W-20',
-    spec: 'API SP / ILSAC GF-6',
-    type: 'Бензин · Гибрид',
-    volume: '4 л',
-    base: 'Полная синтетика',
-    price: 5590,
-    workPrice: 0,
-    note: 'Для современных гибридов и Lexus/Toyota.',
-    color: '#1A4480',
-    stock: 9,
-  },
-  {
-    id: 'zic-x9-ls-5w30',
-    brand: 'ZIC',
-    line: 'X9 LS',
-    visc: '5W-30',
-    spec: 'API SP / ACEA C3',
-    type: 'Бензин · Дизель',
-    volume: '4 л',
-    base: 'YUBASE (синтетика)',
-    price: 3890,
-    workPrice: 0,
-    note: 'Лучший баланс цена/качество для среднего сегмента.',
-    color: '#7A2B2B',
-    stock: 32,
-  },
-  {
-    id: 'total-quartz-9000-5w40',
-    brand: 'Total',
-    line: 'Quartz 9000',
-    visc: '5W-40',
-    spec: 'API SN/CF / ACEA A3/B4',
-    type: 'Бензин · Дизель',
-    volume: '4 л',
-    base: 'Синтетика',
-    price: 4290,
-    workPrice: 0,
-    note: 'Французская классика для Peugeot, Citroën, Renault.',
-    color: '#B43A2B',
-    stock: 16,
-  },
-  {
-    id: 'eurol-fluence-5w30',
-    brand: 'Eurol',
-    line: 'Fluence',
-    visc: '5W-30',
-    spec: 'API SN / ACEA A5/B5',
-    type: 'Бензин',
-    volume: '4 л',
-    base: 'Синтетика',
-    price: 4690,
-    workPrice: 0,
-    note: 'Голландское, для Ford EcoBoost и Volvo.',
-    color: '#0E4FA0',
-    stock: 7,
-  },
-  {
-    id: 'lukoil-genesis-armortech-5w40',
-    brand: 'Lukoil',
-    line: 'Genesis Armortech',
-    visc: '5W-40',
-    spec: 'API SN/CF / ACEA A3/B4',
-    type: 'Бензин · Дизель',
-    volume: '4 л',
-    base: 'Синтетика',
-    price: 2990,
-    workPrice: 0,
-    note: 'Российский синтез, на который дают допуски MB и VW.',
-    color: '#CC0000',
-    stock: 41,
-  },
-  {
-    id: 'bardahl-xtc-c60-5w40',
-    brand: 'Bardahl',
-    line: 'XTC C60',
-    visc: '5W-40',
-    spec: 'API SN / ACEA A3/B4',
-    type: 'Бензин · Дизель',
-    volume: '4 л',
-    base: 'Синтетика + фуллерен',
-    price: 5790,
-    workPrice: 0,
-    badge: 'C60 fullerene',
-    note: 'С молекулой фуллерена. Для машин, которым уже за 150 000 км.',
-    color: '#D08A2C',
-    stock: 6,
-  },
-  {
-    id: 'elf-evolution-700-sti-10w40',
-    brand: 'ELF',
-    line: 'Evolution 700 STI',
-    visc: '10W-40',
-    spec: 'API SL/CF / ACEA A3/B4',
-    type: 'Бензин · Дизель',
-    volume: '4 л',
-    base: 'Полусинтетика',
-    price: 2690,
-    workPrice: 0,
-    note: 'Для машин с пробегом, где синтетика «потеет».',
-    color: '#003B7A',
-    stock: 28,
-  },
-];
 
-// Keep the public journey renderable during API startup, local outages, and Fast Refresh.
-var OILS = [...DEMO_OILS];
+// Public catalog starts empty and is populated only by the allowlisted backend.
+var OILS = [];
 
 const CASES = [
   {
@@ -398,31 +243,13 @@ const CASES = [
 
 // Сервисы первого экрана
 const SERVICES = [
-  { k: '01', title: 'Замена моторного масла', t: 'Покупаете масло у нас — замена бесплатно. Любая марка из ассортимента.', time: '25–40 мин' },
+  { k: '01', title: 'Замена моторного масла', t: 'Подберём масло по VIN, сверим допуск и заменим в цехе.', time: '25–40 мин' },
   { k: '02', title: 'Замена ATF / DSG / CVT', t: 'Полная или частичная замена в АКПП. Промывка через стенд, обнуление адаптаций.', time: '1.5–3 ч' },
   { k: '03', title: 'Замена антифриза', t: 'Полная замена ОЖ с промывкой системы. Оригинальные жидкости.', time: '30–50 мин' },
   { k: '04', title: 'Тормозная жидкость', t: 'Замена через прокачку всех контуров. DOT 4 / DOT 5.1.', time: '30 мин' },
   { k: '05', title: 'Замена фильтров', t: 'Воздушный, салонный, топливный. Только оригинал или Mann/Mahle.', time: '10–20 мин' },
   { k: '06', title: 'Диагностика 14 пунктов', t: 'Подвеска, тормоза, утечки, ремни, аккумулятор. Письменный отчёт.', time: '40 мин' },
 ];
-
-// VIN demo lookup
-const VIN_DEMO = {
-  vin: 'WBABA91070AL55203',
-  brand: 'BMW',
-  model: 'X5 xDrive40i',
-  generation: 'G05',
-  year: 2021,
-  engine: 'B58B30M1 (3.0 бензин, 333 л.с.)',
-  oilCapacity: '6.5 л',
-  oilSpec: 'BMW Longlife-01 / 5W-30',
-  filter: 'BMW 11428583898',
-  airFilter: 'MANN C 29 005',
-  cabinFilter: 'MANN FP 32 001',
-  drainPlug: 'M14×1.5, шайба 11137548021',
-  recommended: 'bardahl-xtc-c60-5w40',
-  alternatives: ['eurol-fluence-5w30', 'mobil-1-esp-5w30', 'shell-helix-ultra-5w40', 'zic-x9-ls-5w30'],
-};
 
 // History data for "personal account"
 const ACCOUNT = {
@@ -450,7 +277,33 @@ const ACCOUNT = {
 // ====================================================================
 
 /* ---------- Money / format ---------- */
-const fmtMoney = (n) => new Intl.NumberFormat('ru-RU').format(Math.round(n)) + ' ₽';
+const fmtMoney = (n) => {
+  const amount = Number(n);
+  return Number.isFinite(amount)
+    ? `${new Intl.NumberFormat('ru-RU').format(Math.round(amount))} ₽`
+    : 'Уточнить стоимость';
+};
+const fmtOrderTotal = (knownTotal, hasUnknownPrice) => {
+  if (!hasUnknownPrice) return fmtMoney(knownTotal);
+  return knownTotal > 0 ? `от ${fmtMoney(knownTotal)}` : 'Уточнить стоимость';
+};
+const fmtOilPrice = (oil) => oil?.price == null
+  ? oil?.pricesDiffer ? 'Цены по точкам' : 'Уточнить стоимость'
+  : fmtMoney(oil.price);
+
+function formatOfferQuantity(offer) {
+  if (offer.availability === 'NOT_LISTED') return 'Не представлен в этой точке';
+  if (offer.availability === 'UNKNOWN' || offer.available == null) return 'Наличие уточняется';
+  if (offer.availability === 'OUT_OF_STOCK' || offer.available <= 0) return 'Нет в наличии';
+  return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(offer.available)} ${offer.uom || ''}`.trim();
+}
+
+function offerCountLabel(oil) {
+  const inStock = (oil?.offers || []).filter(offer => offer.availability === 'IN_STOCK').length;
+  if (inStock > 0) return `В наличии в ${inStock} ${inStock === 1 ? 'точке' : 'точках'}`;
+  if ((oil?.offers || []).some(offer => offer.availability === 'OUT_OF_STOCK')) return 'Нет в наличии';
+  return 'Наличие уточняется';
+}
 const fmtNum = (n) => new Intl.NumberFormat('ru-RU').format(Math.round(n));
 
 /* ---------- Logo ---------- */
@@ -1172,7 +1025,7 @@ function HomeHero() {
             />
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.1em'}}>
               <span>{vin.length}/17</span>
-              <button type="button" className="text-action" onClick={() => setVin(VIN_DEMO.vin)} style={{color: '#C2410C', textTransform: 'uppercase'}}>Попробовать с демо-VIN →</button>
+              <span>VIN используется только для подбора</span>
             </div>
 
             <button className="btn rust lg" onClick={submit} style={{width: '100%', marginTop: 18, justifyContent: 'space-between'}}>
@@ -1181,10 +1034,7 @@ function HomeHero() {
             </button>
 
             <div style={{borderTop: '1px solid var(--line-paper)', marginTop: 22, paddingTop: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#3D3D3D'}}>
-              <span style={{display: 'inline-flex', alignItems: 'center', gap: 8}}>
-                <FreeChangeBadge size="sm" />
-                при покупке масла у нас
-              </span>
+              <span>Цена и наличие показаны по каждой точке</span>
               <Link to="/shop" style={{color: '#C2410C', fontWeight: 600, textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.1em'}}>Каталог →</Link>
             </div>
 
@@ -1229,7 +1079,7 @@ function FreeChangeBanner() {
             Замена включена<span style={{color: '#0a0a0a'}}>.</span>
           </div>
           <div style={{marginTop: 18, fontSize: 15, maxWidth: 540, opacity: 0.95, lineHeight: 1.5}}>
-            Никаких звёздочек. Любая марка из ассортимента — Shell, Mobil, ZIC, Lukoil, Total, Bardahl. Работа мастера, прокладка, утилизация отработки — в цене масла.
+            Выберите масло из опубликованного ассортимента. Наличие и цена показаны отдельно по каждой точке; стоимость работ и расходных материалов подтвердит администратор.
           </div>
         </div>
         <div className="free-change-banner__saving" style={{justifySelf: 'end', textAlign: 'right'}}>
@@ -1310,9 +1160,7 @@ function CasesPreview() {
 
 /* Products preview */
 function ProductsPreview() {
-  const featuredIds = ['shell-helix-ultra-5w40', 'mobil-1-esp-5w30', 'zic-x9-ls-5w30', 'bardahl-xtc-c60-5w40'];
-  const fixedPicks = OILS.filter(o => featuredIds.includes(o.id));
-  const picks = fixedPicks.length ? fixedPicks : OILS.filter(o => o.stock > 0).slice(0, 4);
+  const picks = OILS.filter(o => o.offers?.some(offer => offer.availability === 'IN_STOCK')).slice(0, 4);
   return (
     <section style={{background: '#F5F2ED', color: '#0a0a0a', padding: '90px 0 110px', position: 'relative'}}>
       <div className="container">
@@ -1334,9 +1182,6 @@ function OilCardPaper({ oil, idx }) {
         position: 'relative', height: '100%', cursor: 'pointer',
         transition: 'border-color 160ms, transform 160ms',
       }} onMouseEnter={e => e.currentTarget.style.borderColor = '#C2410C'} onMouseLeave={e => e.currentTarget.style.borderColor = '#D9D3C5'}>
-        <div style={{position: 'absolute', top: 12, right: 12}}>
-          <FreeChangeBadge size="sm" />
-        </div>
         <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.16em', color: '#6B6B6B', textTransform: 'uppercase'}}>{(idx+1).toString().padStart(2,'0')} / {oil.brand.toUpperCase()}</div>
 
         <div style={{height: 130, position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}>
@@ -1349,8 +1194,8 @@ function OilCardPaper({ oil, idx }) {
         </div>
 
         <div style={{marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 14, borderTop: '1px dashed #D9D3C5'}}>
-          <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, color: '#0a0a0a'}}>{fmtMoney(oil.price)}</span>
-          <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.12em'}}>+ ЗАМЕНА</span>
+          <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, color: '#0a0a0a'}}>{fmtOilPrice(oil)}</span>
+          <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.08em'}}>{offerCountLabel(oil)}</span>
         </div>
       </div>
     </Link>
@@ -1481,13 +1326,12 @@ function HomePage() {
     <main>
       <HomeHero />
       <Tape kind="rust" items={[
-        'Купил масло — замена бесплатно',
+        'Масла из CRM с актуальным наличием',
         'Калининград · 2023 → ∞',
         'Shell · Mobil · ZIC · Total · Bardahl · Lukoil',
         'Среднее время визита 28 минут',
       ]} />
       <ServicesGrid />
-      <FreeChangeBanner />
       <CasesPreview />
       <ProductsPreview />
       <CifryBlock />
@@ -1509,7 +1353,7 @@ function VinPage() {
   const initial = (r.state && r.state.vin) || '';
   const [vin, setVin] = useState(initial);
   const [step, setStep] = useState(initial.length === 17 ? 2 : 1);
-  const [chosenOilId, setChosenOilId] = useState(VIN_DEMO.recommended);
+  const [chosenOilId, setChosenOilId] = useState('');
   const [slotIdx, setSlotIdx] = useState(0);
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
@@ -1527,27 +1371,10 @@ function VinPage() {
     cabin: false,
   });
 
-  const demoCar = {
-    brand: VIN_DEMO.brand,
-    model: VIN_DEMO.model,
-    generation: VIN_DEMO.generation,
-    year: VIN_DEMO.year,
-    engine: VIN_DEMO.engine,
-  };
-  const demoMaintenance = {
-    oilCapacity: VIN_DEMO.oilCapacity,
-    oilSpec: VIN_DEMO.oilSpec,
-    filter: VIN_DEMO.filter,
-    oilCapacityLiters: parseLiters(VIN_DEMO.oilCapacity),
-    filters: buildFallbackFilters(VIN_DEMO),
-    drainPlug: VIN_DEMO.drainPlug,
-  };
-  const defaultRecommended = OILS.find(o => o.id === VIN_DEMO.recommended);
-  const defaultAlternatives = VIN_DEMO.alternatives.map(id => OILS.find(o => o.id === id)).filter(Boolean);
-  const lookupCar = lookupResult?.car || demoCar;
-  const maintenance = lookupResult?.maintenance || demoMaintenance;
-  const recommended = lookupResult?.recommended || defaultRecommended;
-  const alternatives = lookupResult?.alternatives?.length ? lookupResult.alternatives : defaultAlternatives;
+  const lookupCar = lookupResult?.car || {};
+  const maintenance = lookupResult?.maintenance || { filters: {} };
+  const recommended = lookupResult?.recommended || null;
+  const alternatives = lookupResult?.alternatives || [];
   const carTitle = `${lookupCar.brand || ''} ${lookupCar.model || ''}`.trim() || 'Автомобиль';
   const carShortModel = String(lookupCar.model || '').split(' ')[0] || lookupCar.model || 'машина';
   const allOils = [recommended, ...alternatives, ...OILS].filter(Boolean);
@@ -1557,8 +1384,9 @@ function VinPage() {
   const recommendedOilCalc = calculateOilByCapacity(recommended, maintenance);
   const filterItems = buildFilterItems(maintenance);
   const selectedFilterItems = filterItems.filter(item => selectedFilters[item.key]);
-  const filtersTotal = selectedFilterItems.reduce((sum, item) => sum + item.price, 0);
-  const orderTotal = oilCalc.total + filtersTotal;
+  const filtersTotal = selectedFilterItems.reduce((sum, item) => sum + (item.price ?? 0), 0);
+  const orderTotal = (oilCalc.total ?? 0) + filtersTotal;
+  const orderHasUnknownPrice = oilCalc.total == null || selectedFilterItems.some(item => item.price == null);
 
   const runVinLookup = async (value, { keepCurrentStep = false } = {}) => {
     const cleanVin = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -1571,12 +1399,12 @@ function VinPage() {
     try {
       const result = await apiPost('/api/vin/lookup', { vin: cleanVin });
       setLookupResult(result);
-      setChosenOilId(result.recommended?.id || VIN_DEMO.recommended);
+      setChosenOilId(result.recommended?.id || '');
       if (!keepCurrentStep) setStep(2);
     } catch (error) {
       setLookupResult(null);
-      setChosenOilId(VIN_DEMO.recommended);
-      setLookupError(error.message || 'Не удалось получить подбор с сервера. Показываем демо-результат.');
+      setChosenOilId('');
+      setLookupError(error.message || 'Подбор по VIN временно недоступен. Повторите запрос позже.');
       if (!keepCurrentStep) setStep(2);
     } finally {
       setLookupStatus('idle');
@@ -1673,7 +1501,7 @@ function VinPage() {
               />
               <div style={{display: 'flex', justifyContent: 'space-between', marginTop: 10, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.1em'}}>
                 <span>{vin.length}/17</span>
-                <button type="button" className="text-action" onClick={() => setVin(VIN_DEMO.vin)} style={{color: '#C2410C'}}>Попробовать с демо-VIN →</button>
+                <span>VIN используется только для подбора</span>
               </div>
               <button
                 className="btn rust lg"
@@ -1752,7 +1580,7 @@ function VinPage() {
                 </div>
               )}
 
-              <button className="btn rust lg" disabled={lookupStatus === 'loading'} onClick={() => setStep(3)} style={{marginTop: 32, width: 280, justifyContent: 'space-between', opacity: lookupStatus === 'loading' ? 0.45 : 1}}>
+              <button className="btn rust lg" disabled={lookupStatus === 'loading' || !recommended} onClick={() => setStep(3)} style={{marginTop: 32, width: 280, justifyContent: 'space-between', opacity: lookupStatus === 'loading' || !recommended ? 0.45 : 1}}>
                 {lookupStatus === 'loading' ? 'Подбираем...' : 'Подобрать масло'} <span className="arr">→</span>
               </button>
             </div>
@@ -1775,7 +1603,11 @@ function VinPage() {
         )}
 
         {/* STEP 3 — oil pick */}
-        {step === 3 && (
+        {step === 3 && !recommended && (
+          <CatalogGate title="Подходящее масло не найдено" text={lookupMessage || 'На сайте нет опубликованного масла, совместимого с результатом подбора.'} />
+        )}
+
+        {step === 3 && recommended && chosen && (
           <div>
             <div style={{marginBottom: 26}}>
               <div className="t-eyebrow" style={{marginBottom: 10}}>Рекомендация для {lookupCar.brand} {carShortModel}</div>
@@ -1850,9 +1682,9 @@ function VinPage() {
               </div>
 
               <div className="vin-selection-footer" style={{padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24}}>
-                <div style={{fontSize: 13, color: '#9A9A9A'}}>Итог пересчитывается из выбранного масла и включённых фильтров. Работа мастера включена.</div>
+                <div style={{fontSize: 13, color: '#9A9A9A'}}>Сумма показана только по товарам с известной ценой. Стоимость работ уточнит администратор.</div>
                 <div className="vin-selection-footer__total" style={{display: 'flex', alignItems: 'center', gap: 18}}>
-                  <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 42, color: '#F5F2ED'}}>{fmtMoney(orderTotal)}</div>
+                  <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 42, color: '#F5F2ED'}}>{fmtOrderTotal(orderTotal, orderHasUnknownPrice)}</div>
                   <button className="btn rust" onClick={() => setStep(4)} style={{whiteSpace: 'nowrap'}}>К выбору слота <span className="arr">→</span></button>
                 </div>
               </div>
@@ -1863,7 +1695,7 @@ function VinPage() {
               <div style={{background: '#0e0e0e', padding: '36px 36px 32px'}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22}}>
                   <span className="badge solid-rust">★ ОСНОВНАЯ РЕКОМЕНДАЦИЯ</span>
-                  <FreeChangeBadge size="sm" />
+                  <span className="badge">Цены по точкам</span>
                 </div>
                 <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 48, lineHeight: 1, color: '#F5F2ED', textTransform: 'uppercase', letterSpacing: '-0.02em'}}>{oilFullName(recommended)}</div>
                 <div style={{fontFamily: 'Oswald, sans-serif', fontSize: 20, color: '#9A9A9A', textTransform: 'uppercase', marginTop: 8}}>{recommended.visc} · {recommended.volume}</div>
@@ -1882,7 +1714,7 @@ function VinPage() {
                   </div>
                   <div>
                     <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.1em'}}>ИТОГ</div>
-                    <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 38, color: '#F5F2ED'}}>{fmtMoney(recommendedOilCalc.total + filtersTotal)}</div>
+                    <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 38, color: '#F5F2ED'}}>{fmtOrderTotal((recommendedOilCalc.total ?? 0) + filtersTotal, recommendedOilCalc.total == null || selectedFilterItems.some(item => item.price == null))}</div>
                   </div>
                 </div>
               </div>
@@ -1894,7 +1726,7 @@ function VinPage() {
                     <tr><th>База</th><td>{recommended.base}</td></tr>
                     <tr><th>Упаковка</th><td>{recommended.volume}</td></tr>
                     <tr><th>Расчётный объём</th><td>{formatLiters(recommendedOilCalc.requiredLiters)} · {recommendedOilCalc.packages} шт.</td></tr>
-                    <tr><th>Запас на складе</th><td>{recommended.stock} канистр</td></tr>
+                    <tr><th>Наличие</th><td>{offerCountLabel(recommended)}</td></tr>
                   </tbody>
                 </table>
                 <button
@@ -1913,7 +1745,7 @@ function VinPage() {
                 <div key={o.id} style={{background: '#0e0e0e', padding: '22px 22px'}}>
                   <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 14, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.1em'}}>
                     <span>{o.brand.toUpperCase()}</span>
-                    <span style={{color: '#C2410C'}}>+ ЗАМЕНА</span>
+                    <span style={{color: '#C2410C'}}>{offerCountLabel(o)}</span>
                   </div>
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, color: '#F5F2ED', textTransform: 'uppercase', lineHeight: 1.05, marginBottom: 6}}>{o.line}</div>
                   <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A'}}>{o.visc} · {o.volume}</div>
@@ -1968,10 +1800,10 @@ function VinPage() {
             <div className="vin-selection-footer" style={{marginTop: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 24, border: '1px solid #C2410C', padding: '22px 24px'}}>
               <div>
                 <div className="t-eyebrow" style={{marginBottom: 8}}>Итого по выбранному</div>
-                <div style={{fontSize: 13, color: '#9A9A9A'}}>Масло по объёму + выбранные фильтры. Работа мастера включена.</div>
+                <div style={{fontSize: 13, color: '#9A9A9A'}}>Масло по объёму + выбранные фильтры. Стоимость работ уточнит администратор.</div>
               </div>
               <div className="vin-selection-footer__total" style={{display: 'flex', alignItems: 'center', gap: 18}}>
-                <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 46, color: '#F5F2ED'}}>{fmtMoney(orderTotal)}</div>
+                <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 46, color: '#F5F2ED'}}>{fmtOrderTotal(orderTotal, orderHasUnknownPrice)}</div>
                 <button className="btn rust" onClick={() => setStep(4)} style={{whiteSpace: 'nowrap'}}>К выбору слота <span className="arr">→</span></button>
               </div>
             </div>
@@ -2084,15 +1916,15 @@ function VinPage() {
                   ))}
                   <div style={{display: 'flex', justifyContent: 'space-between', padding: '14px 0', borderTop: '1px dashed var(--line)', fontSize: 13}}>
                     <span style={{color: '#9A9A9A'}}>Работа мастера</span>
-                    <span style={{color: '#C2410C', fontFamily: 'JetBrains Mono, monospace'}}>включена · 0 ₽</span>
+                    <span style={{color: '#C2410C', fontFamily: 'JetBrains Mono, monospace'}}>подтвердит администратор</span>
                   </div>
                   <div style={{display: 'flex', justifyContent: 'space-between', padding: '14px 0', borderTop: '1px dashed var(--line)', fontSize: 13}}>
                     <span style={{color: '#9A9A9A'}}>Утилизация отработки</span>
-                    <span style={{color: '#C2410C', fontFamily: 'JetBrains Mono, monospace'}}>включена · 0 ₽</span>
+                    <span style={{color: '#C2410C', fontFamily: 'JetBrains Mono, monospace'}}>подтвердит администратор</span>
                   </div>
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '18px 0 0', borderTop: '2px solid #C2410C', marginTop: 8}}>
                     <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.14em', textTransform: 'uppercase'}}>Итог</span>
-                    <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 40, color: '#F5F2ED'}}>{fmtMoney(orderTotal)}</span>
+                    <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 40, color: '#F5F2ED'}}>{fmtOrderTotal(orderTotal, orderHasUnknownPrice)}</span>
                   </div>
                 </div>
               </div>
@@ -2157,56 +1989,39 @@ function parseLiters(value) {
 }
 
 function getOilPackageLiters(oil) {
-  return parseLiters(oil?.volume) || 4;
+  return parseLiters(oil?.volume);
 }
 
 function getRequiredOilLiters(maintenance) {
-  return Number(maintenance?.oilCapacityLiters) || parseLiters(maintenance?.oilCapacity) || 4;
+  return Number(maintenance?.oilCapacityLiters) || parseLiters(maintenance?.oilCapacity);
 }
 
 function calculateOilByCapacity(oil, maintenance) {
   const requiredLiters = getRequiredOilLiters(maintenance);
   const packageLiters = getOilPackageLiters(oil);
-  const packages = Math.max(1, Math.ceil(requiredLiters / packageLiters));
-  const total = packages * (Number(oil?.price) || 0);
+  const packages = requiredLiters && packageLiters ? Math.max(1, Math.ceil(requiredLiters / packageLiters)) : null;
+  const unitPrice = oil?.price == null ? null : Number(oil.price);
+  const total = unitPrice == null ? null : (packages ? packages * unitPrice : unitPrice);
 
   return { requiredLiters, packageLiters, packages, total };
 }
 
 function formatLiters(value) {
   const number = Number(value);
-  if (!Number.isFinite(number)) return '0 л';
+  if (!Number.isFinite(number) || number <= 0) return 'не указано';
   return `${String(Math.round(number * 10) / 10).replace('.', ',')} л`;
 }
 
-function buildFallbackFilters(vinDemo) {
-  return {
-    oil: {
-      title: 'Масляный фильтр',
-      article: vinDemo.filter || 'MANN / OEM по VIN',
-      price: 950,
-    },
-    air: {
-      title: 'Воздушный фильтр',
-      article: vinDemo.airFilter || 'MANN / OEM по VIN',
-      price: 1350,
-    },
-    cabin: {
-      title: 'Салонный фильтр',
-      article: vinDemo.cabinFilter || 'MANN / OEM по VIN',
-      price: 1650,
-    },
-  };
-}
-
 function buildFilterItems(maintenance) {
-  const filters = maintenance?.filters || buildFallbackFilters(VIN_DEMO);
-  return ['oil', 'air', 'cabin'].map(key => ({
-    key,
-    title: filters[key]?.title || (key === 'oil' ? 'Масляный фильтр' : key === 'air' ? 'Воздушный фильтр' : 'Салонный фильтр'),
-    article: filters[key]?.article || 'Подберём по VIN',
-    price: Number(filters[key]?.price) || 0,
-  }));
+  const filters = maintenance?.filters || {};
+  return ['oil', 'air', 'cabin']
+    .filter(key => filters[key]?.article || Number(filters[key]?.price) > 0)
+    .map(key => ({
+      key,
+      title: filters[key]?.title || (key === 'oil' ? 'Масляный фильтр' : key === 'air' ? 'Воздушный фильтр' : 'Салонный фильтр'),
+      article: filters[key]?.article || 'Артикул не указан',
+      price: Number(filters[key]?.price) > 0 ? Number(filters[key].price) : null,
+    }));
 }
 
 function groupApiSlots(items) {
@@ -2369,7 +2184,7 @@ function ShopPage() {
           <div>
             <div className="t-eyebrow" style={{marginBottom: 14}}>Каталог · моторные масла</div>
             <h1 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(40px, 6vw, 80px)', lineHeight: 0.92, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
-              Масло.<br />Купил — поменяли<span style={{color: '#C2410C'}}>.</span>
+              Масло.<br />Цены и наличие<span style={{color: '#C2410C'}}>.</span>
             </h1>
           </div>
           <div style={{textAlign: 'right'}}>
@@ -2379,13 +2194,13 @@ function ShopPage() {
           </div>
         </div>
 
-        {/* Free change strip */}
+        {/* Branch pricing notice */}
         <div style={{background: '#0a0a0a', color: '#F5F2ED', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 36}}>
           <div style={{display: 'flex', alignItems: 'center', gap: 18}}>
-            <FreeChangeBadge size="md" />
-            <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 20, textTransform: 'uppercase'}}>Цена на сайте = цена с заменой. Никаких «работ сверху».</span>
+            <span className="badge">ДВЕ ТОЧКИ</span>
+            <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 20, textTransform: 'uppercase'}}>Цена и наличие показаны отдельно для каждого филиала.</span>
           </div>
-          <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.12em'}}>ПРАВИЛО ДОМА · С 2023</div>
+          <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.12em'}}>ДАННЫЕ ИЗ CRM</div>
         </div>
 
         <div className="responsive-grid shop-layout" style={{display: 'grid', gridTemplateColumns: '260px 1fr', gap: 40, alignItems: 'start'}}>
@@ -2469,8 +2284,6 @@ function ShopCard({ oil, idx }) {
         position: 'relative', height: '100%', cursor: 'pointer',
         transition: 'border-color 160ms',
       }} onMouseEnter={e => e.currentTarget.style.borderColor = '#C2410C'} onMouseLeave={e => e.currentTarget.style.borderColor = '#D9D3C5'}>
-        <div style={{position: 'absolute', top: 12, right: 12}}><FreeChangeBadge size="sm" /></div>
-
         <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.16em', color: '#6B6B6B', textTransform: 'uppercase'}}>
           {(idx+1).toString().padStart(3,'0')} · {oil.brand.toUpperCase()}
         </div>
@@ -2490,10 +2303,10 @@ function ShopCard({ oil, idx }) {
 
         <div style={{marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 14, borderTop: '1px dashed #D9D3C5'}}>
           <div>
-            <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26}}>{fmtMoney(oil.price)}</span>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#C2410C', letterSpacing: '0.12em', marginTop: 2}}>+ ЗАМЕНА В ЦЕНЕ</div>
+            <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26}}>{fmtOilPrice(oil)}</span>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.08em', marginTop: 2}}>Цена зависит от точки</div>
           </div>
-          <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#0a0a0a', letterSpacing: '0.12em'}}>В НАЛИЧИИ {oil.stock} →</span>
+          <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#0a0a0a', letterSpacing: '0.06em', textAlign: 'right'}}>{offerCountLabel(oil)} →</span>
         </div>
       </div>
     </Link>
@@ -2506,21 +2319,49 @@ function ShopCard({ oil, idx }) {
 //  pages/product.jsx — карточка масла + калькулятор
 // ====================================================================
 
-function ProductPage() {
+function ProductPage({catalogVersion}) {
   const r = useRoute();
   const id = (r.params && r.params.id) || (r.path.split('/')[2]);
-  const oil = OILS.find(o => o.id === id) || OILS[0];
+  const listedOil = OILS.find(o => o.id === id) || null;
+  const [directOil, setDirectOil] = useState(null);
+  const [directStatus, setDirectStatus] = useState(listedOil ? 'ready' : 'loading');
+
+  useEffect(() => {
+    if (!id) {
+      setDirectOil(null);
+      setDirectStatus('missing');
+      return;
+    }
+    let cancelled = false;
+    if (!listedOil) setDirectStatus('loading');
+    apiGet(`/api/oils/${encodeURIComponent(id)}`)
+      .then(item => {
+        if (cancelled) return;
+        setDirectOil(item);
+        setDirectStatus('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDirectOil(null);
+        setDirectStatus('missing');
+      });
+    return () => { cancelled = true; };
+  }, [id, catalogVersion]);
+
+  const oil = directOil || listedOil;
+  if (directStatus === 'loading') return <CatalogGate title="Загружаем карточку масла" />;
+  if (!oil) return <CatalogGate title="Карточка недоступна" text="Товар не найден или снят с публикации." />;
   const others = OILS.filter(o => o.id !== oil.id).slice(0, 4);
-
-  const [filtersOpts] = useState({ filter: 950, drain: 280, antifreeze: 0 });
-  const [addFilter, setAddFilter] = useState(true);
-  const [addDrain, setAddDrain] = useState(true);
-  const [addAntifreeze, setAddAntifreeze] = useState(false);
-
-  const total = oil.price
-    + (addFilter ? filtersOpts.filter : 0)
-    + (addDrain ? filtersOpts.drain : 0)
-    + (addAntifreeze ? 3200 : 0);
+  const specifications = [
+    ['Бренд', oil.brand],
+    ['Линейка', oil.line],
+    ['Вязкость SAE', oil.visc],
+    ['Спецификация', oil.spec],
+    ['Тип ДВС', oil.type],
+    ['Фасовка', oil.volume],
+    ['Единица продажи', oil.uom],
+    ['Артикул', oil.article],
+  ].filter(([, value]) => value);
 
   return (
     <main style={{background: '#F5F2ED', color: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
@@ -2536,116 +2377,65 @@ function ProductPage() {
             <div style={{aspectRatio: '1', background: '#FFFFFF', border: '1px solid #D9D3C5', position: 'relative', overflow: 'hidden'}}>
               {/* hex glow background */}
               <div style={{position: 'absolute', inset: 0, background: `radial-gradient(circle at 50% 50%, ${oil.color}20, transparent 60%)`}} />
-              <div style={{position: 'absolute', top: 18, left: 18}}>
-                <FreeChangeBadge size="lg" />
-              </div>
-              <div style={{position: 'absolute', top: 18, right: 18, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 80, color: '#0a0a0a', lineHeight: 0.9, letterSpacing: '-0.02em'}}>
+              {oil.visc ? <div style={{position: 'absolute', top: 18, right: 18, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 80, color: '#0a0a0a', lineHeight: 0.9, letterSpacing: '-0.02em'}}>
                 {oil.visc.split('-')[0]}<span style={{color: '#C2410C'}}>.</span>
                 <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.1em', textAlign: 'right', marginTop: -8}}>{oil.visc}</div>
-              </div>
+              </div> : null}
               <OilProductVisual oil={oil} variant="product" />
               {/* corner stamps */}
               <div style={{position: 'absolute', bottom: 18, left: 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.16em'}}>
-                ART. {oil.id.toUpperCase().slice(0, 10)}
+                ART. {(oil.article || oil.id).toUpperCase().slice(0, 18)}
               </div>
               <div style={{position: 'absolute', bottom: 18, right: 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.16em'}}>
-                В НАЛИЧИИ · {oil.stock}
+                {offerCountLabel(oil).toUpperCase()}
               </div>
             </div>
 
-            {/* note */}
-            <div style={{marginTop: 22, padding: '20px 22px', border: '1px solid #0a0a0a', background: '#0a0a0a', color: '#F5F2ED'}}>
-              <div className="t-eyebrow muted" style={{marginBottom: 8}}>Слово мастера</div>
+            {oil.note ? <div style={{marginTop: 22, padding: '20px 22px', background: '#0a0a0a', color: '#F5F2ED'}}>
+              <div className="t-eyebrow muted" style={{marginBottom: 8}}>Описание</div>
               <div style={{fontSize: 15, lineHeight: 1.5}}>{oil.note}</div>
-              <div style={{marginTop: 14, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.1em'}}>— Максим Лобов</div>
-            </div>
+            </div> : null}
           </div>
 
           {/* Info side */}
           <div>
             <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 14}}>
-              {oil.brand} · {oil.type}
+              {[oil.brand, oil.type].filter(Boolean).join(' · ')}
             </div>
             <h1 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(40px, 5.5vw, 72px)', lineHeight: 0.95, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
-              {oil.line}<br /><span style={{color: '#C2410C'}}>{oil.visc}.</span>
+              {oil.line}{oil.visc ? <><br /><span style={{color: '#C2410C'}}>{oil.visc}.</span></> : null}
             </h1>
             <div style={{fontFamily: 'Oswald, sans-serif', fontSize: 18, color: '#6B6B6B', textTransform: 'uppercase', marginTop: 8}}>
-              {oil.volume} · {oil.base}
+              {[oil.volume, oil.uom].filter(Boolean).join(' · ')}
             </div>
 
             <table className="spec" style={{marginTop: 32}}>
               <tbody>
-                <tr><th>Бренд</th><td>{oil.brand}</td></tr>
-                <tr><th>Линейка</th><td>{oil.line}</td></tr>
-                <tr><th>Вязкость SAE</th><td>{oil.visc}</td></tr>
-                <tr><th>Спецификация</th><td>{oil.spec}</td></tr>
-                <tr><th>Тип ДВС</th><td>{oil.type}</td></tr>
-                <tr><th>База</th><td>{oil.base}</td></tr>
-                <tr><th>Объём</th><td>{oil.volume}</td></tr>
-                <tr><th>Артикул</th><td style={{fontFamily: 'JetBrains Mono, monospace'}}>{oil.id.toUpperCase()}</td></tr>
+                {specifications.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value}</td></tr>)}
               </tbody>
             </table>
 
-            {/* Calculator */}
             <div style={{marginTop: 36, background: '#0a0a0a', color: '#F5F2ED', padding: '28px 28px 24px', position: 'relative', overflow: 'hidden'}}>
-              <div style={{position: 'absolute', top: -24, right: -10, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 180, color: 'rgba(245,242,237,0.04)', lineHeight: 0.8}}>+</div>
-
-              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22}}>
-                <div>
-                  <div className="t-eyebrow" style={{marginBottom: 8}}>Калькулятор замены</div>
-                  <div className="t-headline" style={{fontSize: 24}}>Что включено и что докинуть.</div>
-                </div>
-                <FreeChangeBadge size="sm" />
+              <div className="t-eyebrow" style={{marginBottom: 8}}>Наличие и цены</div>
+              <div className="t-headline" style={{fontSize: 24, marginBottom: 18}}>По филиалам.</div>
+              <div style={{display: 'flex', flexDirection: 'column', gap: 1, background: '#343434'}}>
+                {(oil.offers || []).map(offer => (
+                  <div key={offer.branchId} style={{background: '#0a0a0a', padding: '15px 0', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 18, alignItems: 'center'}}>
+                    <div>
+                      <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 18, textTransform: 'uppercase'}}>{offer.name}</div>
+                      {offer.address ? <div style={{fontSize: 12, color: '#9A9A9A', marginTop: 3}}>{offer.address}</div> : null}
+                      <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: offer.availability === 'IN_STOCK' ? '#F5F2ED' : '#9A9A9A', marginTop: 7}}>{formatOfferQuantity(offer)}</div>
+                    </div>
+                    <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, textAlign: 'right'}}>{offer.price == null ? 'Уточнить' : fmtMoney(offer.price)}</div>
+                  </div>
+                ))}
               </div>
-
-              <table style={{width: '100%', borderCollapse: 'collapse'}}>
-                <tbody>
-                  <tr style={{borderBottom: '1px dashed var(--line)'}}>
-                    <td style={{padding: '14px 0', fontSize: 13.5, color: '#F5F2ED'}}>
-                      <span style={{color: '#C2410C', marginRight: 8}}>✓</span> Масло {oil.brand} {oil.line} {oil.visc} · {oil.volume}
-                    </td>
-                    <td style={{padding: '14px 0', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: '#F5F2ED', textAlign: 'right'}}>{fmtMoney(oil.price)}</td>
-                  </tr>
-                  <tr style={{borderBottom: '1px dashed var(--line)'}}>
-                    <td style={{padding: '14px 0', fontSize: 13.5, color: '#F5F2ED'}}>
-                      <span style={{color: '#C2410C', marginRight: 8}}>✓</span> Работа мастера, прокладка, утилизация
-                    </td>
-                    <td style={{padding: '14px 0', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: '#C2410C', textAlign: 'right'}}>0 ₽</td>
-                  </tr>
-
-                  <OptRow label="Масляный фильтр (оригинал)" price={950} on={addFilter} toggle={() => setAddFilter(!addFilter)} hint="Mann / Mahle / OEM" />
-                  <OptRow label="Сливной болт + шайба" price={280} on={addDrain} toggle={() => setAddDrain(!addDrain)} hint="каждая замена — новая шайба" />
-                  <OptRow label="Антифриз (доливка до полной)" price={3200} on={addAntifreeze} toggle={() => setAddAntifreeze(!addAntifreeze)} hint="по желанию, по щупу" />
-                </tbody>
-              </table>
-
-              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 24, paddingTop: 22, borderTop: '2px solid #C2410C'}}>
-                <div>
-                  <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.14em', textTransform: 'uppercase'}}>Итого к оплате</div>
-                  <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', marginTop: 4, letterSpacing: '0.06em'}}>наличными, картой, СБП · по факту</div>
-                </div>
-                <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 56, color: '#F5F2ED', lineHeight: 0.9}}>{fmtMoney(total)}</div>
-              </div>
-
               <a href="/booking" className="btn rust lg" style={{width: '100%', marginTop: 22, justifyContent: 'space-between'}}>
-                Записаться по этому маслу <span className="arr">→</span>
+                Уточнить и записаться <span className="arr">→</span>
               </a>
             </div>
           </div>
         </div>
-
-        {/* Compatibility */}
-        <section style={{marginTop: 80}}>
-          <SectionHead paper eyebrow="Подходит к машинам" title="OEM-допуски и спецификации." num="" right={<Link to="/vin" className="btn ghost dark sm">Проверить по VIN →</Link>} />
-          <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14}}>
-            {['BMW LL-01', 'MB-Approval 229.5', 'VW 502.00 / 505.00', 'Porsche A40', 'Renault RN 0700/0710', 'Fiat 9.55535-Z2', 'Ford WSS-M2C913-D', 'GM dexos2'].map(c => (
-              <div key={c} style={{padding: '18px 18px', background: '#FFF', border: '1px solid #D9D3C5'}}>
-                <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.12em', marginBottom: 8}}>OEM</div>
-                <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 18, textTransform: 'uppercase', lineHeight: 1.1}}>{c}</div>
-              </div>
-            ))}
-          </div>
-        </section>
 
         {/* Other oils */}
         <section style={{marginTop: 80}}>
@@ -2656,28 +2446,6 @@ function ProductPage() {
         </section>
       </div>
     </main>
-  );
-}
-
-function OptRow({ label, price, on, toggle, hint }) {
-  return (
-    <tr style={{borderBottom: '1px dashed var(--line)'}}>
-      <td style={{padding: '14px 0', fontSize: 13.5, color: '#F5F2ED'}}>
-        <label style={{display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer'}}>
-          <span style={{
-            width: 16, height: 16, border: '1px solid #F5F2ED',
-            background: on ? '#C2410C' : 'transparent', borderColor: on ? '#C2410C' : '#F5F2ED',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>{on && <span style={{color: '#F5F2ED', fontSize: 11, lineHeight: 1}}>+</span>}</span>
-          {label}
-          <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.08em', marginLeft: 8}}>· {hint}</span>
-          <input type="checkbox" checked={on} onChange={toggle} style={{display: 'none'}} />
-        </label>
-      </td>
-      <td style={{padding: '14px 0', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: on ? '#F5F2ED' : '#858585', textAlign: 'right'}}>
-        {on ? '+' : ''}{fmtMoney(price)}
-      </td>
-    </tr>
   );
 }
 
@@ -3369,19 +3137,18 @@ function AccountPage() {
         <section style={{marginTop: 64}}>
           <SectionHead eyebrow="Рекомендуем" title="Под твою машину." right={<Link to="/vin" className="btn ghost sm">Подбор по VIN →</Link>} />
           <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
-            {OILS.filter(o => VIN_DEMO.alternatives.slice(0,3).includes(o.id) || o.id === VIN_DEMO.recommended).slice(0,4).map((o, i) => (
+            {OILS.slice(0,4).map((o, i) => (
               <Link key={o.id} to={`/product/${o.id}`}>
                 <div className="card" style={{padding: 0, height: '100%'}}>
                   <div style={{padding: 22}}>
                     <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 14}}>
                       <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#9A9A9A', letterSpacing: '0.12em'}}>{o.brand.toUpperCase()}</span>
-                      {o.id === VIN_DEMO.recommended && <span className="badge solid-rust">★ ОСНОВНОЕ</span>}
+                      <span className="badge">{offerCountLabel(o)}</span>
                     </div>
                     <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, color: '#F5F2ED', lineHeight: 1.1, marginBottom: 6, textTransform: 'uppercase'}}>{o.line}</div>
                     <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A'}}>{o.visc} · {o.volume}</div>
                     <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 18, paddingTop: 14, borderTop: '1px dashed var(--line)'}}>
-                      <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, color: '#F5F2ED'}}>{fmtMoney(o.price)}</span>
-                      <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.12em'}}>+ ЗАМЕНА</span>
+                      <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, color: '#F5F2ED'}}>{fmtOilPrice(o)}</span>
                     </div>
                   </div>
                 </div>
@@ -3599,29 +3366,46 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
     setCatalogStatus('loading');
     setCatalogError('');
 
-    apiGet('/api/oils?limit=1000')
-      .then(data => {
+    const refreshCatalog = async () => {
+      if (inFlight || document.visibilityState !== 'visible') return;
+      inFlight = true;
+      try {
+        const data = await apiGet('/api/oils?limit=100');
         const oils = Array.isArray(data?.items) ? data.items : [];
         if (cancelled) return;
-        if (oils.length === 0) throw new Error('Каталог масел из эко-платформы пуст.');
         OILS = oils;
         window.OILS = oils;
         setCatalogVersion(version => version + 1);
         setCatalogStatus('ready');
-      })
-      .catch(error => {
+        setCatalogError('');
+      } catch (error) {
         if (cancelled) return;
         console.warn('[catalog] Не удалось обновить масла:', error.message);
-        OILS = DEMO_OILS;
-        window.OILS = DEMO_OILS;
+        OILS = [];
+        window.OILS = [];
         setCatalogError(error.message || 'Не удалось загрузить каталог масел.');
-        setCatalogStatus('ready');
-      });
+        setCatalogStatus('error');
+      } finally {
+        inFlight = false;
+      }
+    };
 
-    return () => { cancelled = true; };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void refreshCatalog();
+    };
+    void refreshCatalog();
+    const timer = window.setInterval(() => void refreshCatalog(), 60_000);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   const seg = router.path.split('/').filter(Boolean);
@@ -3637,7 +3421,7 @@ function App() {
   else if (catalogStatus === 'error') page = <CatalogGate title="Каталог эко-платформы недоступен" text={catalogError} />;
   else if (seg[0] === 'vin') page = <VinPage />;
   else if (seg[0] === 'shop') page = <ShopPage />;
-  else if (seg[0] === 'product') page = <ProductPage />;
+  else if (seg[0] === 'product') page = <ProductPage catalogVersion={catalogVersion} />;
   else if (seg[0] === 'account') page = <AccountPage />;
   else page = <HomePage />;
 

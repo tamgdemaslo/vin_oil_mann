@@ -13,19 +13,43 @@ import { parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
 import { partsCatalogsRequest } from "@/lib/parts-catalogs";
 import { createOpenAIClient } from "@/lib/openai-client";
 import { getOilRequirementsFromFluidCatalog } from "@/lib/fluid-oil-requirements";
+import { resolvePublicStorefront, type PublicStorefrontContext } from "@/lib/public-storefront";
+
+export type PublicOilAvailability = "IN_STOCK" | "OUT_OF_STOCK" | "NOT_LISTED" | "UNKNOWN";
+
+export type PublicOilOffer = {
+  branchId: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  availability: PublicOilAvailability;
+  available: number | null;
+  uom: string | null;
+  price: number | null;
+  currency: string;
+  asOf: string | null;
+};
 
 export type PublicOilCard = {
   id: string;
+  slug: string;
   name: string;
+  description?: string;
   article?: string;
   brand?: string;
   sae?: string;
   acea?: string;
   apiSpec?: string;
+  ilsac?: string;
+  oem?: string;
   packageVolume?: string;
-  price: number;
+  uom?: string;
+  price: number | null;
   currency: string;
   available: number;
+  pricesDiffer: boolean;
+  offers: PublicOilOffer[];
+  updatedAt: string;
   imageHref?: string;
 };
 
@@ -34,7 +58,16 @@ export type PublicOilRecommendation = PublicOilCard & {
   why: string[];
 };
 
-type LocalOilRow = Awaited<ReturnType<typeof loadLocalOilRows>>[number];
+type StorefrontOilRow = Prisma.StorefrontProductGetPayload<{
+  include: {
+    contentSource: true;
+    bindings: {
+      include: {
+        localProduct: { include: { stockBalances: true } };
+      };
+    };
+  };
+}>;
 
 type PublicOilQuery = {
   search?: string;
@@ -43,6 +76,7 @@ type PublicOilQuery = {
   acea?: string;
   api?: string;
   limit?: number;
+  offset?: number;
 };
 
 type CarInfoItem = {
@@ -76,164 +110,120 @@ function compact(value: string | undefined | null): string {
   return (value ?? "").trim();
 }
 
-function getProductText(row: {
-  name: string;
-  groupPath: string | null;
-  description: string | null;
-  brand: string | null;
-  sae: string | null;
-  acea: string | null;
-  apiSpec: string | null;
-  oem: string | null;
-  searchText: string;
-}): string {
-  return [
-    row.name,
-    row.groupPath,
-    row.description,
-    row.brand,
-    row.sae,
-    row.acea,
-    row.apiSpec,
-    row.oem,
-    row.searchText,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+function configuredBranchName(configured: PublicStorefrontContext["branches"][number]) {
+  return configured.publicName?.trim() || configured.branch.shortName || configured.branch.name;
 }
 
-function looksLikeMotorOil(row: LocalOilRow): boolean {
-  const text = getProductText(row);
-  const sae = normalizeSAE(row.sae ?? row.name);
-  const accessorySignal =
-    /фильтр|filter|кольц|пробк|клипс|герметик|замена|диагност|колод|датчик|ламп|подъемник|крышк|корпус|шайб|проклад/.test(text);
-  if (accessorySignal) return false;
-
-  const hasOilSignal =
-    text.includes("масл") ||
-    text.includes("oil") ||
-    sae.length > 0 ||
-    normalizeACEA(row.acea ?? row.name).length > 0;
-  if (!hasOilSignal) return false;
-
-  const hasMotorSignal = /мотор|двигател|engine/.test(text);
-  if (!hasMotorSignal && sae.length === 0) return false;
-
-  const hasNonMotorSignal = /трансмис|акпп|atf|gear|редуктор|гур|psf|тормозн|brake|антифриз|coolant/.test(text);
-  return !hasNonMotorSignal || hasMotorSignal;
-}
-
-function motorOilCandidateWhere(): Prisma.LocalProductWhereInput {
-  const textMode = "insensitive" as const;
-
+function toPublicOffer(
+  row: StorefrontOilRow,
+  configured: PublicStorefrontContext["branches"][number]
+): PublicOilOffer {
+  const binding = row.bindings.find((item) => item.branchId === configured.branchId);
+  const localProduct = binding?.localProduct;
+  if (!localProduct || localProduct.archived) {
+    return {
+      branchId: configured.id,
+      name: configuredBranchName(configured),
+      address: configured.publicAddress?.trim() || configured.branch.address || null,
+      phone: configured.publicPhone?.trim() || configured.branch.phone || null,
+      availability: "NOT_LISTED",
+      available: null,
+      uom: null,
+      price: null,
+      currency: "руб.",
+      asOf: null,
+    };
+  }
+  const allowedStoreIds = new Set(configured.stores.map((item) => item.storeId));
+  const balances = localProduct.stockBalances.filter((balance) => allowedStoreIds.has(balance.storeId));
+  const available = Math.max(0, balances.reduce((sum, balance) => sum + decimalToNumber(balance.available), 0));
+  const asOf = balances.reduce<Date | null>(
+    (latest, balance) => !latest || balance.syncedAt > latest ? balance.syncedAt : latest,
+    null
+  );
   return {
-    AND: [
-      {
-        OR: [
-          { sae: { not: null } },
-          { acea: { not: null } },
-          { apiSpec: { not: null } },
-          { ilsac: { not: null } },
-          { name: { contains: "мотор", mode: textMode } },
-          { name: { contains: "engine", mode: textMode } },
-          { groupPath: { contains: "мотор", mode: textMode } },
-          { groupPath: { contains: "engine", mode: textMode } },
-          { searchText: { contains: "мотор", mode: textMode } },
-          { searchText: { contains: "engine", mode: textMode } },
-        ],
-      },
-      {
-        NOT: {
-          OR: [
-            { name: { contains: "фильтр", mode: textMode } },
-            { name: { contains: "filter", mode: textMode } },
-            { name: { contains: "кольц", mode: textMode } },
-            { name: { contains: "пробк", mode: textMode } },
-            { name: { contains: "клипс", mode: textMode } },
-            { name: { contains: "герметик", mode: textMode } },
-            { name: { contains: "колод", mode: textMode } },
-            { name: { contains: "датчик", mode: textMode } },
-            { name: { contains: "ламп", mode: textMode } },
-            { name: { contains: "шайб", mode: textMode } },
-            { name: { contains: "проклад", mode: textMode } },
-            { name: { contains: "трансмис", mode: textMode } },
-            { name: { contains: "акпп", mode: textMode } },
-            { name: { contains: "atf", mode: textMode } },
-            { name: { contains: "gear", mode: textMode } },
-            { name: { contains: "гур", mode: textMode } },
-            { name: { contains: "psf", mode: textMode } },
-            { name: { contains: "тормозн", mode: textMode } },
-            { name: { contains: "brake", mode: textMode } },
-            { name: { contains: "антифриз", mode: textMode } },
-            { name: { contains: "coolant", mode: textMode } },
-          ],
-        },
-      },
-    ],
+    branchId: configured.id,
+    name: configuredBranchName(configured),
+    address: configured.publicAddress?.trim() || configured.branch.address || null,
+    phone: configured.publicPhone?.trim() || configured.branch.phone || null,
+    availability: available > 0 ? "IN_STOCK" : "OUT_OF_STOCK",
+    available,
+    uom: localProduct.uomName?.trim() || null,
+    price: localProduct.salePriceCents > 0 ? localProduct.salePriceCents / 100 : null,
+    currency: localProduct.currencyName?.trim() || "руб.",
+    asOf: (asOf ?? localProduct.updatedAt).toISOString(),
   };
 }
 
-function totalAvailable(row: LocalOilRow): number {
-  return row.stockBalances.reduce((sum, balance) => sum + decimalToNumber(balance.available), 0);
-}
-
-function toPublicOilCard(row: LocalOilRow): PublicOilCard {
-  // Internal product photos are operational attachments, not curated storefront assets.
-  // Keep imageHref absent until the catalog has an explicitly approved public image.
+export function mapStorefrontOilCard(row: StorefrontOilRow, storefront: PublicStorefrontContext): PublicOilCard {
+  const source = row.contentSource;
+  const offers = storefront.branches.map((configured) => toPublicOffer(row, configured));
+  const knownPrices = [...new Set(offers.map((offer) => offer.price).filter((price): price is number => price != null))];
+  const updatedAt = offers.reduce(
+    (latest, offer) => offer.asOf && offer.asOf > latest ? offer.asOf : latest,
+    row.updatedAt.toISOString()
+  );
   return {
     id: row.id,
-    name: row.name,
-    article: row.article ?? undefined,
-    brand: row.brand ?? undefined,
-    sae: row.sae ?? undefined,
-    acea: row.acea ?? undefined,
-    apiSpec: row.apiSpec ?? undefined,
-    packageVolume: row.packageVolume ?? undefined,
-    price: row.salePriceCents / 100,
-    currency: row.currencyName ?? "руб.",
-    available: totalAvailable(row),
+    slug: row.slug,
+    name: row.publicName?.trim() || source.name,
+    description: row.publicDescription?.trim() || source.description?.trim() || undefined,
+    article: source.article ?? undefined,
+    brand: source.brand ?? undefined,
+    sae: source.sae ?? undefined,
+    acea: source.acea ?? undefined,
+    apiSpec: source.apiSpec ?? undefined,
+    ilsac: source.ilsac ?? undefined,
+    oem: source.oem ?? undefined,
+    packageVolume: source.packageVolume ?? undefined,
+    uom: source.uomName ?? undefined,
+    price: knownPrices.length === 1 ? knownPrices[0] : null,
+    currency: offers.find((offer) => offer.price != null)?.currency ?? source.currencyName ?? "руб.",
+    available: offers.reduce((sum, offer) => sum + (offer.available ?? 0), 0),
+    pricesDiffer: knownPrices.length > 1,
+    offers,
+    updatedAt,
+    imageHref: row.publicImageHref ?? undefined,
   };
 }
 
-function toOilProduct(row: LocalOilRow): OilProduct {
+function toOilProduct(row: StorefrontOilRow): OilProduct {
+  const source = row.contentSource;
   const volume =
-    row.packageVolume != null
-      ? Number.parseFloat(row.packageVolume.replace(",", ".").replace(/[^\d.]/g, ""))
+    source.packageVolume != null
+      ? Number.parseFloat(source.packageVolume.replace(",", ".").replace(/[^\d.]/g, ""))
       : Number.NaN;
-  const volumeLiters = Number.isFinite(volume) ? volume : parsePackVolumeLitersFromOilName(row.name) ?? undefined;
+  const volumeLiters = Number.isFinite(volume) ? volume : parsePackVolumeLitersFromOilName(source.name) ?? undefined;
 
   return {
     id: row.id,
-    name: row.name,
-    article: row.article ?? undefined,
-    price: row.salePriceCents / 100,
-    currency: row.currencyName ?? "руб.",
+    name: row.publicName?.trim() || source.name,
+    article: source.article ?? undefined,
+    price: source.salePriceCents / 100,
+    currency: source.currencyName ?? "руб.",
     meta: { href: `local://product/${row.id}` },
     requirements_norm: {
-      sae: mergeUnique([normalizeSAE(row.sae ?? ""), normalizeSAE(row.name)]),
-      oem: mergeUnique([normalizeOEM(row.oem ?? ""), normalizeOEM(row.name)]),
-      acea: mergeUnique([normalizeACEA(row.acea ?? ""), normalizeACEA(row.aceaExtra ?? ""), normalizeACEA(row.name)]),
-      api: mergeUnique([normalizeAPI(row.apiSpec ?? ""), normalizeAPI(row.name)]),
-      ilsac: mergeUnique([normalizeILSAC(row.ilsac ?? ""), normalizeILSAC(row.name)]),
+      sae: mergeUnique([normalizeSAE(source.sae ?? ""), normalizeSAE(source.name)]),
+      oem: mergeUnique([normalizeOEM(source.oem ?? ""), normalizeOEM(source.name)]),
+      acea: mergeUnique([normalizeACEA(source.acea ?? ""), normalizeACEA(source.aceaExtra ?? ""), normalizeACEA(source.name)]),
+      api: mergeUnique([normalizeAPI(source.apiSpec ?? ""), normalizeAPI(source.name)]),
+      ilsac: mergeUnique([normalizeILSAC(source.ilsac ?? ""), normalizeILSAC(source.name)]),
     },
     volume_liters: volumeLiters,
-    imageHref: row.imageHref ?? undefined,
+    imageHref: row.publicImageHref ?? undefined,
   };
 }
 
-async function loadLocalOilRows(params: PublicOilQuery = {}, scanLimit = 1000) {
+function publicOilWhere(storefrontId: string, params: PublicOilQuery): Prisma.StorefrontProductWhereInput {
   const search = compact(params.search);
   const brand = compact(params.brand);
   const sae = compact(params.sae);
   const acea = compact(params.acea);
   const api = compact(params.api);
-  const and: Prisma.LocalProductWhereInput[] = [];
-
-  and.push(motorOilCandidateWhere());
+  const sourceFilters: Prisma.LocalProductWhereInput[] = [];
 
   if (search) {
-    and.push({
+    sourceFilters.push({
       OR: [
         { name: { contains: search, mode: "insensitive" as const } },
         { article: { contains: search, mode: "insensitive" as const } },
@@ -242,49 +232,95 @@ async function loadLocalOilRows(params: PublicOilQuery = {}, scanLimit = 1000) {
       ],
     });
   }
-  if (brand) and.push({ brand: { contains: brand, mode: "insensitive" as const } });
-  if (sae) and.push({ OR: [{ sae: { contains: sae, mode: "insensitive" as const } }, { name: { contains: sae, mode: "insensitive" as const } }] });
-  if (acea) and.push({ OR: [{ acea: { contains: acea, mode: "insensitive" as const } }, { name: { contains: acea, mode: "insensitive" as const } }] });
-  if (api) and.push({ OR: [{ apiSpec: { contains: api, mode: "insensitive" as const } }, { name: { contains: api, mode: "insensitive" as const } }] });
+  if (brand) sourceFilters.push({ brand: { contains: brand, mode: "insensitive" as const } });
+  if (sae) sourceFilters.push({ OR: [{ sae: { contains: sae, mode: "insensitive" as const } }, { name: { contains: sae, mode: "insensitive" as const } }] });
+  if (acea) sourceFilters.push({ OR: [{ acea: { contains: acea, mode: "insensitive" as const } }, { name: { contains: acea, mode: "insensitive" as const } }] });
+  if (api) sourceFilters.push({ OR: [{ apiSpec: { contains: api, mode: "insensitive" as const } }, { name: { contains: api, mode: "insensitive" as const } }] });
+  return {
+    storefrontId,
+    publicationState: "PUBLISHED",
+    ...(sourceFilters.length ? { contentSource: { AND: sourceFilters } } : {}),
+  };
+}
 
-  return prisma.localProduct.findMany({
+async function loadStorefrontOilRows(params: PublicOilQuery = {}, options: { limit?: number; offset?: number }) {
+  const storefront = await resolvePublicStorefront();
+  const where = publicOilWhere(storefront.id, params);
+  const [rows, total] = await Promise.all([
+    prisma.storefrontProduct.findMany({
+      where,
+      include: {
+        contentSource: true,
+        bindings: {
+          where: { status: "CONFIRMED" },
+          include: { localProduct: { include: { stockBalances: true } } },
+        },
+      },
+      orderBy: [{ publicName: "asc" }, { id: "asc" }],
+      skip: Math.max(0, options.offset ?? 0),
+      ...(options.limit == null ? {} : { take: options.limit }),
+    }),
+    prisma.storefrontProduct.count({ where }),
+  ]);
+  return { storefront, rows, total };
+}
+
+async function loadPublicOilMatches(params: PublicOilQuery = {}) {
+  const { storefront, rows } = await loadStorefrontOilRows(params, {});
+  return rows.map((row) => ({
+    card: mapStorefrontOilCard(row, storefront),
+    product: toOilProduct(row),
+  }));
+}
+
+export async function listPublicOils(params: PublicOilQuery = {}) {
+  const limit = Math.min(100, Math.max(1, params.limit ?? 30));
+  const offset = Math.max(0, params.offset ?? 0);
+  const { storefront, rows, total } = await loadStorefrontOilRows(params, { limit, offset });
+  const oils = rows.map((row) => mapStorefrontOilCard(row, storefront));
+  return {
+    count: oils.length,
+    total,
+    limit,
+    offset,
+    nextOffset: offset + oils.length < total ? offset + oils.length : null,
+    oils,
+  };
+}
+
+export async function getPublicOilById(idOrSlug: string) {
+  const value = idOrSlug.trim();
+  if (!value) return null;
+  const storefront = await resolvePublicStorefront();
+  const row = await prisma.storefrontProduct.findFirst({
     where: {
-      archived: false,
-      entityType: { not: "service" },
-      ...(and.length > 0 ? { AND: and } : {}),
+      storefrontId: storefront.id,
+      publicationState: "PUBLISHED",
+      OR: [{ id: value }, { slug: value }],
     },
     include: {
-      stockBalances: true,
+      contentSource: true,
+      bindings: {
+        where: { status: "CONFIRMED" },
+        include: { localProduct: { include: { stockBalances: true } } },
+      },
     },
-    orderBy: [{ name: "asc" }],
-    take: scanLimit,
   });
+  return row ? mapStorefrontOilCard(row, storefront) : null;
 }
 
-async function loadPublicOilMatches(params: PublicOilQuery = {}, scanLimit = 1000) {
-  const rows = await loadLocalOilRows(params, scanLimit);
-  return rows
-    .filter(looksLikeMotorOil)
-    .map((row) => ({
-      card: toPublicOilCard(row),
-      product: toOilProduct(row),
-    }));
-}
-
-export async function listPublicOils(params: PublicOilQuery) {
-  const limit = Math.min(1000, Math.max(1, params.limit ?? 30));
-  const matches = await loadPublicOilMatches(params, Math.min(2500, Math.max(200, limit * 3)));
-  const oils = matches
-    .map((item) => item.card)
-    .sort((a, b) => {
-      const stockOrder = Number(b.available > 0) - Number(a.available > 0);
-      if (stockOrder !== 0) return stockOrder;
-      if (b.available !== a.available) return b.available - a.available;
-      return a.name.localeCompare(b.name, "ru");
-    })
-    .slice(0, limit);
-
-  return { count: oils.length, oils };
+export async function getPublicOilFilters() {
+  const storefront = await resolvePublicStorefront();
+  const rows = await prisma.storefrontProduct.findMany({
+    where: { storefrontId: storefront.id, publicationState: "PUBLISHED" },
+    select: { contentSource: { select: { brand: true, sae: true, packageVolume: true } } },
+  });
+  const unique = (values: Array<string | undefined>) => [...new Set(values.map(compact).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  return {
+    brands: unique(rows.map((row) => row.contentSource.brand ?? undefined)),
+    sae: unique(rows.map((row) => row.contentSource.sae ?? undefined)),
+    packageVolumes: unique(rows.map((row) => row.contentSource.packageVolume ?? undefined)),
+  };
 }
 
 function getCarInfoItems(carData: unknown): CarInfoItem[] {
@@ -461,7 +497,7 @@ export async function getPublicVinOilRecommendation(params: {
     };
   }
 
-  const localOils = await loadPublicOilMatches({}, 1500);
+  const localOils = await loadPublicOilMatches({});
   const cardsById = new Map(localOils.map((item) => [item.product.id, item.card]));
   const { recommended, alternatives } = scoreAndMatch(
     requirements,

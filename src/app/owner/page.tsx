@@ -21,7 +21,10 @@ export default async function OwnerDashboardPage() {
           <h1>Сводка бизнеса</h1>
           <span>Агрегированный режим только для чтения. Для операции выберите конкретный филиал в шапке.</span>
         </div>
-        <a href="/cabinet/branches" className="eco-btn eco-btn--secondary">Управление филиалами</a>
+        <div className="eco-owner-dashboard__head-actions">
+          <a href="/owner/storefront" className="eco-btn eco-btn--secondary">Клиентская витрина</a>
+          <a href="/cabinet/branches" className="eco-btn eco-btn--secondary">Управление филиалами</a>
+        </div>
       </header>
 
       <section className="eco-owner-dashboard__totals" aria-label="Итоги месяца">

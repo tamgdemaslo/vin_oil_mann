@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { listPublicOils } from "@/lib/public-oil";
+import { PublicStorefrontUnavailableError } from "@/lib/public-storefront";
 import {
   publicJson,
   publicOptions,
@@ -8,7 +9,12 @@ import {
 
 function parseLimit(value: string | null): number {
   const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isFinite(parsed) ? Math.min(1000, Math.max(1, parsed)) : 30;
+  return Number.isFinite(parsed) ? Math.min(100, Math.max(1, parsed)) : 30;
+}
+
+function parseOffset(value: string | null): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
 export async function OPTIONS(request: NextRequest) {
@@ -28,10 +34,16 @@ export async function GET(request: NextRequest) {
       acea: params.get("acea") ?? undefined,
       api: params.get("api") ?? undefined,
       limit: parseLimit(params.get("limit")),
+      offset: parseOffset(params.get("offset")),
     });
-    return publicJson(request, result);
+    return publicJson(request, result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[public/oils]", error);
-    return publicJson(request, { error: "Не удалось загрузить каталог масел" }, { status: 500 });
+    const code = error instanceof PublicStorefrontUnavailableError ? error.code : "source_unavailable";
+    return publicJson(
+      request,
+      { error: "Каталог масел временно недоступен", code },
+      { status: 503, headers: { "Cache-Control": "no-store" } }
+    );
   }
 }
