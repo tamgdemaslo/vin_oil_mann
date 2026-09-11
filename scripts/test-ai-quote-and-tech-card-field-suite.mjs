@@ -89,7 +89,7 @@ for (const [caseId, vehicleDisplayName, type, requiredFluidSpec, partial, total,
   assert.equal(first.options.length, 2, `${caseId}: every requested procedure has an option`);
   assert.equal(first.options[0].code, "partial", `${caseId}: stable option order starts with partial service`);
   assert.equal(first.options[1].code, "machine", `${caseId}: stable option order retains machine service`);
-  assert.equal(first.options[1].billableQuantityLiters, Math.ceil(total * 1.7), `${caseId}: machine quantity uses the one canonical pipeline`);
+  assert.equal(first.options[1].billableQuantityLiters, Math.round(total * 1.7 * 1000) / 1000, `${caseId}: machine quantity uses the one canonical pipeline`);
   assert.ok(first.filterPolicy.access !== undefined, `${caseId}: filter policy is always resolved or honestly unknown`);
   assert.equal(first.options.every((option) => option.servicePackage.levelAdjustment), true, `${caseId}: service package owns level adjustment`);
   if (manual) assert.equal(first.hardBlockers.some((blocker) => blocker.code === "TRANSMISSION_SERVICE_MISMATCH"), true, `${caseId}: manual transmission cannot receive an ATF quote`);

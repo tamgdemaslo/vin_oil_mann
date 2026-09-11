@@ -305,7 +305,7 @@ function localizedNumber(value: string) {
 
 export function packageVolumeLiters(candidate: Pick<LocalFluidCandidate, "uomName" | "packageVolume" | "markingMode">) {
   const uom = String(candidate.uomName ?? "").trim().toLocaleLowerCase("ru-RU");
-  if (/^(?:л|литр(?:а|ов)?|l|liter|litre)$/iu.test(uom)) return 1;
+  if (/^(?:л|литр(?:а|ов)?|l|liter|litre)$/iu.test(uom)) return candidate.markingMode === "PACKAGED_MARKED_GOOD" ? null : 1;
   if (candidate.markingMode === "BULK_OIL_FROM_MARKED_BARREL") return null;
   const source = String(candidate.packageVolume ?? "");
   const match = source.match(/(\d+(?:[.,]\d+)?)\s*(мл|ml|milliliters?|millilitres?|л|l|liters?|litres?)(?=\s|$|[.,;/)])/iu);
@@ -323,7 +323,7 @@ export function quantityForLiters(candidate: Pick<LocalFluidCandidate, "uomName"
   );
   const quantity = isLiterUnit ? Math.ceil((requiredLiters - 1e-8) * 1000) / 1000 : Math.ceil((requiredLiters - 1e-8) / litersPerUnit);
   const purchasedVolumeLiters = Math.round(quantity * litersPerUnit * 1000) / 1000;
-  return { litersPerUnit, quantity, purchasedVolumeLiters, packageRemainderLiters: Math.round((purchasedVolumeLiters - requiredLiters) * 1000) / 1000 };
+  return { litersPerUnit, quantity, purchasedVolumeLiters, packageRemainderLiters: Math.round((purchasedVolumeLiters - requiredLiters) * 1000) / 1000, billingMode: isLiterUnit ? "actual_consumption" as const : "whole_packages" as const };
 }
 
 function evidenceFor(candidate: LocalFluidCandidate, requiredSpec: string) {

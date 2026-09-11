@@ -440,7 +440,6 @@ export type QuoteAndTechCardPlanOption = {
 };
 export type QuoteAndTechCardPlan = { input: QuoteAndTechCardInput; rules: QuoteAndTechCardRules; isTransmission: boolean; requestedProcedures: QuoteAndTechCardProcedure[]; filterPolicy: QuoteAndTechCardFilterPolicy; hardBlockers: Array<{ code: string; message: string; requiredToContinue: string }>; quoteWarnings: string[]; techCardWarnings: string[]; options: QuoteAndTechCardPlanOption[] };
 function isTransmission(type: QuoteAndTechCardServiceType) { return ["automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential", "awd_clutch"].includes(type); }
-function roundUp(value: number, step: number) { const normalizedStep = Math.max(0.1, Math.min(10, step || 1)); return Math.round(Math.ceil((value - 1e-8) / normalizedStep) * normalizedStep * 1_000) / 1_000; }
 
 function quantitySource(input: QuoteAndTechCardInput, code: QuoteAndTechCardProcedure) {
   if (code === "machine" || code === "machine_filter_service") return { capacity: input.service.totalTechnicalQuantityLiters, mode: "total_capacity_x_machine_multiplier" } as const;
@@ -524,7 +523,9 @@ export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<
     const rawCalculatedQuantity = source.capacity == null ? null : source.capacity * multiplier;
     const capacityEvidence = sourceCapacityEvidence(input, source.capacity, verifiedFacts, code);
     const technicalQuantityLiters = capacityEvidence ? source.capacity ?? null : null;
-    const billableQuantityLiters = rawCalculatedQuantity == null ? null : roundUp(Math.max(rawCalculatedQuantity, transmission ? rules.transmissionMinimumBillableLiters : 0), rules.literRoundingStep);
+    // Consumption is independent of sale packaging. Legacy rounding/minimum
+    // settings must not inflate bulk litres or erase a canister's remainder.
+    const billableQuantityLiters = rawCalculatedQuantity == null ? null : Math.round(rawCalculatedQuantity * 1_000) / 1_000;
     const quantityTrace: QuoteAndTechCardQuantityTrace = {
       sourceCapacity: source.capacity ?? null,
       sourceCapacityEvidence: capacityEvidence,
@@ -532,8 +533,8 @@ export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<
       configuredAdditionalVolume: 0,
       calculationMode: source.mode,
       rawCalculatedQuantity,
-      packageStep: rules.literRoundingStep,
-      roundingRule: `Округление вверх до шага ${rules.literRoundingStep} л; минимум ${transmission ? rules.transmissionMinimumBillableLiters : 0} л.`,
+      packageStep: 0.001,
+      roundingRule: "Расход с точностью до 0,001 л. Целые упаковки рассчитываются после подбора фасовки.",
       technicalQuantity: technicalQuantityLiters,
       billableQuantity: billableQuantityLiters,
     };
@@ -560,7 +561,7 @@ export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<
   return { input, rules, isTransmission: transmission, requestedProcedures: [...requestedProcedures], filterPolicy, hardBlockers, quoteWarnings, techCardWarnings: [...new Set(techCardWarnings)], options };
 }
 
-export const SaleQuantitySchema = z.object({ technicalVolumeLiters: z.number().positive().nullable(), plannedConsumptionLiters: z.number().positive(), litersPerSaleUnit: z.number().positive(), saleUnitQuantity: z.number().positive(), unitPriceCents: z.number().int().nonnegative(), purchasedVolumeLiters: z.number().positive(), packageRemainderLiters: z.number().nonnegative(), saleUnit: z.string().max(40) }).strict();
+export const SaleQuantitySchema = z.object({ billingMode: z.enum(["actual_consumption", "whole_packages"]).optional(), technicalVolumeLiters: z.number().positive().nullable(), plannedConsumptionLiters: z.number().positive(), litersPerSaleUnit: z.number().positive(), saleUnitQuantity: z.number().positive(), unitPriceCents: z.number().int().nonnegative(), purchasedVolumeLiters: z.number().positive(), packageRemainderLiters: z.number().nonnegative(), saleUnit: z.string().max(40) }).strict();
 const QuoteLineSchema = z.object({ supplierOffer: z.record(z.string(), z.unknown()).optional(), saleQuantity: SaleQuantitySchema.optional(), source: z.string().trim().max(80).optional(), type: z.string().trim().max(80).nullable().optional(), role: z.enum(["fluid", "external_filter", "pan", "hardware", "consumable", "internal_filter", "labor", "rounding", "unknown"]).optional(), productId: z.string().trim().max(160).nullable().optional(), name: z.string().trim().min(1).max(220), catalogName: z.string().trim().min(1).max(220), customerDisplayName: z.string().trim().min(1).max(160), article: z.string().trim().max(120).nullable().optional(), quantity: z.number().positive(), unitPriceCents: z.number().int().nonnegative().optional(), totalCents: z.number().int().nonnegative(), internalOnly: z.boolean().default(false) }).strict();
 const QuoteAndTechCardMaterialCandidateSchema = z.object({ productId: z.string().max(160), catalogName: z.string().max(220), compatible: z.boolean(), availableQuantity: z.number().nonnegative(), requiredQuantity: z.number().positive().nullable(), packageLiters: z.number().positive().nullable(), unitPriceCents: z.number().int().nonnegative(), eligible: z.boolean(), exclusionReason: z.enum(["incompatible_specification", "price_missing", "stock_insufficient", "package_unknown"]).nullable() }).strict();
 export const QuoteAndTechCardMaterialSelectionTraceSchema = z.object({
@@ -808,24 +809,41 @@ function customerVehicleDisplayName(value: string) {
     .trim() || value;
 }
 
-function customerQuantity(value: number | null) { return value == null ? "—" : String(value); }
+function customerQuantity(value: number | null) { return value == null ? "—" : new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(value); }
 
-function customerFluidLine(option: QuoteAndTechCardQuoteOption, detailed: boolean) {
+export function fluidBillingMode(option: QuoteAndTechCardQuoteOption) {
+  const sale = option.lines.find(line => line.role === "fluid" && !line.internalOnly)?.saleQuantity;
+  if (!sale) return null;
+  // Older saved quotes have sale units but no explicit billing mode.
+  return sale.billingMode ?? (sale.litersPerSaleUnit === 1 && /^(?:л|литр(?:а|ов)?|l|liter|litre)$/iu.test(sale.saleUnit.trim()) ? "actual_consumption" : "whole_packages");
+}
+
+export function fluidBillingNote(option: QuoteAndTechCardQuoteOption) {
+  const mode = fluidBillingMode(option);
+  return mode === "actual_consumption" ? "Масло на розлив: оплата по фактическому расходу. Сумму уточним после замены."
+    : mode === "whole_packages" ? "Оплачиваются целые упаковки. Неиспользованное масло передадим вам." : "";
+}
+
+export function quoteTotalLabel(option: QuoteAndTechCardQuoteOption) {
+  return option.priceCompleteness === "subtotal" ? "Известная часть суммы" : fluidBillingMode(option) === "actual_consumption" ? "Ориентировочно" : "Итого";
+}
+
+function customerFluidLine(option: QuoteAndTechCardQuoteOption, showPrice: boolean) {
   const material = option.lines.find((line) => line.role === "fluid" && !line.internalOnly);
   if (!material) return "Основная жидкость не включена в сумму";
   const sale = material.saleQuantity;
-  const soldByLiter = sale?.litersPerSaleUnit === 1 && /^(?:л|литр(?:а|ов)?|l|liter|litre)$/iu.test(sale.saleUnit.trim());
+  const soldByLiter = fluidBillingMode(option) === "actual_consumption";
   // A bulk catalogue's trailing unit is redundant here. Sealed package names,
   // product lines, viscosity and articles remain unchanged.
   const name = soldByLiter && /на розлив/iu.test(material.customerDisplayName)
     ? material.customerDisplayName.replace(/,\s*1\s*(?:л|l)\.?\s*$/iu, "")
     : material.customerDisplayName;
   const quantity = `${name} — в расчёте ${customerQuantity(option.billableQuantityLiters)} л`;
-  if (!detailed || !sale) return quantity;
-  const purchase = !soldByLiter || sale.purchasedVolumeLiters !== option.billableQuantityLiters
-    ? `; к покупке ${material.quantity} ${sale.saleUnit} (${sale.purchasedVolumeLiters} л)` : "";
-  const remainder = sale.packageRemainderLiters > 0 ? `; остаток ${sale.packageRemainderLiters} л` : "";
-  return quantity + purchase + remainder;
+  if (!sale) return quantity;
+  if (soldByLiter) return `${quantity}${showPrice ? `, ${customerMoneyFromCents(sale.unitPriceCents)}/л` : ""}. ${fluidBillingNote(option)}`;
+  const purchase = `; к покупке ${customerQuantity(material.quantity)} ${sale.saleUnit} (${customerQuantity(sale.purchasedVolumeLiters)} л)`;
+  const remainder = sale.packageRemainderLiters > 0 ? `; ориентировочный остаток ${customerQuantity(sale.packageRemainderLiters)} л` : "";
+  return `${quantity}${purchase}${remainder}. ${fluidBillingNote(option)}`;
 }
 
 function customerLaborLine(option: QuoteAndTechCardQuoteOption) {
@@ -895,15 +913,15 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
   const showPrice = mode !== "short_without_price" && mode !== "recommendation";
   const detailed = mode === "detailed_with_price" || mode === "recommendation";
   const optionText = ready.map((option) => {
-    if (mode === "only_final_price") return `${option.customerDisplayName}${option.priceCompleteness === "subtotal" ? " (известная часть суммы)" : ""} — ${customerMoneyFromCents(option.totalCents!)}`;
-    if (!detailed) return `${option.customerDisplayName}: ${customerFluidLine(option, false)}${showPrice ? `, ${option.priceCompleteness === "subtotal" ? "известная часть суммы: " : ""}${customerMoneyFromCents(option.totalCents!)}` : ""}.`;
+    if (mode === "only_final_price") return `${option.customerDisplayName} — ${quoteTotalLabel(option).toLocaleLowerCase("ru-RU")}: ${customerMoneyFromCents(option.totalCents!)}. ${fluidBillingNote(option)}`;
+    if (!detailed) return `${option.customerDisplayName}: ${customerFluidLine(option, showPrice)}${showPrice ? `\n${quoteTotalLabel(option)}: ${customerMoneyFromCents(option.totalCents!)}` : ""}`;
     return [
       option.customerDisplayName,
-      customerFluidLine(option, true),
+      customerFluidLine(option, showPrice),
       ...customerAdditionalPartLines(option, showPrice),
       option.code === "partial" ? "Без снятия поддона и замены фильтра." : "",
       showPrice ? customerLaborLine(option) : "",
-      showPrice ? `${option.priceCompleteness === "subtotal" ? "Известная часть суммы" : "Итого"}: ${customerMoneyFromCents(option.totalCents!)}` : "",
+      showPrice ? `${quoteTotalLabel(option)}: ${customerMoneyFromCents(option.totalCents!)}` : "",
     ].filter(Boolean).join("\n");
   });
   const vehicle = customerVehicleDisplayName(input.vehicle.displayName);
@@ -938,14 +956,14 @@ export function buildQuoteAndTechCardBundleCustomerMessage(input: Pick<QuoteAndT
   const detailed = mode === "detailed_with_price" || mode === "recommendation";
   const sections = readyCards.flatMap(({ card, options }) => options.map((option) => {
     const title = input.results.length > 1 ? `${card.techCard.serviceName}\n${option.customerDisplayName}` : option.customerDisplayName;
-    if (mode === "only_final_price") return `${title}${option.priceCompleteness === "subtotal" ? " (известная часть суммы)" : ""} — ${customerMoneyFromCents(option.totalCents!)}`;
-    if (!detailed) return `${title}: ${customerFluidLine(option, false)}${showPrice ? `, ${option.priceCompleteness === "subtotal" ? "известная часть суммы: " : ""}${customerMoneyFromCents(option.totalCents!)}` : ""}.`;
+    if (mode === "only_final_price") return `${title} — ${quoteTotalLabel(option).toLocaleLowerCase("ru-RU")}: ${customerMoneyFromCents(option.totalCents!)}. ${fluidBillingNote(option)}`;
+    if (!detailed) return `${title}: ${customerFluidLine(option, showPrice)}${showPrice ? `\n${quoteTotalLabel(option)}: ${customerMoneyFromCents(option.totalCents!)}` : ""}`;
     return [
       title,
-      customerFluidLine(option, true),
+      customerFluidLine(option, showPrice),
       ...customerAdditionalPartLines(option, showPrice),
       showPrice ? customerLaborLine(option) : "",
-      showPrice ? `${option.priceCompleteness === "subtotal" ? "Известная часть суммы" : "Итого"}: ${customerMoneyFromCents(option.totalCents!)}` : "",
+      showPrice ? `${quoteTotalLabel(option)}: ${customerMoneyFromCents(option.totalCents!)}` : "",
     ].filter(Boolean).join("\n");
   }));
   const preliminary = readyCards.some(({ card }) => card.quoteSet.confidence === "preliminary") ? " Расчёт предварительный." : "";

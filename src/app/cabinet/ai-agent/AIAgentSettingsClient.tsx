@@ -292,16 +292,14 @@ export default function AIAgentSettingsClient() {
         </EcoCard>
 
         <EcoCard padded={false}>
-          <SectionHead title="Правила расчёта" body="Округление, срок действия предложения и норматив времени применяются одинаково во всех каналах." />
+          <SectionHead title="Правила расчёта" body="Масло на розлив оплачивается по фактическому расходу. Масло в канистрах — целыми упаковками, остаток передаётся клиенту." />
           <div className="eco-agent-settings__body">
             <Switch checked={settings.calculationRules.freeWorkWithServiceOil} onChange={(value) => patchCalculation("freeWorkWithServiceOil", value)} title="Работа бесплатна с маслом сервиса" hint="Стоимость работы не добавляется к варианту с маслом из локального каталога." />
             <div className="eco-agent-settings__grid">
               <NumberField label="Большой объём начинается с" value={settings.calculationRules.excessVolumeThresholdLiters} onChange={(value) => patchCalculation("excessVolumeThresholdLiters", value)} min={0} max={30} step={0.5} suffix="л" />
-              <NumberField label="Округлять масло до" value={settings.calculationRules.literRoundingStep} onChange={(value) => patchCalculation("literRoundingStep", value)} min={0.1} max={10} step={0.1} suffix="л" />
               <NumberField label="Норматив записи" value={settings.calculationRules.serviceDurationMinutes} onChange={(value) => patchCalculation("serviceDurationMinutes", Math.round(value))} min={10} max={480} suffix="мин" />
               <NumberField label="Расчёт действует" value={settings.calculationRules.quoteValidityHours} onChange={(value) => patchCalculation("quoteValidityHours", Math.round(value))} min={1} max={168} suffix="ч" />
               <NumberField label="Коэффициент аппаратной замены" hint="Умножает полный объём трансмиссии для расчёта жидкости; значение можно настроить под филиал." value={settings.calculationRules.transmissionMachineExchangeMultiplier} onChange={(value) => patchCalculation("transmissionMachineExchangeMultiplier", value)} min={1} max={3} step={0.1} />
-              <NumberField label="Минимальный объём трансмиссии" hint="Минимальный оплачиваемый объём жидкости при замене." value={settings.calculationRules.transmissionMinimumBillableLiters} onChange={(value) => patchCalculation("transmissionMinimumBillableLiters", value)} min={0} max={200} step={0.5} suffix="л" />
               <NumberField label="Дополнительных техпроверок" hint="Не более двух; после лимита помощник возвращает честный предварительный результат." value={settings.calculationRules.maxTechnicalVerificationPasses} onChange={(value) => patchCalculation("maxTechnicalVerificationPasses", Math.round(value))} min={0} max={2} />
             </div>
             <p className="eco-agent-settings__note">Фильтр трансмиссии, требующий разборки агрегата, в услугу ТГМ и смету не включается.</p>

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {reset,input,product,call,run,artifact,jiti} from './fixtures/ai-assistant/harness.mjs';
 const cases = [
  {car:'HOLDOUT A 2017',id:'control-a',spec:'CONTROL-A/1+',volume:3.1,pack:'2.5 л',price:132400,step:1,units:2,purchased:5,total:264800},
- {car:'HOLDOUT B 2023',id:'control-b',spec:'CONTROL-B.2',volume:6.25,pack:'208 л',price:14999,step:.01,uom:'л',marking:'BULK_OIL_FROM_MARKED_BARREL',units:6.3,purchased:6.3,total:94500},
+ {car:'HOLDOUT B 2023',id:'control-b',spec:'CONTROL-B.2',volume:6.25,pack:'208 л',price:14999,step:.01,uom:'л',marking:'BULK_OIL_FROM_MARKED_BARREL',units:6.25,purchased:6.25,total:93800},
  {car:'HOLDOUT C 2021',id:'control-c',spec:'CONTROL-C/3',volume:4.1,pack:'1 л',price:115500,step:1,units:5,purchased:5,total:577500},
  {car:'HOLDOUT D 2019',id:'control-d',spec:'CONTROL-D+',volume:5.1,pack:'4 л',price:244000,step:1,units:2,purchased:8,total:488000},
 ];

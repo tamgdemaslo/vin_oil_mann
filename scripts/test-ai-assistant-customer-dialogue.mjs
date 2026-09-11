@@ -253,12 +253,12 @@ const paidCopy=structuredClone(complete),paidOption=paidCopy.quoteSet.options[0]
 paidOption.lines.find(line=>line.role==='labor').totalCents=12345;
 paidOption.totalCents+=12345;
 assert.match(renderCustomer(paidCopy).text,/Работа — 123,45 ₽/);
-assert.match(renderCustomer(paidCopy).text,/Итого: 5[\s\u00a0]?223,45 ₽/);
+assert.match(renderCustomer(paidCopy).text,/Ориентировочно: 5[\s\u00a0]?223,45 ₽/);
 const sealed=await completeOilFixture(6,false);
 assert.equal(sealed.quoteSet.options[0].totalCents,660000);
 assert.equal(sealed.customerMessage.status,'ready');
 for(const copy of [sealed.customerMessage.text,buildQuoteAndTechCardBundleCustomerMessage({vehicle:sealed.vehicle,results:[sealed]}).text]){
   assert.match(copy,/Valvoline SynPower 5W-30, 5 л/);
-  assert.match(copy,/к покупке 2 шт \(10 л\); остаток 4 л/);
+  assert.match(copy,/к покупке 2 шт \(10 л\); ориентировочный остаток 4 л/);
 }
 console.log('Customer readiness replay: internal incomplete quotes, guarded saved messages, all five modes, complete reviewed quotes, exact prices and package leftovers passed.');

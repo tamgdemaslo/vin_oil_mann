@@ -702,6 +702,7 @@ export async function quoteLines(itemValues: Array<Record<string, unknown>>, ros
     const available = product.stockBalances.reduce((sum, row) => sum + Number(row.available), 0);
     if (available + 0.0001 < quantity) warnings.push(`${product.name}: локального остатка недостаточно; поставку нужно подтвердить.`);
     const saleQuantity = converted?.quantity && converted.litersPerUnit ? {
+      billingMode: converted.billingMode,
       technicalVolumeLiters: number(item.technicalVolumeLiters) || null, plannedConsumptionLiters,
       litersPerSaleUnit: converted.litersPerUnit, saleUnitQuantity: quantity, unitPriceCents: product.salePriceCents,
       purchasedVolumeLiters: converted.purchasedVolumeLiters!, packageRemainderLiters: converted.packageRemainderLiters!, saleUnit: product.uomName ?? "шт.",
@@ -740,7 +741,7 @@ export async function quoteLines(itemValues: Array<Record<string, unknown>>, ros
     if (item.maxDeliveryDays != null && (selected.deliveryDays == null || number(selected.deliveryDays) > number(item.maxDeliveryDays))) return fail("ROSSKO_DELIVERY_NOT_AGREED");
     warnings.push(`${text(selected.brand)} ${text(selected.article)}: предложение условное, наличие, упаковку и срок подтвердить перед работой.`);
     const unitPriceCents = Math.round(number(selected.retailPriceCents));
-    return [{ source: "rossko", offerId: text(selected.id), role, type: "product", name: text(selected.name, 180) || `Запчасть ${text(selected.brand)} ${text(selected.article)}`, article: text(selected.article), brand: text(selected.brand), quantity, unitPriceCents, totalCents: Math.round(unitPriceCents * quantity), supplierOffer: { ...selected, priceObservedAt: selected.fetchedAt, quantity, applicabilitySource: proofProduct?.id ?? null, conditional: true }, ...(converted?.quantity && converted.litersPerUnit ? { saleQuantity: { technicalVolumeLiters: number(item.technicalVolumeLiters) || null, plannedConsumptionLiters: planned, litersPerSaleUnit: converted.litersPerUnit, saleUnitQuantity: quantity, unitPriceCents, purchasedVolumeLiters: converted.purchasedVolumeLiters!, packageRemainderLiters: converted.packageRemainderLiters!, saleUnit: text(selected.uomName) || proofProduct?.uomName || "шт." } } : {}) }];
+    return [{ source: "rossko", offerId: text(selected.id), role, type: "product", name: text(selected.name, 180) || `Запчасть ${text(selected.brand)} ${text(selected.article)}`, article: text(selected.article), brand: text(selected.brand), quantity, unitPriceCents, totalCents: Math.round(unitPriceCents * quantity), supplierOffer: { ...selected, priceObservedAt: selected.fetchedAt, quantity, applicabilitySource: proofProduct?.id ?? null, conditional: true }, ...(converted?.quantity && converted.litersPerUnit ? { saleQuantity: { billingMode: converted.billingMode, technicalVolumeLiters: number(item.technicalVolumeLiters) || null, plannedConsumptionLiters: planned, litersPerSaleUnit: converted.litersPerUnit, saleUnitQuantity: quantity, unitPriceCents, purchasedVolumeLiters: converted.purchasedVolumeLiters!, packageRemainderLiters: converted.packageRemainderLiters!, saleUnit: text(selected.uomName) || proofProduct?.uomName || "шт." } } : {}) }];
   });
   const lines = [...localLines, ...rosskoLines];
   const totalCents = lines.reduce((sum, line) => sum + line.totalCents, 0);
@@ -1380,7 +1381,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       if (quote.finalQuote !== true && (appliedRule.requiresHumanConfirmation === true || !lines.some((line) => line.role === "labor"))) blockers.push({ code: "MISSING_LABOR_RULE", message: "Для услуги нет применимого правила стоимости работ.", requiredToContinue: "Настроить тарифное правило или указать подтверждённую стоимость работы." });
       const automatic = object(quote.automaticMaterialDecision);
       const primaryFluid = lines.find((line) => line.role === "fluid");
-      if (!selectedMaterial && primaryFluid) selectedMaterial = { name: primaryFluid.customerDisplayName, catalogName: primaryFluid.catalogName, customerDisplayName: primaryFluid.customerDisplayName, specification: text(input.service.requiredFluidSpec, 160) || null, quantity: primaryFluid.quantity, compatibilityEvidence: text(automatic.compatibilityEvidence, 700) || null };
+      if (!selectedMaterial && primaryFluid) selectedMaterial = { name: primaryFluid.customerDisplayName, catalogName: primaryFluid.catalogName, customerDisplayName: primaryFluid.customerDisplayName, specification: text(input.service.requiredFluidSpec, 160) || null, quantity: primaryFluid.saleQuantity?.plannedConsumptionLiters ?? option.billableQuantityLiters!, compatibilityEvidence: text(automatic.compatibilityEvidence, 700) || null };
       const supplierFluidWarning = lines.some((line) => line.role === "fluid" && line.source === "supplier")
         ? "Цена жидкости получена от поставщика: подтвердить наличие и срок поставки перед записью."
         : null;

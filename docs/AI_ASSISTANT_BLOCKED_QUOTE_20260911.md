@@ -29,13 +29,31 @@ unverified; displaying it cannot authorize service facts. Previously researched
 fields are reused for matching service/procedure scope instead of another
 enrichment call.
 
-Validation: 23 frozen regression suites, TypeScript, Timeweb infrastructure
-checks, and local browser inspection of the actual React renderer at default
-and 390px widths. The new runner replay covers absent service quantities,
+Validation: 24 frozen regression suites, TypeScript, Timeweb infrastructure
+checks, and local browser inspection of the actual React renderer. The initial
+diagnostics change was also checked at 390px width. The runner replay covers absent service quantities,
 independent branch tariffs, catalogue mismatch/price/stock diagnostics, complete
 research retention and avoiding duplicate enrichment. Fixtures use synthetic
 vehicles and catalogues. No new paid smoke, production mutation, technical
 profile activation or production deployment was performed for this patch.
+
+The owner confirmed the commercial rule: bulk oil is charged by actual
+consumption; sealed oil is charged as whole packages and the unused oil is
+handed to the customer. The planner now preserves fractional consumption to
+0.001 L instead of applying legacy whole-litre rounding or a minimum volume.
+The catalogue's sale unit and packaging determine purchased units afterwards.
+For a planned 4.3 L, this means 4.3 sale litres from bulk, one 5 L canister, or
+five 1 L bottles. Unknown or conflicting packaging remains unresolved.
+
+Billing mode is retained in the existing quote JSON, with a sale-unit fallback
+for older saved artifacts. Bulk totals are explicitly estimates until measured
+consumption is available. All five customer message modes and bundled messages
+retain the billing/return condition; price-free modes omit money. Whole-package
+leftovers are described as estimates. The tech card displays consumption litres,
+not the number of canisters, and quote rows show their sale units. Settings show
+the owner-approved policy instead of unused litre-rounding/minimum controls.
+The existing currency-rounding policy is unchanged. No accounting writes or
+claims of already-measured consumption are introduced.
 
 This is not acceptance of a complete real-vehicle quote. Remaining work is an
 applicable verified vehicle/aggregate and service-data path, a supported basis
