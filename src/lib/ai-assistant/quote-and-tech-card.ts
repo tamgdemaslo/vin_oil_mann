@@ -541,7 +541,7 @@ export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<
     const filterServiceNotConfirmed = isFilterService && filterPolicy.access === "unknown";
     const filterServiceNotApplicable = isFilterService && (filterPolicy.access === "none" || filterPolicy.access === "internal_requires_disassembly");
     const blocker = billableQuantityLiters == null
-      ? { code: "NO_MATERIAL_PRICE", message: "Не определён рабочий объём жидкости для этого варианта.", requiredToContinue: "Подтвердить рабочий объём жидкости для выбранной процедуры." }
+      ? { code: "MISSING_SERVICE_QUANTITY", message: "Не определён расход жидкости для расчёта этого варианта.", requiredToContinue: "Укажите объём для выбранной процедуры по применимому источнику. Полная ёмкость агрегата не заменяет расход на обслуживание." }
       : filterServiceNotConfirmed
         ? { code: "FILTER_SERVICE_CONFIGURATION_NOT_CONFIRMED", message: "Для сервиса с поддоном и фильтром не подтверждена конструкция фильтра и состав сервисного комплекта.", requiredToContinue: "Подтвердить по VIN конструкцию фильтра, номер фильтра или поддона, прокладку и необходимый крепёж." }
         : filterServiceNotApplicable
@@ -876,6 +876,7 @@ function customerFluidRequirement(serviceType: QuoteAndTechCardResult["techCard"
 // Internal repair instructions must never be copied into a customer's answer.
 function customerBlockerText(blocker: { code: string } | undefined) {
   switch (blocker?.code) {
+    case "MISSING_SERVICE_QUANTITY": return "Расход жидкости для выбранного обслуживания пока не определён.";
     case "SPECIFICATION_NOT_CONFIRMED": return "Подходящий допуск масла ещё не подтверждён.";
     case "MISSING_LABOR_RULE": return "Стоимость этой работы пока не подтверждена.";
     case "NO_MATERIAL_PRICE": return "Для окончательной стоимости ещё нужно уточнить необходимые материалы, их количество и цену.";

@@ -81,11 +81,10 @@ assert.equal(artifact(f).quoteSet.options[0].priceCompleteness,'subtotal','unkno
 const url='https://example.test/manual.pdf';
 const sourceResponse={output:[{type:'message',content:[{annotations:[{type:'url_citation',url,title:'Manual'}]}]},{type:'web_search_call',action:{sources:[{url},{url,title:'Another title'},{url:'https://other.test/info'}]}}]};
 const sources=sourcesFromResponses([sourceResponse],[{sourceType:'web',title:'Web search',url}]);
-assert.equal(sources.length,2);
+assert.equal(sources.length,1);
 assert.equal(sources[0].title,'Manual');
 assert.equal(sources[0].metadata.citation,true);
-assert.equal(sources[1].title,'other.test');
-assert.equal(sources[1].metadata.citation,undefined);
+assert.equal(sources.some(source=>source.url==='https://other.test/info'),false,'uncited search discovery is not answer evidence');
 const crowded=sourcesFromResponses(Array.from({length:3},(_,i)=>({output:[{type:'message',content:[{annotations:Array.from({length:30},(_,j)=>({type:'url_citation',url:`https://example.test/${i}/${j}`,title:'Manual'}))}]}]})),[{sourceType:'mann',title:'Local profile',metadata:{status:'none'}}]);
 assert.equal(crowded.length,60);
 assert.equal(crowded[0].sourceType,'mann','web citations must not evict local evidence');

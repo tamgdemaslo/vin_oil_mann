@@ -170,6 +170,8 @@ export const assistantFunctionTools = [
 ] as const;
 
 export type ToolContext = {
+  // Server-owned, current-run findings. Never accepted from tool arguments.
+  technicalResearch?: Array<{ serviceType: string; aggregate: string | null; procedures: string[]; findings: string; missingFields: string[] }>;
   technicalLookup?: (request: Record<string, unknown>) => Promise<AssistantToolResult>;
   organizationId: string;
   actorId: string;
@@ -604,6 +606,23 @@ async function automaticLocalFluidResolutionUncached(args: Record<string, unknow
   if (!requiredSpec || requiredLiters <= 0 || !alternativeTokens.length) {
     throw new Error("Для расчёта жидкости укажите requiredFluidSpec и requiredFluidVolumeLiters, чтобы backend проверил локальное масло");
   }
+  const rows = await localFluidCandidateRows(requiredSpec, text(args.serviceFamily, 60));
+  const evaluation = evaluatePreferredLocalFluid(rows.map((row) => ({
+    ...row,
+    availableUnits: row.stockBalances.reduce((sum, stock) => sum + Number(stock.available), 0),
+  })), requiredSpec, requiredLiters, text(args.serviceFamily, 60));
+  return {
+    selection: evaluation.selected,
+    candidates: evaluation.candidates,
+    fallbackReason: evaluation.selected ? null : evaluation.candidates.length ? "Подходящего локального товара с достаточным остатком нет." : "Локальный каталог не вернул совместимых кандидатов.",
+    originalOnlyOverride: false,
+  };
+}
+
+/** Candidate discovery does not require or invent a billable quantity. */
+async function localFluidCandidateRows(requiredSpec: string, family: string) {
+  const alternativeTokens = family === "engine_oil" ? engineOilSpecificationSearchTokenGroups(requiredSpec) : fluidSpecificationSearchTokenGroups(requiredSpec);
+  if (!alternativeTokens.length) return [];
   const branchId = getScopedBranchId();
   const fields = (token: string): Prisma.LocalProductWhereInput[] => [
     { sae: { contains: token, mode: "insensitive" } },
@@ -615,7 +634,7 @@ async function automaticLocalFluidResolutionUncached(args: Record<string, unknow
     { oemAtf: { contains: token, mode: "insensitive" } },
     { searchText: { contains: token, mode: "insensitive" } },
   ];
-  const rows = await assistantMemo("fluid-candidates", { branchId, requiredSpec, family: args.serviceFamily }, () => prisma.localProduct.findMany({
+  return assistantMemo("fluid-candidates", { branchId, requiredSpec, family }, () => prisma.localProduct.findMany({
     where: {
       branchId,
       archived: false,
@@ -643,16 +662,6 @@ async function automaticLocalFluidResolutionUncached(args: Record<string, unknow
     orderBy: [{ salePriceCents: "asc" }, { name: "asc" }],
     take: 100,
   }));
-  const evaluation = evaluatePreferredLocalFluid(rows.map((row) => ({
-    ...row,
-    availableUnits: row.stockBalances.reduce((sum, stock) => sum + Number(stock.available), 0),
-  })), requiredSpec, requiredLiters, text(args.serviceFamily, 60));
-  return {
-    selection: evaluation.selected,
-    candidates: evaluation.candidates,
-    fallbackReason: evaluation.selected ? null : evaluation.candidates.length ? "Подходящего локального товара с достаточным остатком нет." : "Локальный каталог не вернул совместимых кандидатов.",
-    originalOnlyOverride: false,
-  };
 }
 
 async function automaticLocalFluidResolution(args: Record<string, unknown>, context: ToolContext): Promise<LocalFluidResolution> {
@@ -1209,6 +1218,36 @@ export function applyAutomaticTransmissionScenarioDefaults(input: QuoteAndTechCa
   return withProcedures(input, ["partial"]);
 }
 
+async function blockedQuoteDiagnostics(input: QuoteAndTechCardInput, option: ReturnType<typeof createQuoteAndTechCardPlan>["options"][number], context: ToolContext) {
+  const blockers: QuoteAndTechCardQuoteOption["blockers"] = [];
+  const lines: QuoteAndTechCardQuoteOption["lines"] = [];
+  const tariff = await assistantTariffContext(context.organizationId);
+  const family = serviceFamilyForTechCard(input.service.type);
+  const labour = await resolveLaborPrice({
+    organizationId: context.organizationId, locationId: tariff.locationId ?? "",
+    serviceFamily: family, procedureType: procedureForTechCard(option.code, input.service.type),
+    transmissionConfiguration: option.servicePackage.panRemoval
+      ? input.service.transmissionConfiguration === "two_coarse_filters" ? "two_coarse_filters" : "pan_and_filter"
+      : isAutomaticTransmissionService(input.service.type) ? "no_pan" : "not_applicable",
+    materialsOwner: input.service.materialsOwner, vehicleId: input.vehicle.id,
+    aggregateCode: input.vehicle.aggregateCode ?? input.service.aggregate,
+    vehicle: input.vehicle.snapshot ?? {},
+    fallbackServiceProductId: await quoteAndTechCardFallbackServiceProductId(input.service.type, option.code),
+  });
+  if (!labour.requiresHumanConfirmation && labour.laborPriceCents != null && labour.priceFromCents == null && labour.priceToCents == null) {
+    lines.push({ source: labour.source, type: "labor", role: "labor", name: "Работа", catalogName: "Работа", customerDisplayName: "Работа", quantity: 1, unitPriceCents: labour.laborPriceCents, totalCents: labour.laborPriceCents, internalOnly: false });
+  } else blockers.push({ code: "MISSING_LABOR_RULE", message: "Точная стоимость работы для этого варианта не определена.", requiredToContinue: "Проверьте тариф выбранного филиала в правилах расчёта." });
+  const spec = input.service.requiredFluidSpec;
+  if (input.service.materialsOwner === "service" && spec && ["engine_oil", "transmission_fluid"].includes(family) && !context.employeeRequestedOriginalFluidOnly) {
+    const rows = await localFluidCandidateRows(spec, family);
+    const compatible = rows.filter(row => family === "engine_oil" ? engineOilSpecificationMatches(row, spec) : fluidSpecificationMatches(row, spec));
+    if (!compatible.length) blockers.push({ code: "LOCAL_FLUID_NOT_FOUND", message: `В каталоге филиала не найдена жидкость с указанной спецификацией ${spec}.`.slice(0, 360), requiredToContinue: "Подберите материал у поставщика либо добавьте имеющийся товар, его спецификацию и цену в каталог. Применимость спецификации к автомобилю проверяется отдельно." });
+    else if (!compatible.some(row => row.salePriceCents > 0)) blockers.push({ code: "NO_MATERIAL_PRICE", message: "У найденной жидкости не заполнена цена продажи.", requiredToContinue: "Укажите цену в карточке материала." });
+    else if (!compatible.some(row => row.salePriceCents > 0 && row.stockBalances.some(stock => Number(stock.available) > 0))) blockers.push({ code: "LOCAL_FLUID_OUT_OF_STOCK", message: "У найденной жидкости нет положительного остатка в филиале.", requiredToContinue: "Проверьте поставку. Достаточное количество можно проверить после определения расхода." });
+  }
+  return { lines, blockers };
+}
+
 async function buildQuoteAndTechCard(args: Record<string, unknown>, context: ToolContext) {
   const rawInput = object(args.input);
   const rawVehicle = object(rawInput.vehicle);
@@ -1254,7 +1293,9 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     const blockers = [...baseBlockers];
     if (option.blocker) blockers.push(option.blocker);
     if (blockers.length) {
-      options.push({ priceCompleteness: "subtotal", code: option.code, label: option.label, customerDisplayName: customerProcedureDisplayName(input.service.type, option.code), status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, quantityTrace: option.quantityTrace, servicePackage: option.servicePackage, materialSelectionTrace: { requiredSpecification: input.service.requiredFluidSpec ?? null, oemRequirement: { specification: input.service.requiredFluidSpec ?? null, evidence: null }, oemReference: { brand: "OEM", article: input.service.requiredFluidOemArticle ?? null }, localCandidates: [], selectedLocalCandidate: null, compatibleProduct: { productId: null, catalogName: null, compatibilityEvidence: null }, selectedProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, selectedSellableProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, localAvailableQuantity: null, requiredQuantity: option.billableQuantityLiters, fallbackSupplierUsed: false, fallbackReason: option.blocker?.message ?? null }, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: [] });
+      const diagnostics = await blockedQuoteDiagnostics(input, option, context);
+      blockers.push(...diagnostics.blockers);
+      options.push({ priceCompleteness: "subtotal", code: option.code, label: option.label, customerDisplayName: customerProcedureDisplayName(input.service.type, option.code), status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, quantityTrace: option.quantityTrace, servicePackage: option.servicePackage, materialSelectionTrace: { requiredSpecification: input.service.requiredFluidSpec ?? null, oemRequirement: { specification: input.service.requiredFluidSpec ?? null, evidence: null }, oemReference: { brand: "OEM", article: input.service.requiredFluidOemArticle ?? null }, localCandidates: [], selectedLocalCandidate: null, compatibleProduct: { productId: null, catalogName: null, compatibilityEvidence: null }, selectedProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, selectedSellableProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, localAvailableQuantity: null, requiredQuantity: option.billableQuantityLiters, fallbackSupplierUsed: false, fallbackReason: option.blocker?.message ?? null }, lines: diagnostics.lines, totalCents: null, maximumTotalCents: null, validUntil: null, blockers: blockers.slice(0, 6), warnings: [] });
       continue;
     }
     // Local-first is code, not an instruction: check the compatible local ATF
@@ -1469,9 +1510,12 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   assistantEvent({ toolName: "quote_ready", status: "completed", serviceType: input.service.type, pricedOptions: options.filter(option => option.totalCents != null).length });
   assistantExecution()?.partialResults.push({ toolName: "preliminary_quote", result: { ...draft, customerMessage: preliminaryMessage } });
   const missingFields = ["procedure", "levelTemperature", "torqueNotes", "filterAccess"].filter(field => !localTechnical.facts.some(fact => fact.field === field));
-  const research = context.technicalLookup && options.some(option => option.totalCents != null)
+  const aggregate = text(input.vehicle.aggregateCode ?? input.service.aggregate, 160).toUpperCase();
+  const priorResearch = (context.technicalResearch ?? []).filter(item => item.serviceType === input.service.type && (!item.aggregate || item.aggregate.toUpperCase() === aggregate));
+  const unresolvedResearchFields = missingFields.filter(field => !priorResearch.some(item => item.missingFields.includes(field) && plan.requestedProcedures.every(procedure => item.procedures.includes(procedure))));
+  const research = context.technicalLookup && unresolvedResearchFields.length > 0 && options.some(option => option.totalCents != null)
     ? await assistantMemo("technical-enrichment", { vehicle: input.vehicle, service: input.service.type, missingFields }, async () => {
-      try { return await context.technicalLookup!({ vehicle: input.vehicle, serviceType: input.service.type, aggregate: input.service.aggregate, missingFields }); }
+      try { return await context.technicalLookup!({ vehicle: input.vehicle, serviceType: input.service.type, aggregate: input.vehicle.aggregateCode ?? input.service.aggregate, procedures: plan.requestedProcedures, missingFields: unresolvedResearchFields }); }
       catch {
         assistantSignal()?.throwIfAborted();
         assistantEvent({ toolName: "technical_enrichment", status: "failed" });
@@ -1481,7 +1525,9 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     : null;
   const customerMessage = preliminaryMessage;
   const researchEvidence = research?.result.findings ? [{ source: "Точечный поиск: сведения для проверки", fact: text(research.result.findings, 700), status: "needs_verification" as const, url: research.sources?.find(source => source.url)?.url ?? null }] : [];
-  const resultBase = { ...draft, evidence: [...draft.evidence.slice(0, 19), ...researchEvidence], techCard: { ...draft.techCard, research: research?.result ?? null }, customerMessage, status: scenarioStatus(calculatedQuoteStatus, techCardStatus, customerMessage.status) };
+  const retainedFindings = [...priorResearch.map(item => item.findings), text(research?.result.findings, 12_000)].filter(Boolean);
+  const retainedResearch = priorResearch.length && retainedFindings.length ? { status: "needs_verification", findings: [...new Set(retainedFindings)].join("\n\n"), missingFields: [...new Set([...priorResearch.flatMap(item => item.missingFields), ...unresolvedResearchFields])], enrichmentStatus: research?.result.status ?? null } : null;
+  const resultBase = { ...draft, evidence: [...draft.evidence.slice(0, 19), ...researchEvidence], techCard: { ...draft.techCard, research: retainedResearch ?? research?.result ?? null }, customerMessage, status: scenarioStatus(calculatedQuoteStatus, techCardStatus, customerMessage.status) };
   const result = parseQuoteAndTechCardResult(resultBase);
   if (!result) throw new Error("Не удалось сформировать проверенный контракт техкарты и сметы");
   return {
@@ -1490,7 +1536,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       { sourceType: "internal_catalog" as const, title: "Техкарта и смета: детерминированный сценарий", excerpt: `Проверочных проходов: не более ${plan.rules.maxTechnicalVerificationPasses}; вариантов процедуры: ${options.length}.` },
       ...mannOilFilter.sources,
       ...(research?.sources ?? []),
-      ...input.evidence.map((item) => ({ sourceType: "internal_catalog" as const, title: item.source, url: item.url ?? null, excerpt: item.fact })),
+      ...input.evidence.filter(item => item.url && /^https?:\/\//iu.test(item.url)).map((item) => ({ sourceType: "web" as const, title: item.source, url: item.url, excerpt: item.fact, metadata: { origin: "model_evidence", verification: "candidate", reportedStatus: item.status } })),
     ],
   } satisfies AssistantToolResult;
 }

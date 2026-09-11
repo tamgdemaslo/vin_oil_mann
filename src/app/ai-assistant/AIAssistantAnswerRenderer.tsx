@@ -182,6 +182,7 @@ function QuoteAndTechCardOption({ option }: { option: QuoteAndTechCardResult["qu
 
 function QuoteAndTechCardView({ result, showCustomerMessage = true }: { result: QuoteAndTechCardResult; showCustomerMessage?: boolean }) {
   const customerBlocker = quoteAndTechCardCustomerMessageBlocker(result);
+  const researchFindings = typeof result.techCard.research?.findings === "string" ? result.techCard.research.findings : "";
   const techRows: Array<[string, string | null]> = [
     ["Автомобиль", result.vehicle.displayName],
     ["Агрегат", result.vehicle.aggregate],
@@ -203,6 +204,7 @@ function QuoteAndTechCardView({ result, showCustomerMessage = true }: { result: 
       </div>}
       {result.quoteSet.hardBlockers.length > 0 && <div className="eco-ai-answer__blockers">{result.quoteSet.hardBlockers.map((blocker) => <p key={blocker.code}><strong>{blocker.message}</strong><span>{blocker.requiredToContinue}</span></p>)}</div>}
       {(result.techCard.warnings.length > 0 || result.evidence.length > 0) && <details><summary>Исследование и источники · {result.techCard.warnings.length + result.evidence.length}</summary><ul>{result.techCard.warnings.map((warning, index) => <li key={`warning-${index}`}>{warning}</li>)}{result.evidence.map((item, index) => <li key={`evidence-${index}`}>{item.source}: {item.fact}</li>)}</ul></details>}
+      {researchFindings && <details><summary>Результат технического поиска</summary><p>Найденные сведения требуют проверки применимости. Они не подтверждают подбор и не являются инструкцией к работе.</p><Markdown content={researchFindings} /></details>}
     </section>
     <section className="eco-ai-answer__quote-options" aria-label="Варианты сметы"><header><ReceiptText size={17} aria-hidden /><strong>Смета</strong><span>{result.quoteSet.status === "blocked" ? "Расчёт заблокирован" : result.quoteSet.confidence === "confirmed" ? "Стоимость подтверждена" : "Предварительный расчёт"}</span></header>{result.quoteSet.options.map((option) => <QuoteAndTechCardOption key={option.code} option={option} />)}</section>
     {showCustomerMessage && (!customerBlocker && result.customerMessage.status === "ready" ? <ClientMessageCard message={result.customerMessage.text} /> : <div className="eco-ai-answer__blockers"><p><strong>Подбор и расчёт не завершены.</strong><span>{customerBlocker || result.customerMessage.text}</span></p></div>)}
