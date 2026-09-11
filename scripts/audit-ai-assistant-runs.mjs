@@ -18,11 +18,11 @@ try {
   await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '15000ms'");
   const where={createdAt:{gte:since,lte:asOf}};
   const availableInWindow=await tx.aIAssistantRun.count({where});
-  const runs=await tx.aIAssistantRun.findMany({where,orderBy:{createdAt:'desc'},take:limit,select:{id:true,status:true,model:true,startedAt:true,completedAt:true,durationMs:true,inputTokens:true,outputTokens:true,toolSummaryJson:true,toolCalls:{select:{toolName:true,status:true,durationMs:true,argumentsJson:true,createdAt:true}},quotes:{select:{createdAt:true,baseTotalCents:true}}}});
+  const runs=await tx.aIAssistantRun.findMany({where,orderBy:{createdAt:'desc'},take:limit,select:{id:true,status:true,model:true,startedAt:true,completedAt:true,durationMs:true,inputTokens:true,outputTokens:true,toolSummaryJson:true,toolCalls:{select:{toolName:true,status:true,durationMs:true,argumentsJson:true,startedAt:true}},quotes:{select:{createdAt:true,baseTotalCents:true}}}});
   const messages=await tx.aIAssistantMessage.findMany({where:{runId:{in:runs.map(r=>r.id)},role:'assistant'},select:{runId:true,attachmentsJson:true}});
   const profileTable=await tx.$queryRawUnsafe("SELECT to_regclass('public.mann_technical_association_revisions') IS NOT NULL AS present");
   const technicalProfileAvailability = profileTable[0]?.present ? await tx.$queryRawUnsafe('SELECT state, verification_status AS "verificationStatus", COUNT(*)::int AS count FROM mann_technical_association_revisions GROUP BY state, verification_status') : null;
-  return {technicalProfileAvailability,availableInWindow,runs:runs.map(run=>({...run,tools:run.toolCalls,messages:messages.filter(message=>message.runId===run.id)}))};
+  return {technicalProfileAvailability,availableInWindow,runs:runs.map(run=>({...run,tools:run.toolCalls.map(tool=>({...tool,createdAt:tool.startedAt})),messages:messages.filter(message=>message.runId===run.id)}))};
  },{timeout:30000});
  console.log(JSON.stringify({...summarizeAssistantRuns(data.runs,{asOf:asOf.toISOString(),since:since.toISOString(),availableInWindow:data.availableInWindow,limit,source}),technicalProfileAvailability:data.technicalProfileAvailability},null,2));
 } catch(error) {console.log(JSON.stringify({asOf:asOf.toISOString(),source,available:false,code:error.code??'AUDIT_FAILED'}));process.exitCode=1;} finally{await db.$disconnect();}

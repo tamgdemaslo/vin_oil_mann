@@ -64,6 +64,24 @@ await test('TOTAL does not suppress the missing partial-capacity search; duplica
   await runWithRequestTenant(tenant,()=>withAssistantExecution(2000,undefined,async()=>{await executeAssistantTool('lookup_technical_data',args,context);await executeAssistantTool('lookup_technical_data',{...args,missingFields:['specification','capacity']},context);}));
   assert.equal(searches,1);
 });
+await test('detailed technical questions survive validation and reach research without truncation',async()=>{
+  setup();
+  const question='OEM articles and exact quantities of pan integrated filter, pan gasket if separate, pan bolts and quick-coupling/drain level seal';
+  let received;
+  const context={...ctx,technicalLookup:async request=>{received=request;return {result:{status:'needs_verification'},sources:[]};}};
+  await lookup({vehicle:{make:'TEST',model:'CAR'},serviceType:'automatic_transmission',procedure:'filter_service',missingFields:[question]},context);
+  assert.deepEqual(received.missingFields,[question]);
+  await assert.rejects(()=>lookup({vehicle:{},missingFields:['x'.repeat(501)]},context),error=>error.code==='TOOL_SCHEMA_INVALID');
+});
+await test('both requested procedures require their own capacity, including the legacy comma form',async()=>{
+  for(const procedureArgs of [{procedure:'partial, filter_service'},{procedures:['partial','filter_service']}]){
+    setup([{nominalLiters:7,serviceContext:'WITH_FILTER'}]);let received;
+    const context={...ctx,technicalLookup:async request=>{received=request;return {result:{status:'needs_verification'},sources:[]};}};
+    await lookup({vehicle:{make:'TEST',model:'CAR'},serviceType:'automatic_transmission',...procedureArgs,missingFields:['capacity']},context);
+    assert.deepEqual(received.procedures,['filter_service','partial']);
+    assert.deepEqual(received.missingFields,['capacity']);
+  }
+});
 await test('real runner prices a complete filter service from the reviewed source and frozen branch catalog',async()=>{
   const f=setup();
   f.tables.localProduct=[product('oil',{name:'Fixture ATF на розлив, 1 л',uomName:'л',packageVolume:'1 л',salePriceCents:100000,atf:'TEST-ATF',oemAtf:null,searchText:'TEST-ATF'}),product('filter',{name:'Fixture service filter',article:'TEST-FILTER',uomName:'шт',packageVolume:null,salePriceCents:200000,atf:null,oem:null,sae:null,searchText:'filter'})];
@@ -77,5 +95,18 @@ await test('real runner prices a complete filter service from the reviewed sourc
   assert.equal(result.customerMessage.status,'ready',result.customerMessage.text);
   assert.equal(option.lines.find(row=>row.role==='fluid').quantity,7);
   assert.equal(option.lines.find(row=>row.role==='labor').totalCents,600000);
+});
+await test('partial without pan uses its own tariff even when the vehicle supports pan service',async()=>{
+  const f=setup();
+  f.tables.localProduct=[product('oil',{name:'Fixture ATF на розлив, 1 л',uomName:'л',packageVolume:'1 л',salePriceCents:100000,atf:'TEST-ATF',oemAtf:null,searchText:'TEST-ATF'})];
+  f.tables.aIAssistantLaborPricingRule[1].transmissionConfiguration='no_pan';
+  f.tables.aIAssistantLaborPricingRule.push({...f.tables.aIAssistantLaborPricingRule[1],id:'pan-rule',transmissionConfiguration:'pan_and_filter',laborPriceCents:600000});
+  const value=request({requestedProcedures:['partial','filter_service']});
+  value.service.transmissionConfiguration='pan_and_filter';
+  f.responses=[call('build_quote_and_tech_card',{input:value})];
+  await run('Рассчитай частичную замену ATF без снятия поддона TEST CAR');
+  const option=artifact(f).quoteSet.options[0];
+  assert.equal(option.servicePackage.panRemoval,false);
+  assert.equal(option.lines.find(row=>row.role==='labor').totalCents,400000);
 });
 console.log(`Service capacity regression: ${count} scenarios passed.`);

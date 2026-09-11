@@ -46,7 +46,7 @@ function activeAssistantBranches(context: BranchContext): AIAssistantBranch[] {
     }));
 }
 
-function branchAccess(base: AIAssistantBaseAccess, branchId: string): AIAssistantAccess {
+export function branchAccess(base: AIAssistantBaseAccess, branchId: string): AIAssistantAccess {
   const branch = base.branches.find((candidate) => candidate.id === branchId);
   if (!branch) {
     throw new AIAssistantAccessError(

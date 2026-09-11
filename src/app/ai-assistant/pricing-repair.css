@@ -1,0 +1,13 @@
+.eco-pricing-repair { margin: 12px 0; border-left: 3px solid var(--eco-rust); background: var(--eco-surface, #fff); padding: 14px 16px; font-size: 13px; color: var(--eco-ink, #252525); }
+.eco-pricing-repair > strong { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.eco-pricing-repair p { margin: 8px 0; max-width: 72ch; line-height: 1.5; }
+.eco-pricing-repair__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.eco-pricing-repair__preview { margin-top: 12px; border-top: 1px solid var(--eco-line, #ddd); padding-top: 10px; }
+.eco-pricing-repair__preview select { display: block; max-width: 100%; margin-top: 6px; padding: 8px; border: 1px solid var(--eco-line-strong, #ccc); background: #fff; border-radius: 4px; }
+.eco-pricing-repair__rows { max-height: 320px; overflow: auto; border-block: 1px solid var(--eco-line, #ddd); }
+.eco-pricing-repair__rows > label { font-weight: 400; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 2px; border-bottom: 1px solid var(--eco-line, #eee); cursor: pointer; }
+.eco-pricing-repair__rows input { margin-top: 3px; accent-color: var(--eco-rust); }
+.eco-pricing-repair__rows b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.eco-pricing-repair__rows small { display: block; margin-top: 4px; color: #595959; }
+.eco-pricing-repair__error { color: #9b2c20; }
+@media (max-width: 620px) { .eco-pricing-repair { padding: 12px; }.eco-pricing-repair__rows > label { grid-template-columns: 18px minmax(0, 1fr); }.eco-pricing-repair__rows b { grid-column: 2; }.eco-pricing-repair__actions .eco-btn { white-space: normal; text-align: left; } }

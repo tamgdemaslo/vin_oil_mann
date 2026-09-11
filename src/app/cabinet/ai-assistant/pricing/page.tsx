@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { requireAuthenticatedSession } from "@/lib/app-access";
 import PricingRulesClient from "./PricingRulesClient";
 
-export default async function AIAssistantPricingRulesPage() {
+export default async function AIAssistantPricingRulesPage({ searchParams }: { searchParams: Promise<{ branchId?: string }> }) {
+  const { branchId } = await searchParams;
   const session = await requireAuthenticatedSession("/cabinet/ai-assistant/pricing");
   if (session.user.role !== "owner" && session.user.role !== "admin") redirect("/cabinet");
   return <main className="eco-page eco-page--wide">
@@ -16,6 +17,6 @@ export default async function AIAssistantPricingRulesPage() {
       </div>
       <div className="eco-page-actions"><Link href="/cabinet/ai-assistant" className="eco-btn eco-btn--quiet"><ArrowLeft size={16} /> Настройки</Link><Link href="/ai-assistant" className="eco-btn eco-btn--primary"><Calculator size={16} /> Открыть помощник</Link></div>
     </header>
-    <PricingRulesClient />
+    <PricingRulesClient branchId={branchId} />
   </main>;
 }
