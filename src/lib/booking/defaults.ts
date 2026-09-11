@@ -17,3 +17,8 @@ export const DEFAULT_BOOKING_WORKING_HOURS: BookingWorkingHour[] = Array.from({ 
 export function defaultBookingWorkingHour(weekday: number) {
   return DEFAULT_BOOKING_WORKING_HOURS.find((row) => row.weekday === weekday) ?? null;
 }
+
+export function resolveBookingWorkingHours(configured: BookingWorkingHour[]) {
+  return DEFAULT_BOOKING_WORKING_HOURS.map((fallback) =>
+    configured.find((row) => row.weekday === fallback.weekday) ?? fallback);
+}

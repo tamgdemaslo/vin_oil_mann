@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { CATALOG_BOOKING_SERVICE_PREFIX } from "@/lib/booking/catalog-services";
+import { publicServiceGroupRank, publicServicePresentation } from "@/lib/booking/public-service-presentation";
 import {
   checkPublicRateLimit,
   getPublicBookingReadLimitPerHour,
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
       requiresVin: true,
       requiresConfirmation: true,
       requiredFieldsJson: true,
+      sortOrder: true,
     },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
@@ -72,14 +74,19 @@ export async function GET(request: NextRequest) {
             : product.salePriceCents > 0
               ? { kind: "fixed" as const, amountCents: product.salePriceCents, currency: product.currencyName || "RUB" }
               : null;
+      const presentation = publicServicePresentation(service.name, service.description);
       return {
         ...service,
+        ...presentation,
         pricing,
         requiredFields: Array.isArray(service.requiredFieldsJson)
         ? service.requiredFieldsJson.filter((field): field is string => typeof field === "string")
         : [],
         requiredFieldsJson: undefined,
       };
-    }),
+    }).sort((left, right) =>
+      publicServiceGroupRank(left.group) - publicServiceGroupRank(right.group)
+      || left.sortOrder - right.sortOrder
+      || left.customerName.localeCompare(right.customerName, "ru")),
   }, { headers: rateLimitHeaders(rate) });
 }

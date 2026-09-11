@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { DEFAULT_BOOKING_WORKING_HOURS } from "@/lib/booking/defaults";
+import { resolveBookingWorkingHours } from "@/lib/booking/defaults";
 import {
   checkPublicRateLimit,
   getPublicBookingReadLimitPerHour,
@@ -39,16 +39,17 @@ export async function GET(request: NextRequest) {
     orderBy: { name: "asc" },
   });
   return publicJson(request, {
-    branches: branches.map((branch) => ({
+    // An online-booking point must have a real destination. A missing address
+    // makes the point unavailable instead of leaking a client-facing placeholder.
+    branches: branches.filter((branch) => Boolean(branch.address?.trim())).map((branch) => ({
       id: branch.id,
       name: branch.bookingSettings?.publicName || branch.shortName || branch.name,
-      address: branch.address,
+      address: branch.address!.trim(),
       phone: branch.phone,
       timezone: branch.timezone,
       intro: branch.bookingSettings?.publicIntro,
       bookingHorizonDays: branch.bookingSettings?.bookingHorizonDays ?? 60,
-      workingHours: DEFAULT_BOOKING_WORKING_HOURS.map((fallback) =>
-        branch.bookingWorkingHours.find((row) => row.weekday === fallback.weekday) ?? fallback),
+      workingHours: resolveBookingWorkingHours(branch.bookingWorkingHours),
     })),
   }, { headers: rateLimitHeaders(rate) });
 }

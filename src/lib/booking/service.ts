@@ -48,7 +48,10 @@ export type CreateBookingInput = {
   overrideReason?: BookingOverrideReason | null;
   durationOverrideMinutes?: number | null;
   idempotencyKey?: string | null;
+  needsVehicleClarification?: boolean;
 };
+
+export const BOOKING_VEHICLE_CLARIFICATION_MARKER = "[Публичная запись: клиент не знает VIN, нужна помощь с подбором]";
 
 export type BookingActor = {
   kind: "PUBLIC" | "USER" | "MANAGE_LINK" | "SYSTEM";
@@ -476,10 +479,12 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
       startsAt,
       endsAt,
     }, appliedOverrideReason === "slot_taken");
-    const requiresVin = services.some((service) => service.requiresVin);
+    const requiredFields = requiredServiceFields(services);
+    const requiresVin = requiredFields.has("vin");
+    const needsVehicleClarification = actor.kind === "PUBLIC" && requiresVin && input.needsVehicleClarification === true;
     const submittedVehicle = !input.vehicleId ? normalizeVehicleInput(input.vehicle) : null;
     const vehicleVin = submittedVehicle?.vin ?? null;
-    if (requiresVin && !vehicleVin && !input.vehicleId) {
+    if (requiresVin && !needsVehicleClarification && !vehicleVin && !input.vehicleId) {
       throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
     }
 
@@ -496,8 +501,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
     if (!bookingVehicle) {
       throw new BookingError("Укажите автомобиль", "booking_vehicle_required");
     }
-    const requiredFields = requiredServiceFields(services);
-    if (requiresVin && !bookingVehicle.vin) {
+    if (requiresVin && !needsVehicleClarification && !bookingVehicle.vin) {
       throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
     }
     if (requiredFields.has("email") && !clean(input.email)) {
@@ -509,7 +513,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
     if (requiredFields.has("year") && !bookingVehicle.year) {
       throw new BookingError("Для выбранной услуги нужен год автомобиля", "booking_vehicle_year_required");
     }
-    const requiresConfirmation = services.some((service) => service.requiresConfirmation);
+    const requiresConfirmation = services.some((service) => service.requiresConfirmation) || needsVehicleClarification;
     const branch = await tx.branch.findUnique({ where: { id: input.branchId } });
     if (!branch) throw new BookingError("Филиал не найден", "booking_branch_not_found", 404);
 
@@ -539,7 +543,11 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
         requiresConfirmation,
         confirmationState: requiresConfirmation ? BOOKING_CONFIRMATION.PENDING : BOOKING_CONFIRMATION.NOT_REQUIRED,
         comment: clean(input.comment),
-        internalComment: actor.kind === "USER" ? clean(input.internalComment) : null,
+        internalComment: actor.kind === "USER"
+          ? clean(input.internalComment)
+          : needsVehicleClarification
+            ? BOOKING_VEHICLE_CLARIFICATION_MARKER
+            : null,
         conflictOverride: Boolean(appliedOverrideReason),
         managementHandle,
         createdByUserId: actor.userId ?? null,

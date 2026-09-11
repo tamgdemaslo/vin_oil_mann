@@ -1,4 +1,5 @@
-import type { BookingWithDetails } from "./service";
+import { BOOKING_VEHICLE_CLARIFICATION_MARKER, type BookingWithDetails } from "./service";
+import { publicServicePresentation } from "./public-service-presentation";
 
 function vehicleDto(vehicle: BookingWithDetails["vehicle"]) {
   if (!vehicle) return null;
@@ -88,13 +89,17 @@ export function publicManagedBookingDto(booking: BookingWithDetails) {
     customerName: full.customerName,
     vehicle: full.vehicle,
     master: full.master,
-    services: full.services,
+    services: full.services.map((service) => ({
+      ...service,
+      name: publicServicePresentation(service.name).customerName,
+    })),
     startsAt: full.startsAt,
     endsAt: full.endsAt,
     durationMinutes: full.durationMinutes,
     status: full.status,
     requiresConfirmation: full.requiresConfirmation,
     confirmationState: full.confirmationState,
+    clarificationRequired: booking.internalComment?.includes(BOOKING_VEHICLE_CLARIFICATION_MARKER) ?? false,
     comment: full.comment,
     cancellationReason: full.cancellationReason,
   };

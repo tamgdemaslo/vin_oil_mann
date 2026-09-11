@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
       vehicle: body.vehicle && typeof body.vehicle === "object" ? body.vehicle : null,
       comment: typeof body.comment === "string" ? body.comment : null,
       idempotencyKey: typeof body.idempotencyKey === "string" ? body.idempotencyKey : null,
+      needsVehicleClarification: body.needsVehicleClarification === true,
       source: "PUBLIC",
     }, { kind: "PUBLIC", respectLeadTime: true });
     const managementUrl = buildBookingManagementUrl(request, result.managementToken);

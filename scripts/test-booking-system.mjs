@@ -19,6 +19,7 @@ const catalogServices = await jiti.import("../src/lib/booking/catalog-services.t
 const journalWindows = await jiti.import("../src/lib/booking/journal-windows.ts");
 const journalTime = await jiti.import("../src/lib/booking/journal-time.ts");
 const publicLinks = await jiti.import("../src/lib/booking/public-link.ts");
+const publicServicePresentation = await jiti.import("../src/lib/booking/public-service-presentation.ts");
 const bookingIdempotency = await jiti.import("../src/lib/booking/idempotency.ts");
 const { getBookingAvailability } = await jiti.import("../src/lib/booking/availability.ts");
 const bookingAccess = await jiti.import("../src/lib/booking/access.ts");
@@ -43,6 +44,14 @@ assert.equal(publicLinks.publicBookingPath("филиал 1"), "/booking?branchId
 assert.equal(publicLinks.publicBookingBranchFromSearch("?branchId=branch-a"), "branch-a");
 assert.equal(publicLinks.publicBookingBranchFromSearch("?branch=legacy-branch"), "legacy-branch");
 assert.equal(publicLinks.publicBookingBranchFromSearch(""), null);
+
+assert.deepEqual(
+  publicServicePresentation.publicServicePresentation("Замена моторного масла в двигателе и масляного фильтра"),
+  { customerName: "Замена моторного масла", customerDescription: "С заменой масляного фильтра.", group: "engine" },
+);
+assert.equal(publicServicePresentation.publicServicePresentation("Замена масла в DSG").group, "transmission");
+assert.equal(publicServicePresentation.publicServicePresentation("Выставление уровня АКПП").group, "other");
+assert.equal(publicServicePresentation.publicServicePresentation("Замена тормозной жидкости").group, "fluids");
 
 const idempotencyKey = "550e8400-e29b-41d4-a716-446655440000";
 assert.equal(
@@ -362,6 +371,9 @@ assert.ok(
 );
 assert.match(service, /booking\.rescheduled/);
 assert.match(service, /booking\.cancelled/);
+assert.match(service, /needsVehicleClarification/);
+assert.match(service, /BOOKING_VEHICLE_CLARIFICATION_MARKER/);
+assert.match(service, /requiresConfirmation\) \|\| needsVehicleClarification/);
 assert.match(service, /type BookingOverrideReason = "slot_taken" \| "outside_schedule" \| "nonstandard_start"/);
 assert.match(service, /overrideReason !== actualReason/);
 assert.ok(
@@ -405,6 +417,11 @@ assert.match(publicCreate, /vehicleId: null/);
 assert.match(publicCreate, /idempotencyKey/);
 assert.match(publicCreate, /result\.reused \? 200 : 201/);
 assert.match(publicCreate, /notification/);
+assert.match(publicCreate, /needsVehicleClarification: body\.needsVehicleClarification === true/);
+
+const publicBookingDto = source("src/lib/booking/dto.ts");
+assert.match(publicBookingDto, /clarificationRequired/);
+assert.match(publicBookingDto, /publicServicePresentation/);
 
 const publicCreateStatus = source("src/app/api/public/booking/status/route.ts");
 assert.match(publicCreateStatus, /getPublicBookingByIdempotency/);
@@ -442,23 +459,38 @@ const publicBookingClient = source("src/app/booking/BookingClient.tsx");
 assert.match(publicBookingClient, /publicBookingBranchFromSearch\(window\.location\.search\)/);
 assert.match(publicBookingClient, /setStep\(2\)/);
 assert.doesNotMatch(publicBookingClient, /data\.branches\.length === 1/);
-assert.match(publicBookingClient, /const STEPS = \["Филиал", "Услуги", "Время", "Автомобиль и контакты"\]/);
+assert.match(publicBookingClient, /const BRANCH_STEPS = FULL_STEPS\.slice\(1\)/);
+assert.match(publicBookingClient, /label: "Услуги"/);
 assert.doesNotMatch(publicBookingClient, /customer-lookup/);
 assert.doesNotMatch(publicBookingClient, /params\.get\("phone"\)|params\.get\("vin"\)|params\.get\("name"\)/);
 assert.match(publicBookingClient, /AbortController/);
 assert.match(publicBookingClient, /activeAvailabilityKeyRef/);
-assert.match(publicBookingClient, /durationMinutes: totalDuration/);
+assert.match(publicBookingClient, /totalDuration, timezone/);
 assert.match(publicBookingClient, /submissionUnknown/);
 assert.match(publicBookingClient, /\/api\/public\/booking\/status/);
 assert.doesNotMatch(publicBookingClient, /\/время\|слот\|занят\//);
 assert.match(publicBookingClient, /Заявка принята\. Время предварительное/);
 assert.match(publicBookingClient, /sessionStorage/);
-assert.match(publicBookingClient, /материалы отдельно/);
+assert.match(publicBookingClient, /Масло и расходники отдельно/);
+assert.match(publicBookingClient, /Стоимость уточним по автомобилю/);
+assert.match(publicBookingClient, /Не знаю VIN \/ нужна помощь с подбором/);
+assert.match(publicBookingClient, /needsVehicleClarification/);
+assert.match(publicBookingClient, /Время Калининграда/);
+assert.doesNotMatch(publicBookingClient, /Адрес уточняется/);
 
 const publicServices = source("src/app/api/public/booking/services/route.ts");
 assert.match(publicServices, /salePriceCents/);
 assert.match(publicServices, /priceNeedsSetup/);
 assert.match(publicServices, /vehicle_calculation/);
+assert.match(publicServices, /publicServicePresentation/);
+
+const publicBranches = source("src/app/api/public/booking/branches/route.ts");
+assert.match(publicBranches, /Boolean\(branch\.address\?\.trim\(\)\)/);
+assert.match(publicBranches, /resolveBookingWorkingHours/);
+
+const telegramBookingLink = source("src/app/api/public/booking/manage/[token]/telegram-link/route.ts");
+assert.match(telegramBookingLink, /getBookingByManagementToken/);
+assert.match(telegramBookingLink, /createClientTelegramLinkToken/);
 
 const publicManageClient = source("src/app/booking/manage/[token]/ManageBookingClient.tsx");
 assert.match(publicManageClient, /"loading" \| "loaded" \| "not_found" \| "error"/);
