@@ -4,6 +4,7 @@ import {
   ArrowLeft, ArrowRight, CalendarDays, Car, Check, CheckCircle2, ChevronDown, Clock3, Copy,
   Info, LoaderCircle, MapPin, MessageCircle, Navigation, Phone, ShieldCheck, UserRound, Wrench,
 } from "lucide-react";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { publicBookingBranchFromSearch } from "@/lib/booking/public-link";
 import type { PublicServiceGroup } from "@/lib/booking/public-service-presentation";
@@ -412,9 +413,9 @@ export default function BookingClient() {
   }
 
   return <main className={styles.publicRoot}>
-    <header className={styles.publicHeader}><a className={styles.brand} href="/client-site" aria-label="Там где масло — на главную"><span aria-hidden>ТГМ</span><strong>Там где масло.</strong></a><div><ShieldCheck aria-hidden /><span>Онлайн-запись<br /><small>без звонка и регистрации</small></span></div></header>
+    <header className={styles.publicHeader}><a className={styles.brand} href="/client-site" aria-label="Там где масло — на главную"><Image src="/brand/logo-wordmark-white.svg" width={204} height={30} priority alt="Там где масло." /></a><div className={styles.headerActions}><a href="/client-site">На сайт</a><ShieldCheck aria-hidden /><span>Онлайн-запись<br /><small>без звонка и регистрации</small></span></div></header>
     <section className={styles.bookingShell}>
-      {step === 1 ? <div className={styles.intro}><div><h1>Выберите сервис</h1><p>Покажем услуги, график и свободное время именно выбранного филиала.</p></div></div> : branch ? <div className={styles.branchContext}><div><small>Там где масло.</small><strong>{[branch.name, branch.address].filter(Boolean).join(" · ")}</strong><span>{branchHoursLabel(branch.workingHours)}</span></div><button className={styles.secondaryButton} type="button" onClick={openBranchChooser}>Изменить</button></div> : null}
+      {step === 1 ? <div className={styles.intro}><div><span className={styles.bookingKicker}>Онлайн-запись · Калининград</span><h1>Запись в сервис за несколько минут.</h1><p>Выберите филиал — покажем его услуги, график и действительно свободное время.</p></div><div className={styles.introProof} aria-label="Условия онлайн-записи"><span>Без звонка</span><span>Свободные окна</span><span>Оплата в сервисе</span></div></div> : branch ? <div className={styles.branchContext}><div><small>Онлайн-запись · Калининград</small><strong>{[branch.name, branch.address].filter(Boolean).join(" · ")}</strong><span>{branchHoursLabel(branch.workingHours)}</span></div><button className={styles.secondaryButton} type="button" onClick={openBranchChooser}>Изменить</button></div> : null}
       <div className={styles.progressHeader}><nav className={styles.steps} aria-label="Шаги записи">{flowSteps.map((item, index) => <button type="button" key={item.step} className={item.step === step ? styles.activeStep : item.step < step ? styles.doneStep : ""} disabled={item.step > step} onClick={() => item.step < step && setStep(item.step)}><span>{item.step < step ? <Check aria-hidden /> : index + 1}</span>{item.label}</button>)}</nav><div className={styles.mobileProgress}><div><strong>{flowSteps.find((item) => item.step === step)?.label}</strong><span>{flowPosition} из {flowSteps.length}</span></div><i><span style={{ transform: `scaleX(${flowPosition / flowSteps.length})` }} /></i></div></div>
       <div className={styles.workspace}><section className={styles.stage}>
         {step > 1 && selectedServices.length > 0 && <div className={styles.mobileSummary}><Wrench aria-hidden /><span><strong>Выбрано: {selectedServices.length} {selectedServices.length === 1 ? "услуга" : "услуги"} · {durationLabel(totalDuration)}</strong><small>{selectedServices.map((service) => service.customerName).join(", ")}</small></span></div>}
