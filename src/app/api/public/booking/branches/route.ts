@@ -39,12 +39,10 @@ export async function GET(request: NextRequest) {
     orderBy: { name: "asc" },
   });
   return publicJson(request, {
-    // An online-booking point must have a real destination. A missing address
-    // makes the point unavailable instead of leaking a client-facing placeholder.
-    branches: branches.filter((branch) => Boolean(branch.address?.trim())).map((branch) => ({
+    branches: branches.map((branch) => ({
       id: branch.id,
       name: branch.bookingSettings?.publicName || branch.shortName || branch.name,
-      address: branch.address!.trim(),
+      address: branch.address?.trim() || null,
       phone: branch.phone,
       timezone: branch.timezone,
       intro: branch.bookingSettings?.publicIntro,

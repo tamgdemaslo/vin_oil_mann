@@ -485,7 +485,8 @@ assert.match(publicServices, /vehicle_calculation/);
 assert.match(publicServices, /publicServicePresentation/);
 
 const publicBranches = source("src/app/api/public/booking/branches/route.ts");
-assert.match(publicBranches, /Boolean\(branch\.address\?\.trim\(\)\)/);
+assert.doesNotMatch(publicBranches, /filter\(\(branch\) => Boolean\(branch\.address/);
+assert.match(publicBranches, /address: branch\.address\?\.trim\(\) \|\| null/);
 assert.match(publicBranches, /resolveBookingWorkingHours/);
 
 const telegramBookingLink = source("src/app/api/public/booking/manage/[token]/telegram-link/route.ts");
