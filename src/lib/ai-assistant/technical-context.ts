@@ -64,20 +64,40 @@ export async function verifiedLocalTechnicalInput(input: QuoteAndTechCardInput, 
   const matches = result.profile.items.filter(item => item.systemCode === technicalSystems[service.type] && item.sourceStatus === "primary_source" && !item.requiresReview);
   if (matches.length !== 1) return { input, facts, ...result };
   const item = matches[0];
-  const aggregate = input.vehicle.aggregateCode ?? service.aggregate ?? (service.type === "engine_oil" ? String(input.vehicle.snapshot?.engineCode ?? "") : null);
+  const aggregate = input.vehicle.aggregateCode || service.aggregate || (service.type === "engine_oil" ? String(input.vehicle.snapshot?.engineCode ?? "") : null) || item.componentModel || null;
   if (item.componentModel && (!aggregate || aggregate.toUpperCase() !== item.componentModel.toUpperCase())) return { input, facts, ...result };
   const source = item.evidence[0];
   if (!source) return { input, facts, ...result };
   const base = { source: `${source.publisher ?? source.title ?? "MANN technical profile"} · ${item.revisionId}`, url: source.url ?? null, vehicleVariantKey: result.resolution.selectedApplication!.variantIds.join(","), aggregate: aggregate ?? null };
   const spec = [...item.specifications, ...item.viscosityGrades].join("; ");
-  if (spec && (!service.requiredFluidSpec || service.requiredFluidSpec === spec)) { service.requiredFluidSpec = spec; facts.push({ ...base, field: "specification", value: spec }); }
+  // The applicable reviewed profile supplies the requirement. A model's
+  // explanatory suffix must not prevent that requirement reaching pricing.
+  if (spec) {
+    if (service.requiredFluidSpec && service.requiredFluidSpec !== spec) service.technicalWarnings = [...(service.technicalWarnings ?? []), `Спецификация уточнена по применимому техническому профилю: ${spec}.`].slice(0, 16);
+    service.requiredFluidSpec = spec;
+    facts.push({ ...base, field: "specification", value: spec });
+  }
+  type CapacityKey = "totalTechnicalQuantityLiters" | "partialTechnicalQuantityLiters" | "standardTechnicalQuantityLiters" | "filterServiceTechnicalQuantityLiters";
+  const capacities = new Map<CapacityKey, Set<number>>();
+  const automatic = ["automatic_transmission", "cvt", "dsg"].includes(service.type);
   for (const capacity of item.capacities) {
     if (!capacity.nominalLiters || !capacity.serviceContext) continue;
-    const key = capacity.serviceContext === "TOTAL" ? "totalTechnicalQuantityLiters" : capacity.serviceContext === "PARTIAL" ? "partialTechnicalQuantityLiters" : ["SERVICE", "WITH_FILTER"].includes(capacity.serviceContext) && service.type === "engine_oil" ? "standardTechnicalQuantityLiters" : null;
-    if (!key || (service[key] != null && service[key] !== capacity.nominalLiters)) continue;
-    service[key] = capacity.nominalLiters;
-    const procedure = key === "totalTechnicalQuantityLiters" ? "machine" : key === "partialTechnicalQuantityLiters" ? "partial" : "standard";
-    facts.push({ ...base, field: "capacity", value: capacity.nominalLiters, procedure });
+    const key: CapacityKey | null = capacity.serviceContext === "TOTAL" ? "totalTechnicalQuantityLiters"
+      : capacity.serviceContext === "PARTIAL" || (automatic && capacity.serviceContext === "WITHOUT_FILTER") ? "partialTechnicalQuantityLiters"
+      : automatic && capacity.serviceContext === "WITH_FILTER" ? "filterServiceTechnicalQuantityLiters"
+      : ["SERVICE", "WITH_FILTER"].includes(capacity.serviceContext) && service.type === "engine_oil" ? "standardTechnicalQuantityLiters" : null;
+    if (!key) continue;
+    const values = capacities.get(key) ?? new Set<number>();
+    values.add(capacity.nominalLiters);
+    capacities.set(key, values);
   }
-  return { input: { ...input, service }, facts, ...result };
+  for (const [key, values] of capacities) {
+    // Conflicting rows cannot silently become a first-row-wins assignment.
+    if (values.size !== 1) continue;
+    const value = [...values][0];
+    service[key] = value;
+    const procedures = key === "totalTechnicalQuantityLiters" ? ["machine", "machine_filter_service"] : key === "partialTechnicalQuantityLiters" ? ["partial"] : key === "filterServiceTechnicalQuantityLiters" ? ["filter_service"] : ["standard"];
+    for (const procedure of procedures) facts.push({ ...base, field: "capacity", value, procedure });
+  }
+  return { input: { ...input, vehicle: { ...input.vehicle, aggregateCode: aggregate }, service: { ...service, aggregate } }, facts, ...result };
 }
