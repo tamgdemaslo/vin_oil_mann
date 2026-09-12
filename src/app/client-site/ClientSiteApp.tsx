@@ -641,27 +641,31 @@ function OilCanFallback({ oil, variant = 'shop' }) {
 
 function OilProductVisual({ oil, variant = 'shop' }) {
   const product = variant === 'product';
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => { setImageFailed(false); }, [oil.imageHref]);
+  const showImage = Boolean(oil.imageHref) && !imageFailed;
   const inner = (
     <div style={{position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-      <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-        <OilCanFallback oil={oil} variant={variant} />
-      </div>
-      {oil.imageHref && (
+      {!showImage && (
+        <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+          <OilCanFallback oil={oil} variant={variant} />
+        </div>
+      )}
+      {showImage && (
         <img
           src={oil.imageHref}
           alt={`${oil.brand} ${oil.line} ${oil.visc}`}
           loading={product ? 'eager' : 'lazy'}
           decoding="async"
-          onError={(event) => { event.currentTarget.style.display = 'none'; }}
+          onError={() => { setImageFailed(true); }}
           style={{
-            position: 'relative',
+            position: 'absolute',
+            inset: 0,
             zIndex: 1,
-            maxWidth: product ? '78%' : '88%',
-            maxHeight: product ? '86%' : '100%',
-            objectFit: 'contain',
-            filter: product
-              ? 'drop-shadow(0 26px 38px rgba(10,10,10,0.28))'
-              : 'drop-shadow(0 14px 18px rgba(10,10,10,0.18))',
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: '50% 50%',
           }}
         />
       )}
@@ -669,7 +673,7 @@ function OilProductVisual({ oil, variant = 'shop' }) {
   );
 
   if (product) {
-    return <div style={{position: 'absolute', inset: '74px 32px 42px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>{inner}</div>;
+    return <div style={{position: 'absolute', inset: showImage ? 0 : '74px 32px 42px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>{inner}</div>;
   }
 
   return inner;
@@ -2351,6 +2355,7 @@ function ProductPage({catalogVersion}) {
   const oil = directOil || listedOil;
   if (directStatus === 'loading') return <CatalogGate title="Загружаем карточку масла" />;
   if (!oil) return <CatalogGate title="Карточка недоступна" text="Товар не найден или снят с публикации." />;
+  const hasPublicImage = Boolean(oil.imageHref);
   const others = OILS.filter(o => o.id !== oil.id).slice(0, 4);
   const specifications = [
     ['Бренд', oil.brand],
@@ -2376,17 +2381,17 @@ function ProductPage({catalogVersion}) {
           <div>
             <div style={{aspectRatio: '1', background: '#FFFFFF', border: '1px solid #D9D3C5', position: 'relative', overflow: 'hidden'}}>
               {/* hex glow background */}
-              <div style={{position: 'absolute', inset: 0, background: `radial-gradient(circle at 50% 50%, ${oil.color}20, transparent 60%)`}} />
-              {oil.visc ? <div style={{position: 'absolute', top: 18, right: 18, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 80, color: '#0a0a0a', lineHeight: 0.9, letterSpacing: '-0.02em'}}>
+              {!hasPublicImage && <div style={{position: 'absolute', inset: 0, background: `radial-gradient(circle at 50% 50%, ${oil.color}20, transparent 60%)`}} />}
+              {oil.visc && !hasPublicImage ? <div style={{position: 'absolute', top: 18, right: 18, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 80, color: '#0a0a0a', lineHeight: 0.9, letterSpacing: '-0.02em'}}>
                 {oil.visc.split('-')[0]}<span style={{color: '#C2410C'}}>.</span>
                 <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.1em', textAlign: 'right', marginTop: -8}}>{oil.visc}</div>
               </div> : null}
               <OilProductVisual oil={oil} variant="product" />
               {/* corner stamps */}
-              <div style={{position: 'absolute', bottom: 18, left: 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.16em'}}>
+              <div style={{position: 'absolute', zIndex: 2, bottom: hasPublicImage ? 14 : 18, left: hasPublicImage ? 14 : 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: hasPublicImage ? '#F5F2ED' : '#6B6B6B', background: hasPublicImage ? '#0a0a0a' : 'transparent', padding: hasPublicImage ? '6px 8px' : 0, letterSpacing: '0.16em'}}>
                 ART. {(oil.article || oil.id).toUpperCase().slice(0, 18)}
               </div>
-              <div style={{position: 'absolute', bottom: 18, right: 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.16em'}}>
+              <div style={{position: 'absolute', zIndex: 2, bottom: hasPublicImage ? 14 : 18, right: hasPublicImage ? 14 : 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: hasPublicImage ? '#F5F2ED' : '#6B6B6B', background: hasPublicImage ? '#0a0a0a' : 'transparent', padding: hasPublicImage ? '6px 8px' : 0, letterSpacing: '0.16em'}}>
                 {offerCountLabel(oil).toUpperCase()}
               </div>
             </div>
