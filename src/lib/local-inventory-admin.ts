@@ -142,6 +142,7 @@ const productWithStockInclude = {
   photos: {
     select: {
       id: true,
+      purpose: true,
       fileName: true,
       contentType: true,
       sizeBytes: true,
@@ -1054,6 +1055,7 @@ function mapProduct(product: ProductWithStock) {
     imageHref: product.imageHref ?? "",
     photos: product.photos.map((photo) => ({
       id: photo.id,
+      purpose: photo.purpose,
       fileName: photo.fileName ?? "",
       contentType: photo.contentType,
       sizeBytes: photo.sizeBytes,

@@ -149,14 +149,20 @@ assert.equal(zeroCard.offers[0].available, 0, "a successful read with no balance
 const clientApp = fs.readFileSync(resolve(root, "src/app/client-site/ClientSiteApp.tsx"), "utf8");
 const clientApi = fs.readFileSync(resolve(root, "src/lib/client-site-api.ts"), "utf8");
 const publicOil = fs.readFileSync(resolve(root, "src/lib/public-oil.ts"), "utf8");
+const publicStorefrontImage = fs.readFileSync(resolve(root, "src/lib/public-storefront-image.ts"), "utf8");
+const storefrontPublication = fs.readFileSync(resolve(root, "src/lib/storefront-publication.ts"), "utf8");
 const migration = fs.readFileSync(resolve(root, "prisma/migrations/20260911150000_storefront_oil_publication/migration.sql"), "utf8");
+const photoPurposeMigration = fs.readFileSync(resolve(root, "prisma/migrations/20260912180000_product_photo_purpose/migration.sql"), "utf8");
 
 assert.doesNotMatch(clientApp, /OILS\s*=\s*DEMO_OILS/u, "public UI must not restore demo products");
 assert.doesNotMatch(clientApi, /Math\.floor\s*\(/u, "decimal availability must not be truncated");
 assert.match(publicOil, /publicationState:\s*"PUBLISHED"/u, "public catalog must query only published cards");
 assert.match(publicOil, /allowedStoreIds/u, "availability must use the configured store allowlist");
 assert.match(publicOil, /balance\.available/u, "canonical available is used directly");
+assert.match(publicStorefrontImage, /purpose:\s*"STOREFRONT"/u, "Avito photos must never be served by the public image route");
+assert.match(storefrontPublication, /productId:\s*localProductId,\s*purpose:\s*"STOREFRONT"/u, "only storefront photos can be selected for the site");
 assert.match(migration, /CREATE TABLE "storefront_products"/u);
 assert.doesNotMatch(migration, /^\s*(INSERT|UPDATE|DELETE)\s/imu, "expand migration must not backfill or publish data");
+assert.match(photoPurposeMigration, /ADD COLUMN "purpose" TEXT NOT NULL DEFAULT 'AVITO'/u, "existing photos become Avito photos safely");
 
 console.log("storefront publication tests passed");

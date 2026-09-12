@@ -3,9 +3,11 @@ import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { invalidateProductFilterOptions } from "@/lib/local-inventory-admin";
 import { requireBranchApi } from "@/lib/branch-api";
+import { isSafeStorefrontImageContentType } from "@/lib/storefront-image";
 
 const MAX_PRODUCT_PHOTOS = 12;
 const MAX_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
+const PRODUCT_PHOTO_PURPOSES = new Set(["AVITO", "STOREFRONT"]);
 
 function safeFileName(value: unknown) {
   const name = String(value ?? "").trim();
@@ -30,21 +32,29 @@ export async function POST(
   });
   if (!product) return NextResponse.json({ error: "Товар не найден" }, { status: 404 });
 
-  const existingCount = await prisma.localProductPhoto.count({ where: { productId: product.id } });
+  const form = await request.formData();
+  const purposeValue = String(form.get("purpose") ?? "AVITO").trim().toUpperCase();
+  if (!PRODUCT_PHOTO_PURPOSES.has(purposeValue)) {
+    return NextResponse.json({ error: "Неизвестное назначение фотографии" }, { status: 400 });
+  }
+  const purpose = purposeValue === "STOREFRONT" ? "STOREFRONT" : "AVITO";
+  const existingCount = await prisma.localProductPhoto.count({ where: { productId: product.id, purpose } });
   if (existingCount >= MAX_PRODUCT_PHOTOS) {
-    return NextResponse.json({ error: `Можно прикрепить не больше ${MAX_PRODUCT_PHOTOS} фото` }, { status: 400 });
+    return NextResponse.json({ error: `В одном блоке можно прикрепить не больше ${MAX_PRODUCT_PHOTOS} фото` }, { status: 400 });
   }
 
-  const form = await request.formData();
   const files = form.getAll("files").filter((value): value is File => value instanceof File);
   if (files.length === 0) return NextResponse.json({ error: "Выберите фото" }, { status: 400 });
   if (existingCount + files.length > MAX_PRODUCT_PHOTOS) {
-    return NextResponse.json({ error: `Можно прикрепить не больше ${MAX_PRODUCT_PHOTOS} фото` }, { status: 400 });
+    return NextResponse.json({ error: `В одном блоке можно прикрепить не больше ${MAX_PRODUCT_PHOTOS} фото` }, { status: 400 });
   }
 
   for (const file of files) {
     if (!file.type.startsWith("image/")) {
       return NextResponse.json({ error: "Можно прикреплять только изображения" }, { status: 400 });
+    }
+    if (purpose === "STOREFRONT" && !isSafeStorefrontImageContentType(file.type)) {
+      return NextResponse.json({ error: "Для сайта разрешены фотографии JPEG, PNG или WebP" }, { status: 400 });
     }
     if (file.size > MAX_PHOTO_SIZE_BYTES) {
       return NextResponse.json({ error: "Размер одного фото не должен превышать 8 МБ" }, { status: 400 });
@@ -64,6 +74,7 @@ export async function POST(
       prisma.localProductPhoto.create({
         data: {
           productId: product.id,
+          purpose,
           fileName: file.fileName,
           contentType: file.contentType,
           sizeBytes: file.data.byteLength,
@@ -71,6 +82,7 @@ export async function POST(
         },
         select: {
           id: true,
+          purpose: true,
           fileName: true,
           contentType: true,
           sizeBytes: true,
@@ -85,6 +97,7 @@ export async function POST(
   return NextResponse.json({
     photos: created.map((photo) => ({
       id: photo.id,
+      purpose: photo.purpose,
       fileName: photo.fileName ?? "",
       contentType: photo.contentType,
       sizeBytes: photo.sizeBytes,

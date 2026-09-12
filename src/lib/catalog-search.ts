@@ -77,6 +77,7 @@ type CatalogProduct = Prisma.LocalProductGetPayload<{
     photos: {
       select: {
         id: true;
+        purpose: true;
         fileName: true;
         contentType: true;
         sizeBytes: true;
@@ -1082,6 +1083,7 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     matchSummary,
     photos: product.photos.map((photo) => ({
       id: photo.id,
+      purpose: photo.purpose,
       fileName: photo.fileName ?? "",
       contentType: photo.contentType,
       sizeBytes: photo.sizeBytes,
@@ -1170,7 +1172,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
               take: storeId ? 1 : 20,
             },
             photos: {
-              select: { id: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
+              select: { id: true, purpose: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
               orderBy: { createdAt: "asc" },
             },
             supplierCounterparty: { select: { name: true, displayName: true } },
@@ -1253,7 +1255,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
         take: storeId ? 1 : 20,
       },
       photos: {
-        select: { id: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
+        select: { id: true, purpose: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
         orderBy: { createdAt: "asc" },
       },
       supplierCounterparty: { select: { name: true, displayName: true } },

@@ -674,6 +674,7 @@ export async function executeProductCopy(context: BranchContext, input: {
             data: source.photos.map((photo) => ({
               branchId: target.id,
               productId: createdProduct.id,
+              purpose: photo.purpose,
               fileName: photo.fileName,
               contentType: photo.contentType,
               sizeBytes: photo.sizeBytes,

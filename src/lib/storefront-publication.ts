@@ -682,6 +682,7 @@ export async function getStorefrontPublicationStatus(context: BranchContext, loc
     where: { branchId: context.branchId, id: localProductId },
     include: {
       photos: {
+        where: { purpose: "STOREFRONT" },
         orderBy: { createdAt: "desc" },
         select: { id: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
       },
@@ -771,17 +772,15 @@ export async function getStorefrontPublicationStatus(context: BranchContext, loc
     contentSourceProductId: publicProduct?.contentSourceProductId ?? product.id,
     publicImageHref: publicProduct?.publicImageHref ?? null,
     publicImagePhotoId: publicProduct ? selectedStorefrontPublicPhotoId(publicProduct.id, publicProduct.publicImageHref) : null,
-    photoCandidates: publicProduct
-      ? product.photos.map((photo) => ({
-          id: photo.id,
-          localProductId: product.id,
-          fileName: photo.fileName,
-          contentType: photo.contentType,
-          sizeBytes: photo.sizeBytes,
-          createdAt: photo.createdAt.toISOString(),
-          previewUrl: `/api/local-inventory/products/${encodeURIComponent(product.id)}/photos/${encodeURIComponent(photo.id)}`,
-        }))
-      : [],
+    photoCandidates: product.photos.map((photo) => ({
+      id: photo.id,
+      localProductId: product.id,
+      fileName: photo.fileName,
+      contentType: photo.contentType,
+      sizeBytes: photo.sizeBytes,
+      createdAt: photo.createdAt.toISOString(),
+      previewUrl: `/api/local-inventory/products/${encodeURIComponent(product.id)}/photos/${encodeURIComponent(photo.id)}`,
+    })),
     bindingCandidates: [...bindingCandidates.values()].sort((left, right) =>
       candidatePriority(left.evidence) - candidatePriority(right.evidence) || left.name.localeCompare(right.name, "ru")
     ).slice(0, 20),
@@ -835,11 +834,11 @@ export async function setStorefrontPublicImage(
 
     const previousHref = binding.storefrontProduct.publicImageHref;
     let nextHref: string | null = null;
-    let selectedPhoto: { id: string; fileName: string | null; contentType: string; sizeBytes: number } | null = null;
+    let selectedPhoto: { id: string; purpose: string; fileName: string | null; contentType: string; sizeBytes: number } | null = null;
     if (photoId) {
       selectedPhoto = await tx.localProductPhoto.findFirst({
-        where: { id: photoId, branchId: context.branchId, productId: localProductId },
-        select: { id: true, fileName: true, contentType: true, sizeBytes: true },
+        where: { id: photoId, branchId: context.branchId, productId: localProductId, purpose: "STOREFRONT" },
+        select: { id: true, purpose: true, fileName: true, contentType: true, sizeBytes: true },
       });
       if (!selectedPhoto) {
         throw new StorefrontPublicationError("Фото не найдено в выбранной CRM-карточке.", 404, "storefront_image_not_found");
@@ -868,6 +867,7 @@ export async function setStorefrontPublicImage(
           localProductId,
           branchId: context.branchId,
           photoId: selectedPhoto?.id ?? null,
+          purpose: selectedPhoto?.purpose ?? null,
           fileName: selectedPhoto?.fileName ?? null,
           contentType: selectedPhoto?.contentType ?? null,
           sizeBytes: selectedPhoto?.sizeBytes ?? null,

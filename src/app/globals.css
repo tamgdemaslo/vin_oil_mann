@@ -913,6 +913,14 @@
   gap: 3px;
 }
 
+.product-editor-storefront-image-head > span {
+  flex: 1 1 320px;
+}
+
+.product-editor-storefront-image-list span {
+  flex: 1 1 180px;
+}
+
 .product-editor-storefront-image small {
   color: var(--eco-muted);
   font-size: 12px;
@@ -943,11 +951,83 @@
   background: var(--eco-surface-sunk);
 }
 
+.product-editor-storefront-image-actions,
+.product-editor-storefront-image-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.product-editor-storefront-image-actions {
+  flex: 0 0 auto;
+}
+
+.product-editor-storefront-image-actions .eco-btn.is-disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.product-editor-storefront-image-delete {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--eco-danger);
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: var(--eco-surface);
+}
+
+.product-editor-storefront-image-delete:hover:not(:disabled) {
+  background: #fff1f2;
+}
+
+.product-editor-storefront-image-delete:focus-visible {
+  outline: 2px solid var(--eco-rust);
+  outline-offset: 2px;
+}
+
+.product-editor-storefront-image-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.product-editor-storefront-image-empty {
+  display: grid;
+  gap: 4px;
+  padding: 16px 2px 4px;
+  border-top: 1px solid var(--eco-line);
+}
+
+.product-editor-storefront-image-empty strong {
+  color: var(--eco-ink);
+  font-size: 13px;
+}
+
+.product-editor-storefront-image-empty span,
+.product-editor-storefront-image-note {
+  color: var(--eco-muted);
+  font-size: 12px;
+}
+
+.product-editor-storefront-image-note {
+  padding-top: 2px;
+}
+
 @media (max-width: 640px) {
   .product-editor-storefront-image-head,
   .product-editor-storefront-image-list > div {
     align-items: flex-start;
     flex-wrap: wrap;
+  }
+
+  .product-editor-storefront-image-actions,
+  .product-editor-storefront-image-row-actions {
+    width: 100%;
+  }
+
+  .product-editor-storefront-image-row-actions .eco-btn {
+    flex: 1 1 auto;
   }
 }
 

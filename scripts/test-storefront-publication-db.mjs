@@ -126,7 +126,20 @@ const dachaPhoto = await setup.localProductPhoto.create({
     id: "photo-dacha-public",
     branchId: dacha.id,
     productId: dachaOil.id,
+    purpose: "STOREFRONT",
     fileName: "shell-helix.jpg",
+    contentType: "image/jpeg",
+    sizeBytes: 4,
+    data: Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+  },
+});
+const dachaAvitoPhoto = await setup.localProductPhoto.create({
+  data: {
+    id: "photo-dacha-avito",
+    branchId: dacha.id,
+    productId: dachaOil.id,
+    purpose: "AVITO",
+    fileName: "shell-helix-avito.jpg",
     contentType: "image/jpeg",
     sizeBytes: 4,
     data: Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
@@ -204,6 +217,11 @@ await inBranch(gagarina, (ctx) => publication.applyStorefrontPublication(ctx, se
 assert.equal(await setup.storefrontProduct.count({ where: { storefrontId: storefront.id } }), 1);
 assert.equal(await setup.storefrontProductBinding.count(), 2);
 
+await assert.rejects(
+  () => inBranch(dacha, (ctx) => publication.setStorefrontPublicImage(ctx, dachaOil.id, dachaAvitoPhoto.id)),
+  (error) => error?.code === "storefront_image_not_found",
+  "an Avito photo cannot be selected for the public storefront"
+);
 const imageStatus = await inBranch(dacha, (ctx) => publication.setStorefrontPublicImage(ctx, dachaOil.id, dachaPhoto.id));
 assert.equal(imageStatus.publicImagePhotoId, dachaPhoto.id);
 assert.equal(imageStatus.photoCandidates.length, 1);

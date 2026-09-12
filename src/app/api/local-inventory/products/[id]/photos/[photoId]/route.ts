@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { invalidateProductFilterOptions } from "@/lib/local-inventory-admin";
 import { requireBranchApi } from "@/lib/branch-api";
+import { storefrontPublicImageHref } from "@/lib/storefront-image";
 
 export async function GET(
   _request: NextRequest,
@@ -53,9 +54,23 @@ export async function DELETE(
       id: photoId,
       product: { branchId: branchAccess.context.branchId!, OR: [{ id }, { id: id }] },
     },
-    select: { id: true },
+    select: { id: true, productId: true },
   });
   if (!photo) return NextResponse.json({ error: "Фото не найдено" }, { status: 404 });
+
+  const binding = await prisma.storefrontProductBinding.findUnique({
+    where: { localProductId: photo.productId },
+    select: {
+      storefrontProductId: true,
+      storefrontProduct: { select: { publicImageHref: true } },
+    },
+  });
+  if (binding && binding.storefrontProduct.publicImageHref === storefrontPublicImageHref(binding.storefrontProductId, photo.id)) {
+    return NextResponse.json(
+      { error: "Сначала уберите фотографию с клиентского сайта" },
+      { status: 409 }
+    );
+  }
 
   await prisma.localProductPhoto.delete({ where: { id: photo.id } });
   invalidateProductFilterOptions();

@@ -83,9 +83,11 @@ type ProductStorageAssignment = {
 
 type ProductStoreOption = { id: string; name: string; isMain?: boolean; archived?: boolean };
 type ProductCellOption = { id: string; code: string; name: string; zone: string; productCount: number };
+type ProductPhotoPurpose = "AVITO" | "STOREFRONT";
 
 type ProductPhoto = {
   id: string;
+  purpose: ProductPhotoPurpose;
   fileName: string;
   contentType: string;
   sizeBytes: number;
@@ -1757,7 +1759,7 @@ export default function ProductsClient() {
   const [actionMenuPosition, setActionMenuPosition] = useState<ActionMenuPosition | null>(null);
   const [archiveCandidate, setArchiveCandidate] = useState<ProductRow | null>(null);
   const [archiveSaving, setArchiveSaving] = useState(false);
-  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [uploadingPhotoPurpose, setUploadingPhotoPurpose] = useState<ProductPhotoPurpose | null>(null);
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [allFilteredProductsSelected, setAllFilteredProductsSelected] = useState(false);
@@ -2692,7 +2694,7 @@ export default function ProductsClient() {
     setExtraOpen(false);
     setTechnicalOpen(false);
     setNewGroupMode(false);
-    setUploadingPhotos(false);
+    setUploadingPhotoPurpose(null);
     setDeletingPhotoId(null);
     setFormOpen(false);
     setMobileEditorView("details");
@@ -2715,7 +2717,7 @@ export default function ProductsClient() {
     setExtraOpen(false);
     setTechnicalOpen(false);
     setNewGroupMode(false);
-    setUploadingPhotos(false);
+    setUploadingPhotoPurpose(null);
     setDeletingPhotoId(null);
     setInfo(null);
     setError(null);
@@ -2751,7 +2753,7 @@ export default function ProductsClient() {
     setExtraOpen(false);
     setTechnicalOpen(false);
     setNewGroupMode(false);
-    setUploadingPhotos(false);
+    setUploadingPhotoPurpose(null);
     setDeletingPhotoId(null);
     setInfo(null);
     setError(null);
@@ -2777,7 +2779,7 @@ export default function ProductsClient() {
     setExtraOpen(false);
     setTechnicalOpen(false);
     setNewGroupMode(false);
-    setUploadingPhotos(false);
+    setUploadingPhotoPurpose(null);
     setDeletingPhotoId(null);
     setInfo(null);
     setError(null);
@@ -4068,14 +4070,15 @@ export default function ProductsClient() {
     return product;
   }
 
-  async function uploadProductPhotos(fileList: FileList | null) {
+  async function uploadProductPhotos(fileList: FileList | null, purpose: ProductPhotoPurpose) {
     if (!editingId || !fileList?.length) return;
     const files = Array.from(fileList);
-    setUploadingPhotos(true);
+    setUploadingPhotoPurpose(purpose);
     setError(null);
     setInfo(null);
     try {
       const formData = new FormData();
+      formData.append("purpose", purpose);
       for (const file of files) {
         if (!file.type.startsWith("image/")) throw new Error("Можно прикреплять только изображения");
         formData.append("files", file);
@@ -4086,16 +4089,18 @@ export default function ProductsClient() {
       });
       const data = await readJson<{ error?: string }>(res);
       if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить фото");
-      setInfo(files.length === 1 ? "Фото прикреплено" : `Фото прикреплены: ${files.length}`);
+      const destination = purpose === "STOREFRONT" ? "для сайта" : "для Авито";
+      setInfo(files.length === 1 ? `Фото ${destination} прикреплено` : `Фото ${destination} прикреплены: ${files.length}`);
       await refreshProduct(editingId);
+      if (purpose === "STOREFRONT") await loadStorefrontStatus(editingId);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
-      setUploadingPhotos(false);
+      setUploadingPhotoPurpose(null);
     }
   }
 
-  async function deleteProductPhoto(photoId: string) {
+  async function deleteProductPhoto(photoId: string, purpose: ProductPhotoPurpose) {
     if (!editingId) return;
     setDeletingPhotoId(photoId);
     setError(null);
@@ -4106,6 +4111,7 @@ export default function ProductsClient() {
       if (!res.ok) throw new Error(data?.error ?? "Не удалось удалить фото");
       setInfo("Фото удалено");
       await refreshProduct(editingId);
+      if (purpose === "STOREFRONT") await loadStorefrontStatus(editingId);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -4857,32 +4863,34 @@ export default function ProductsClient() {
   }
 
   function renderPhotoSection(compact = false) {
+    const photos = editingProduct?.photos.filter((photo) => photo.purpose === "AVITO") ?? [];
+    const uploading = uploadingPhotoPurpose === "AVITO";
     return (
       <section className={`product-editor-side-card product-editor-photo-section ${compact ? "is-compact" : ""}`}>
         <div className="product-editor-section-head">
           <div>
-            <h3>Фото</h3>
-            <p>Миниатюры для карточки и поиска</p>
+            <h3>Фотографии для Авито</h3>
+            <p>Для объявлений и внутреннего поиска товара</p>
           </div>
-          <label className={`eco-btn eco-btn--sm ${editingId && !uploadingPhotos ? "" : "is-disabled"}`}>
+          <label className={`eco-btn eco-btn--sm ${editingId && !uploadingPhotoPurpose ? "" : "is-disabled"}`}>
             <ImagePlus aria-hidden className="eco-icon" />
-            {uploadingPhotos ? "Загрузка..." : "Прикрепить"}
+            {uploading ? "Загрузка..." : "Прикрепить"}
             <input
               type="file"
               accept="image/*"
               multiple
-              disabled={!editingId || uploadingPhotos}
+              disabled={!editingId || Boolean(uploadingPhotoPurpose)}
               className="sr-only"
               onChange={(event) => {
-                void uploadProductPhotos(event.target.files);
+                void uploadProductPhotos(event.target.files, "AVITO");
                 event.target.value = "";
               }}
             />
           </label>
         </div>
-        {editingProduct?.photos.length ? (
+        {photos.length ? (
           <div className="product-editor-photo-grid">
-            {editingProduct.photos.map((photo) => (
+            {photos.map((photo) => (
               <div key={photo.id} className="product-editor-photo">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={photo.url} alt={photo.fileName || "Фото товара"} />
@@ -4891,7 +4899,7 @@ export default function ProductsClient() {
                   <em>{formatFileSize(photo.sizeBytes)}</em>
                   <button
                     type="button"
-                    onClick={() => void deleteProductPhoto(photo.id)}
+                    onClick={() => void deleteProductPhoto(photo.id, "AVITO")}
                     disabled={deletingPhotoId === photo.id}
                     aria-label="Удалить фото"
                   >
@@ -4903,8 +4911,8 @@ export default function ProductsClient() {
           </div>
         ) : (
           <div className="product-editor-photo-empty">
-            <strong>Фото не прикреплено</strong>
-            <span>{editingId ? "Добавьте фото товара для карточки и поиска" : "Фото можно прикрепить после создания товара"}</span>
+            <strong>Фото для Авито не прикреплены</strong>
+            <span>{editingId ? "Добавьте фотографии для объявлений и внутреннего поиска" : "Фото можно прикрепить после создания товара"}</span>
           </div>
         )}
       </section>
@@ -5491,13 +5499,13 @@ export default function ProductsClient() {
                           <span><em>Источник описания</em><b>{storefrontStatus.contentSourceProductId === editingId ? "эта карточка" : storefrontStatus.contentSourceProductId ?? "эта карточка"}</b></span>
                         </div>
 
-                        {storefrontStatus.storefrontProductId ? (
-                          <div className="product-editor-storefront-image">
-                            <div className="product-editor-storefront-image-head">
-                              <span>
-                                <b>Фото на сайте</b>
-                                <small>Публичным становится только выбранное изображение. Остальные фото CRM остаются закрытыми.</small>
-                              </span>
+                        <div className="product-editor-storefront-image">
+                          <div className="product-editor-storefront-image-head">
+                            <span>
+                              <b>Фотографии для сайта</b>
+                              <small>Отдельные изображения для клиентской витрины. Фотографии Авито сюда не попадают.</small>
+                            </span>
+                            <div className="product-editor-storefront-image-actions">
                               {storefrontStatus.publicImagePhotoId ? (
                                 <button
                                   type="button"
@@ -5505,45 +5513,78 @@ export default function ProductsClient() {
                                   disabled={!storefrontStatus.canManage || storefrontImageSaving}
                                   onClick={() => void updateStorefrontPublicImage(null)}
                                 >
-                                  Убрать фото
+                                  Убрать с сайта
                                 </button>
                               ) : null}
+                              <label className={`eco-btn eco-btn--sm ${!uploadingPhotoPurpose ? "" : "is-disabled"}`}>
+                                <ImagePlus aria-hidden className="eco-icon" />
+                                {uploadingPhotoPurpose === "STOREFRONT" ? "Загрузка..." : "Добавить фото"}
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  multiple
+                                  disabled={Boolean(uploadingPhotoPurpose)}
+                                  className="sr-only"
+                                  onChange={(event) => {
+                                    void uploadProductPhotos(event.target.files, "STOREFRONT");
+                                    event.target.value = "";
+                                  }}
+                                />
+                              </label>
                             </div>
-                            {storefrontStatus.photoCandidates.length ? (
-                              <div className="product-editor-storefront-image-list">
-                                {storefrontStatus.photoCandidates.map((photo) => {
-                                  const selected = storefrontStatus.publicImagePhotoId === photo.id;
-                                  return (
-                                    <div key={photo.id} className={selected ? "is-selected" : undefined}>
-                                      <Image
-                                        src={photo.previewUrl}
-                                        alt={photo.fileName || "Фото товара"}
-                                        width={64}
-                                        height={64}
-                                        loading="lazy"
-                                        unoptimized
-                                      />
-                                      <span>
-                                        <b>{photo.fileName || "Фото товара"}</b>
-                                        <small>{Math.max(1, Math.round(photo.sizeBytes / 1024))} КБ</small>
-                                      </span>
+                          </div>
+                          {storefrontStatus.photoCandidates.length ? (
+                            <div className="product-editor-storefront-image-list">
+                              {storefrontStatus.photoCandidates.map((photo) => {
+                                const selected = storefrontStatus.publicImagePhotoId === photo.id;
+                                return (
+                                  <div key={photo.id} className={selected ? "is-selected" : undefined}>
+                                    <Image
+                                      src={photo.previewUrl}
+                                      alt={photo.fileName || "Фото товара для сайта"}
+                                      width={64}
+                                      height={64}
+                                      loading="lazy"
+                                      unoptimized
+                                    />
+                                    <span>
+                                      <b>{photo.fileName || "Фото товара"}</b>
+                                      <small>{Math.max(1, Math.round(photo.sizeBytes / 1024))} КБ</small>
+                                    </span>
+                                    <div className="product-editor-storefront-image-row-actions">
                                       <button
                                         type="button"
                                         className="eco-btn eco-btn--sm"
-                                        disabled={selected || !storefrontStatus.canManage || storefrontImageSaving}
+                                        disabled={selected || !storefrontStatus.storefrontProductId || !storefrontStatus.canManage || storefrontImageSaving}
                                         onClick={() => void updateStorefrontPublicImage(photo.id)}
                                       >
-                                        {selected ? "Опубликовано" : "Показать на сайте"}
+                                        {selected ? "На сайте" : "Показать на сайте"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="product-editor-storefront-image-delete"
+                                        disabled={selected || deletingPhotoId === photo.id}
+                                        onClick={() => void deleteProductPhoto(photo.id, "STOREFRONT")}
+                                        aria-label={selected ? "Сначала уберите фотографию с сайта" : "Удалить фотографию для сайта"}
+                                        title={selected ? "Сначала уберите фотографию с сайта" : "Удалить фотографию"}
+                                      >
+                                        {deletingPhotoId === photo.id ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Trash2 aria-hidden className="eco-icon" />}
                                       </button>
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="product-editor-empty-note">У этой карточки CRM нет загруженных фотографий.</div>
-                            )}
-                          </div>
-                        ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="product-editor-storefront-image-empty">
+                              <strong>Фотографии для сайта не загружены</strong>
+                              <span>Добавьте отдельные изображения, подготовленные для клиентской витрины.</span>
+                            </div>
+                          )}
+                          {!storefrontStatus.storefrontProductId && storefrontStatus.photoCandidates.length ? (
+                            <div className="product-editor-storefront-image-note">Выбрать главное фото можно после создания общей карточки на витрине.</div>
+                          ) : null}
+                        </div>
 
                         {storefrontStatus.storefrontProductId
                           && storefrontStatus.contentSourceProductId !== editingId

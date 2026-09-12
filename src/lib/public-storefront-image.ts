@@ -16,6 +16,7 @@ export async function getSelectedPublicStorefrontImage(storefrontProductId: stri
   const photo = await prisma.localProductPhoto.findFirst({
     where: {
       id: photoId,
+      purpose: "STOREFRONT",
       product: {
         storefrontBindings: {
           some: { storefrontProductId: product.id, status: "CONFIRMED" },
