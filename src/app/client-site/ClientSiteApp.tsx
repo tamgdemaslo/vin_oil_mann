@@ -2369,7 +2369,7 @@ function ProductPage({catalogVersion}) {
   ].filter(([, value]) => value);
 
   return (
-    <main style={{background: '#F5F2ED', color: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
+    <main className="bg-paper" style={{minHeight: '100vh', padding: '40px 0 100px'}}>
       <div className="container">
         {/* Breadcrumb */}
         <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 28}}>
