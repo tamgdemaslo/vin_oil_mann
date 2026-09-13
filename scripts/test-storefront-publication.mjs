@@ -161,6 +161,9 @@ assert.match(publicOil, /allowedStoreIds/u, "availability must use the configure
 assert.match(publicOil, /balance\.available/u, "canonical available is used directly");
 assert.match(publicStorefrontImage, /purpose:\s*"STOREFRONT"/u, "Avito photos must never be served by the public image route");
 assert.match(storefrontPublication, /productId:\s*localProductId,\s*purpose:\s*"STOREFRONT"/u, "only storefront photos can be selected for the site");
+assert.match(clientApp, /STOREFRONT_IMAGE_RETRY_DELAYS_MS/u, "storefront images retry transient failures");
+assert.match(clientApp, /onLoad=\{\(\) => \{ setImageLoaded\(true\); \}\}/u, "storefront fallback remains visible until the photo loads");
+assert.match(clientApp, /retry=\$\{imageAttempt\}/u, "storefront image retries bypass a failed browser cache entry");
 assert.match(migration, /CREATE TABLE "storefront_products"/u);
 assert.doesNotMatch(migration, /^\s*(INSERT|UPDATE|DELETE)\s/imu, "expand migration must not backfill or publish data");
 assert.match(photoPurposeMigration, /ADD COLUMN "purpose" TEXT NOT NULL DEFAULT 'AVITO'/u, "existing photos become Avito photos safely");

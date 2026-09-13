@@ -639,31 +639,66 @@ function OilCanFallback({ oil, variant = 'shop' }) {
   );
 }
 
+const STOREFRONT_IMAGE_RETRY_DELAYS_MS = [500, 1500, 4000];
+
 function OilProductVisual({ oil, variant = 'shop' }) {
   const product = variant === 'product';
+  const [imageAttempt, setImageAttempt] = useState(0);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
-  useEffect(() => { setImageFailed(false); }, [oil.imageHref]);
+  const retryTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
+    setImageAttempt(0);
+    setImageLoaded(false);
+    setImageFailed(false);
+    return () => {
+      if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
+    };
+  }, [oil.imageHref]);
+
   const showImage = Boolean(oil.imageHref) && !imageFailed;
+  const imageSrc = showImage && imageAttempt > 0
+    ? `${oil.imageHref}${oil.imageHref.includes('?') ? '&' : '?'}retry=${imageAttempt}`
+    : oil.imageHref;
+  const handleImageError = () => {
+    setImageLoaded(false);
+    if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
+    const retryDelay = STOREFRONT_IMAGE_RETRY_DELAYS_MS[imageAttempt];
+    if (retryDelay == null) {
+      setImageFailed(true);
+      return;
+    }
+    retryTimerRef.current = window.setTimeout(() => {
+      retryTimerRef.current = null;
+      setImageAttempt(attempt => attempt + 1);
+    }, retryDelay);
+  };
   const inner = (
     <div style={{position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-      {!showImage && (
+      {(!showImage || !imageLoaded) && (
         <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
           <OilCanFallback oil={oil} variant={variant} />
         </div>
       )}
       {showImage && (
         <img
-          src={oil.imageHref}
+          key={imageSrc}
+          src={imageSrc}
           alt={`${oil.brand} ${oil.line} ${oil.visc}`}
           loading={product ? 'eager' : 'lazy'}
           decoding="async"
-          onError={() => { setImageFailed(true); }}
+          onLoad={() => { setImageLoaded(true); }}
+          onError={handleImageError}
           style={{
             position: 'absolute',
             inset: 0,
             zIndex: 1,
             width: '100%',
             height: '100%',
+            opacity: imageLoaded ? 1 : 0,
             boxSizing: 'border-box',
             padding: product ? 'clamp(18px, 4vw, 44px)' : '6px',
             objectFit: 'contain',
