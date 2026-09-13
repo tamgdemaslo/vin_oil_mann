@@ -1,3 +1,4 @@
+import { resolveServicePositionName } from "@/lib/demand-position-name";
 import { Prisma, type LocalCounterparty } from "@prisma/client";
 import {
   ensureAnonymousRetailCounterparty,
@@ -751,7 +752,9 @@ async function resolveCreatePositions(
       groupIdSnapshot: product?.groupId ?? null,
       assortmentReference,
       assortmentType: meta?.type ?? product?.entityType ?? "",
-      name: (product?.name ?? cleanRecordText(position.name)) || assortmentReference || "Позиция",
+      name: oneOffService
+        ? resolveServicePositionName(position.name)
+        : (product?.name ?? cleanRecordText(position.name)) || assortmentReference || "Позиция",
       quantity: new Prisma.Decimal(quantity),
       priceCentsPerUnit: priceCents,
       discount: new Prisma.Decimal(discount),
@@ -842,7 +845,9 @@ async function resolveUpdatePositions(
       groupIdSnapshot: product?.groupId ?? existing?.groupIdSnapshot ?? null,
       assortmentReference,
       assortmentType,
-      name: product?.name ?? existing?.name ?? assortmentReference ?? "Позиция",
+      name: oneOffService
+        ? resolveServicePositionName(position.name, existing?.name, jsonRecord(existing?.raw).name)
+        : product?.name ?? existing?.name ?? assortmentReference ?? "Позиция",
       quantity: new Prisma.Decimal(quantity),
       priceCentsPerUnit: priceCents,
       discount: new Prisma.Decimal(discount),
@@ -2531,7 +2536,9 @@ export async function loadLocalDemandDetailPayload(
       : position.buyPriceCentsPerUnit;
     return {
       id: position.id,
-      name: position.name,
+      name: oneOffService
+        ? resolveServicePositionName(position.name, positionRaw.name)
+        : position.name,
       quantity: position.quantity.toNumber(),
       price: position.priceCentsPerUnit,
       slotName: position.slotName ?? "",
