@@ -150,6 +150,7 @@ const clientApp = fs.readFileSync(resolve(root, "src/app/client-site/ClientSiteA
 const clientApi = fs.readFileSync(resolve(root, "src/lib/client-site-api.ts"), "utf8");
 const publicOil = fs.readFileSync(resolve(root, "src/lib/public-oil.ts"), "utf8");
 const publicStorefrontImage = fs.readFileSync(resolve(root, "src/lib/public-storefront-image.ts"), "utf8");
+const publicStorefrontImageRoute = fs.readFileSync(resolve(root, "src/app/api/public/oils/[id]/image/[photoId]/route.ts"), "utf8");
 const storefrontPublication = fs.readFileSync(resolve(root, "src/lib/storefront-publication.ts"), "utf8");
 const migration = fs.readFileSync(resolve(root, "prisma/migrations/20260911150000_storefront_oil_publication/migration.sql"), "utf8");
 const photoPurposeMigration = fs.readFileSync(resolve(root, "prisma/migrations/20260912180000_product_photo_purpose/migration.sql"), "utf8");
@@ -162,8 +163,13 @@ assert.match(publicOil, /balance\.available/u, "canonical available is used dire
 assert.match(publicStorefrontImage, /purpose:\s*"STOREFRONT"/u, "Avito photos must never be served by the public image route");
 assert.match(storefrontPublication, /productId:\s*localProductId,\s*purpose:\s*"STOREFRONT"/u, "only storefront photos can be selected for the site");
 assert.match(clientApp, /STOREFRONT_IMAGE_RETRY_DELAYS_MS/u, "storefront images retry transient failures");
-assert.match(clientApp, /onLoad=\{\(\) => \{ setImageLoaded\(true\); \}\}/u, "storefront fallback remains visible until the photo loads");
+assert.match(clientApp, /OilImageSkeleton/u, "storefront uses a neutral loading skeleton instead of a false product photo");
+assert.match(clientApp, /width=\$\{imageWidth\}/u, "storefront requests display-sized product images");
+assert.match(clientApp, /fetchPriority=\{product \|\| priority \? 'high' : 'auto'\}/u, "visible storefront photos receive high fetch priority");
 assert.match(clientApp, /retry=\$\{imageAttempt\}/u, "storefront image retries bypass a failed browser cache entry");
+assert.match(publicStorefrontImageRoute, /resize\(\{ width, height: width, fit: "inside", withoutEnlargement: true \}\)/u, "public image route produces bounded previews");
+assert.match(publicStorefrontImageRoute, /webp\(\{ quality: 84/u, "public image route serves efficient WebP previews");
+assert.match(publicStorefrontImageRoute, /public, max-age=31536000, immutable/u, "immutable photo ids are cached by browsers and the CDN");
 assert.match(migration, /CREATE TABLE "storefront_products"/u);
 assert.doesNotMatch(migration, /^\s*(INSERT|UPDATE|DELETE)\s/imu, "expand migration must not backfill or publish data");
 assert.match(photoPurposeMigration, /ADD COLUMN "purpose" TEXT NOT NULL DEFAULT 'AVITO'/u, "existing photos become Avito photos safely");

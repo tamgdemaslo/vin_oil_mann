@@ -641,7 +641,15 @@ function OilCanFallback({ oil, variant = 'shop' }) {
 
 const STOREFRONT_IMAGE_RETRY_DELAYS_MS = [500, 1500, 4000];
 
-function OilProductVisual({ oil, variant = 'shop' }) {
+function OilImageSkeleton({ variant }) {
+  return (
+    <div className={`storefront-image-skeleton storefront-image-skeleton--${variant}`} aria-hidden="true">
+      <span />
+    </div>
+  );
+}
+
+function OilProductVisual({ oil, variant = 'shop', priority = false }) {
   const product = variant === 'product';
   const [imageAttempt, setImageAttempt] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -660,8 +668,11 @@ function OilProductVisual({ oil, variant = 'shop' }) {
   }, [oil.imageHref]);
 
   const showImage = Boolean(oil.imageHref) && !imageFailed;
-  const imageSrc = showImage && imageAttempt > 0
-    ? `${oil.imageHref}${oil.imageHref.includes('?') ? '&' : '?'}retry=${imageAttempt}`
+  const imageWidth = product ? 1200 : 480;
+  const imageParams = [`width=${imageWidth}`];
+  if (imageAttempt > 0) imageParams.push(`retry=${imageAttempt}`);
+  const imageSrc = showImage
+    ? `${oil.imageHref}${oil.imageHref.includes('?') ? '&' : '?'}${imageParams.join('&')}`
     : oil.imageHref;
   const handleImageError = () => {
     setImageLoaded(false);
@@ -677,8 +688,9 @@ function OilProductVisual({ oil, variant = 'shop' }) {
     }, retryDelay);
   };
   const inner = (
-    <div style={{position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-      {(!showImage || !imageLoaded) && (
+    <div aria-busy={showImage && !imageLoaded} style={{position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+      {showImage && !imageLoaded && <OilImageSkeleton variant={variant} />}
+      {!showImage && (
         <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
           <OilCanFallback oil={oil} variant={variant} />
         </div>
@@ -688,7 +700,8 @@ function OilProductVisual({ oil, variant = 'shop' }) {
           key={imageSrc}
           src={imageSrc}
           alt={`${oil.brand} ${oil.line} ${oil.visc}`}
-          loading={product ? 'eager' : 'lazy'}
+          loading={product || priority ? 'eager' : 'lazy'}
+          fetchPriority={product || priority ? 'high' : 'auto'}
           decoding="async"
           onLoad={() => { setImageLoaded(true); }}
           onError={handleImageError}
@@ -699,6 +712,7 @@ function OilProductVisual({ oil, variant = 'shop' }) {
             width: '100%',
             height: '100%',
             opacity: imageLoaded ? 1 : 0,
+            transition: 'opacity 180ms ease-out',
             boxSizing: 'border-box',
             padding: product ? 'clamp(18px, 4vw, 44px)' : '6px',
             objectFit: 'contain',
@@ -2330,7 +2344,7 @@ function ShopCard({ oil, idx }) {
         </div>
 
         <div style={{height: 150, position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}>
-          <OilProductVisual oil={oil} variant="shop" />
+          <OilProductVisual oil={oil} variant="shop" priority={idx < 6} />
         </div>
 
         <div>
@@ -2423,7 +2437,7 @@ function ProductPage({catalogVersion}) {
                 {oil.visc.split('-')[0]}<span style={{color: '#C2410C'}}>.</span>
                 <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.1em', textAlign: 'right', marginTop: -8}}>{oil.visc}</div>
               </div> : null}
-              <OilProductVisual oil={oil} variant="product" />
+              <OilProductVisual oil={oil} variant="product" priority />
               {/* corner stamps */}
               <div style={{position: 'absolute', zIndex: 2, bottom: hasPublicImage ? 14 : 18, left: hasPublicImage ? 14 : 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: hasPublicImage ? '#F5F2ED' : '#6B6B6B', background: hasPublicImage ? '#0a0a0a' : 'transparent', padding: hasPublicImage ? '6px 8px' : 0, letterSpacing: '0.16em'}}>
                 ART. {(oil.article || oil.id).toUpperCase().slice(0, 18)}
