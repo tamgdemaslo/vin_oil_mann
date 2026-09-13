@@ -664,7 +664,9 @@ function OilProductVisual({ oil, variant = 'shop' }) {
             zIndex: 1,
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
+            boxSizing: 'border-box',
+            padding: product ? 'clamp(18px, 4vw, 44px)' : '6px',
+            objectFit: 'contain',
             objectPosition: '50% 50%',
           }}
         />
