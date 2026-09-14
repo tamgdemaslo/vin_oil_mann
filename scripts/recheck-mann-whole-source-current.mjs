@@ -5,23 +5,39 @@ import {createJiti} from 'jiti';
 import {parseCopy,sha} from './lib/mann-offline-scope.mjs';
 import {loadIdentityOverlay} from './lib/mann-source-identity-overlay.mjs';
 import {conditionalVehicleIdentityReasons} from './lib/mann-conditional-vehicle-identity.mjs';
-const mode=process.argv[2];assert.ok(mode===undefined||mode==='compound-headings','Unknown replay mode');
+const mode=process.argv[2];assert.ok(mode===undefined||mode==='compound-headings'||mode==='current-held','Unknown replay mode');
+const currentHeld=mode==='current-held';
 const compoundHeadings=mode==='compound-headings';
-const root=resolve(import.meta.dirname,'..'),parentDir=resolve(root,compoundHeadings?'outputs/mann-type-count-added-preview-2026-09-14':'outputs/mann-specification-role-scoped-preview-2026-09-14');
-const [planRaw,sourceRaw,mannRaw,coverageRaw]=await Promise.all([readFile(resolve(parentDir,'plan.json'),'utf8'),readFile('/tmp/vehicle_fluid_requirements.sql','utf8'),readFile('/tmp/mann_filter_applications.sql','utf8'),readFile(resolve(parentDir,'full-source-coverage.json'),'utf8')]);
-assert.equal(sha(planRaw),compoundHeadings?'5d860f8615a07175105a0b3a8c2a0a30d92abe72523925bb2921efc1754c0221':'711a88e19895736d82713535038e69c10a4c7f5ec1381d81bfba8d2645dd9221');
+const root=resolve(import.meta.dirname,'..'),parentDir=resolve(root,currentHeld?'outputs/mann-gentra-evidence-review-2026-09-14':compoundHeadings?'outputs/mann-type-count-added-preview-2026-09-14':'outputs/mann-specification-role-scoped-preview-2026-09-14');
+const [planRaw,sourceRaw,mannRaw,coverageRaw]=await Promise.all([readFile(resolve(parentDir,'plan.json'),'utf8'),readFile('/tmp/vehicle_fluid_requirements.sql','utf8'),readFile('/tmp/mann_filter_applications.sql','utf8'),readFile(resolve(parentDir,currentHeld?'full-source-coverage-v3.json':'full-source-coverage.json'),'utf8')]);
+assert.equal(sha(planRaw),currentHeld?'f22d1056d9af7913ee5b2521254b12763bb4e2e3d488267fbb7e28aa333be90a':compoundHeadings?'5d860f8615a07175105a0b3a8c2a0a30d92abe72523925bb2921efc1754c0221':'711a88e19895736d82713535038e69c10a4c7f5ec1381d81bfba8d2645dd9221');
 const plan=JSON.parse(planRaw),coverage=JSON.parse(coverageRaw);assert.equal(coverage.planHash,sha(planRaw));assert.equal(sha(sourceRaw),plan.inputHashes.source);
 assert.equal(sha(mannRaw),'5e34efadc60014077b55655e0c62cdcbb8b1f44d3a8aace2399e941b45003fda');
 const overlay=await loadIdentityOverlay(root,sourceRaw,resolve(root,'outputs/mann-identity-scoped-2026-09-14/source-identity-corrections.json'));
+let powerCorrection=null;
+if(currentHeld){
+ const auditRaw=await readFile(resolve(parentDir,'partial-table-power-audit-v1.json'),'utf8');
+ assert.equal(sha(auditRaw),'ac2b95f85efd35756fe18b61f68bb4ef8d2426f2d886da4cb7ce98a01dec2ecb');
+ const audit=JSON.parse(auditRaw);assert.equal(audit.sourceHash,sha(sourceRaw));
+ overlay.requirements=overlay.requirements.map(s=>structuredClone(s));
+ const byId=new Map(overlay.requirements.map(s=>[s.id,s]));
+ for(const f of audit.findings){
+  assert.equal(sha(overlay.originalById.get(f.sourceRequirementId)),f.sourceHash);
+  const s=byId.get(f.sourceRequirementId);assert.ok(s);assert.equal(s.contextConfidence,'table_engine');
+  for(const field of f.affectedFields){assert.ok(['powerHp','powerKw'].includes(field));assert.ok(s[field]!=null);s[field]=null;}
+ }
+ assert.equal(audit.findings.length,274);
+ powerCorrection={auditHash:sha(auditRaw),correctedSources:274,scope:'Audited ambiguous table powers set to null; original fingerprints and all other source fields retained.'};
+}
 const jiti=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),{matchFluidRequirementToMann:match}=await jiti.import('../src/lib/mann-fluid-matcher-v2.ts');
 const {mannMakeFormsForTest}=await jiti.import('../src/lib/mann-vehicle-resolver.ts'),{normalizeMannText}=await jiti.import('../src/lib/mann-catalog.ts');
 const allRows=parseCopy(mannRaw,'mann_filter_applications'),byMake=new Map();
 const oldCoverage=new Map((coverage.rows??coverage.findings??[]).map(r=>[r.requirementId,r.status]));
 assert.equal(oldCoverage.size,13296,'Whole source coverage rows must be bound');
-const out=resolve(root,compoundHeadings?'outputs/mann-compound-headings-recheck-2026-09-14':'outputs/mann-whole-source-current-recheck-2026-09-14');await mkdir(out);
+const out=resolve(root,currentHeld?'outputs/mann-held-power-current-recheck-2026-09-14':compoundHeadings?'outputs/mann-compound-headings-recheck-2026-09-14':'outputs/mann-whole-source-current-recheck-2026-09-14');await mkdir(out);
 const codeFiles=['src/lib/mann-fluid-matcher-v2.ts','src/lib/mann-vehicle-resolver.ts','src/lib/fluid-catalog.ts','src/lib/mann-engine-code-list.ts','scripts/lib/mann-source-identity-overlay.mjs','scripts/lib/mann-conditional-vehicle-identity.mjs','scripts/recheck-mann-whole-source-current.mjs'];
 const codeHashes=Object.fromEntries(await Promise.all(codeFiles.map(async f=>[f,sha(await readFile(resolve(root,f),'utf8'))])));
-const manifest={planPath:resolve(parentDir,'plan.json'),planHash:sha(planRaw),sourceHash:sha(sourceRaw),mannHash:sha(mannRaw),coverageHash:sha(coverageRaw),identityOverlay:overlay.metadata,codeHashes,expectedSources:overlay.requirements.length,productionApplyAllowed:false};
+const manifest={planPath:resolve(parentDir,'plan.json'),planHash:sha(planRaw),sourceHash:sha(sourceRaw),mannHash:sha(mannRaw),coverageHash:sha(coverageRaw),identityOverlay:overlay.metadata,powerCorrection,codeHashes,expectedSources:overlay.requirements.length,productionApplyAllowed:false};
 await writeFile(resolve(out,'input-manifest.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});
 const stream=await open(resolve(out,'decisions.ndjson'),'wx'),statusCounts={},oldUnresolvedStatusCounts={},reasonCounts={},identityCandidates=[];let count=0;
 try{

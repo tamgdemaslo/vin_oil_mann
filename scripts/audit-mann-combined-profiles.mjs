@@ -81,7 +81,7 @@ for(const [variant,group] of variants){
     if(new Set(actual.items.map(i=>i.systemCode)).size>1)multiSystemCases++;
     if(actual.items.filter(i=>i.userConfirmedEquipment).length>1)multiEquipmentCases++;
     for(const [system,items] of Map.groupBy(actual.items,i=>i.systemCode)){
-      if(['v4','v5'].includes(process.argv[3]))for(let i=0;i<items.length;i++)for(let j=i+1;j<items.length;j++){
+      if(['v4','v5','v7'].includes(process.argv[3]))for(let i=0;i<items.length;i++)for(let j=i+1;j<items.length;j++){
         const a=items[i],b=items[j],ar=group.find(r=>r.id===a.revisionId),br=group.find(r=>r.id===b.revisionId);
         // Different installed circuits are not competing fluid recommendations.
         if(ar?.applicabilityJson.requiredEquipment?.circuit!==br?.applicabilityJson.requiredEquipment?.circuit)continue;
@@ -120,12 +120,12 @@ const unexercised=plan.newRevisions.filter(r=>!isolatedSeen.has(r.id)).map(r=>r.
 const report={kind:'COMBINED_PROFILE_COMPOSITION_AUDIT',planSha256:sha(raw),variants:variants.size,cases,multiSystemCases,multiEquipmentCases,
   candidateRevisions:plan.newRevisions.length,seenCandidateRevisions:plan.newRevisions.length-unseen.length,unseenCandidateRevisions:unseen,
   individuallyExercisedCandidates:plan.newRevisions.length-unexercised.length,unexercisedCandidates:unexercised,equivalentRows,
-  ...(['v3','v4','v5'].includes(process.argv[3])?{unresolvedRepresentation}:{}),
-  ...(['v4','v5'].includes(process.argv[3])?{specificationDivergencePairs:specificationDifferences.size,specificationDifferences:[...specificationDifferences.values()]}:{}),
-  ...(process.argv[3]==='v5'?{supportedMarkets:VEHICLE_DESTINATION_MARKETS,codeHashes:Object.fromEntries(await Promise.all(['src/lib/vehicle-market.ts','src/lib/mann-technical-applicability.ts','src/lib/mann-unified-technical-profile.ts'].map(async f=>[f,sha(await readFile(resolve(root,f),'utf8'))])))}:{}),
+  ...(['v3','v4','v5','v6','v7'].includes(process.argv[3])?{unresolvedRepresentation}:{}),
+  ...(['v4','v5','v6','v7'].includes(process.argv[3])?{specificationDivergencePairs:specificationDifferences.size,specificationDifferences:[...specificationDifferences.values()]}:{}),
+  ...(['v5','v6','v7'].includes(process.argv[3])?{supportedMarkets:VEHICLE_DESTINATION_MARKETS,codeHashes:Object.fromEntries(await Promise.all(['src/lib/vehicle-market.ts','src/lib/mann-technical-applicability.ts','src/lib/mann-unified-technical-profile.ts'].map(async f=>[f,sha(await readFile(resolve(root,f),'utf8'))])))}:{}),
   droppedExpectedItems:0,capacityConflictCases:conflicts.size,conflictingVariants:new Set([...conflicts.values()].map(c=>c.vehicleVariantKey)).size,
   productionApplyAllowed:false,limitation:'Synthetic post-merge candidate/primary composition, sampled scope endpoints; not production HTTP, full month coverage, or technical fact verification.',conflicts:[...conflicts.values()]};
-assert.ok(!process.argv[3]||['v2','v3','v4','v5'].includes(process.argv[3]));
+assert.ok(!process.argv[3]||['v2','v3','v4','v5','v6','v7'].includes(process.argv[3]));
 await writeFile(resolve(dir,`profile-composition-audit${process.argv[3]?`-${process.argv[3]}`:''}.json`),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify({...report,conflicts:undefined},null,2));
 assert.equal(unexercised.length,0,'Candidate never exercised individually');

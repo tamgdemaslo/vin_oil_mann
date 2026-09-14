@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+import {sha,parseCopy} from './lib/mann-offline-scope.mjs';
+import {loadIdentityOverlay} from './lib/mann-source-identity-overlay.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+const sql=await readFile('/tmp/mann_filter_applications.sql','utf8');assert.equal(sha(sql),'5e34efadc60014077b55655e0c62cdcbb8b1f44d3a8aace2399e941b45003fda');
+const rows=parseCopy(sql,'mann_filter_applications');assert.equal(rows.length,37600);
+const j=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),{matchFluidRequirementToMann:match}=await j.import('../src/lib/mann-fluid-matcher-v2.ts');
+const {mannMakeFormsForTest:forms}=await j.import('../src/lib/mann-vehicle-resolver.ts');
+const {normalizeMannText}=await j.import('../src/lib/mann-catalog.ts');
+const heading='星途(奇瑞) / EXEED (CHERY)';assert.ok(forms('EXEED').includes(normalizeMannText(heading)));assert.ok(!forms('CHERY').includes(normalizeMannText(heading)));
+assert.equal(rows.filter(r=>normalizeMannText(r.make)===normalizeMannText(heading)).length,0);
+const raw=await readFile(resolve(dir,'exeed-vx-254-additive-proposal-v1.json'),'utf8'),proposal=JSON.parse(raw),row=proposal.proposal.row,s=proposal.sourceProbe.effectiveSource;
+const decision=match(s,[...rows,row]);assert.equal(decision.topCandidates[0].variantIds[0],row.vehicleVariantKey);assert.equal(decision.topCandidates[0].eligible,false);
+const single=match(s,[row]);assert.equal(single.status,'REVIEW_REQUIRED');assert.ok(single.topCandidates[0].matchedFields.includes('точный код двигателя'));
+for(const altered of [{...s,make:'chery',makeNormalized:'CHERY'},{...s,model:'TXL',modelNormalized:'TXL'},{...s,model:'TIGGO 8',modelNormalized:'TIGGO 8'}])assert.equal(match(altered,[row]).topCandidates.length,0);
+const sourceSql=await readFile('/tmp/vehicle_fluid_requirements.sql','utf8');assert.equal(sha(sourceSql),'e802cacc05c23f8c21bc4d84bbf6796b15d9bb5be86e41964a028276fa4f92a0');
+const overlay=await loadIdentityOverlay(root,sourceSql,resolve(root,'outputs/mann-identity-scoped-2026-09-14/source-identity-corrections.json'),'fbbe7b991ba80e19d62b42aaece22cb739860443256a8d935160f69ab9f90d34');
+const priorRaw=await readFile(resolve(root,'outputs/mann-compound-headings-recheck-2026-09-14/decisions.ndjson'),'utf8');assert.equal(sha(priorRaw),'4af04d068abca5a0533d8f67e929c75ba5add900425f36e8c2faff5a279935ac');
+const prior=new Map(priorRaw.trim().split('\n').map(JSON.parse).map(r=>[r.requirementId,r]));
+const exeed=overlay.requirements.filter(s=>s.make==='exeed');assert.ok(exeed.length>0);
+for(const s of exeed){const p=prior.get(s.id);assert.equal(sha(s),p.effectiveSourceHash);assert.deepEqual(JSON.parse(JSON.stringify(match(s,rows))),p.decision);}
+const plan=await readFile(resolve(dir,'plan.json'),'utf8');assert.equal(sha(plan),proposal.planHash);
+const report={kind:'EXEED_BILINGUAL_HEADING_REGRESSION',proposalHash:sha(raw),mannHash:sha(sql),planHash:sha(plan),resolverHash:sha(await readFile(resolve(root,'src/lib/mann-vehicle-resolver.ts'),'utf8')),oldRowsChecked:rows.length,oldRowsWithNewHeading:0,oldExeedSourceDecisionsUnchanged:exeed.length,newRowDecision:decision,negativeBrandModelTests:3,productionApplyAllowed:false};
+await writeFile(resolve(dir,'exeed-bilingual-heading-verification-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify({...report,newRowDecision:undefined}));

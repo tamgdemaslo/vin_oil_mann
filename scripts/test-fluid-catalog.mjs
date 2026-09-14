@@ -28,6 +28,19 @@ assert.deepEqual(capacities.map((capacity) => [capacity.kind, capacity.minLiters
 ]);
 
 const specifications = parseSpecifications("Renault RN 0710, API SN, ACEA C3 для SAE 5W-40", ["5W-40"]);
+for (const [text, expected] of [
+  ["DOT-4+", ["DOT-4+"]],
+  ["DOT 5.1", ["DOT 5.1"]],
+  ["DOT 4 CLASS 6", ["DOT 4 CLASS 6"]],
+  ["DOT 4+ / DOT 4", ["DOT 4+", "DOT 4"]],
+  ["DOT-4 / DOT 4", ["DOT 4"]],
+  ["DOT-4. Периодичность замены", ["DOT-4"]],
+  ["DOT 4+. Следующее предложение", ["DOT 4+"]],
+  ["DOT 4+X", []], ["DOT 4.12", []], ["DOT 40", []], ["DOT 4+ж", []],
+]) {
+  assert.deepEqual(parseSpecifications(text).filter(s => s.type === "DOT").map(s => s.value), expected);
+  assert.equal(parseSpecifications(text)[0].value, text);
+}
 assert.ok(specifications.some((specification) => specification.type === "RENAULT"));
 assert.ok(specifications.some((specification) => specification.type === "API"));
 assert.ok(specifications.some((specification) => specification.type === "ACEA"));

@@ -12,4 +12,8 @@ assert.equal(result.evidence.exactDisplacementCcm,'1975');assert.equal(result.re
 assert.equal(result.row.pdfPage,null);assert.equal(result.row.catalogPage,null);assert.equal(result.row.id,undefined);assert.equal(result.row.importBatchId,undefined);
 for(const patch of [{manufactureMonths:{from:null,to:null,precision:'UNKNOWN'}},{binding:{...a.binding,serialNumberRange:'FROM SOME VIN'}},{filterType:'Unknown filter'},{engineCode:''},{hp:'unknown'}])assert.throws(()=>prepare({...a,...patch},audit.sourceHtml,norms));
 assert.throws(()=>prepare(a,{...audit.sourceHtml,url:'https://example.com/test'},norms));
+const cn={...a,filterType:'油过滤器'},cnResult=prepare(cn,audit.sourceHtml,norms);
+assert.equal(cnResult.row.filterType,'oil');assert.deepEqual(cnResult.evidence.originalApplication,cn);
+assert.equal(cnResult.row.vehicleVariantKey,result.row.vehicleVariantKey);
+assert.throws(()=>prepare({...a,filterType:'油过滤器 unknown'},audit.sourceHtml,norms));
 console.log(JSON.stringify({passed:true,negativeCases:6,rawMetadataPreserved:true,legacyKeyCompatible:true}));

@@ -144,7 +144,9 @@ const MANN_MAKE_FORMS: Record<string, string[]> = {
   CHEVROLET: ["CHEVROLET", "CHEVROLET EUROPE / DAEWOO (GM)"],
   DAEWOO: ["DAEWOO", "CHEVROLET EUROPE / DAEWOO (GM)", "DAEWOO - FS LUBLIN"],
   FAW: ["FAW", "BESTURN / FAW"],
-  EXEED: ["EXEED", "EXEED (CHERY)"],
+  // Exact bilingual manufacturer heading in official MANN application 5281749.
+  // Catalogue retrieval only: neither a CHERY alias nor evidence of CN/RU scope.
+  EXEED: ["EXEED", "EXEED (CHERY)", "星途(奇瑞) / EXEED (CHERY)"],
   "LAND ROVER": ["LAND ROVER", "LANDROVER"],
   SSANGYONG: ["SSANGYONG", "SSANG YONG"],
   "GREAT WALL": ["GREAT WALL", "GREATWALL"],

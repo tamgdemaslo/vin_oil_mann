@@ -10,3 +10,8 @@ assert.equal(parse('- 2AZ-FE / 170 л.с. / Япония - 2AZ-FE / 170 л.с. /
 assert.equal(parse('- 1GR-FE / 270, 275 л.с. / ОАЭ / 2007 - н.в.','2007 - н.в.')[0].market,'AE');
 for(const text of ['- G4FA / 107 л.с. / Россия / 13.2010 - 12.2015','- G4FA / 107 л.с. / Россия / 2017 - 2010','- G4FA / 107 л.с. / Россия дополнительный текст','- G4FA / 107 л.с. / Россия - пропущенная ветка','- G4FA / 107 л.с. / Россия / Япония','- G4FA, G4FA / 107 л.с. / Россия','- G4FA / 107, 107 л.с. / Россия','- 2009 / 107 л.с. / Россия']) assert.equal(parse(text,'2010 - 2017'),null,text);
 console.log('Market branch grammar tests passed');
+const gs3=parse('- 4A15J2 / 177 л.с. / Китай / 03.2023-н.в. - 4A15J2 / 170 л.с. / Россия / 06.2024-н.в.','03.2023 - н.в.');
+assert.deepEqual(gs3.map(b=>[b.market,b.powerHp,b.window]),[['CN',[177],{from:'2023-03',to:null}],['RU',[170],{from:'2024-06',to:null}]]);
+assert.equal(parse('- 4A13M1 / 137 л.с. / Китай','08.2017 - 07.2019')[0].market,'CN');
+for(const value of ['00.2023-н.в.','13.2023-н.в.','03.2023-н.в. extra'])assert.equal(parse('- 4A15J2 / 177 л.с. / Китай',value),null);
+assert.equal(parse('- 4A15J2 / 177 л.с. / Китай / Россия','03.2023-н.в.'),null);

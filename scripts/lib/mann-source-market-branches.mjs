@@ -1,6 +1,11 @@
 /** Offline triage only: consume the entire source phrase, never infer missing markets. */
 export function sourceMarketBranches(model, productionYears) {
   const dates = text => {
+    const monthlyOpen = /^(\d{2})\.(\d{4})\s*-\s*н\.в\.(?:\s*г\.)?$/.exec(text);
+    if (monthlyOpen) {
+      if (+monthlyOpen[1] < 1 || +monthlyOpen[1] > 12) return null;
+      return {from:`${monthlyOpen[2]}-${monthlyOpen[1]}`,to:null};
+    }
     const monthly = /^(\d{2})\.(\d{4})\s*-\s*(\d{2})\.(\d{4})(?:\s*г\.)?$/.exec(text);
     if (monthly) {
       if ([+monthly[1],+monthly[3]].some(m=>m<1||m>12)) return null;
@@ -12,7 +17,7 @@ export function sourceMarketBranches(model, productionYears) {
     return {from: `${m[1]}-01`, to: m[2] === 'н.в.' ? null : `${m[2]}-12`};
   };
   if (typeof model !== 'string' || !model.startsWith('- ')) return null;
-  const markets = {'Россия':'RU','Япония':'JP','Европа':'EU','Ю. Корея':'KR','Ю-В Азия':'SOUTHEAST_ASIA','США':'US','ОАЭ':'AE'};
+  const markets = {'Россия':'RU','Китай':'CN','Япония':'JP','Европа':'EU','Ю. Корея':'KR','Ю-В Азия':'SOUTHEAST_ASIA','США':'US','ОАЭ':'AE'};
   const branches = [];
   for (const phrase of model.slice(2).split(/\s+-\s+(?=[A-Z0-9-]*[A-Z])/)) {
     const parts = phrase.split(/\s*\/\s*/);

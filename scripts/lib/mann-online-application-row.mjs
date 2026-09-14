@@ -10,7 +10,7 @@ export function prepareOnlineMannRow(application,evidence,normalizers){
  const window=application.manufactureMonths;assert.match(window.from,/^\d{4}-\d{2}$/);if(window.to)assert.match(window.to,/^\d{4}-\d{2}$/);
  assert.ok(!window.to||window.from<=window.to);assert.equal(application.binding.serialNumberRange,'','Serial restrictions need explicit applicability support');
  assert.ok(application.engineCode&&application.engineCode!=='-');assert.match(application.hp,/^\d+(?:\.\d+)?$/);assert.match(application.kw,/^\d+(?:\.\d+)?$/);
- const filterType={'Air Filter':'air','Oil Filter':'oil','Fuel Filter':'fuel','Cabin Air Filter':'cabin'}[application.filterType];assert.ok(filterType,'Unsupported filter type');
+ const filterType={'Air Filter':'air','Oil Filter':'oil','油过滤器':'oil','Fuel Filter':'fuel','Cabin Air Filter':'cabin'}[application.filterType];assert.ok(filterType,'Unsupported filter type');
  const date=month=>month.slice(5,7)+'/'+month.slice(2,4),vehicleYears=window.to?`${date(window.from)}-${date(window.to)}`:`${date(window.from)} ->`;
  const row={make:application.make,makeNormalized:normalizeMannText(application.make),model:application.model,modelNormalized:normalizeMannSearchText(application.model),modelYears:null,
   vehicleText:application.vehicleText,effectiveVehicleText:application.vehicleText,detail:application.vehicleText,engineCode:application.engineCode,engineCodeNormalized:normalizeEngineCode(application.engineCode),kw:application.kw,hp:application.hp,

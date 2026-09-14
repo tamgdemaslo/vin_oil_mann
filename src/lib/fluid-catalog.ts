@@ -676,7 +676,7 @@ export function parseSpecifications(value: unknown, grades: string[] = []): Spec
     ["ACEA", /\bACEA\s+[A-E]\d(?:\/[A-E]\d)?\b/gi],
     ["ILSAC", /\bILSAC\s+GF-?\d+[A-Z]?\b/gi],
     ["JASO", /\bJASO\s+[A-Z]{1,3}\d?\b/gi],
-    ["DOT", /\bDOT\s*-?\s*[345](?:\+|\.1)?(?:\s+CLASS\s*\d)?\b/gi],
+    ["DOT", /\bDOT\s*-?\s*[345](?:\+|\.1)?(?:\s+CLASS\s*\d+)?(?![\p{L}\p{N}_+]|\.[\p{L}\p{N}_.+])/giu],
     ["VW", /\bVW\s+(?:TL\s*)?\d{3}(?:[ .-]\d{2,3})?(?:-[A-Z])?\b/gi],
     ["MB", /\bMB(?:-APPROVAL)?\s+\d{3}(?:\.\d+)?\b/gi],
     ["RENAULT", /\bRN\s*0?\d{3}\b/gi],
@@ -692,7 +692,8 @@ export function parseSpecifications(value: unknown, grades: string[] = []): Spec
     }
   }
   for (const grade of grades) specs.push({ type: "SAE", value: grade });
-  return [...new Map(specs.map((spec) => [`${spec.type}|${normalizeSearch(spec.value)}`, spec])).values()];
+  // DOT punctuation is meaningful: do not collapse 4+ into 4 or 5.1 into 5 1.
+  return [...new Map(specs.map((spec) => [`${spec.type}|${spec.type === "DOT" ? clean(spec.value).toUpperCase().replace(/-/g, " ").replace(/\s+/g, " ") : normalizeSearch(spec.value)}`, spec])).values()];
 }
 
 function parseInterval(value: unknown): { kmMin: number | null; kmMax: number | null; months: number | null } {
@@ -778,16 +779,18 @@ function contextFromRows(rows: PodbormaslaRow[], fallback: PodbormaslaRow, confi
     ...extractEngineCodes(row.application),
   ]));
   const volumes = unique(candidates.map((row) => String(parseEngineVolumeCc(row.engine_displacement || row.application) ?? ""))).filter(Boolean).map(Number);
-  const powersHp = unique(candidates.map((row) => String(parsePowerHp(row.power, row.model, row.application) ?? ""))).filter(Boolean).map(Number);
-  const powersKw = unique(candidates.map((row) => String(parsePowerKw(row.power, row.model, row.application) ?? ""))).filter(Boolean).map(Number);
+  // Unknown or multi-valued anchors must not disappear from table consensus.
+  // A single known value beside an unknown one is not a shared engine power.
+  const powersHp = candidates.map((row) => parsePowerHp(row.power, row.model, row.application));
+  const powersKw = candidates.map((row) => parsePowerKw(row.power, row.model, row.application));
   const fuels = unique(candidates.map((row) => normalizeFuel(row.fuel_type || row.application)));
   const range = intersectRange(candidates.map((row) => parseYearRange(row.production_years || row.application || row.page_title)));
   const drives = unique(candidates.map((row) => driveFromText(row.application)));
   return {
     engineCodes,
     engineVolumeCc: volumes.length === 1 ? volumes[0] ?? null : null,
-    powerKw: powersKw.length === 1 ? powersKw[0] ?? null : null,
-    powerHp: powersHp.length === 1 ? powersHp[0] ?? null : null,
+    powerKw: powersKw.every(value => value !== null && value === powersKw[0]) ? powersKw[0] ?? null : null,
+    powerHp: powersHp.every(value => value !== null && value === powersHp[0]) ? powersHp[0] ?? null : null,
     fuelType: fuels.length === 1 ? fuels[0] ?? null : null,
     yearFrom: range.from,
     yearTo: range.to,

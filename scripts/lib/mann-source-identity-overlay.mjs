@@ -54,19 +54,39 @@ export async function loadIdentityOverlay(root, fluidRaw, path, expectedHash) {
   const {prepareFluidCatalog}=await jiti.import(resolve(root,'src/lib/fluid-catalog.ts'));
   const prepared=prepareFluidCatalog({rowsNdjson:snapshotRaw,mannFiltersCsv:''});
   let parserCompatibility;
+  let compatibilityParserHash=currentParserHash;
+  let compatibilityPreparedHash=sha(prepared);
+  if(currentParserHash==='46e51357b407df2bb3d17af2d93742140cb365cce036154d9bacfb12f0eb5a40'){
+    const dotRaw=await readFile(resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14/dot-token-transition-v4.json'),'utf8');
+    assert.equal(sha(dotRaw),'0a41c9207446bb0f4a9ac43ad6e80ceeea964b0ea17cca0539ca1521492dedb9');
+    const dot=JSON.parse(dotRaw);assert.equal(dot.snapshotHash,sha(snapshotRaw));
+    assert.equal(dot.afterParserHash,currentParserHash);assert.equal(dot.afterPreparedHash,compatibilityPreparedHash);
+    assert.equal(compatibilityPreparedHash,'c42b224f6101a4298cd7ef5a6a4a02aa1036efcffc2734b6ebfc0aca86acf8bf');
+    compatibilityParserHash=dot.beforeParserHash;compatibilityPreparedHash=dot.beforePreparedHash;
+  }
+  if(compatibilityParserHash==='366d7c8e06859de7bcbf3a1ae6a692474df96c87f47f8f2a8f5101ca8ded637a'){
+    // Audited all-row transition: only ambiguous shared-table power becomes null.
+    const transitionRaw=await readFile(resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14/table-power-reparse-transition-v1.json'),'utf8');
+    assert.equal(sha(transitionRaw),'7957aec888217d8601633967e037a102ac14b9bd8e3207724ac8cdc9d462e2df');
+    const transition=JSON.parse(transitionRaw);assert.equal(transition.snapshotHash,sha(snapshotRaw));
+    assert.equal(transition.afterParserHash,compatibilityParserHash);assert.equal(transition.afterPreparedHash,compatibilityPreparedHash);
+    assert.equal(compatibilityPreparedHash,'d26001fe5b85e2b23092b682734df5950c4afa3aa7ab2c727333b586104ce926');
+    compatibilityParserHash='4f9abf60a140b3ed5cb5b1b034190d86a2f39c3de3cb80e3f517adb881cdb233';
+    compatibilityPreparedHash='61daaaa182cf15d0de21343c3738c79d89d8109ac31cc5f11b0a96363fc64751';
+  }
   if(report.hashes.parser!==currentParserHash){
     // One fully audited transition: capacity scalar semantics only. No arbitrary
     // parser hash is accepted, and the entire fresh parse must equal its proof.
     assert.equal(report.hashes.parser,'6885c95dbe512c6d85f72a8f7bb93ab3dba4c8d0aa0c590eabb82e1bc9cbe397');
-    assert.equal(currentParserHash,'4f9abf60a140b3ed5cb5b1b034190d86a2f39c3de3cb80e3f517adb881cdb233');
+    assert.equal(compatibilityParserHash,'4f9abf60a140b3ed5cb5b1b034190d86a2f39c3de3cb80e3f517adb881cdb233');
     const dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
     const proofRaw=await readFile(resolve(dir,'capacity-summary-identity-compatibility-v1.json'),'utf8');
     assert.equal(sha(proofRaw),'411fe844e2d5d0c38d34de497d3df284477c48a188028a26d1ac62907b10a1ea');
     const proof=JSON.parse(proofRaw);
     assert.equal(proof.snapshotHash,sha(snapshotRaw));
-    assert.equal(proof.beforeParserHash,report.hashes.parser);assert.equal(proof.afterParserHash,currentParserHash);
-    assert.equal(sha(prepared),proof.preparedHash);
-    parserCompatibility={proofHash:proof.proofHash,compatibilityHash:sha(proofRaw),currentParserHash,scope:'CAPACITY_SCALARS_ONLY_IDENTITY_UNCHANGED'};
+    assert.equal(proof.beforeParserHash,report.hashes.parser);assert.equal(proof.afterParserHash,compatibilityParserHash);
+    assert.equal(compatibilityPreparedHash,proof.preparedHash);
+    parserCompatibility={proofHash:proof.proofHash,compatibilityHash:sha(proofRaw),currentParserHash,scope:currentParserHash===compatibilityParserHash?'CAPACITY_SCALARS_ONLY_IDENTITY_UNCHANGED':'CAPACITY_AND_TABLE_POWER_SCALARS_ONLY_IDENTITY_UNCHANGED'};
   }
   const reparsed=new Map(prepared.requirements.map(r=>[r.id,r]));
   assert.equal(reparsed.size,originals.length);

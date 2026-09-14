@@ -2258,7 +2258,7 @@ function ShopPage() {
           <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.12em'}}>ДАННЫЕ ИЗ CRM</div>
         </div>
 
-        <div className="responsive-grid shop-layout" style={{display: 'grid', gridTemplateColumns: '260px 1fr', gap: 40, alignItems: 'start'}}>
+        <div className="responsive-grid shop-layout" style={{display: 'grid', gridTemplateColumns: '260px minmax(0, 1fr)', gap: 40, alignItems: 'start'}}>
           {/* Filters */}
           <aside className="responsive-sticky" style={{position: 'sticky', top: 120}}>
             <FilterGroup title="Бренд" items={allBrands} active={brands} onToggle={v => toggle(brands, setBrands, v)} />
@@ -2271,7 +2271,7 @@ function ShopPage() {
             >Сбросить фильтры</button>
           </aside>
 
-          <div>
+          <div className="shop-results">
             {/* sort */}
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22, paddingBottom: 16, borderBottom: '1px solid #D9D3C5'}}>
               <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', textTransform: 'uppercase'}}>
@@ -2285,7 +2285,7 @@ function ShopPage() {
               </div>
             </div>
 
-            <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22}}>
+            <div className="responsive-grid shop-product-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 22}}>
               {filtered.map((o, i) => <ShopCard key={o.id} oil={o} idx={i} />)}
             </div>
 
@@ -2332,7 +2332,7 @@ function FilterGroup({ title, items, active, onToggle }) {
 
 function ShopCard({ oil, idx }) {
   return (
-    <Link to={`/product/${oil.id}`}>
+    <Link className="shop-card-link" to={`/product/${oil.id}`}>
       <div className="shop-card" style={{
         background: '#FFFFFF', border: '1px solid #D9D3C5',
         padding: '20px 20px 22px', display: 'flex', flexDirection: 'column', gap: 16,

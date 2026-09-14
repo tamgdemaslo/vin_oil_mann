@@ -18,6 +18,31 @@ const revisions=Map.groupBy(plan.newRevisions,r=>r.sourceRequirementId),contexts
 for(const id of revisions.keys())assert.ok(sourceIds.has(id));
 // A candidate does not resolve a held source variant or a disputed date slice.
 const obligations=new Map();
+// A retained revision may be explicitly withheld; existence is not preview coverage.
+const heldRevisionIds=new Set();
+for(const revision of plan.newRevisions){
+ const hold=revision.provenanceJson?.sourcePowerReviewHold??revision.provenanceJson?.sourceDateReviewHold;
+ if(!hold)continue;
+ assert.equal(revision.provenanceJson.catalogPreviewEligible,false);
+ assert.equal(revision.provenanceJson.conditionalEquipmentEligible,false);
+ heldRevisionIds.add(revision.id);
+ const list=obligations.get(revision.sourceRequirementId)??[];
+ list.push({reason:hold.reason??'EXPLICIT_SOURCE_PREVIEW_HOLD',revisionId:revision.id,hold});
+ obligations.set(revision.sourceRequirementId,list);
+}
+// Repairing a later date window does not resolve the excluded earlier source slice.
+const dotSuccessors=new Map((plan.dotTokenRepair?.replacements??[]).map(r=>[r.originalRevisionId,r.successorId]));
+const currentRevisionId=id=>{
+ const seen=new Set();while(dotSuccessors.has(id)){assert.ok(!seen.has(id),'Cyclic DOT successor history');seen.add(id);id=dotSuccessors.get(id);}return id;
+};
+for(const entry of plan.fourDateScopeRepair?.replacements??[]){
+ const successor=plan.newRevisions.find(r=>r.id===currentRevisionId(entry.successorId));assert.ok(successor);
+ assert.ok(sourceIds.has(successor.sourceRequirementId));
+ assert.deepEqual(successor.applicabilityJson.window.intersection,entry.newWindow);
+ const id=successor.sourceRequirementId,list=obligations.get(id)??[];
+ list.push({reason:'SOURCE_ENGINE_BRANCH_DATE_PREFIX_UNSUPPORTED',originalRevisionId:entry.originalRevisionId,candidateRevisionIds:[successor.id],pendingWindow:entry.excludedPrefix,retainedWindow:entry.newWindow});
+ obligations.set(id,list);
+}
 for(const entry of plan.sourceEvidenceReview??[]){
  assert.ok(sourceIds.has(entry.sourceRequirementId));assert.equal(sha(entry.originalSource),entry.sourceHash);
  assert.equal(entry.publicationAllowed,false);
@@ -120,11 +145,12 @@ for(const entry of plan.passatDatePending??[]){
 const rows=sources.map(r=>{
   const decision=decisions.get(r.id);assert.ok(decision);const candidates=revisions.get(r.id)??[],context=contexts.get(r.id);
   const pending=obligations.get(r.id)??[];
-  const status=candidates.length?(pending.length?'IN_LOCAL_PREVIEW_WITH_PENDING_REVIEW':'IN_LOCAL_PREVIEW_PLAN'):pending.length?'HELD_SOURCE_REVIEW':context?.disposition==='EXPLICIT_ELECTRIC_STEERING_NO_FLUID'?'SOURCE_SAYS_NO_STEERING_FLUID':
+  const previewCandidates=candidates.filter(c=>!heldRevisionIds.has(c.id));
+  const status=previewCandidates.length?(pending.length?'IN_LOCAL_PREVIEW_WITH_PENDING_REVIEW':'IN_LOCAL_PREVIEW_PLAN'):pending.length?'HELD_SOURCE_REVIEW':context?.disposition==='EXPLICIT_ELECTRIC_STEERING_NO_FLUID'?'SOURCE_SAYS_NO_STEERING_FLUID':
     context?.rematchRequired?'DESTINATION_REVIEW':decision.match.status==='MANN_CATALOG_GAP'?'MANN_CATALOG_GAP':'UNRESOLVED_MATCH_OR_CONDITIONS';
   if(candidates.length)assert.notEqual(context?.rematchRequired,true,'Known destination issue in merged plan');
   return {requirementId:r.id,make:r.make,systemCode:r.systemCode,sourceUrl:r.sourceUrl,status,sourceMatchStatus:decision.match.status,
-    localRevisionIds:candidates.map(c=>c.id),hasParsedNumericCapacity:decision.capacity.capacities.length>0,
+    localRevisionIds:candidates.map(c=>c.id),withheldRevisionIds:candidates.filter(c=>heldRevisionIds.has(c.id)).map(c=>c.id),hasParsedNumericCapacity:decision.capacity.capacities.length>0,
     pendingReview:pending,sourceFullyResolved:false,
     ...(candidates.some(c=>c.provenanceJson?.sourceComponentYearScope)?{sourceComponentYearScopes:candidates.filter(c=>c.provenanceJson?.sourceComponentYearScope).map(c=>({revisionId:c.id,componentModel:c.componentModel,...c.provenanceJson.sourceComponentYearScope}))}:{}),
     hasSourceSpecification:Boolean(r.specificationText?.trim()||r.specificationsJson?.length),

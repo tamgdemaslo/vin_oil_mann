@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {parseCopy,sha} from './lib/mann-offline-scope.mjs';
-const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-whole-source-current-recheck-2026-09-14');
+const mode=process.argv[2];assert.ok(mode===undefined||mode==='current-held');
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,mode==='current-held'?'outputs/mann-held-power-current-recheck-2026-09-14':'outputs/mann-whole-source-current-recheck-2026-09-14');
 // Requires the completed manifest: never interpret a partial NDJSON as a full run.
 const summaryRaw=await readFile(resolve(dir,'summary.json'),'utf8'),summary=JSON.parse(summaryRaw);
 const raw=await readFile(resolve(dir,'decisions.ndjson'),'utf8'),sql=await readFile('/tmp/vehicle_fluid_requirements.sql','utf8');
@@ -12,7 +13,7 @@ assert.equal(rows.length,sources.size);assert.equal(new Set(rows.map(r=>r.requir
 for(const r of rows){assert.equal(sha(sources.get(r.requirementId)),r.originalSourceHash);assert.equal(r.decision.requirementId,r.requirementId);assert.equal(r.publicationAllowed,false);}
 const count=(rows,key)=>Object.fromEntries([...Map.groupBy(rows,key)].map(([k,v])=>[k,v.length]));
 assert.deepEqual(count(rows,r=>r.decision.status),summary.statusCounts);
-const pending=rows.filter(r=>r.oldCoverageStatus==='UNRESOLVED_MATCH_OR_CONDITIONS');assert.equal(pending.length,10005);
+const pending=rows.filter(r=>r.oldCoverageStatus==='UNRESOLVED_MATCH_OR_CONDITIONS');assert.equal(pending.length,mode==='current-held'?9962:10005);
 assert.deepEqual(count(pending,r=>r.decision.status),summary.oldUnresolvedStatusCounts);
 const strong=pending.filter(r=>!r.identityReasons.length);
 assert.equal(strong.length,summary.oldUnresolvedIdentityCandidateCount);
