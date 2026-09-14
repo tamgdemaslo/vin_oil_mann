@@ -46,6 +46,14 @@ gearFixtures.push({...gearFixtures[0],id:'TEST-MANUAL',sourceRequirementId:'TEST
   applicabilityJson:{...gearFixtures[0].applicabilityJson,transmissionType:'manual',transmissionGearCount:5},
   technicalDataJson:{capacities:[],specifications:[{type:'TEST',value:'TEST-MANUAL'}],viscosityGrades:[]}});
 const modules = new Map();
+// Synthetic values: these test display semantics, not a vehicle's actual fluids.
+const capacityFixtures = [
+  {qualifier:'APPROXIMATE',nominalLiters:8},
+  {qualifier:'UP_TO',maxLiters:4},
+  {qualifier:'RANGE',minLiters:4,maxLiters:5},
+  {qualifier:'TOLERANCE',nominalLiters:4,toleranceLiters:0.1},
+  {qualifier:'EXACT',nominalLiters:8.365,serviceContextLabel:'полная ёмкость'},
+];
 const equipmentPlan=JSON.parse(readFileSync(path.join(root,'outputs/mann-identity-scoped-2026-09-14/conditional-equipment-plan-v1.json'),'utf8'));
 const equipmentFixtures=[['POWER_STEERING','HYDRAULIC_STEERING',undefined],['REAR_DIFFERENTIAL','REAR_DIFFERENTIAL','4WD'],['REAR_DIFFERENTIAL','REAR_DIFFERENTIAL','2WD']].map(([system,circuit,drive])=>{
   const row=equipmentPlan.revisions.find(r=>r.systemCode===system),id=`TEST-EQUIPMENT-${circuit}-${drive??'NONE'}`;
@@ -122,7 +130,7 @@ try {
       transmissionOptions: [{ type: 'automatic', label: 'АКПП' }, { type: 'manual', label: 'МКПП' }],
       transmissionComponentOptions: body.transmissionType === 'automatic' ? ['09G', 'DQ200'] : [],
       transmissionConditionsToReview: body.transmissionType === 'automatic' ? ['Для особых условий нужна проверка'] : [],
-      items: model ? [{ revisionId: 'fixture', systemLabel: 'Масло АКПП', componentModel: model, capacities: [], specifications: ['TEST-SPEC'], viscosityGrades: [], evidence: [], userConfirmedTransmissionModel: true, automaticSelectionEligible: false }] : [],
+      items: model ? [{ revisionId: 'fixture', systemLabel: 'Масло АКПП', componentModel: model, capacities: capacityFixtures, specifications: ['TEST-SPEC'], viscosityGrades: [], evidence: [], userConfirmedTransmissionModel: true, automaticSelectionEligible: false }] : [],
     } });
   });
   const ready = () => page.waitForFunction(() => document.querySelector('.eco-vehicle-lookup__profile')?.getAttribute('aria-busy') === 'false');
@@ -135,6 +143,7 @@ try {
   assert.equal(await model.inputValue(), '');
   await model.selectOption('09G'); await ready();
   assert.equal(requests.at(-1).vehicleContext.transmissionModel, '09G');
+  for(const label of ['примерно 8 л','до 4 л','4–5 л','4 л ± 0,1 л','8,365 л · полная ёмкость'])assert.equal(await page.getByText(label,{exact:true}).count(),1);
   assert.equal(await page.getByText('Модель коробки указана вручную. Данные остаются предварительными.').count(), 1);
   await model.selectOption(''); await ready();
   assert.equal(requests.at(-1).vehicleContext.transmissionModel, undefined);

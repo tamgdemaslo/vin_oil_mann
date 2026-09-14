@@ -80,6 +80,7 @@ export type MannTechnicalEvidence = {
 };
 
 export type MannTechnicalCapacity = {
+  qualifier?: "EXACT" | "RANGE" | "TOLERANCE" | "APPROXIMATE" | "UP_TO";
   nominalLiters?: number;
   minLiters?: number;
   maxLiters?: number;
@@ -222,11 +223,14 @@ function normalizeCapacity(value: unknown): MannTechnicalCapacity | undefined {
   const minLiters = finitePositive(capacity.minLiters);
   const maxLiters = finitePositive(capacity.maxLiters);
   const toleranceLiters = finitePositive(capacity.toleranceLiters, true);
+  const qualifier = ["EXACT", "RANGE", "TOLERANCE", "APPROXIMATE", "UP_TO"].includes(String(capacity.qualifier))
+    ? capacity.qualifier as MannTechnicalCapacity["qualifier"] : undefined;
   if (nominalLiters == null && minLiters == null && maxLiters == null) return undefined;
   const serviceContext = [capacity.serviceContext, capacity.filterContext, capacity.kind]
     .map((candidate) => text(candidate)?.toUpperCase())
     .find((candidate) => candidate && candidate !== "UNKNOWN");
   return {
+    ...(qualifier ? { qualifier } : {}),
     nominalLiters,
     minLiters,
     maxLiters,

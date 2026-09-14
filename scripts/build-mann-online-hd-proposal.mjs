@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+import {parseCopy,sha} from './lib/mann-offline-scope.mjs';
+import {prepareOnlineMannRow} from './lib/mann-online-application-row.mjs';
+import {conditionalVehicleIdentityReasons} from './lib/mann-conditional-vehicle-identity.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+const raw=await readFile(resolve(dir,'online-c2029-gap-evidence-v2.json'),'utf8'),audit=JSON.parse(raw);assert.equal(sha(raw),'d037880f479a5d115cb6b32809b936a12eed20a7722c292f28337b32a590f80f');
+assert.equal(sha(await readFile(audit.sourceHtml.path,'utf8')),audit.sourceHtml.sha256);
+const proofRaw=await readFile(resolve(dir,'online-c2029-gap-verification-v1.json'),'utf8'),proof=JSON.parse(proofRaw);assert.equal(proof.reportHash,sha(raw));
+const planRaw=await readFile(resolve(dir,'plan.json'),'utf8');assert.equal(sha(planRaw),audit.planHash);
+const sql=await readFile('/tmp/mann_filter_applications.sql','utf8');assert.equal(sha(sql),audit.mannHash);const rows=parseCopy(sql,'mann_filter_applications');
+const j=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),catalog=await j.import('../src/lib/mann-catalog.ts'),normalization=await j.import('../src/lib/vehicle-normalization.ts');
+for(const row of rows)assert.equal(catalog.mannCatalogVariantKey({make:row.make,model:row.model,vehicle_text:row.vehicleText,effective_vehicle_text:row.effectiveVehicleText,engine_code:row.engineCode,kw:row.kw,hp:row.hp,vehicle_years:row.vehicleYears,condition:row.condition}),row.vehicleVariantKey);
+const app=audit.findings.find(f=>f.application.manufacturerTypeId==='00000000219218');assert.equal(app.status,'NO_LITERAL_IDENTITY_IN_SNAPSHOT');
+const proposal=prepareOnlineMannRow(app.application,audit.sourceHtml,{...catalog,...normalization});assert.ok(!rows.some(r=>r.vehicleVariantKey===proposal.row.vehicleVariantKey));
+assert.equal(proposal.row.vehicleText,'2.0 16V DOHC (HD)');assert.equal(proposal.row.vehicleYears,'10/06-05/11');
+const probeRaw=await readFile(resolve(dir,'archived-body-evidence-probe-v1.json'),'utf8');assert.equal(sha(probeRaw),audit.archivedBodyProbeHash);const body=JSON.parse(probeRaw);
+const ids=new Set(audit.sourceLinks.filter(f=>f.onlineManufacturerTypeIds.includes(app.application.manufacturerTypeId)).map(f=>f.sourceRequirementId));assert.equal(ids.size,6);
+const {matchFluidRequirementToMann:match}=await j.import('../src/lib/mann-fluid-matcher-v2.ts');
+const augmented=[...rows,proposal.row],sourceProbes=[];
+for(const f of body.findings.filter(f=>ids.has(f.sourceRequirementId))){
+ const decision=match(f.effectiveAfter,augmented),top=decision.topCandidates[0];
+ sourceProbes.push({sourceRequirementId:f.sourceRequirementId,originalSource:f.originalSource,sourceHash:f.sourceHash,effectiveSource:f.effectiveAfter,decision,identityReasons:conditionalVehicleIdentityReasons(f.effectiveAfter,top),sourceDriveStillRequiresScope:f.additionalSourceDrive,publicationAllowed:false});
+}
+assert.equal(sourceProbes.length,6);
+const codeFiles=['src/lib/mann-catalog.ts','src/lib/vehicle-normalization.ts','src/lib/mann-fluid-matcher-v2.ts','src/lib/mann-vehicle-resolver.ts','scripts/lib/mann-online-application-row.mjs','scripts/build-mann-online-hd-proposal.mjs'];
+const result={kind:'ADDITIVE_MANN_ONLINE_HD_PROPOSAL',planHash:sha(planRaw),mannHash:sha(sql),auditHash:sha(raw),proofHash:sha(proofRaw),bodyProbeHash:sha(probeRaw),legacyIdentityChecks:rows.length,existingRowsPreserved:rows.length,proposal,sourceProbes,codeHashes:Object.fromEntries(await Promise.all(codeFiles.map(async p=>[p,sha(await readFile(resolve(root,p),'utf8'))]))),requiredGates:['CATALOG_ONLY_INSERT_NO_REPLACEMENT','PERSIST_MANUFACTURER_EVIDENCE_MAPPING','SOURCE_GENERATION_AND_BODY_NAMESPACE_RECONCILIATION','FULL_SOURCE_ENGINE_POWER_MARKET_DRIVE_MONTH_SCOPES','TECHNICAL_DATA_REVIEW'],productionApplyAllowed:false};
+await writeFile(resolve(dir,'online-hd-additive-proposal-v1.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
+console.log(JSON.stringify({legacyIdentityChecks:rows.length,newVariantKey:proposal.row.vehicleVariantKey,sourceProbes:sourceProbes.map(f=>({id:f.sourceRequirementId,status:f.decision.status,top:f.decision.topCandidates[0]?.variantIds,hardConflicts:f.decision.topCandidates[0]?.hardConflicts,identityReasons:f.identityReasons}))}));

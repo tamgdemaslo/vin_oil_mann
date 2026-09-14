@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {parseMannOnlineApplications as parse} from './lib/mann-online-product-applications.mjs';
+const html=await readFile(new URL('../tmp/mann-online-evidence-2026-09-14/c2029.html',import.meta.url),'utf8'),options={url:'https://www.mann-filter.com/ph-en/catalog/search-results/product.html/c2029_mann-filter.html',article:'C2029'};
+const result=parse(html,options),hd=result.applications.filter(r=>r.vehicleText==='2.0 16V DOHC (HD)');
+assert.equal(hd.length,1);assert.equal(hd[0].manufacturerTypeId,'00000000219218');assert.equal(hd[0].engineCode,'G4GC');assert.equal(hd[0].hp,'143');assert.equal(hd[0].vehicleYears,'10/06 → 05/11');
+assert.equal(hd[0].binding.vehicleName,'2.0 16V DOHC','Body evidence is outside the machine link and must not disappear');
+assert.throws(()=>parse(html,{...options,article:'C9999'}));assert.throws(()=>parse(html,{...options,url:'https://example.com/c2029'}));
+assert.throws(()=>parse(html.replace(' (HD) ',' (XD) '),options),'Responsive views must agree');
+assert.throws(()=>parse(html.replace('%26bhp%3D143','%26bhp%3D999'),options),'Visible power must agree with binding');
+assert.throws(()=>parse(html.replace('cmp-table__desktop','unknown-layout'),options),'Unknown layout must fail closed');
+assert.throws(()=>parse(html.replaceAll('10/06 → 05/11','05/11 → 10/06'),options),'Reversed endpoints must fail even if both months occur');
+assert.deepEqual(hd[0].manufactureMonths,{from:'2006-10',to:'2011-05',precision:'MONTH_FROM_RENDERED_TABLE'});
+assert.ok(result.applications.some(a=>a.manufactureMonths.precision==='UNKNOWN'&&a.manufactureMonths.from===null&&a.manufactureMonths.to===null));
+console.log(JSON.stringify({passed:true,applications:result.applications.length,tables:result.applicationTables,hdBodyPreserved:true,negativeTests:6,unknownDatesNot1900Or9999:true}));

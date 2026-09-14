@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {parseCopy,sha} from './lib/mann-offline-scope.mjs';
+
+const root=resolve(import.meta.dirname,'..');
+const dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+const input=await readFile(resolve(dir,'online-formatting-gap-audit-v1.json'),'utf8');
+assert.equal(sha(input),'7a9a57484882bed91381fe9466067a949d2af07ffa3c7e740d5cdfaaf0cffab1');
+const audit=JSON.parse(input);
+const plan=await readFile(resolve(dir,'plan.json'),'utf8');
+assert.equal(sha(plan),'31f8407dde303ca792f858299a5c40282a4079d65b9e8a9a8e020941e8411c5c');
+assert.equal(audit.planHash,sha(plan));
+const sql=await readFile('/tmp/vehicle_fluid_requirements.sql','utf8');
+assert.equal(sha(sql),'e802cacc05c23f8c21bc4d84bbf6796b15d9bb5be86e41964a028276fa4f92a0');
+const sources=parseCopy(sql,'vehicle_fluid_requirements');
+assert.equal(sources.length,13296);
+const norm=x=>String(x??'').normalize('NFKC').toUpperCase().trim();
+const engines=s=>[...new Set([s.engineCodeNormalized,...(s.engineCodesJson??[])].map(norm).filter(Boolean))];
+const exactEnginePower=(s,a)=>engines(s).length===1&&engines(s)[0]===norm(a.engineCode)&&s.powerHp!=null&&Number(a.hp)===s.powerHp;
+// These are triage signals only. Prefix names are NOT aliases or identity proof.
+const signals=(s,a)=>{
+ const makeLiteral=norm(s.make)===norm(a.make);
+ const modelPrefix=new RegExp(`^${norm(s.model).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}(?:$|[ /])`).test(norm(a.model));
+ const m=a.manufactureMonths;
+ const datesKnown=m?.precision==='MONTH_FROM_RENDERED_TABLE'&&(m.from||m.to)&&s.yearFrom!=null&&s.yearTo!=null;
+ const lo=datesKnown?[`${s.yearFrom}-01`,m.from??'0000-01'].sort().at(-1):null;
+ const hi=datesKnown?[`${s.yearTo}-12`,m.to??'9999-12'].sort()[0]:null;
+ return {makeLiteral,modelPrefix,yearEnvelopeStatus:!datesKnown?'UNKNOWN':lo>hi?'DISJOINT':'OVERLAPS',intersection:datesKnown&&lo<=hi?{from:lo,to:hi}:null};
+};
+const residual=audit.findings.filter(f=>!['EXISTING_LITERAL_IDENTITY','FORMATTING_EQUIVALENT_CANDIDATE'].includes(f.status));
+assert.equal(residual.length,13);
+const findings=residual.map(f=>{
+ const a=f.originalOnlineApplication;
+ const candidates=sources.filter(s=>exactEnginePower(s,a)).map(s=>({sourceRequirementId:s.id,sourceHash:sha(s),source:s,signals:signals(s,a),publicationAllowed:false}));
+ const priority=candidates.filter(c=>c.signals.makeLiteral&&c.signals.modelPrefix&&c.signals.yearEnvelopeStatus==='OVERLAPS');
+ return {manufacturerTypeId:a.manufacturerTypeId,originalOnlineApplication:a,catalogGapStatus:f.status,enginePowerSourceCount:candidates.length,prioritySourceIds:priority.map(c=>c.sourceRequirementId),candidates,publicationAllowed:false};
+});
+const fixture=sources.find(s=>s.engineCodeNormalized==='G4GC'&&s.powerHp===143);
+assert.ok(fixture);
+assert.equal(exactEnginePower(fixture,{engineCode:'G4GC',hp:'143'}),true);
+assert.equal(exactEnginePower(fixture,{engineCode:'G4GC',hp:'144'}),false);
+assert.equal(exactEnginePower(fixture,{engineCode:'G4GC/G4FC',hp:'143'}),false);
+assert.equal(exactEnginePower({...fixture,engineCodesJson:['G4GC','G4FC']},{engineCode:'G4GC',hp:'143'}),false);
+assert.equal(signals(fixture,{make:'HYUNDAI (BEIJING.H)',model:'ELANTRA',manufactureMonths:{precision:'UNKNOWN'}}).makeLiteral,false);
+assert.equal(signals(fixture,{make:'HYUNDAI',model:'ELANTRA',manufactureMonths:{precision:'UNKNOWN'}}).yearEnvelopeStatus,'UNKNOWN');
+const summary=findings.map(f=>({typeId:f.manufacturerTypeId,make:f.originalOnlineApplication.make,model:f.originalOnlineApplication.model,engine:f.originalOnlineApplication.engineCode,hp:f.originalOnlineApplication.hp,enginePowerSources:f.enginePowerSourceCount,prioritySources:f.prioritySourceIds.length,sourceModels:[...new Set(f.candidates.map(c=>`${c.source.make}/${c.source.model}`))]}));
+const report={kind:'ONLINE_GAP_SOURCE_IMPACT_TRIAGE',formattingAuditHash:sha(input),sourceSqlHash:sha(sql),planHash:sha(plan),sourcesChecked:sources.length,applicationsChecked:findings.length,uniqueEnginePowerSources:new Set(findings.flatMap(f=>f.candidates.map(c=>c.sourceRequirementId))).size,uniquePrioritySources:new Set(findings.flatMap(f=>f.prioritySourceIds)).size,summary,findings,productionApplyAllowed:false,limitations:['Engine/power candidates across all makes are leads, never identity or fluid applicability evidence.','Literal make and model prefix plus overlapping year envelope prioritize investigation only; generation/body, fuel, displacement, exact months, market and equipment remain unverified.','Missing power or multi-engine source rows are excluded from exact-engine-power triage, not declared irrelevant.','No aliases added, no online dates inferred, no source or canonical plan changed.']};
+await writeFile(resolve(dir,'online-gap-source-impact-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
+console.log(JSON.stringify({...report,findings:undefined},null,2));

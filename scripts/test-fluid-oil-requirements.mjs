@@ -61,7 +61,7 @@ assert.ok(exact.matchedBy.includes("код двигателя"));
 const requirements = oilRequirementsFromCatalogMatch(exact);
 assert.deepEqual(requirements.sae_viscosities, ["0W-16"]);
 assert.deepEqual(requirements.api, ["SP"]);
-assert.deepEqual(requirements.ilsac, ["GF-6"]);
+assert.deepEqual(requirements.ilsac, ["GF-6A"]); // Preserve the source's explicit suffix.
 assert.equal(requirements.oil_capacity_liters, 4.6);
 assert.equal(requirements.oil_capacity_note, "с фильтром");
 

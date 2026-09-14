@@ -360,6 +360,11 @@ function variantKey(row: CsvRow): string {
   ].join("|"));
 }
 
+// Shared by offline additive catalogue adapters; preserves the importer's identity scheme.
+export function mannCatalogVariantKey(row: CsvRow): string {
+  return variantKey(row);
+}
+
 function requiredColumns(rows: CsvRow[], required: string[]): string[] {
   const first = rows[0];
   if (!first) return required;

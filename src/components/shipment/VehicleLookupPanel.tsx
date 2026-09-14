@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
-import type { MannTechnicalCapacity, MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
+import type { MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
+import { mannCapacityLabel as capacityLabel } from "@/lib/mann-capacity-label";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
 import { mannTechnicalContextFromVehicle } from "@/lib/mann-technical-request-context";
 import { mannEquipmentChoiceKey } from "@/lib/mann-equipment-scope";
@@ -120,27 +121,6 @@ function candidateLabel(candidate: MannVehicleCandidate): string {
   const title = rawTitle.trim().toLowerCase() === "all models" ? "Все модификации" : rawTitle;
   const details = [candidate.engineCode, candidate.kw ? `${candidate.kw} кВт` : null, candidate.hp ? `${candidate.hp} л.с.` : null, candidate.vehicleYears].filter(Boolean);
   return details.length ? `${title} · ${details.join(" · ")}` : title;
-}
-
-function formatLiters(value: number): string {
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(value);
-}
-
-function capacityLabel(capacity: MannTechnicalCapacity): string {
-  let value = "";
-  if (capacity.nominalLiters != null) {
-    value = `${formatLiters(capacity.nominalLiters)} л`;
-    if (capacity.toleranceLiters != null && capacity.toleranceLiters > 0) {
-      value += ` ± ${formatLiters(capacity.toleranceLiters)} л`;
-    }
-  } else if (capacity.minLiters != null && capacity.maxLiters != null) {
-    value = `${formatLiters(capacity.minLiters)}–${formatLiters(capacity.maxLiters)} л`;
-  } else if (capacity.maxLiters != null) {
-    value = `до ${formatLiters(capacity.maxLiters)} л`;
-  } else if (capacity.minLiters != null) {
-    value = `от ${formatLiters(capacity.minLiters)} л`;
-  }
-  return [value, capacity.serviceContextLabel].filter(Boolean).join(" · ");
 }
 
 function TechnicalProfile({

@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {parseMannOnlineApplications} from './lib/mann-online-product-applications.mjs';
+import {parseCopy,sha} from './lib/mann-offline-scope.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+const version=process.argv[2]??'v1';assert.ok(['v1','v2'].includes(version));
+const htmlPath=resolve(root,'tmp/mann-online-evidence-2026-09-14/c2029.html'),html=await readFile(htmlPath,'utf8');
+const url='https://www.mann-filter.com/ph-en/catalog/search-results/product.html/c2029_mann-filter.html';
+const parsed=parseMannOnlineApplications(html,{url,article:'C2029'});assert.equal(parsed.applications.length,49);
+const planRaw=await readFile(resolve(dir,'plan.json'),'utf8');assert.equal(sha(planRaw),'31f8407dde303ca792f858299a5c40282a4079d65b9e8a9a8e020941e8411c5c');
+const sql=await readFile('/tmp/mann_filter_applications.sql','utf8');assert.equal(sha(sql),'5e34efadc60014077b55655e0c62cdcbb8b1f44d3a8aace2399e941b45003fda');const oldRows=parseCopy(sql,'mann_filter_applications');
+const norm=value=>String(value??'').normalize('NFKC').toUpperCase().replace(/\s/g,'');
+const dates=value=>norm(value).replace(/→|->/g,'-');
+const identity=row=>JSON.stringify([norm(row.make),norm(row.model),norm(row.vehicleText),norm(row.engineCode),norm(row.kw),norm(row.hp),dates(row.vehicleYears)]);
+const oldByIdentity=Map.groupBy(oldRows,identity);
+const findings=parsed.applications.map(application=>{
+ const exact=oldByIdentity.get(identity(application))??[];
+ const sameModel=oldRows.filter(r=>norm(r.make)===norm(application.make)&&norm(r.model)===norm(application.model));
+ return {application,exactLiteralIdentityRowIds:exact.map(r=>r.id),existingVariantIds:[...new Set(exact.map(r=>r.vehicleVariantKey))],sameLiteralModelRowIds:sameModel.map(r=>r.id),status:exact.length?'EXISTING_LITERAL_IDENTITY':'NO_LITERAL_IDENTITY_IN_SNAPSHOT',publicationAllowed:false};
+});
+const bodyRaw=await readFile(resolve(dir,'archived-body-evidence-probe-v1.json'),'utf8'),body=JSON.parse(bodyRaw);assert.equal(body.planHash,sha(planRaw));
+const sources=body.findings.filter(f=>f.originalSource.make==='hyundai'&&f.originalSource.model==='elantra');assert.equal(sources.length,12);
+const sourceLinks=sources.map(f=>{
+ const source=f.effectiveAfter;
+ const candidates=findings.filter(a=>a.application.make==='HYUNDAI'&&/^Elantra(?:\b|\s)/.test(a.application.model)&&a.application.vehicleText.includes('(HD)')&&source.engineCodesJson.length===1&&norm(source.engineCodesJson[0])===norm(a.application.engineCode)&&Number(a.application.hp)===source.powerHp);
+ return {sourceRequirementId:source.id,sourceHash:f.sourceHash,originalSource:f.originalSource,sourceBodyEvidence:f.configurationEvidence,onlineManufacturerTypeIds:candidates.map(c=>c.application.manufacturerTypeId),status:candidates.length?'NEW_ONLINE_BODY_ENGINE_POWER_CANDIDATE':'NO_EXACT_HD_ENGINE_POWER_ON_THIS_PRODUCT_PAGE',remainingConditions:['SOURCE_MANN_GENERATION_NAMESPACE_RECONCILIATION','SOURCE_MARKET_DRIVE_MONTH_SCOPE','INDEPENDENT_CATALOG_IMPORT_AND_VARIANT_ID_CREATION','TECHNICAL_SOURCE_QUALITY_AND_CAPACITIES'],publicationAllowed:false};
+});
+const hd=findings.find(f=>f.application.manufacturerTypeId==='00000000219218');assert.ok(hd);assert.equal(hd.status,'NO_LITERAL_IDENTITY_IN_SNAPSHOT');assert.equal(hd.application.vehicleText,'2.0 16V DOHC (HD)');assert.equal(hd.application.engineCode,'G4GC');assert.equal(hd.application.hp,'143');
+assert.equal(oldRows.filter(r=>r.make==='HYUNDAI'&&/Elantra/i.test(r.model)&&/\bHD\b/.test(`${r.model} ${r.vehicleText} ${r.effectiveVehicleText}`)).length,0,'HD must truly be absent from existing Elantra rows, not merely differently spaced');
+const report={kind:'OFFICIAL_MANN_ONLINE_PRODUCT_GAP_AUDIT',planHash:sha(planRaw),mannHash:sha(sql),sourceHtml:{url,path:htmlPath,sha256:sha(html),article:'C2029'},archivedBodyProbeHash:sha(bodyRaw),parserHash:sha(await readFile(resolve(root,'scripts/lib/mann-online-product-applications.mjs'),'utf8')),onlineApplications:findings.length,tables:parsed.applicationTables,statusCounts:Object.fromEntries([...Map.groupBy(findings,f=>f.status)].map(([k,v])=>[k,v.length])),sourceLinkCount:sourceLinks.length,newHdCandidateSources:sourceLinks.filter(f=>f.onlineManufacturerTypeIds.length).length,findings,sourceLinks,productionApplyAllowed:false,limitation:'One official product page only, not whole current MANN coverage. No-literal-match is not proof a variant is absent under every alias. Specific Elantra HD absence separately verified. Manufacturer IDs and visible body suffix retained; ISO day fields are not assumed production-day precision. No filter compatibility -> fluid approval inference, no database writes.'};
+await writeFile(resolve(dir,`online-c2029-gap-evidence-${version}.json`),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify({...report,findings:undefined,sourceLinks:undefined}));

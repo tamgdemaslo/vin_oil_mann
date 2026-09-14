@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { capacitySummary, parseCapacities } from "@/lib/fluid-catalog";
 import {
   normalizeACEA,
   normalizeAPI,
@@ -97,7 +98,8 @@ function requirementProfile(row: CatalogOilRequirement): string {
   return JSON.stringify({
     specifications: row.specificationsJson,
     viscosities: row.viscosityGradesJson,
-    volume: row.serviceVolumeLiters ?? row.fillVolumeMaxLiters,
+    // Retain distinctions between unresolved capacities when comparing rows.
+    capacityText: row.fillVolumeText,
   });
 }
 
@@ -192,8 +194,13 @@ export function oilRequirementsFromCatalogMatch(match: FluidCatalogOilMatch): Oi
         return normalized.length ? normalized : fallbackSpecification(value);
       }),
   );
-  const volume = match.requirement.serviceVolumeLiters ?? match.requirement.fillVolumeMaxLiters ?? undefined;
-  const volumeNote = /с\s+фильтр/i.test(match.requirement.fillVolumeText ?? "")
+  // Re-read source semantics even for legacy imports whose service scalar was
+  // populated from an unspecified capacity. Never fall back to maximum volume.
+  const capacityText = match.requirement.fillVolumeText ?? "";
+  const volume = capacitySummary(parseCapacities(capacityText)).service ?? undefined;
+  const volumeNote = volume === undefined && capacityText.trim()
+    ? `Объём в источнике: ${capacityText.trim()}; объём замены требует уточнения`
+    : /с\s+фильтр/i.test(capacityText)
     ? "с фильтром"
     : /без\s+фильтр/i.test(match.requirement.fillVolumeText ?? "")
       ? "без фильтра"

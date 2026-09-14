@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {createJiti} from 'jiti';
+import {prepareOnlineMannRow as prepare} from './lib/mann-online-application-row.mjs';
+const j=createJiti(import.meta.url,{alias:{'@':new URL('../src',import.meta.url).pathname}}),catalog=await j.import('../src/lib/mann-catalog.ts'),normalization=await j.import('../src/lib/vehicle-normalization.ts');
+const audit=JSON.parse(await readFile(new URL('../outputs/mann-gentra-evidence-review-2026-09-14/online-c2029-gap-evidence-v2.json',import.meta.url),'utf8'));
+const a=audit.findings.find(f=>f.application.manufacturerTypeId==='00000000219218').application,original=structuredClone(a),norms={...catalog,...normalization};
+const result=prepare(a,audit.sourceHtml,norms);assert.deepEqual(a,original);assert.equal(result.productionApplyAllowed,false);assert.equal(result.operation,'PROPOSE_INSERT_ONLY');
+assert.equal(result.row.vehicleVariantKey,'88347e623939d1ed13e25bdab4ef33af9126f5fc910576d3e7107fe6faf24864');
+assert.equal(result.row.model,'Elantra II / Elantra TAGAZ (XD2)');assert.equal(result.row.vehicleText,'2.0 16V DOHC (HD)');assert.equal(result.row.vehicleYearFrom,2006);assert.equal(result.row.vehicleYearTo,2011);
+assert.equal(result.evidence.exactDisplacementCcm,'1975');assert.equal(result.requiresManufacturerEvidencePersistence,true);assert.deepEqual(result.evidence.originalApplication,a);
+assert.equal(result.row.pdfPage,null);assert.equal(result.row.catalogPage,null);assert.equal(result.row.id,undefined);assert.equal(result.row.importBatchId,undefined);
+for(const patch of [{manufactureMonths:{from:null,to:null,precision:'UNKNOWN'}},{binding:{...a.binding,serialNumberRange:'FROM SOME VIN'}},{filterType:'Unknown filter'},{engineCode:''},{hp:'unknown'}])assert.throws(()=>prepare({...a,...patch},audit.sourceHtml,norms));
+assert.throws(()=>prepare(a,{...audit.sourceHtml,url:'https://example.com/test'},norms));
+console.log(JSON.stringify({passed:true,negativeCases:6,rawMetadataPreserved:true,legacyKeyCompatible:true}));

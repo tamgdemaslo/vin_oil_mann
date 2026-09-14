@@ -643,16 +643,23 @@ export function parseCapacities(value: unknown): Capacity[] {
   }));
 }
 
-function capacitySummary(capacities: Capacity[]) {
+export function capacitySummary(capacities: Capacity[]) {
   const mins = capacities.flatMap((capacity) => (capacity.minLiters === null ? [] : [capacity.minLiters]));
   const maxs = capacities.flatMap((capacity) => (capacity.maxLiters === null ? [] : [capacity.maxLiters]));
-  const service = capacities.find((capacity) => ["service", "partial", "with_filter", "unspecified"].includes(capacity.kind));
-  const total = capacities.find((capacity) => capacity.kind === "total");
+  // A scalar must not turn an unqualified volume or the upper end of a range
+  // into a service fill. Keep all original capacities and their bounds below.
+  const scalar = (kinds: Capacity["kind"][]) => {
+    const selected = capacities.filter(capacity => kinds.includes(capacity.kind));
+    if (!selected.length || selected.some(capacity => capacity.qualifier !== "EXACT"
+      || capacity.minLiters == null || capacity.minLiters !== capacity.maxLiters)) return null;
+    const values = new Set(selected.map(capacity => capacity.minLiters));
+    return values.size === 1 ? selected[0]!.minLiters : null;
+  };
   return {
     min: mins.length ? Math.min(...mins) : null,
     max: maxs.length ? Math.max(...maxs) : null,
-    service: service?.nominalLiters ?? service?.maxLiters ?? null,
-    total: total?.nominalLiters ?? total?.maxLiters ?? null,
+    service: scalar(["service", "partial", "with_filter"]),
+    total: scalar(["total"]),
   };
 }
 

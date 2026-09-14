@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+import {sha} from './lib/mann-offline-scope.mjs';
+const phase=process.argv[2];assert.ok(['before','after'].includes(phase));
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+const raw=await readFile(resolve(root,'../vin-oil-mann/outputs/podbormasla-20260723/podbormasla_rows.ndjson'),'utf8');assert.equal(sha(raw),'e69dcb74c344c793e4a2cf091077143efb0d332ed24660af7415795b031f01ae');
+const parserHash=sha(await readFile(resolve(root,'src/lib/fluid-catalog.ts'),'utf8'));
+if(phase==='before')assert.equal(parserHash,'6885c95dbe512c6d85f72a8f7bb93ab3dba4c8d0aa0c590eabb82e1bc9cbe397');
+const j=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),{prepareFluidCatalog}=await j.import('../src/lib/fluid-catalog.ts');
+const prepared=prepareFluidCatalog({rowsNdjson:raw,mannFiltersCsv:''});assert.equal(prepared.requirements.length,13296);
+const report={phase,parserHash,snapshotHash:sha(raw),prepared,productionApplyAllowed:false};
+await writeFile(resolve(dir,`capacity-summary-${phase}-v1.json`),JSON.stringify(report)+'\n',{flag:'wx'});console.log(JSON.stringify({phase,parserHash,requirements:prepared.requirements.length}));

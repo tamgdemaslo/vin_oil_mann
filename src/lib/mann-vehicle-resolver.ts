@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { splitMannEngineCodeList } from "@/lib/mann-engine-code-list";
+import { mannRowIdentityEvidence } from "@/lib/mann-row-identity-evidence";
 import { isMannNonVehicleVariantText, listMannFilters, matchMannArticlesToLocalProducts, normalizeMannSearchText, normalizeMannText, type MannArticleMatchResult } from "@/lib/mann-catalog";
 import type { NormalizedVehicleIdentity } from "@/lib/vehicle-identity";
 import { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-normalization";
@@ -328,6 +329,8 @@ function numberFromText(value?: string | null): number | null {
 }
 
 function engineVolumeCcFromRow(row: MannRow): number | null {
+  const explicit = mannRowIdentityEvidence(row);
+  if (explicit) return explicit.engineVolumeCc;
   const value = `${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""} ${row.condition ?? ""}`;
   const liters = [...value.matchAll(/\b(\d(?:[.,]\d{1,3})?)\s*(?:l|л)\b/gi)]
     .map((match) => Number(match[1]?.replace(",", ".")))
@@ -465,6 +468,8 @@ function rowGenerationForVehicle(row: MannRow, vehicle: NormalizedMannVehicle): 
 }
 
 export function rowBodyCodes(row: MannRow): string[] {
+  const explicit = mannRowIdentityEvidence(row);
+  if (explicit) return [...explicit.bodyCodes];
   const generation = rowGeneration(row);
   const alphabeticPlatformCodes = [...row.model.matchAll(/\(([A-Z]{2,3})\)/gi)].map((match) => match[1]?.toUpperCase());
   // The archived Solaris rows explicitly print 1.4(RB) / 1.6(RB).

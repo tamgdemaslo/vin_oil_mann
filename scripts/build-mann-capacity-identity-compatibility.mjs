@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {sha} from './lib/mann-offline-scope.mjs';
+const dir=resolve(import.meta.dirname,'../outputs/mann-gentra-evidence-review-2026-09-14');
+const raw=await readFile(resolve(dir,'capacity-summary-transition-v1.json'),'utf8');assert.equal(sha(raw),'caea2a8cc713b49350d40f323d594344b3380a4eadd609a9d1c256a0bacaabac');const proof=JSON.parse(raw);
+const afterRaw=await readFile(resolve(dir,'capacity-summary-after-v1.json'),'utf8');assert.equal(sha(afterRaw),proof.afterHash);const after=JSON.parse(afterRaw);
+assert.equal(after.parserHash,proof.afterParserHash);assert.equal(after.snapshotHash,proof.snapshotHash);
+const compact={proofHash:sha(raw),afterHash:sha(afterRaw),preparedHash:sha(after.prepared),beforeParserHash:proof.beforeParserHash,afterParserHash:proof.afterParserHash,snapshotHash:proof.snapshotHash,checked:proof.checked};
+const output=JSON.stringify(compact,null,2)+'\n';await writeFile(resolve(dir,'capacity-summary-identity-compatibility-v1.json'),output,{flag:'wx'});console.log(JSON.stringify({...compact,manifestHash:sha(output)}));
