@@ -1549,8 +1549,7 @@ async function resolveLocalCounterparty(clientId: string | null, phone: string |
              COALESCE(raw #>> '{ecoPlatform,systemRole}', '') = ${ANONYMOUS_RETAIL_SYSTEM_ROLE} AS "isAnonymousRetail"
       FROM local_counterparties
       WHERE branch_id = ${branchId}
-        AND (id = ${clientId} OR legacy_id = ${clientId})
-      ORDER BY CASE WHEN id = ${clientId} THEN 0 ELSE 1 END, updated_at DESC
+        AND id = ${clientId}
       LIMIT 1
     `;
     if (rows[0]) return rows[0];
@@ -1707,10 +1706,10 @@ async function findTelegramConversation(input: NotificationEventContext): Promis
       )
     LEFT JOIN local_counterparties conversation_client
       ON conversation_client.branch_id = ${activeNotificationBranchId()}
-      AND (conversation_client.id = mc.client_id OR conversation_client.legacy_id = mc.client_id)
+      AND conversation_client.id = mc.client_id
     LEFT JOIN local_counterparties conversation_supplier
       ON conversation_supplier.branch_id = ${activeNotificationBranchId()}
-      AND (conversation_supplier.id = mc.supplier_id OR conversation_supplier.legacy_id = mc.supplier_id)
+      AND conversation_supplier.id = mc.supplier_id
     WHERE mc.organization_id = ${organizationId}
       AND mc.branch_id = ${activeNotificationBranchId()}
       AND mc.channel = 'telegram'
@@ -1723,9 +1722,7 @@ async function findTelegramConversation(input: NotificationEventContext): Promis
           OR ci.client_id = ${clientId ?? null}
           OR ci.supplier_id = ${clientId ?? null}
           OR conversation_client.id = ${clientId ?? null}
-          OR conversation_client.legacy_id = ${clientId ?? null}
           OR conversation_supplier.id = ${clientId ?? null}
-          OR conversation_supplier.legacy_id = ${clientId ?? null}
         ))
         OR (${phone}::text IS NOT NULL AND ${phone}::text <> '' AND (
           regexp_replace(COALESCE(mc.participant_phone, ''), '[^0-9]', '', 'g') = ${phone}
@@ -1763,9 +1760,7 @@ async function findTelegramConversation(input: NotificationEventContext): Promis
           mc.client_id = ${clientId ?? null}
           OR mc.supplier_id = ${clientId ?? null}
           OR conversation_client.id = ${clientId ?? null}
-          OR conversation_client.legacy_id = ${clientId ?? null}
           OR conversation_supplier.id = ${clientId ?? null}
-          OR conversation_supplier.legacy_id = ${clientId ?? null}
         ) THEN 0
         ELSE 1
       END,

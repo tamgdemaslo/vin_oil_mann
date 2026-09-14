@@ -2952,9 +2952,9 @@ async function telegramConversationPeer(outbox: MessageOutbox): Promise<Telegram
       mc.metadata_json AS "metadataJson"
     FROM messenger_conversations mc
     LEFT JOIN local_counterparties client
-      ON client.id = mc.client_id OR client.legacy_id = mc.client_id
+      ON client.id = mc.client_id AND client.branch_id = mc.branch_id
     LEFT JOIN local_counterparties supplier
-      ON supplier.id = mc.supplier_id OR supplier.legacy_id = mc.supplier_id
+      ON supplier.id = mc.supplier_id AND supplier.branch_id = mc.branch_id
     WHERE mc.id = ${outbox.conversationId}
       AND mc.organization_id = ${outbox.organizationId ?? getMessengerOrganizationId()}
       AND mc.branch_id = ${getScopedBranchId()}
