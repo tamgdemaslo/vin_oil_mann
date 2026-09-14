@@ -2333,18 +2333,19 @@ function FilterGroup({ title, items, active, onToggle }) {
 function ShopCard({ oil, idx }) {
   return (
     <Link to={`/product/${oil.id}`}>
-      <div style={{
+      <div className="shop-card" style={{
         background: '#FFFFFF', border: '1px solid #D9D3C5',
         padding: '20px 20px 22px', display: 'flex', flexDirection: 'column', gap: 16,
         position: 'relative', height: '100%', cursor: 'pointer',
         transition: 'border-color 160ms',
+        contentVisibility: 'auto', containIntrinsicSize: '390px',
       }} onMouseEnter={e => e.currentTarget.style.borderColor = '#C2410C'} onMouseLeave={e => e.currentTarget.style.borderColor = '#D9D3C5'}>
         <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.16em', color: '#6B6B6B', textTransform: 'uppercase'}}>
           {(idx+1).toString().padStart(3,'0')} · {oil.brand.toUpperCase()}
         </div>
 
         <div style={{height: 150, position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}>
-          <OilProductVisual oil={oil} variant="shop" priority={idx < 6} />
+          <OilProductVisual oil={oil} variant="shop" priority={idx < 3} />
         </div>
 
         <div>

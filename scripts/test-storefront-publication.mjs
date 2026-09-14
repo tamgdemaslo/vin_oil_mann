@@ -166,10 +166,14 @@ assert.match(clientApp, /STOREFRONT_IMAGE_RETRY_DELAYS_MS/u, "storefront images 
 assert.match(clientApp, /OilImageSkeleton/u, "storefront uses a neutral loading skeleton instead of a false product photo");
 assert.match(clientApp, /width=\$\{imageWidth\}/u, "storefront requests display-sized product images");
 assert.match(clientApp, /fetchPriority=\{product \|\| priority \? 'high' : 'auto'\}/u, "visible storefront photos receive high fetch priority");
+assert.match(clientApp, /priority=\{idx < 3\}/u, "only the first visible storefront row competes for high-priority bandwidth");
+assert.match(clientApp, /contentVisibility:\s*'auto'/u, "offscreen storefront cards skip unnecessary rendering work");
 assert.match(clientApp, /retry=\$\{imageAttempt\}/u, "storefront image retries bypass a failed browser cache entry");
 assert.match(publicStorefrontImageRoute, /resize\(\{ width, height: width, fit: "inside", withoutEnlargement: true \}\)/u, "public image route produces bounded previews");
 assert.match(publicStorefrontImageRoute, /webp\(\{ quality: 84/u, "public image route serves efficient WebP previews");
 assert.match(publicStorefrontImageRoute, /public, max-age=31536000, immutable/u, "immutable photo ids are cached by browsers and the CDN");
+assert.match(publicStorefrontImageRoute, /STOREFRONT_IMAGE_CACHE_MAX_BYTES/u, "derived storefront previews use a bounded server memory cache");
+assert.match(publicStorefrontImageRoute, /X-Storefront-Image-Cache/u, "public image responses expose cache diagnostics");
 assert.match(migration, /CREATE TABLE "storefront_products"/u);
 assert.doesNotMatch(migration, /^\s*(INSERT|UPDATE|DELETE)\s/imu, "expand migration must not backfill or publish data");
 assert.match(photoPurposeMigration, /ADD COLUMN "purpose" TEXT NOT NULL DEFAULT 'AVITO'/u, "existing photos become Avito photos safely");
