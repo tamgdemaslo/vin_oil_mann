@@ -3,32 +3,17 @@
 import {
   ArrowLeft,
   CalendarDays,
-  Car,
-  CheckCircle2,
   Clock3,
-  MapPin,
-  Phone,
   RefreshCw,
-  ShieldCheck,
-  Wrench,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import BookingRecordCard, { type BookingRecord } from "../../BookingRecordCard";
+import PublicBookingHeader from "../../PublicBookingHeader";
 import styles from "../../booking.module.css";
 
-type ManagedBooking = {
-  id: string;
-  branch: { id: string; name: string; timezone: string; address: string | null; phone: string | null };
+type ManagedBooking = BookingRecord & {
   customerName: string;
-  vehicle: { make: string; model: string; year: number | null; plate: string | null; vin: string | null } | null;
-  master: { membershipId: string; name: string; position: string | null } | null;
-  services: Array<{ id: string | null; name: string; durationMinutes: number }>;
-  startsAt: string;
-  endsAt: string;
-  durationMinutes: number;
-  status: string;
-  requiresConfirmation: boolean;
-  confirmationState: string;
   comment: string | null;
   cancellationReason: string | null;
 };
@@ -83,12 +68,6 @@ function formattedTime(value: string, timeZone?: string) {
   return new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(value));
 }
 
-function durationLabel(minutes: number) {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return [hours ? `${hours} ч` : null, rest ? `${rest} мин` : null].filter(Boolean).join(" ");
-}
-
 function requestError(error: unknown) {
   if (!(error instanceof ApiError)) return "Не удалось связаться с сервером. Проверьте интернет и повторите.";
   if (error.status === 429 || error.code === "booking_rate_limited") return "Слишком много запросов. Подождите немного и повторите.";
@@ -122,6 +101,7 @@ export default function ManageBookingClient({ token }: { token: string }) {
     durationMinutes: booking.durationMinutes,
     timezone: booking.branch.timezone,
   }) : "", [booking, localDate]);
+  const slotMasterNames = useMemo(() => new Set(slots.map((slot) => slot.master.name)), [slots]);
 
   const loadBooking = useCallback(async () => {
     bookingAbortRef.current?.abort();
@@ -133,6 +113,8 @@ export default function ManageBookingClient({ token }: { token: string }) {
       const data = await readJson<{ booking: ManagedBooking }>(await fetch(`/api/public/booking/manage/${encodeURIComponent(token)}`, { signal: controller.signal }));
       setBooking(data.booking);
       setLocalDate(branchToday(data.booking.branch.timezone));
+      const requestedAction = new URLSearchParams(window.location.search).get("action");
+      setMode(data.booking.status !== "CANCELLED" && requestedAction === "reschedule" ? "reschedule" : data.booking.status !== "CANCELLED" && requestedAction === "cancel" ? "cancel" : "details");
       setLoadState("loaded");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
@@ -223,15 +205,11 @@ export default function ManageBookingClient({ token }: { token: string }) {
       }));
       setBooking(data.booking);
       setMode("details");
+      window.history.replaceState({}, "", window.location.pathname);
       const statusText = data.booking.confirmationState === "PENDING"
         ? "Заявка на перенос принята. Новое время предварительное."
         : "Запись перенесена. Новое время подтверждено.";
-      const deliveryText = data.notification.state === "DELIVERED"
-        ? " Уведомление доставлено."
-        : data.notification.state === "QUEUED"
-          ? " Уведомление поставлено в очередь."
-          : " Доставка уведомления не подтверждена.";
-      setNotice(`${statusText}${deliveryText}`);
+      setNotice(statusText);
       setSelectedSlot(null);
     } catch (error) {
       const message = requestError(error);
@@ -256,7 +234,8 @@ export default function ManageBookingClient({ token }: { token: string }) {
       }));
       setBooking(data.booking);
       setMode("details");
-      setNotice("Запись отменена. Слот освобождён.");
+      window.history.replaceState({}, "", window.location.pathname);
+      setNotice("Запись отменена.");
     } catch (error) {
       setActionError(requestError(error));
     } finally {
@@ -266,10 +245,7 @@ export default function ManageBookingClient({ token }: { token: string }) {
 
   return (
     <main className={`${styles.publicRoot} ${styles.manageRoot}`}>
-      <header className={styles.publicHeader}>
-        <a className={styles.brand} href="/client-site"><span aria-hidden>ТГМ</span><strong>Там где масло</strong></a>
-        <div><ShieldCheck aria-hidden /><span>Защищённая ссылка<br /><small>доступ только к этой записи</small></span></div>
-      </header>
+      <PublicBookingHeader secureLink />
 
       <section className={styles.manageShell}>
         {loadState === "loading" ? (
@@ -288,49 +264,32 @@ export default function ManageBookingClient({ token }: { token: string }) {
           </div>
         ) : (
           <div className={styles.managePanel}>
-            <div className={styles.manageHeading}>
-              <div>
-                <span className={booking.status === "CANCELLED" ? styles.statusCancelled : booking.confirmationState === "PENDING" ? styles.statusPending : styles.statusConfirmed}>
-                  {booking.status === "CANCELLED" ? "Запись отменена" : booking.confirmationState === "PENDING" ? "Время предварительное" : "Запись подтверждена"}
-                </span>
-                <h1>Здравствуйте, {booking.customerName}</h1>
-                <p>{booking.status === "CANCELLED" ? "Эта запись больше не занимает время мастера." : "Здесь можно проверить детали, перенести или отменить визит."}</p>
-              </div>
-              {booking.status !== "CANCELLED" && <CheckCircle2 aria-hidden />}
-            </div>
-
-            {notice && <div className={styles.manageNotice} role="status"><CheckCircle2 aria-hidden /> {notice}</div>}
             {actionError && mode !== "reschedule" && <div className={styles.error} role="alert">{actionError}</div>}
 
             {mode === "details" ? <>
-              <dl className={styles.manageFacts}>
-                <div><dt><CalendarDays aria-hidden /> Дата и время</dt><dd>{formattedDate(booking.startsAt, booking.branch.timezone)}<strong>{formattedTime(booking.startsAt, booking.branch.timezone)}–{formattedTime(booking.endsAt, booking.branch.timezone)}</strong></dd></div>
-                <div><dt><MapPin aria-hidden /> Филиал</dt><dd>{booking.branch.name}<small>{booking.branch.address}</small></dd></div>
-                <div><dt><Car aria-hidden /> Автомобиль</dt><dd>{booking.vehicle ? `${booking.vehicle.make} ${booking.vehicle.model}` : "Указан в заявке"}<small>{[booking.vehicle?.year, booking.vehicle?.plate, booking.vehicle?.vin].filter(Boolean).join(" · ")}</small></dd></div>
-                <div><dt><Wrench aria-hidden /> Работы</dt><dd>{booking.services.map((service) => service.name).join(", ")}<small>{durationLabel(booking.durationMinutes)} · мастер {booking.master?.name || "будет назначен"}</small></dd></div>
-              </dl>
-              {booking.confirmationState === "PENDING" && booking.status !== "CANCELLED" && <div className={styles.pendingNotice}><ShieldCheck aria-hidden /> Заявка принята. Время предварительное и ожидает проверки администратора.</div>}
-              {booking.status === "CANCELLED" ? <div className={styles.manageActions}><a className={styles.primaryButton} href="/booking">Записаться снова</a></div> : <div className={styles.manageActions}>
-                <button type="button" className={styles.primaryButton} onClick={() => { setMode("reschedule"); setNotice(""); setActionError(""); setSlotError(""); setSelectedSlot(null); setLocalDate(branchToday(booking.branch.timezone)); }}><RefreshCw aria-hidden /> Перенести</button>
-                <button type="button" className={styles.dangerButton} onClick={() => { setMode("cancel"); setNotice(""); setActionError(""); }}>Отменить запись</button>
-                {booking.branch.phone && <a className={styles.phoneLink} href={`tel:${booking.branch.phone.replace(/[^+\d]/g, "")}`}><Phone aria-hidden /> {booking.branch.phone}</a>}
-              </div>}
+              <BookingRecordCard
+                booking={booking}
+                managementUrl={`/booking/manage/${encodeURIComponent(token)}`}
+                notice={notice}
+                onReschedule={() => { setMode("reschedule"); setNotice(""); setActionError(""); setSlotError(""); setSelectedSlot(null); setLocalDate(branchToday(booking.branch.timezone)); window.history.replaceState({}, "", `${window.location.pathname}?action=reschedule`); }}
+                onCancel={() => { setMode("cancel"); setNotice(""); setActionError(""); window.history.replaceState({}, "", `${window.location.pathname}?action=cancel`); }}
+              />
             </> : mode === "reschedule" ? <div className={styles.manageEditor}>
-              <button type="button" className={styles.backLink} onClick={() => { setMode("details"); setActionError(""); setSlotError(""); }}><ArrowLeft aria-hidden /> К записи</button>
-              <h2>Новое время</h2><p>Старый слот освободится только после успешного атомарного переноса.</p>
+              <button type="button" className={styles.backLink} onClick={() => { setMode("details"); setActionError(""); setSlotError(""); window.history.replaceState({}, "", window.location.pathname); }}><ArrowLeft aria-hidden /> К записи</button>
+              <h2>Новое время</h2><p>Текущее время сохранится, пока вы не подтвердите перенос.</p>
               <div className={styles.manageDateRow}><label><span>Дата</span><input type="date" min={branchToday(booking.branch.timezone)} value={localDate} onChange={(event) => changeDate(event.target.value)} /></label><button type="button" className={styles.secondaryButton} onClick={() => void loadSlots()} disabled={busy || nearestLoading}>Обновить время</button></div>
               {actionError && <div className={styles.warning} role="alert">{actionError}</div>}
               {slotError && <div className={styles.neutralNotice}>{slotError}</div>}
-              {busy ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : <div className={styles.slotGrid}>{slots.map((slot) => <button type="button" key={`${slot.startsAt}-${slot.master.membershipId}`} className={selectedSlot?.startsAt === slot.startsAt && selectedSlot.master.membershipId === slot.master.membershipId ? styles.selectedSlot : ""} onClick={() => { setSelectedSlot(slot); setSlotError(""); }}><strong>{slot.localTime}</strong><span>{slot.master.name}</span></button>)}</div>}
+              {busy ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : <div className={styles.slotGrid}>{slots.map((slot) => <button type="button" key={`${slot.startsAt}-${slot.master.membershipId}`} className={selectedSlot?.startsAt === slot.startsAt && selectedSlot.master.membershipId === slot.master.membershipId ? styles.selectedSlot : ""} onClick={() => { setSelectedSlot(slot); setSlotError(""); }}><strong>{slot.localTime}</strong>{slotMasterNames.size > 1 && <span>{slot.master.name}</span>}</button>)}</div>}
               {nearestLoading && <div className={styles.neutralNotice}>Ищем ближайшие даты со свободным временем…</div>}
               {!busy && nearestDays.length > 0 && <div className={styles.nearestDays}><strong>Ближайшие даты со свободным временем</strong><div>{nearestDays.map((day) => <button type="button" key={day.localDate} onClick={() => changeDate(day.localDate)}><CalendarDays aria-hidden /><span>{localDateLabel(day.localDate)}<small>с {day.slots[0]?.localTime}</small></span></button>)}</div></div>}
               {selectedSlot && <div className={styles.rescheduleComparison}><div><span>Было</span><strong>{formattedDate(booking.startsAt, booking.branch.timezone)}, {formattedTime(booking.startsAt, booking.branch.timezone)}</strong><small>Мастер: {booking.master?.name || "не указан"}</small></div><div><span>Станет</span><strong>{localDateLabel(localDate)}, {selectedSlot.localTime}</strong><small>Мастер: {selectedSlot.master.name}</small></div></div>}
               <div className={styles.manageActions}><button type="button" className={styles.primaryButton} onClick={() => void reschedule()} disabled={!selectedSlot || busy}><Clock3 aria-hidden /> Подтвердить перенос</button></div>
             </div> : <div className={styles.manageEditor}>
-              <button type="button" className={styles.backLink} onClick={() => { setMode("details"); setActionError(""); }}><ArrowLeft aria-hidden /> К записи</button>
+              <button type="button" className={styles.backLink} onClick={() => { setMode("details"); setActionError(""); window.history.replaceState({}, "", window.location.pathname); }}><ArrowLeft aria-hidden /> К записи</button>
               <h2>Отменить запись?</h2><p>Отменить запись на {formattedDate(booking.startsAt, booking.branch.timezone)} в {formattedTime(booking.startsAt, booking.branch.timezone)}? Слот станет доступен другим клиентам.</p>
               <label className={styles.cancelReason}><span>Причина — необязательно</span><textarea rows={3} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Например, изменились планы" /></label>
-              <div className={styles.manageActions}><button type="button" className={styles.dangerButton} onClick={() => void cancel()} disabled={busy}>{busy ? "Отменяем…" : "Да, отменить запись"}</button><button type="button" className={styles.secondaryButton} onClick={() => setMode("details")}>Оставить как есть</button></div>
+              <div className={styles.manageActions}><button type="button" className={styles.dangerButton} onClick={() => void cancel()} disabled={busy}>{busy ? "Отменяем…" : "Да, отменить запись"}</button><button type="button" className={styles.secondaryButton} onClick={() => { setMode("details"); window.history.replaceState({}, "", window.location.pathname); }}>Оставить как есть</button></div>
             </div>}
           </div>
         )}

@@ -1,13 +1,15 @@
 "use client";
 
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Car, Check, CheckCircle2, ChevronDown, Clock3, Copy,
-  Info, LoaderCircle, MapPin, MessageCircle, Navigation, Phone, ShieldCheck, UserRound, Wrench,
+  ArrowLeft, ArrowRight, CalendarDays, Car, Check, ChevronDown, Clock3,
+  Info, LoaderCircle, MapPin, ShieldCheck, Wrench,
 } from "lucide-react";
-import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isValidBookingCustomerName } from "@/lib/booking/customer-name";
 import { publicBookingBranchFromSearch } from "@/lib/booking/public-link";
 import type { PublicServiceGroup } from "@/lib/booking/public-service-presentation";
+import BookingRecordCard from "./BookingRecordCard";
+import PublicBookingHeader from "./PublicBookingHeader";
 import styles from "./booking.module.css";
 
 type Branch = {
@@ -63,10 +65,10 @@ const FULL_STEPS = [
 ];
 const BRANCH_STEPS = FULL_STEPS.slice(1);
 const SERVICE_GROUPS: Array<{ key: PublicServiceGroup; title: string; intro: string }> = [
-  { key: "engine", title: "Замена моторного масла", intro: "Основное обслуживание двигателя" },
-  { key: "transmission", title: "Трансмиссия", intro: "Работы с маслом в коробке передач" },
-  { key: "fluids", title: "Жидкости и обслуживание", intro: "Фильтры и технические жидкости" },
-  { key: "other", title: "Другие работы", intro: "Диагностика и специальные работы" },
+  { key: "engine", title: "Моторное масло", intro: "Обслуживание двигателя" },
+  { key: "transmission", title: "Коробка передач и полный привод", intro: "Коробка, редукторы, раздатка и Haldex" },
+  { key: "fluids", title: "Фильтры и другие жидкости", intro: "Фильтры и технические жидкости" },
+  { key: "other", title: "Диагностика и дополнительные работы", intro: "Проверки и отдельные работы" },
 ];
 const DRAFT_KEY = "tgm-public-booking-draft-v3";
 const DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
@@ -99,19 +101,23 @@ function maxBookingDate(branch: Branch) {
 function dateLabel(value: string) {
   return value ? new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "long" }).format(new Date(`${value}T12:00:00Z`)) : "Не выбрано";
 }
-function bookingDateLabel(value: string, timezone: string) {
-  return new Intl.DateTimeFormat("ru-RU", { timeZone: timezone, weekday: "short", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-}
 function durationLabel(minutes: number) {
   const hours = Math.floor(minutes / 60), rest = minutes % 60;
   return !hours ? `${rest} мин` : rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
 }
 function branchHoursLabel(hours: Branch["workingHours"]) {
   const days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"], byDay = new Map(hours.map((row) => [row.weekday, row]));
-  return days.map((day, index) => {
+  const values = days.map((day, index) => {
     const row = byDay.get(index + 1);
-    return row?.isWorking && row.startTime && row.endTime ? `${day} ${row.startTime}–${row.endTime}` : `${day} выходной`;
-  }).join(" · ");
+    return { day, schedule: row?.isWorking && row.startTime && row.endTime ? `${row.startTime}–${row.endTime}` : "выходной" };
+  });
+  const groups: Array<{ from: string; to: string; schedule: string }> = [];
+  for (const value of values) {
+    const previous = groups.at(-1);
+    if (previous?.schedule === value.schedule) previous.to = value.day;
+    else groups.push({ from: value.day, to: value.day, schedule: value.schedule });
+  }
+  return groups.map((group) => `${group.from === group.to ? group.from : `${group.from}–${group.to}`} ${group.schedule}`).join(" · ");
 }
 function timezoneLabel(timezone: string) {
   if (timezone === "Europe/Kaliningrad") return "Время Калининграда";
@@ -127,9 +133,13 @@ function money(amountCents: number, currency: string) {
   const normalized = currency.toUpperCase() === "RUB" || /руб/iu.test(currency) ? "RUB" : currency;
   return normalized === "RUB" ? new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(amountCents / 100) : `${(amountCents / 100).toLocaleString("ru-RU")} ${currency}`;
 }
-function pricingLabel(pricing: Service["pricing"]) {
-  if (!pricing || pricing.kind === "vehicle_calculation") return "Стоимость уточним по автомобилю";
-  return `Стоимость работы: ${pricing.kind === "from" ? "от " : ""}${money(pricing.amountCents, pricing.currency)}. Масло и расходники отдельно.`;
+function pricingLabel(service: Service) {
+  const pricing = service.pricing;
+  if (!pricing || pricing.kind === "vehicle_calculation") {
+    return /масл/iu.test(service.customerName) ? "Стоимость уточним по автомобилю" : "Стоимость уточним в сервисе";
+  }
+  const labor = `${pricing.kind === "from" ? "от " : ""}${money(pricing.amountCents, pricing.currency)} за работу`;
+  return /фильтр/iu.test(service.customerName) ? `${labor} · Фильтр оплачивается отдельно` : labor;
 }
 function availabilityMessage(value: Availability) {
   if (value.reasonCode === "branch_closed") return "Филиал не работает в этот день.";
@@ -162,8 +172,7 @@ export default function BookingClient() {
   const [formError, setFormError] = useState(""), [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [slotNotice, setSlotNotice] = useState(""), [submissionUnknown, setSubmissionUnknown] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(operationKey), [lastSubmissionFingerprint, setLastSubmissionFingerprint] = useState("");
-  const [created, setCreated] = useState<CreateResult | null>(null), [copied, setCopied] = useState(false);
-  const [telegramBusy, setTelegramBusy] = useState(false), [telegramLink, setTelegramLink] = useState(""), [telegramError, setTelegramError] = useState("");
+  const [created, setCreated] = useState<CreateResult | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const availabilityAbortRef = useRef<AbortController | null>(null), servicesAbortRef = useRef<AbortController | null>(null);
   const activeAvailabilityKeyRef = useRef("");
@@ -187,6 +196,8 @@ export default function BookingClient() {
   const calculatedCount = selectedServices.filter((service) => !service.pricing || service.pricing.kind === "vehicle_calculation").length;
   const flowSteps = step === 1 ? FULL_STEPS : BRANCH_STEPS;
   const flowPosition = Math.max(1, flowSteps.findIndex((item) => item.step === step) + 1);
+  const visibleMasterNames = useMemo(() => new Set(availability?.slots.map((slot) => slot.master.name) ?? []), [availability?.slots]);
+  const canContinue = step === 1 ? Boolean(branchId) : step === 2 ? serviceIds.length > 0 : step === 3 ? Boolean(selectedSlot) : true;
   const availabilityKey = useMemo(() => JSON.stringify({ branchId, serviceIds: [...serviceIds].sort(), localDate, totalDuration, timezone: branch?.timezone ?? "" }), [branch?.timezone, branchId, localDate, serviceIds, totalDuration]);
 
   useEffect(() => {
@@ -294,7 +305,7 @@ export default function BookingClient() {
     if (requiredFields.has("vin") && !needsVinHelp && vin.trim().length !== 17) errors.vin = "Введите VIN из 17 символов или выберите помощь с подбором.";
     if (requiredFields.has("plate") && !plate.trim()) errors.plate = "Укажите госномер автомобиля.";
     if (requiredFields.has("year") && !year.trim()) errors.year = "Укажите год выпуска автомобиля.";
-    if (!name.trim()) errors.name = "Укажите, как к вам обращаться.";
+    if (!isValidBookingCustomerName(name)) errors.name = "Укажите, как к вам обращаться";
     if (phone.replace(/\D/g, "").length < 10) errors.phone = "Проверьте номер телефона.";
     if (requiredFields.has("email") && !email.trim()) errors.email = "Для выбранной услуги нужен email.";
     return errors;
@@ -343,25 +354,13 @@ export default function BookingClient() {
       else setFormError(errorCopy(error));
     } finally { setSubmitBusy(false); }
   }
-  async function copyManagementLink() { if (created?.managementUrl) { await navigator.clipboard.writeText(created.managementUrl); setCopied(true); } }
-  async function prepareTelegramLink() {
-    if (!created?.managementUrl) return; setTelegramBusy(true); setTelegramError("");
-    try {
-      const management = new URL(created.managementUrl, window.location.origin), prefix = "/booking/manage/";
-      const token = management.pathname.startsWith(prefix) ? management.pathname.slice(prefix.length) : "";
-      if (!token) throw new Error("Не удалось подготовить ссылку Telegram");
-      const data = await readJson<{ linkUrl: string }>(await fetch(`/api/public/booking/manage/${encodeURIComponent(token)}/telegram-link`, { method: "POST" }));
-      setTelegramLink(data.linkUrl);
-    } catch (error) { setTelegramError(errorCopy(error)); } finally { setTelegramBusy(false); }
-  }
-
   function CostSummary({ compact = false }: { compact?: boolean }) {
     if (!selectedServices.length) return null;
     return <div className={compact ? styles.costSummaryCompact : styles.costSummary}>
       {Object.entries(fixedLaborTotals).map(([currency, amount]) => <span key={currency}>Работы с фиксированной ценой: <strong>{money(amount, currency)}</strong></span>)}
       {pricedFromCount > 0 && <span>Для {pricedFromCount} {pricedFromCount === 1 ? "работы" : "работ"} указана минимальная цена.</span>}
       {calculatedCount > 0 && <span>{calculatedCount} {calculatedCount === 1 ? "работа требует" : "работы требуют"} расчёта по автомобилю.</span>}
-      <span>Масло и расходники в сумму работ не включены.</span>
+      <span>Указана стоимость работ. Масло, фильтры и другие материалы оплачиваются отдельно.</span>
     </div>;
   }
   function serviceRows(group: PublicServiceGroup) {
@@ -371,59 +370,26 @@ export default function BookingClient() {
         <input type="checkbox" checked={selected} onChange={() => toggleService(service.id)} />
         <span><strong>{service.customerName}</strong>{service.customerDescription && <small>{service.customerDescription}</small>}
           <small>{durationLabel(service.durationMinutes)}{requirements.length ? ` · Понадобится: ${requirements.join(", ")}` : ""}</small>
-          <small className={styles.priceLine}>{pricingLabel(service.pricing)}</small>
+          <small className={styles.priceLine}>{pricingLabel(service)}</small>
           {service.requiresConfirmation && <em>Время будет предварительным до проверки администратором</em>}</span><Check aria-hidden />
       </label>;
     });
   }
 
-  if (created) {
-    const clarification = created.booking.clarificationRequired, pending = created.booking.confirmationState === "PENDING";
-    const notificationText = created.notification.state === "DELIVERED" ? "Ссылка управления доставлена."
-      : created.notification.state === "QUEUED" ? "Уведомление со ссылкой поставлено в очередь."
-        : created.notification.state === "NOT_AVAILABLE" ? "Автоматический канал уведомлений не настроен — сохраните ссылку ниже."
-          : "Доставка уведомления не подтверждена — сохраните ссылку ниже.";
-    const routeUrl = created.booking.branch.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(created.booking.branch.address)}` : null;
-    return <main className={styles.publicRoot}><section className={styles.successPanel} aria-live="polite">
-      <span className={pending ? styles.pendingSuccessIcon : styles.successIcon}><CheckCircle2 aria-hidden /></span>
-      <h1>{clarification ? "Заявка принята. Свяжемся, чтобы уточнить работы и подтвердить время" : pending ? "Заявка принята. Время предварительное" : "Вы записаны"}</h1>
-      <p>{clarification ? "Администратор поможет уточнить автомобиль и состав работ. До этого время не считается окончательно подтверждённым." : pending ? "Администратор проверит условия работ и подтвердит запись." : "Время закреплено в календаре сервиса."}</p>
-      <div className={styles.confirmationFacts}>
-        <span><CalendarDays aria-hidden /> {bookingDateLabel(created.booking.startsAt, created.booking.branch.timezone)}</span>
-        <span><MapPin aria-hidden /> {[created.booking.branch.name, created.booking.branch.address].filter(Boolean).join(" · ")}</span>
-        <span><Car aria-hidden /> {created.booking.vehicle ? `${created.booking.vehicle.make} ${created.booking.vehicle.model}` : "Автомобиль указан в заявке"}</span>
-        <span><Wrench aria-hidden /> {created.booking.services.map((service) => service.name).join(", ")}</span>
-        <span><Clock3 aria-hidden /> {durationLabel(created.booking.durationMinutes)}</span>
-        <span><UserRound aria-hidden /> Мастер: {created.booking.master?.name ?? "будет назначен"}</span>
-        <span><ShieldCheck aria-hidden /> {pending ? "Ожидает подтверждения" : "Подтверждено"}</span>
-        {created.booking.branch.phone && <span><Phone aria-hidden /> Если планы изменятся: {created.booking.branch.phone}</span>}
-      </div>
-      <p className={styles.deliveryState}>{notificationText}</p>
-      <div className={styles.successActions}>
-        <a className={styles.primaryButton} href={created.managementUrl}>Открыть мою запись <ArrowRight aria-hidden /></a>
-        <button className={styles.secondaryButton} type="button" onClick={() => void copyManagementLink()}><Copy aria-hidden /> {copied ? "Ссылка скопирована" : "Скопировать ссылку"}</button>
-        {routeUrl && <a className={styles.secondaryButton} href={routeUrl} target="_blank" rel="noreferrer"><Navigation aria-hidden /> Построить маршрут</a>}
-      </div>
-      <div className={styles.telegramAction}><strong>Telegram — необязательно</strong><span>Подключите его для сервисных уведомлений. Номер телефона сам по себе Telegram не подключает.</span>
-        {telegramLink ? <a className={styles.secondaryButton} href={telegramLink} target="_blank" rel="noreferrer"><MessageCircle aria-hidden /> Открыть Telegram</a> : <button className={styles.secondaryButton} type="button" disabled={telegramBusy} onClick={() => void prepareTelegramLink()}>{telegramBusy ? <LoaderCircle className={styles.searchSpinner} aria-hidden /> : <MessageCircle aria-hidden />} Подключить Telegram</button>}
-        {telegramError && <small role="alert">{telegramError}</small>}
-      </div>
-      <small>Персональная ссылка открывает только эту запись. Не пересылайте её посторонним.</small>
-    </section></main>;
-  }
+  if (created) return <main className={styles.publicRoot}><PublicBookingHeader secureLink /><section className={styles.recordShell}><BookingRecordCard booking={created.booking} managementUrl={created.managementUrl} title="Вы записаны" /></section></main>;
 
   return <main className={styles.publicRoot}>
-    <header className={styles.publicHeader}><a className={styles.brand} href="/client-site" aria-label="Там где масло — на главную"><Image src="/brand/logo-wordmark-white.svg" width={204} height={30} priority alt="Там где масло." /></a><div className={styles.headerActions}><a href="/client-site">На сайт</a><ShieldCheck aria-hidden /><span>Онлайн-запись<br /><small>без звонка и регистрации</small></span></div></header>
+    <PublicBookingHeader />
     <section className={styles.bookingShell}>
       {step === 1 ? <div className={styles.intro}><div><span className={styles.bookingKicker}>Онлайн-запись · Калининград</span><h1>Запись в сервис за несколько минут.</h1><p>Выберите филиал — покажем его услуги, график и действительно свободное время.</p></div><div className={styles.introProof} aria-label="Условия онлайн-записи"><span>Без звонка</span><span>Свободные окна</span><span>Оплата в сервисе</span></div></div> : branch ? <div className={styles.branchContext}><div><small>Онлайн-запись · Калининград</small><strong>{[branch.name, branch.address].filter(Boolean).join(" · ")}</strong><span>{branchHoursLabel(branch.workingHours)}</span></div><button className={styles.secondaryButton} type="button" onClick={openBranchChooser}>Изменить</button></div> : null}
       <div className={styles.progressHeader}><nav className={styles.steps} aria-label="Шаги записи">{flowSteps.map((item, index) => <button type="button" key={item.step} className={item.step === step ? styles.activeStep : item.step < step ? styles.doneStep : ""} disabled={item.step > step} onClick={() => item.step < step && setStep(item.step)}><span>{item.step < step ? <Check aria-hidden /> : index + 1}</span>{item.label}</button>)}</nav><div className={styles.mobileProgress}><div><strong>{flowSteps.find((item) => item.step === step)?.label}</strong><span>{flowPosition} из {flowSteps.length}</span></div><i><span style={{ transform: `scaleX(${flowPosition / flowSteps.length})` }} /></i></div></div>
       <div className={styles.workspace}><section className={styles.stage}>
-        {step > 1 && selectedServices.length > 0 && <div className={styles.mobileSummary}><Wrench aria-hidden /><span><strong>Выбрано: {selectedServices.length} {selectedServices.length === 1 ? "услуга" : "услуги"} · {durationLabel(totalDuration)}</strong><small>{selectedServices.map((service) => service.customerName).join(", ")}</small></span></div>}
+        {step > 1 && branch && <details className={styles.mobileSummary}><summary><span><strong>Ваша запись</strong><small>{selectedServices.length ? `${selectedServices.length} ${selectedServices.length === 1 ? "услуга" : "услуги"} · ${durationLabel(totalDuration)}` : branch.name}</small></span><ChevronDown aria-hidden /></summary><div><p><b>Филиал</b><span>{branch.name}{branch.address ? ` · ${branch.address}` : ""}</span></p>{selectedServices.length > 0 && <p><b>Услуги</b><span>{selectedServices.map((service) => service.customerName).join(", ")}</span></p>}{selectedSlot && <p><b>Время</b><span>{dateLabel(localDate)}, {selectedSlot.localTime} · {selectedSlot.master.name}</span></p>}{(make || model) && <p><b>Автомобиль</b><span>{[make, model].filter(Boolean).join(" ")}</span></p>}{selectedServices.length > 0 && <CostSummary compact />}</div></details>}
         {loading ? <div className={styles.skeleton}><i /><i /><i /></div> : <div className={styles.stageBody}>
           {step === 1 && <><div className={styles.stageHeading}><MapPin aria-hidden /><div><h2>Куда вы хотите приехать?</h2><p>У каждого филиала свой график и свободные окна.</p></div></div>{branchLinkError && <div className={styles.warning} role="alert">{branchLinkError}</div>}<div className={styles.choiceList}>{branches.map((item) => <label key={item.id} className={item.id === branchId ? styles.selectedChoice : ""}><input type="radio" name="branch" checked={item.id === branchId} onChange={() => chooseBranch(item.id)} /><span><strong>{item.name}</strong>{item.address && <small>{item.address}</small>}<small>{branchHoursLabel(item.workingHours)}</small></span><Check aria-hidden /></label>)}{!branches.length && <div className={styles.empty}>Онлайн-запись пока не открыта ни в одном филиале.</div>}</div></>}
-          {step === 2 && <><div className={styles.stageHeading}><Wrench aria-hidden /><div><h2>Что нужно сделать?</h2><p>Можно выбрать несколько работ. Длительность берём из настроек филиала.</p></div></div><div className={styles.serviceCatalog}>{SERVICE_GROUPS.map((group) => { const count = services.filter((service) => service.group === group.key).length; if (!count) return null; return group.key === "other" ? <details className={styles.serviceGroupDetails} key={group.key}><summary><span><strong>{group.title}</strong><small>{group.intro} · {count}</small></span><ChevronDown aria-hidden /></summary><div className={styles.serviceList}>{serviceRows(group.key)}</div></details> : <section className={styles.serviceGroup} key={group.key}><div className={styles.groupHeading}><strong>{group.title}</strong><span>{group.intro}</span></div><div className={styles.serviceList}>{serviceRows(group.key)}</div></section>; })}{servicesLoading ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : !services.length && <div className={styles.empty}>Для этого филиала пока нет опубликованных услуг с настроенной длительностью.{branch?.phone ? <> Позвоните: <a href={`tel:${branch.phone.replace(/[^+\d]/g, "")}`}>{branch.phone}</a>.</> : null}</div>}</div>{serviceIds.length > 0 && <div className={styles.selectionTotals}><div><Clock3 aria-hidden /><span><strong>{selectedServices.length} {selectedServices.length === 1 ? "услуга" : "услуги"} · {durationLabel(totalDuration)}</strong><small>{requiresConfirmation ? "После отправки потребуется подтверждение." : "Время закрепится после отправки формы."}</small></span></div><CostSummary compact /></div>}</>}
-          {step === 3 && <><div className={styles.stageHeading}><CalendarDays aria-hidden /><div><h2>Когда вам удобно?</h2><p>{branch ? timezoneLabel(branch.timezone) : "Время филиала"}. Имя мастера указано как дополнительная информация.</p></div></div><label className={styles.dateField}><span>Дата визита</span><input type="date" value={localDate} min={branch ? branchToday(branch.timezone) : undefined} max={branch ? maxBookingDate(branch) : undefined} onChange={(event) => chooseDate(event.target.value)} /></label>{slotNotice && <div className={styles.warning} role="status">{slotNotice}</div>}{availabilityError && <div className={styles.errorInline} role="alert"><strong>Не удалось загрузить расписание</strong><span>{availabilityError}</span><button type="button" onClick={() => void loadAvailability()}>Повторить</button></div>}<div className={styles.slotHeader}><strong>{dateLabel(localDate)}</strong><button type="button" onClick={() => void loadAvailability()} disabled={availabilityLoading}>Обновить</button></div>{availabilityLoading ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : availability?.slots.length ? <div className={styles.slotGrid}>{availability.slots.map((slot) => <button type="button" key={`${slot.startsAt}-${slot.master.membershipId}`} className={selectedSlot?.startsAt === slot.startsAt && selectedSlot.master.membershipId === slot.master.membershipId ? styles.selectedSlot : ""} onClick={() => { setSelectedSlot(slot); setSlotNotice(""); setFormError(""); }}><strong>{slot.localTime}</strong><span>Мастер {slot.master.name}</span></button>)}</div> : availability ? <div className={styles.empty}>{availabilityMessage(availability)}</div> : null}{!availabilityLoading && nearestDays.length > 0 && <div className={styles.nearestDays}><strong>Ближайшие даты со свободным временем</strong><div>{nearestDays.map((day) => <button type="button" key={day.localDate} onClick={() => chooseDate(day.localDate)}><CalendarDays aria-hidden /><span>{dateLabel(day.localDate)}<small>с {day.slots[0]?.localTime} · {day.slots.length} вариант(а)</small></span></button>)}</div></div>}{nearestLoading && <div className={styles.neutralNotice}><LoaderCircle className={styles.searchSpinner} aria-hidden /> Ищем ближайшие даты…</div>}{!availabilityLoading && availability && !availability.slots.length && <button className={styles.textButton} type="button" onClick={openBranchChooser}>Выбрать другой филиал</button>}</>}
-          {step === 4 && <><div className={styles.stageHeading}><Car aria-hidden /><div><h2>Автомобиль и контакты</h2><p>Укажите данные для этой записи. Сохранённые автомобили по одному номеру телефона не показываем.</p></div></div><div className={styles.sectionLead}><strong>Автомобиль</strong><span>Обязательные для выбранных работ поля отмечены звёздочкой.</span></div>
+          {step === 2 && <><div className={styles.stageHeading}><Wrench aria-hidden /><div><h2>Что нужно сделать?</h2><p>Можно выбрать несколько услуг</p></div></div><div className={styles.serviceCatalog}>{SERVICE_GROUPS.map((group) => { const count = services.filter((service) => service.group === group.key).length; if (!count) return null; return <section className={styles.serviceGroup} key={group.key}><div className={styles.groupHeading}><strong>{group.title}</strong>{count > 1 && <span>{group.intro}</span>}</div><div className={styles.serviceList}>{serviceRows(group.key)}</div></section>; })}{servicesLoading ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : !services.length && <div className={styles.empty}>Для этого филиала пока нет опубликованных услуг с настроенной длительностью.{branch?.phone ? <> Позвоните: <a href={`tel:${branch.phone.replace(/[^+\d]/g, "")}`}>{branch.phone}</a>.</> : null}</div>}</div>{serviceIds.length > 0 && <div className={styles.selectionTotals}><div><Clock3 aria-hidden /><span><strong>{selectedServices.length} {selectedServices.length === 1 ? "услуга" : "услуги"} · {durationLabel(totalDuration)}</strong><small>{requiresConfirmation ? "После отправки потребуется подтверждение." : "Время закрепится после отправки формы."}</small></span></div><CostSummary compact /></div>}</>}
+          {step === 3 && <><div className={styles.stageHeading}><CalendarDays aria-hidden /><div><h2>Когда вам удобно?</h2><p>{branch ? timezoneLabel(branch.timezone) : "Время филиала"}</p></div></div><label className={styles.dateField}><span>Дата визита</span><input type="date" value={localDate} min={branch ? branchToday(branch.timezone) : undefined} max={branch ? maxBookingDate(branch) : undefined} onChange={(event) => chooseDate(event.target.value)} /></label>{slotNotice && <div className={styles.warning} role="status">{slotNotice}</div>}{availabilityError && <div className={styles.errorInline} role="alert"><strong>Не удалось загрузить расписание</strong><span>{availabilityError}</span><button type="button" onClick={() => void loadAvailability()}>Повторить</button></div>}<div className={styles.slotHeader}><strong>{dateLabel(localDate)}</strong><button type="button" onClick={() => void loadAvailability()} disabled={availabilityLoading}>Обновить</button></div>{availabilityLoading ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : availability?.slots.length ? <><div className={styles.slotGrid}>{availability.slots.map((slot) => <button type="button" key={`${slot.startsAt}-${slot.master.membershipId}`} className={selectedSlot?.startsAt === slot.startsAt && selectedSlot.master.membershipId === slot.master.membershipId ? styles.selectedSlot : ""} onClick={() => { setSelectedSlot(slot); setSlotNotice(""); setFormError(""); }}><strong>{slot.localTime}</strong>{visibleMasterNames.size > 1 && <span>{slot.master.name}</span>}</button>)}</div>{selectedSlot && <p className={styles.selectedSlotNote}>Выбрано: <strong>{selectedSlot.localTime}</strong> · {selectedSlot.master.name}</p>}</> : availability ? <div className={styles.empty}>{availabilityMessage(availability)}</div> : null}{!availabilityLoading && nearestDays.length > 0 && <div className={styles.nearestDays}><strong>Ближайшие даты со свободным временем</strong><div>{nearestDays.map((day) => <button type="button" key={day.localDate} onClick={() => chooseDate(day.localDate)}><CalendarDays aria-hidden /><span>{dateLabel(day.localDate)}<small>с {day.slots[0]?.localTime} · {day.slots.length} вариант(а)</small></span></button>)}</div></div>}{nearestLoading && <div className={styles.neutralNotice}><LoaderCircle className={styles.searchSpinner} aria-hidden /> Ищем ближайшие даты…</div>}{!availabilityLoading && availability && !availability.slots.length && <button className={styles.textButton} type="button" onClick={openBranchChooser}>Выбрать другой филиал</button>}</>}
+          {step === 4 && <><div className={styles.stageHeading}><Car aria-hidden /><div><h2>Автомобиль и контакты</h2><p>Укажите автомобиль и контакты для связи</p></div></div><div className={styles.sectionLead}><strong>Автомобиль</strong><span>Обязательные для выбранных работ поля отмечены звёздочкой.</span></div>
             <div className={styles.formGrid}><label><span>Марка *</span><input value={make} aria-invalid={Boolean(fieldErrors.make)} onChange={(event) => { setMake(event.target.value); clearFieldError("make"); }} autoComplete="organization" placeholder="BMW" />{fieldErrors.make && <small className={styles.fieldError}>{fieldErrors.make}</small>}</label><label><span>Модель *</span><input value={model} aria-invalid={Boolean(fieldErrors.model)} onChange={(event) => { setModel(event.target.value); clearFieldError("model"); }} placeholder="X5" />{fieldErrors.model && <small className={styles.fieldError}>{fieldErrors.model}</small>}</label>{(requiredFields.has("year") || year) && <label><span>Год {requiredFields.has("year") ? "*" : ""}</span><input value={year} aria-invalid={Boolean(fieldErrors.year)} onChange={(event) => { setYear(event.target.value.replace(/\D/g, "").slice(0, 4)); clearFieldError("year"); }} inputMode="numeric" placeholder="2020" />{fieldErrors.year && <small className={styles.fieldError}>{fieldErrors.year}</small>}</label>}{(requiredFields.has("plate") || plate) && <label><span>Госномер {requiredFields.has("plate") ? "*" : ""}</span><input value={plate} aria-invalid={Boolean(fieldErrors.plate)} onChange={(event) => { setPlate(event.target.value.toUpperCase()); clearFieldError("plate"); }} placeholder="А123АА39" />{fieldErrors.plate && <small className={styles.fieldError}>{fieldErrors.plate}</small>}</label>}{(requiredFields.has("vin") || vin) && <label className={styles.wideField}><span>VIN {requiredFields.has("vin") && !needsVinHelp ? "*" : ""}</span><input value={vin} disabled={needsVinHelp} aria-invalid={Boolean(fieldErrors.vin)} onChange={(event) => { setVin(event.target.value.toUpperCase().replace(/\s/g, "").slice(0, 17)); clearFieldError("vin"); }} autoCapitalize="characters" autoComplete="off" placeholder="17 символов" /><small>VIN нужен, чтобы точно подобрать масло, фильтры и уточнить состав работ.</small>{fieldErrors.vin && <small className={styles.fieldError}>{fieldErrors.vin}</small>}</label>}</div>
             {requiresVin && <label className={needsVinHelp ? `${styles.helpChoice} ${styles.helpChoiceSelected}` : styles.helpChoice}><input type="checkbox" checked={needsVinHelp} onChange={(event) => { setNeedsVinHelp(event.target.checked); clearFieldError("vin"); }} /><span><strong>Не знаю VIN / нужна помощь с подбором</strong><small>Создадим заявку на уточнение. Администратор свяжется с вами, а время будет подтверждено после уточнения.</small></span></label>}
             {!requiresVin && !requiredFields.has("plate") && !requiredFields.has("year") && <details className={styles.vehicleDetails}><summary><ChevronDown aria-hidden /><span><strong>Добавить VIN, госномер или год</strong><small>Необязательно для выбранных работ</small></span></summary><div className={`${styles.formGrid} ${styles.vehicleOptionalFields}`}><label><span>Год</span><input value={year} onChange={(event) => setYear(event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" /></label><label><span>Госномер</span><input value={plate} onChange={(event) => setPlate(event.target.value.toUpperCase())} /></label><label className={styles.wideField}><span>VIN</span><input value={vin} onChange={(event) => setVin(event.target.value.toUpperCase().replace(/\s/g, "").slice(0, 17))} /></label></div></details>}
@@ -435,9 +401,9 @@ export default function BookingClient() {
         </div>}
         {formError && <div className={styles.error} role="alert">{formError}</div>}
         {!loading && <div className={styles.footerSpacer} aria-hidden />}
-        {!loading && <footer className={styles.stageFooter}>{(step > 2 || (step === 2 && !enteredByBranchLink)) ? <button className={styles.secondaryButton} type="button" onClick={() => { setFormError(""); setStep((current) => current - 1); }}><ArrowLeft aria-hidden /> Назад</button> : <span />}{step < 4 ? <button className={styles.primaryButton} type="button" onClick={goNext}>Продолжить <ArrowRight aria-hidden /></button> : <button className={styles.primaryButton} type="button" disabled={submitBusy || submissionUnknown} onClick={() => void submitBooking()}>{submitBusy ? <LoaderCircle className={styles.searchSpinner} aria-hidden /> : null} {needsVinHelp ? "Отправить заявку" : "Записаться"} <ArrowRight aria-hidden /></button>}</footer>}
+        {!loading && <footer className={styles.stageFooter}>{(step > 2 || (step === 2 && !enteredByBranchLink)) ? <button className={styles.secondaryButton} type="button" onClick={() => { setFormError(""); setStep((current) => current - 1); }}><ArrowLeft aria-hidden /> Назад</button> : <span />}{step < 4 ? <button className={styles.primaryButton} type="button" disabled={!canContinue} onClick={goNext}>Продолжить <ArrowRight aria-hidden /></button> : <button className={styles.primaryButton} type="button" disabled={submitBusy || submissionUnknown} onClick={() => void submitBooking()}>{submitBusy ? <><LoaderCircle className={styles.searchSpinner} aria-hidden /> Создаём запись…</> : <>{needsVinHelp ? "Отправить заявку" : "Записаться"} <ArrowRight aria-hidden /></>}</button>}</footer>}
       </section>
-      <aside className={styles.summary}><h2>Ваша запись</h2><dl><div><dt><MapPin aria-hidden /> Филиал</dt><dd>{branch?.name ?? "Не выбран"}{branch?.address && <small>{branch.address}</small>}{branch && <button className={styles.textButton} type="button" onClick={openBranchChooser}>Изменить</button>}</dd></div><div><dt><Wrench aria-hidden /> Работы</dt><dd>{selectedServices.length ? selectedServices.map((service) => service.customerName).join(", ") : "Не выбраны"}{totalDuration > 0 && <small>{durationLabel(totalDuration)}</small>}{selectedServices.length > 0 && step > 2 && <button className={styles.textButton} type="button" onClick={() => setStep(2)}>Изменить</button>}</dd></div><div><dt><Clock3 aria-hidden /> Время</dt><dd>{selectedSlot ? <>{dateLabel(localDate)}, {selectedSlot.localTime}<small>Мастер: {selectedSlot.master.name}</small>{step > 3 && <button className={styles.textButton} type="button" onClick={() => setStep(3)}>Изменить</button>}</> : "Не выбрано"}</dd></div><div><dt><Car aria-hidden /> Автомобиль</dt><dd>{make || model ? [make, model].filter(Boolean).join(" ") : "Укажете после выбора времени"}</dd></div></dl>{selectedServices.length > 0 && <CostSummary />}<p><ShieldCheck aria-hidden /> Данные передаются в систему выбранного филиала. Оплата на сайте не требуется.</p></aside>
+      <aside className={styles.summary}><h2>Ваша запись</h2><dl>{branch && <div><dt><MapPin aria-hidden /> Филиал <button className={styles.inlineChange} type="button" onClick={openBranchChooser}>Изменить</button></dt><dd>{branch.name}{branch.address && <small>{branch.address}</small>}</dd></div>}{selectedServices.length > 0 && <div><dt><Wrench aria-hidden /> Услуги {step > 2 && <button className={styles.inlineChange} type="button" onClick={() => setStep(2)}>Изменить</button>}</dt><dd>{selectedServices.map((service) => service.customerName).join(", ")}<small>{durationLabel(totalDuration)}</small></dd></div>}{selectedSlot && <div><dt><Clock3 aria-hidden /> Время {step > 3 && <button className={styles.inlineChange} type="button" onClick={() => setStep(3)}>Изменить</button>}</dt><dd>{dateLabel(localDate)}, {selectedSlot.localTime}<small>{selectedSlot.master.name}</small></dd></div>}{(make || model) && <div><dt><Car aria-hidden /> Автомобиль</dt><dd>{[make, model].filter(Boolean).join(" ")}</dd></div>}</dl>{selectedServices.length > 0 && <CostSummary />}<p>Оплата производится в сервисе.</p></aside>
       </div>
     </section>
   </main>;

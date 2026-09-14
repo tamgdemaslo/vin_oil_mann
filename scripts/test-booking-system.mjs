@@ -20,6 +20,7 @@ const journalWindows = await jiti.import("../src/lib/booking/journal-windows.ts"
 const journalTime = await jiti.import("../src/lib/booking/journal-time.ts");
 const publicLinks = await jiti.import("../src/lib/booking/public-link.ts");
 const publicServicePresentation = await jiti.import("../src/lib/booking/public-service-presentation.ts");
+const customerName = await jiti.import("../src/lib/booking/customer-name.ts");
 const bookingIdempotency = await jiti.import("../src/lib/booking/idempotency.ts");
 const { getBookingAvailability } = await jiti.import("../src/lib/booking/availability.ts");
 const bookingAccess = await jiti.import("../src/lib/booking/access.ts");
@@ -50,8 +51,16 @@ assert.deepEqual(
   { customerName: "Замена моторного масла", customerDescription: "С заменой масляного фильтра.", group: "engine" },
 );
 assert.equal(publicServicePresentation.publicServicePresentation("Замена масла в DSG").group, "transmission");
-assert.equal(publicServicePresentation.publicServicePresentation("Выставление уровня АКПП").group, "other");
+assert.equal(publicServicePresentation.publicServicePresentation("Выставление уровня АКПП").group, "transmission");
+assert.equal(publicServicePresentation.publicServicePresentation("Замена масла в МКПП").group, "transmission");
+assert.equal(publicServicePresentation.publicServicePresentation("Замена масла в заднем редукторе").group, "transmission");
+assert.equal(publicServicePresentation.publicServicePresentation("Замена масла в муфте Haldex").group, "transmission");
 assert.equal(publicServicePresentation.publicServicePresentation("Замена тормозной жидкости").group, "fluids");
+assert.equal(customerName.isValidBookingCustomerName("11111"), false);
+assert.equal(customerName.isValidBookingCustomerName("   "), false);
+assert.equal(customerName.isValidBookingCustomerName("О'Коннор"), true);
+assert.equal(customerName.isValidBookingCustomerName("Анна-Мария"), true);
+assert.equal(customerName.isValidBookingCustomerName("李雷"), true);
 
 const idempotencyKey = "550e8400-e29b-41d4-a716-446655440000";
 assert.equal(
@@ -469,14 +478,24 @@ assert.match(publicBookingClient, /totalDuration, timezone/);
 assert.match(publicBookingClient, /submissionUnknown/);
 assert.match(publicBookingClient, /\/api\/public\/booking\/status/);
 assert.doesNotMatch(publicBookingClient, /\/время\|слот\|занят\//);
-assert.match(publicBookingClient, /Заявка принята\. Время предварительное/);
 assert.match(publicBookingClient, /sessionStorage/);
-assert.match(publicBookingClient, /Масло и расходники отдельно/);
+assert.doesNotMatch(publicBookingClient, /Масло и расходники отдельно/);
 assert.match(publicBookingClient, /Стоимость уточним по автомобилю/);
 assert.match(publicBookingClient, /Не знаю VIN \/ нужна помощь с подбором/);
 assert.match(publicBookingClient, /needsVehicleClarification/);
 assert.match(publicBookingClient, /Время Калининграда/);
 assert.doesNotMatch(publicBookingClient, /Адрес уточняется/);
+assert.doesNotMatch(publicBookingClient, /Длительность берём из настроек филиала/);
+assert.doesNotMatch(publicBookingClient, /Имя мастера указано как дополнительная информация/);
+assert.doesNotMatch(publicBookingClient, /Сохранённые автомобили по одному номеру телефона не показываем/);
+assert.doesNotMatch(publicBookingClient, /Открыть мою запись/);
+assert.match(publicBookingClient, /BookingRecordCard/);
+
+const bookingRecordCard = source("src/app/booking/BookingRecordCard.tsx");
+assert.match(bookingRecordCard, /Время предварительное/);
+assert.match(bookingRecordCard, /Получайте напоминания о визите в Telegram/);
+assert.match(bookingRecordCard, /Напоминания в Telegram подключены/);
+assert.match(bookingRecordCard, /Скопировать персональную ссылку/);
 
 const publicServices = source("src/app/api/public/booking/services/route.ts");
 assert.match(publicServices, /salePriceCents/);
@@ -492,6 +511,7 @@ assert.match(publicBranches, /resolveBookingWorkingHours/);
 const telegramBookingLink = source("src/app/api/public/booking/manage/[token]/telegram-link/route.ts");
 assert.match(telegramBookingLink, /getBookingByManagementToken/);
 assert.match(telegramBookingLink, /createClientTelegramLinkToken/);
+assert.match(telegramBookingLink, /publicBookingTelegramState/);
 
 const publicManageClient = source("src/app/booking/manage/[token]/ManageBookingClient.tsx");
 assert.match(publicManageClient, /"loading" \| "loaded" \| "not_found" \| "error"/);
@@ -503,6 +523,7 @@ assert.match(publicManageClient, /setSelectedSlot\(null\)/);
 assert.match(publicManageClient, />Было</);
 assert.match(publicManageClient, />Станет</);
 assert.match(publicManageClient, /Новое время предварительное/);
+assert.match(publicManageClient, /BookingRecordCard/);
 
 const bookingManagementSettings = source("src/app/management/booking/BookingSettingsClient.tsx");
 assert.match(bookingManagementSettings, /publicBookingPath\(state\.branch\.id\)/);

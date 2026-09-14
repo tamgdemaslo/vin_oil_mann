@@ -403,6 +403,230 @@
   .publicRoot *, .publicRoot *::before, .publicRoot *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
+/* Keep compact rules last in the cascade after the client-site brand layer. */
+.publicHeader { min-height: 64px; padding-top: 11px; padding-bottom: 11px; }
+.bookingShell { width: min(1180px, calc(100% - 40px)); padding: 32px 0 72px; }
+.intro { grid-template-columns: minmax(0, 1fr) auto; gap: 32px; margin-bottom: 22px; padding-bottom: 22px; }
+.intro h1 { max-width: 680px; font-size: 44px; line-height: 1; }
+.introProof { max-width: 420px; padding: 14px 18px; }
+.branchContext { margin-bottom: 14px; border: 1px solid var(--booking-line); padding: 14px 16px; background: #fff; color: var(--booking-ink); }
+.branchContext small { color: var(--booking-accent); }
+.branchContext strong { font-size: 20px; }
+.branchContext span { color: var(--booking-muted); font-family: inherit; font-size: 13px; }
+.branchContext .secondaryButton { min-height: 40px; border-color: var(--booking-line); background: #fff; color: var(--booking-ink); }
+.steps { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+.steps button { min-height: 50px; }
+.workspace { grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 12px; }
+.stage { min-height: 0; align-self: start; }
+.stageBody { flex: 0 1 auto; padding: 28px 30px; }
+.stageHeading { margin-bottom: 20px; }
+.stageHeading h2 { font-size: 30px; line-height: 1.08; }
+.stageHeading p { margin-top: 6px; font-size: 14px; }
+.stageFooter { margin-top: 0; padding: 14px 30px; }
+.primaryButton, .secondaryButton { min-height: 46px; padding: 0 18px; }
+.choiceList label, .serviceList label, .vehicleList label { min-height: 60px; padding: 12px 14px; }
+.choiceList strong, .serviceList strong, .vehicleList strong { font-size: 15px; line-height: 1.35; }
+.choiceList small, .serviceList small, .vehicleList small { font-size: 13px; }
+.serviceCatalog { gap: 22px; }
+.groupHeading strong { font-size: 18px; }
+.groupHeading span, .priceLine, .selectionTotals span small, .costSummary, .costSummaryCompact { font-size: 13px; }
+.formGrid input, .dateField input { height: 48px; }
+.sectionLead strong { font-size: 18px; }
+.sectionLead span, .formGrid label > small { font-size: 13px; }
+.slotGrid > button { min-height: 54px; justify-content: center; text-align: center; }
+.slotGrid > button strong { font-size: 18px; }
+.slotGrid > button span { overflow: visible; font-size: 12px; line-height: 1.25; text-overflow: clip; white-space: normal; }
+.summary { top: 16px; border: 1px solid var(--booking-line); padding: 22px 20px; background: #f8f5ef; color: var(--booking-ink); }
+.summary h2 { margin-bottom: 10px; font-size: 22px; }
+.summary dl > div { border-bottom: 1px solid var(--booking-line); }
+.summary dt, .summary dd small, .summary > p, .summary .costSummary, .summary .costSummaryCompact { color: var(--booking-muted); }
+.summary dd { color: var(--booking-ink); font-size: 14px; }
+.summary .costSummary { border-top-color: var(--booking-line); }
+.summary .costSummary strong, .summary .costSummaryCompact strong { color: var(--booking-ink); }
+
+@media (max-width: 920px) {
+  .bookingShell { width: min(720px, calc(100% - 28px)); }
+  .workspace { grid-template-columns: 1fr; }
+  .summary { display: none; }
+  .mobileSummary { display: block; border: 1px solid var(--booking-line); padding: 0; background: #f8f5ef; color: var(--booking-ink); }
+  .finalReview { display: none; }
+}
+
+@media (max-width: 560px) {
+  .publicHeader { min-height: 58px; padding: 10px 14px; }
+  .bookingShell { width: 100%; padding: 18px 12px 82px; }
+  .intro { display: grid; grid-template-columns: 1fr; gap: 14px; margin-bottom: 18px; padding-bottom: 18px; }
+  .intro h1 { font-size: 36px; }
+  .intro p { font-size: 14px; }
+  .introProof { display: none; }
+  .branchContext { gap: 10px; margin: 0 0 12px; padding: 12px; }
+  .branchContext strong { font-size: 18px; }
+  .branchContext span { display: block; font-size: 12px; }
+  .branchContext .secondaryButton { min-height: 38px; padding: 0 10px; }
+  .workspace { margin-top: 10px; }
+  .stageBody { padding: 20px 14px; }
+  .stageHeading { margin-bottom: 16px; }
+  .stageHeading h2 { font-size: 26px; }
+  .stageHeading p { font-size: 13px; }
+  .mobileSummary { padding: 0; }
+  .recordShell, .manageShell { width: 100%; padding: 20px 12px 40px; }
+}
+
+/* Compact booking flow and shared appointment card. */
+.publicHeader { min-height: 64px; padding-top: 11px; padding-bottom: 11px; }
+.bookingShell { width: min(1180px, calc(100% - 40px)); padding: 32px 0 72px; }
+.intro { grid-template-columns: minmax(0, 1fr) auto; gap: 32px; margin-bottom: 22px; padding-bottom: 22px; }
+.intro h1 { max-width: 680px; font-size: 44px; line-height: 1; }
+.introProof { max-width: 420px; padding: 14px 18px; }
+.branchContext {
+  margin-bottom: 14px;
+  border: 1px solid var(--booking-line);
+  padding: 14px 16px;
+  background: #fff;
+  color: var(--booking-ink);
+}
+.branchContext small { color: var(--booking-accent); }
+.branchContext strong { font-size: 20px; }
+.branchContext span { color: var(--booking-muted); font-family: inherit; font-size: 13px; }
+.branchContext .secondaryButton { min-height: 40px; border-color: var(--booking-line); background: #fff; color: var(--booking-ink); }
+.branchContext .secondaryButton:hover { border-color: var(--booking-accent); background: #fff7f3; }
+.steps { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+.steps button { min-height: 50px; }
+.workspace { grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 12px; }
+.stage { min-height: 0; align-self: start; }
+.stageBody { flex: 0 1 auto; padding: 28px 30px; }
+.stageHeading { margin-bottom: 20px; }
+.stageHeading h2 { font-size: 30px; line-height: 1.08; }
+.stageHeading p { margin-top: 6px; font-size: 14px; }
+.stageFooter { margin-top: 0; padding: 14px 30px; }
+.primaryButton, .secondaryButton { min-height: 46px; padding: 0 18px; }
+.choiceList label, .serviceList label, .vehicleList label { min-height: 60px; padding: 12px 14px; }
+.choiceList strong, .serviceList strong, .vehicleList strong { font-size: 15px; line-height: 1.35; }
+.choiceList small, .serviceList small, .vehicleList small { font-size: 13px; }
+.serviceCatalog { gap: 22px; }
+.serviceGroup { gap: 8px; }
+.groupHeading strong { font-size: 18px; }
+.groupHeading span { font-size: 13px; }
+.priceLine { font-size: 13px !important; font-weight: 600; }
+.selectionTotals span strong { font-size: 14px; }
+.selectionTotals span small, .costSummary, .costSummaryCompact { font-size: 13px; }
+.formGrid input, .dateField input { height: 48px; }
+.formGrid label > span, .dateField > span { font-size: 11px; }
+.formGrid label > small { font-size: 13px; }
+.sectionLead strong { font-size: 18px; }
+.sectionLead span { font-size: 13px; }
+.dateField { margin-bottom: 16px; }
+.slotGrid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+.slotGrid > button { min-height: 54px; justify-content: center; text-align: center; }
+.slotGrid > button strong { font-size: 18px; }
+.slotGrid > button span { overflow: visible; font-size: 12px; line-height: 1.25; text-overflow: clip; white-space: normal; }
+.selectedSlotNote { margin: 12px 0 0; color: var(--booking-muted); font-size: 13px; }
+.selectedSlotNote strong { color: var(--booking-ink); }
+.summary {
+  top: 16px;
+  border: 1px solid var(--booking-line);
+  padding: 22px 20px;
+  background: #f8f5ef;
+  color: var(--booking-ink);
+}
+.summary h2 { margin-bottom: 10px; font-size: 22px; }
+.summary dl > div { border-bottom: 1px solid var(--booking-line); }
+.summary dt { color: var(--booking-muted); }
+.summary dd { color: var(--booking-ink); font-size: 14px; }
+.summary dd small, .summary > p, .summary .costSummary, .summary .costSummaryCompact { color: var(--booking-muted); }
+.summary .costSummary { border-top-color: var(--booking-line); }
+.summary .costSummary strong, .summary .costSummaryCompact strong { color: var(--booking-ink); }
+.summary > p { font-size: 13px; }
+.inlineChange { margin-left: auto; border: 0; padding: 2px 0; background: transparent; color: var(--booking-accent); font-size: 11px; font-weight: 700; }
+
+.recordShell { width: min(820px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 72px; }
+.recordCard { border: 1px solid var(--booking-line); background: #fff; padding: 30px; color: var(--booking-ink); }
+.recordHeading { padding-bottom: 24px; border-bottom: 1px solid var(--booking-line); }
+.recordHeading > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.recordTitle { color: var(--booking-accent); font: 700 11px/1.2 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .09em; text-transform: uppercase; }
+.recordHeading h1 { margin: 22px 0 4px; font: 700 30px/1.08 "Oswald", "Arial Narrow", sans-serif; letter-spacing: -.015em; }
+.recordTime { display: block; font-size: 27px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.recordFacts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.recordFacts > div { display: grid; align-content: start; gap: 8px; padding: 19px 0; border-bottom: 1px solid var(--booking-line); }
+.recordFacts > div:nth-child(odd) { padding-right: 20px; }
+.recordFacts > div:nth-child(even) { padding-left: 20px; border-left: 1px solid var(--booking-line); }
+.recordFacts .recordServices { grid-column: 1 / -1; padding-right: 0; padding-left: 0; border-left: 0; }
+.recordFacts dt { display: flex; align-items: center; gap: 7px; color: var(--booking-muted); font-size: 12px; font-weight: 700; }
+.recordFacts dt svg { width: 16px; height: 16px; color: var(--booking-accent); }
+.recordFacts dd { display: grid; gap: 4px; margin: 0; font-size: 15px; font-weight: 650; line-height: 1.45; }
+.recordFacts dd small { display: flex; align-items: center; gap: 6px; color: var(--booking-muted); font-size: 13px; font-weight: 450; }
+.recordFacts dd small svg { width: 14px; height: 14px; }
+.recordControls { padding-top: 4px; }
+.recordControls .manageActions { padding-top: 18px; }
+.recordUtilities { display: grid; gap: 12px; margin-top: 18px; border-top: 1px solid var(--booking-line); padding-top: 18px; }
+.textUtility { display: inline-flex; width: fit-content; align-items: center; gap: 7px; border: 0; padding: 3px 0; background: transparent; color: var(--booking-accent); font-size: 13px; font-weight: 700; }
+.textUtility svg { width: 16px; height: 16px; }
+.telegramPrompt { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid var(--booking-line); padding: 13px 14px; background: #f8f5ef; }
+.telegramPrompt > span { font-size: 14px; font-weight: 650; }
+.telegramPrompt button { display: inline-flex; min-height: 40px; flex: 0 0 auto; align-items: center; gap: 7px; border: 1px solid var(--booking-ink); padding: 0 14px; background: var(--booking-ink); color: #fff; font-size: 12px; font-weight: 700; }
+.telegramPrompt button:disabled { cursor: wait; opacity: .6; }
+.telegramState, .telegramConnected, .telegramError { display: flex; align-items: center; gap: 7px; color: var(--booking-muted); font-size: 13px; line-height: 1.4; }
+.telegramConnected { color: var(--booking-success); font-weight: 650; }
+.telegramError { color: #8a2c14; }
+.recordSecurity { display: block; margin-top: 18px; color: var(--booking-muted); font-size: 12px; line-height: 1.45; }
+.dangerButton { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; border-radius: 0; text-decoration: none; }
+.manageRoot { background: var(--booking-bg); }
+.manageShell { width: min(820px, calc(100% - 40px)); padding: 42px 0 72px; }
+.managePanel { border-radius: 0; }
+.managePanel:has(> .recordCard) { border: 0; padding: 0; background: transparent; }
+.manageEditor > p { font-size: 14px; }
+.manageEditor h2 { font: 700 27px/1.1 "Oswald", "Arial Narrow", sans-serif; }
+
+@media (max-width: 920px) {
+  .bookingShell { width: min(720px, calc(100% - 28px)); }
+  .mobileSummary { display: block; border: 1px solid var(--booking-line); padding: 0; background: #f8f5ef; color: var(--booking-ink); }
+  .mobileSummary > summary { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; list-style: none; }
+  .mobileSummary > summary::-webkit-details-marker { display: none; }
+  .mobileSummary > summary > span { display: grid; min-width: 0; flex: 1; gap: 2px; }
+  .mobileSummary > summary strong { font-size: 14px; }
+  .mobileSummary > summary small { overflow: hidden; color: var(--booking-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .mobileSummary > summary > svg { color: var(--booking-muted); transition: transform 180ms ease; }
+  .mobileSummary[open] > summary > svg { transform: rotate(180deg); }
+  .mobileSummary > div { display: grid; gap: 10px; border-top: 1px solid var(--booking-line); padding: 12px 14px; }
+  .mobileSummary p { display: grid; gap: 2px; margin: 0; }
+  .mobileSummary p b { color: var(--booking-muted); font-size: 11px; }
+  .mobileSummary p span { font-size: 13px; line-height: 1.4; }
+  .finalReview { display: none; }
+}
+
+@media (max-width: 560px) {
+  .publicHeader { min-height: 58px; }
+  .bookingShell { width: 100%; padding: 18px 12px 82px; }
+  .intro { display: grid; grid-template-columns: 1fr; gap: 14px; margin-bottom: 18px; padding-bottom: 18px; }
+  .intro h1 { font-size: 36px; }
+  .intro p { font-size: 14px; }
+  .introProof { display: none; }
+  .branchContext { align-items: flex-start; margin-bottom: 12px; padding: 12px; }
+  .branchContext strong { font-size: 18px; }
+  .branchContext span { display: block; font-size: 12px; }
+  .branchContext .secondaryButton { min-height: 38px; padding: 0 10px; }
+  .stageBody { padding: 20px 14px; }
+  .stageHeading { margin-bottom: 16px; }
+  .stageHeading h2 { font-size: 26px; }
+  .stageHeading p { font-size: 13px; }
+  .serviceCatalog { gap: 20px; }
+  .groupHeading strong { font-size: 17px; }
+  .choiceList label, .serviceList label, .vehicleList label { padding: 12px; }
+  .slotGrid > button { min-height: 52px; }
+  .recordShell, .manageShell { width: 100%; padding: 20px 12px 40px; }
+  .recordCard { padding: 20px 16px; }
+  .recordHeading h1 { margin-top: 18px; font-size: 26px; }
+  .recordTime { font-size: 24px; }
+  .recordFacts { grid-template-columns: 1fr; }
+  .recordFacts > div, .recordFacts > div:nth-child(odd), .recordFacts > div:nth-child(even) { padding: 16px 0; border-left: 0; }
+  .recordFacts .recordServices { grid-column: auto; }
+  .manageActions .secondaryButton, .manageActions .dangerButton { flex: 1 1 auto; }
+  .phoneLink { flex-basis: 100%; }
+  .telegramPrompt { align-items: stretch; flex-direction: column; }
+  .telegramPrompt button { justify-content: center; }
+  .managePanel { padding: 20px 16px; }
+}
+
 /* Public booking follows the client-site brand language while keeping the
    Eco-platform booking engine and accessibility semantics intact. */
 .publicRoot {
@@ -704,4 +928,73 @@
 
 @media (prefers-reduced-motion: reduce) {
   .publicRoot *, .publicRoot *::before, .publicRoot *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* Final compact cascade overrides the older visual layer above. */
+.publicHeader { min-height: 64px; padding-top: 11px; padding-bottom: 11px; }
+.bookingShell { width: min(1180px, calc(100% - 40px)); padding: 32px 0 72px; }
+.intro { grid-template-columns: minmax(0, 1fr) auto; gap: 32px; margin-bottom: 22px; padding-bottom: 22px; }
+.intro h1 { max-width: 680px; font-size: 44px; line-height: 1; }
+.introProof { max-width: 420px; padding: 14px 18px; }
+.branchContext { margin-bottom: 14px; border: 1px solid var(--booking-line); padding: 14px 16px; background: #fff; color: var(--booking-ink); }
+.branchContext small { color: var(--booking-accent); }
+.branchContext strong { font-size: 20px; }
+.branchContext span { color: var(--booking-muted); font-family: inherit; font-size: 13px; }
+.branchContext .secondaryButton { min-height: 40px; border-color: var(--booking-line); background: #fff; color: var(--booking-ink); }
+.steps { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+.steps button { min-height: 50px; }
+.workspace { grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 12px; }
+.stage { min-height: 0; align-self: start; }
+.stageBody { flex: 0 1 auto; padding: 28px 30px; }
+.stageHeading { margin-bottom: 20px; }
+.stageHeading h2 { font-size: 30px; line-height: 1.08; }
+.stageHeading p { margin-top: 6px; font-size: 14px; }
+.stageFooter { margin-top: 0; padding: 14px 30px; }
+.primaryButton, .secondaryButton { min-height: 46px; padding: 0 18px; }
+.choiceList label, .serviceList label, .vehicleList label { min-height: 60px; padding: 12px 14px; }
+.choiceList strong, .serviceList strong, .vehicleList strong { font-size: 15px; line-height: 1.35; }
+.choiceList small, .serviceList small, .vehicleList small { font-size: 13px; }
+.serviceCatalog { gap: 22px; }
+.groupHeading strong { font-size: 18px; }
+.groupHeading span, .priceLine, .selectionTotals span small, .costSummary, .costSummaryCompact { font-size: 13px; }
+.formGrid input, .dateField input { height: 48px; }
+.sectionLead strong { font-size: 18px; }
+.sectionLead span, .formGrid label > small { font-size: 13px; }
+.slotGrid > button { min-height: 54px; justify-content: center; text-align: center; }
+.slotGrid > button strong { font-size: 18px; }
+.slotGrid > button span { overflow: visible; font-size: 12px; line-height: 1.25; text-overflow: clip; white-space: normal; }
+.summary { top: 16px; border: 1px solid var(--booking-line); padding: 22px 20px; background: #f8f5ef; color: var(--booking-ink); }
+.summary h2 { margin-bottom: 10px; font-size: 22px; }
+.summary dl > div { border-bottom: 1px solid var(--booking-line); }
+.summary dt, .summary dd small, .summary > p, .summary .costSummary, .summary .costSummaryCompact { color: var(--booking-muted); }
+.summary dd { color: var(--booking-ink); font-size: 14px; }
+.summary .costSummary { border-top-color: var(--booking-line); }
+.summary .costSummary strong, .summary .costSummaryCompact strong { color: var(--booking-ink); }
+
+@media (max-width: 920px) {
+  .bookingShell { width: min(720px, calc(100% - 28px)); }
+  .workspace { grid-template-columns: 1fr; }
+  .summary { display: none; }
+  .mobileSummary { display: block; border: 1px solid var(--booking-line); padding: 0; background: #f8f5ef; color: var(--booking-ink); }
+  .finalReview { display: none; }
+}
+
+@media (max-width: 560px) {
+  .publicHeader { min-height: 58px; padding: 10px 14px; }
+  .bookingShell { width: 100%; padding: 18px 12px 82px; }
+  .intro { display: grid; grid-template-columns: 1fr; gap: 14px; margin-bottom: 18px; padding-bottom: 18px; }
+  .intro h1 { font-size: 36px; }
+  .intro p { font-size: 14px; }
+  .introProof { display: none; }
+  .branchContext { gap: 10px; margin: 0 0 12px; padding: 12px; }
+  .branchContext strong { font-size: 18px; }
+  .branchContext span { display: block; font-size: 12px; }
+  .branchContext .secondaryButton { min-height: 38px; padding: 0 10px; }
+  .workspace { margin-top: 10px; }
+  .stageBody { padding: 20px 14px; }
+  .stageHeading { margin-bottom: 16px; }
+  .stageHeading h2 { font-size: 26px; }
+  .stageHeading p { font-size: 13px; }
+  .mobileSummary { padding: 0; }
+  .recordShell, .manageShell { width: 100%; padding: 20px 12px 40px; }
 }

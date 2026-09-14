@@ -1,10 +1,12 @@
 import { NextRequest } from "next/server";
 import { bookingErrorPayload } from "@/lib/booking/errors";
+import { publicBookingTelegramState } from "@/lib/booking/public-telegram";
 import { getBookingByManagementToken } from "@/lib/booking/service";
 import { createClientTelegramLinkToken } from "@/lib/messenger/messenger-linking";
 import { runWithRequestTenant } from "@/lib/request-tenant-store";
 import {
   checkPublicRateLimit,
+  getPublicBookingReadLimitPerHour,
   getPublicBookingWriteLimitPerHour,
   publicJson,
   publicOptions,
@@ -14,6 +16,23 @@ import {
 
 export async function OPTIONS(request: NextRequest) {
   return publicOptions(request);
+}
+
+export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const originError = rejectDisallowedPublicOrigin(request);
+  if (originError) return originError;
+  const rate = checkPublicRateLimit(request, "booking-telegram-status", Math.min(getPublicBookingReadLimitPerHour(), 80));
+  if (!rate.ok) {
+    return publicJson(request, { error: "Слишком много попыток. Попробуйте позже." }, { status: 429, headers: rateLimitHeaders(rate) });
+  }
+  try {
+    const { token } = await params;
+    const booking = await getBookingByManagementToken(token);
+    return publicJson(request, { telegram: await publicBookingTelegramState(booking) }, { headers: rateLimitHeaders(rate) });
+  } catch (error) {
+    const failure = bookingErrorPayload(error);
+    return publicJson(request, failure.body, { status: failure.status, headers: rateLimitHeaders(rate) });
+  }
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {

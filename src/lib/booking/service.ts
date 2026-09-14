@@ -11,6 +11,7 @@ import {
 } from "./constants";
 import { BookingError } from "./errors";
 import { getBookingAvailability } from "./availability";
+import { isValidBookingCustomerName } from "./customer-name";
 import { publicBookingIdempotencyAuditId } from "./idempotency";
 import { createManagementHandle, createManagementToken, verifyManagementToken } from "./management-token";
 import { formatLocalDate, formatLocalTime, localTimeToMinutes } from "./timezone";
@@ -423,7 +424,9 @@ export const BOOKING_INCLUDE = {
 export async function createBooking(input: CreateBookingInput, actor: BookingActor) {
   const customerName = input.customerName?.trim();
   const normalizedPhone = normalizePhoneKey(input.phone);
-  if (!customerName) throw new BookingError("Укажите имя клиента", "booking_customer_name_required");
+  if (!isValidBookingCustomerName(customerName)) {
+    throw new BookingError("Укажите, как к вам обращаться", "booking_customer_name_required");
+  }
   if (!normalizedPhone) throw new BookingError("Укажите корректный телефон", "booking_phone_invalid");
   if (!input.branchId) throw new BookingError("Филиал не указан", "booking_branch_required");
   if (!input.masterMembershipId) throw new BookingError("Мастер не выбран", "booking_master_required");

@@ -6,9 +6,9 @@ export type PublicServicePresentation = {
   group: PublicServiceGroup;
 };
 
-const OTHER_WORKS = /(?:выставление\s+уровня|диагностик|сброс\s+сервисного|редуктор|haldex|раздаточн)/iu;
+const OTHER_WORKS = /(?:диагностик|сброс\s+сервисного)/iu;
 const ENGINE_OIL = /(?:замена.*моторного\s+масла|масло.*двигател)/iu;
-const TRANSMISSION = /(?:замена.*(?:акпп|dsg|cvt|вариатор|коробк|трансмис)|(?:акпп|dsg|cvt|вариатор|трансмис).*масл)/iu;
+const TRANSMISSION = /(?:акпп|мкпп|dsg|cvt|вариатор|коробк|трансмис|редуктор|haldex|раздаточн)/iu;
 const FLUIDS = /(?:жидкост|антифриз|охлаждающ|тормозн|фильтр|масл)/iu;
 
 export function publicServicePresentation(name: string, description?: string | null): PublicServicePresentation {
