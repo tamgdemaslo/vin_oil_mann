@@ -60114,7 +60114,7 @@ html.tgm-print-active .tgm-client-report .qr {
 
 .eco-telegram-qr-panel {
   display: grid;
-  grid-template-columns: 184px minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 344px) minmax(0, 1fr);
   gap: 14px;
   align-items: start;
   padding: 14px;
@@ -60128,16 +60128,18 @@ html.tgm-print-active .tgm-client-report .qr {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 184px;
-  padding: 10px;
+  min-height: 344px;
+  padding: 12px;
   border: 1px solid var(--eco-line);
   border-radius: 6px;
   background: #fff;
 }
 
 .eco-telegram-qr-panel__image img {
-  width: 160px;
-  height: 160px;
+  display: block;
+  width: min(100%, 320px);
+  height: auto;
+  aspect-ratio: 1;
   object-fit: contain;
 }
 
@@ -60487,7 +60489,7 @@ html.tgm-print-active .tgm-client-report .qr {
   }
 
   .eco-telegram-qr-panel__image {
-    min-height: 172px;
+    min-height: 0;
   }
 
   .eco-messenger-composer__bar {

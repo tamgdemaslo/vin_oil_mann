@@ -99,6 +99,14 @@ expect("src/lib/messenger/channels/telegram-user-session.ts", [
   /claimTelegramWorkerLease/,
   /process\.env\.MESSENGER_CREDENTIAL_ENCRYPTION_KEY/,
   /assertIntegrationEncryptionConfigured\(\)/,
+  /QRCode\.toString/,
+  /type:\s*"svg"/,
+  /margin:\s*4/,
+  /qr_update_received/,
+]);
+expect("src/app/cabinet/integrations/messenger/MessengerIntegrationsClient.tsx", [
+  /width=\{320\}/,
+  /Открыть на этом телефоне/,
 ]);
 
 for (const route of [

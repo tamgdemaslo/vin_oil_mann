@@ -1093,6 +1093,11 @@ function attachQrRuntimeHandler(attempt: TelegramQrRuntimeAttempt) {
   }
   attempt.client.addEventHandler((update: unknown) => {
     if (!containsTelegramLoginTokenUpdate(update)) return;
+    logAuthAttempt({
+      action: "qr_update_received",
+      attemptId: attempt.attemptId,
+      accountId: attempt.accountId,
+    });
     attempt.finalizing = finalizeQrRuntimeAttempt(attempt).catch((error) => {
       attempt.status = "error";
       attempt.error = safeError(error, "QR Telegram не подтверждён");
@@ -1495,11 +1500,14 @@ function loginTokenUrl(token: unknown) {
 
 async function qrImageDataUrl(value: string) {
   const QRCode = await import("qrcode");
-  return QRCode.toDataURL(value, {
-    margin: 1,
-    scale: 6,
+  const svg = await QRCode.toString(value, {
+    type: "svg",
+    margin: 4,
+    width: 320,
     errorCorrectionLevel: "M",
+    color: { dark: "#000000", light: "#ffffff" },
   });
+  return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
 }
 
 function loginTokenPayload(result: unknown) {

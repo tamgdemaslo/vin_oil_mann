@@ -770,7 +770,7 @@ export default function MessengerIntegrationsClient() {
           {qrLogin && (
             <div className="eco-telegram-qr-panel">
               <div className="eco-telegram-qr-panel__image">
-                <Image src={qrLogin.imageDataUrl} alt="QR для подключения рабочего Telegram" width={160} height={160} unoptimized />
+                <Image src={qrLogin.imageDataUrl} alt="QR для подключения рабочего Telegram" width={320} height={320} unoptimized />
               </div>
               <div className="eco-telegram-qr-panel__body">
                 <div className="eco-page-kicker">QR владельца</div>
@@ -786,6 +786,10 @@ export default function MessengerIntegrationsClient() {
                     <RefreshCw size={16} />
                     Обновить QR
                   </EcoButton>
+                  <a href={qrLogin.loginUrl} className="eco-btn eco-btn--ghost">
+                    <Smartphone size={16} />
+                    Открыть на этом телефоне
+                  </a>
                 </div>
                 {qrLogin.expiresAt && <small>QR действителен до {formatServiceDateTime(qrLogin.expiresAt)} и обновляется при проверке.</small>}
               </div>
