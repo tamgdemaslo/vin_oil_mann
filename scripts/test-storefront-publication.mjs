@@ -179,6 +179,7 @@ assert.match(clientApp, /retry=\$\{imageAttempt\}/u, "storefront image retries b
 assert.match(clientApp, /\/api\/oils\?limit=24&offset=0/u, "the first catalog response is intentionally small");
 assert.match(clientApp, /requestIdleCallback/u, "remaining catalog pages wait until initial rendering is idle");
 assert.match(clientApp, /catalogLoadingMore \? `\$\{count\}\+` : count/u, "facet counts must not look final while catalog pages are still loading");
+assert.match(clientApp, /Замена масла включена/u, "every storefront oil card states that the oil change is included");
 assert.match(clientApp, /window\.history\.pushState/u, "client-site links use real browser paths");
 assert.doesNotMatch(clientApp, /window\.location\.hash\s*=/u, "new navigation must not create legacy hash URLs");
 assert.match(clientCatchAllPage, /initialPath/u, "direct client-site routes preserve their server-known path");

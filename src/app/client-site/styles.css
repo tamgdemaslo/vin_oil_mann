@@ -437,6 +437,29 @@ button:disabled {
   display: block;
 }
 
+.shop-card__included-service {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--rust);
+  color: var(--paper);
+  font-family: var(--f-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.shop-card__included-service > span:first-child {
+  font-size: 13px;
+  line-height: 1;
+}
+
 @media (min-width: 901px) and (max-width: 1320px) {
   .shop-product-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
