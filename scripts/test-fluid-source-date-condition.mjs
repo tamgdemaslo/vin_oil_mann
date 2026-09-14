@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {createJiti} from 'jiti';
+const {extractFluidSourceDateCondition:extract}=await createJiti(import.meta.url).import('../src/lib/fluid-source-date-condition.ts');
+const label=text=>`ОХЛАЖДАЮЩАЯ ЖИДКОСТЬ Модели: ${text}`;
+assert.equal(extract(label('до 11. 02. 2019')).to,'2019-01');
+assert.equal(extract(label('ДО 11. 02. 2019')).to,'2019-01');
+assert.equal(extract(label('после 11. 02. 2019')).from,'2019-03');
+assert.equal(extract(label('c 11. 02. 2019')).unresolvedBoundaryMonth,'2019-02');
+assert.equal(extract(label('с 01. 08. 2018')).from,'2018-08');
+assert.equal(extract(label('с 01. 08. 2018')).unresolvedBoundaryMonth,null);
+assert.equal(extract(label('после 31. 12. 2018')).from,'2019-01');
+assert.equal(extract(label('до 01. 01. 2019')).to,'2018-12');
+assert.equal(extract(label('до 31. 02. 2019')).status,'INVALID_DATE');
+assert.equal(extract(label('до 29. 02. 2020')).status,'FULL_MONTH_SCOPE');
+assert.equal(extract(label('до 11. 02. 2019 только АКПП')),null);
+console.log('Literal source dates: strict grammar, real dates, month boundaries and no day inference passed');

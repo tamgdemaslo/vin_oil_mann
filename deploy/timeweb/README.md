@@ -21,8 +21,10 @@ or connect to a production host.
 Set production values as App Platform variables. At minimum the application
 requires `DEPLOYMENT_PROVIDER=timeweb`, `DATABASE_URL`, `APP_ORIGIN`, and
 `MESSENGER_CREDENTIAL_ENCRYPTION_KEY`; use `.env.example` as the complete
-variable inventory. The encryption key is required for branch-scoped AQSI,
-Telegram, ROSSKO, and T-Bank credentials. `OPENAI_API_KEY` is a server-side
+variable inventory. Working Telegram QR authorization additionally requires the
+shared backend application identity `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`.
+Telegram account sessions remain isolated per branch. The encryption key is
+required for branch-scoped AQSI, Telegram sessions, ROSSKO, and T-Bank credentials. `OPENAI_API_KEY` is a server-side
 Timeweb runtime secret: never set `NEXT_PUBLIC_OPENAI_API_KEY`, a Docker build
 argument, or a GitHub Actions variable. Secrets must stay in the Timeweb
 control panel.

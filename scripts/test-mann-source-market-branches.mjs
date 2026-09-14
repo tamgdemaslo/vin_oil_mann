@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {sourceMarketBranches as parse} from './lib/mann-source-market-branches.mjs';
+assert.deepEqual(parse('- G4KE / 174 л.с. / Россия / 2008 - 2009','2008 - 2009')[0].window,{from:'2008-01',to:'2009-12'});
+const monthly=parse('- 6B31 / 220 л.с. / Россия / 02.2010-01.2012 г. - 6B31 / 222 л.с. / Россия / 02.2012-01.2017 г.','2010 - 2017');
+assert.equal(monthly.length,2);assert.deepEqual(monthly[1].window,{from:'2012-02',to:'2017-01'});
+assert.equal(parse('- 2AR-FXE Hybrid / 152 л.с. / Япония','2010 - 2015')[0].sourceQualifier,'Hybrid');
+assert.equal(parse('- RF Diesel / 83 л.с. / Россия','2000 - 2005')[0].engineCode,'RF');
+assert.equal(parse('- CAY1, CAY5, CAY6 / 277 л.с. / Россия','09.2008 - 12.2015').length,3);
+assert.equal(parse('- 2AZ-FE / 170 л.с. / Япония - 2AZ-FE / 170 л.с. / Россия - 2AZ-FE / 166 лс / США','2000 - 2010').length,3);
+assert.equal(parse('- 1GR-FE / 270, 275 л.с. / ОАЭ / 2007 - н.в.','2007 - н.в.')[0].market,'AE');
+for(const text of ['- G4FA / 107 л.с. / Россия / 13.2010 - 12.2015','- G4FA / 107 л.с. / Россия / 2017 - 2010','- G4FA / 107 л.с. / Россия дополнительный текст','- G4FA / 107 л.с. / Россия - пропущенная ветка','- G4FA / 107 л.с. / Россия / Япония','- G4FA, G4FA / 107 л.с. / Россия','- G4FA / 107, 107 л.с. / Россия','- 2009 / 107 л.с. / Россия']) assert.equal(parse(text,'2010 - 2017'),null,text);
+console.log('Market branch grammar tests passed');

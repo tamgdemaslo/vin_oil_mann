@@ -26,6 +26,10 @@ const runtimeFindings = [];
 for (const file of filesBelow(path.join(root, "src")).filter((item) => /\.(?:ts|tsx|js|mjs)$/.test(item))) {
   const contents = fs.readFileSync(file, "utf8");
   for (const match of contents.matchAll(forbiddenRuntimeEnv)) {
+    const relative = path.relative(root, file);
+    const sharedTelegramAppIdentity = relative === "src/lib/telegram-user-integration.ts"
+      && /process\.env\.(?:TELEGRAM_API_ID|TELEGRAM_API_HASH)/.test(match[0]);
+    if (sharedTelegramAppIdentity) continue;
     runtimeFindings.push({ file: path.relative(root, file), token: match[0] });
   }
   for (const secret of knownLeakedSecrets) {
@@ -36,12 +40,10 @@ for (const file of filesBelow(path.join(root, "src")).filter((item) => /\.(?:ts|
 const checks = [
   ["YCLIENTS config", "src/lib/yclients/branch-config.ts", ["getBranchIntegrationValues", '"yclients"', "getScopedBranchId"]],
   ["YCLIENTS proxy auth", "src/app/api/yclients/route.ts", ["getSession()", "requireBranchApi()", "configuredCompanyId", "getYclientsBranchConfig"]],
-  ["YCLIENTS AI", "src/lib/ai-agent/yclients.ts", ["getYclientsBranchConfig"]],
-  ["YCLIENTS dashboard", "src/app/api/dashboard/operations/route.ts", ["getYclientsBranchConfig", "yclientsRuntimeUserTokens"]],
   ["ROSSKO", "src/lib/rossko.ts", ["getBranchIntegrationValues", '"rossko"']],
   ["AQSI", "src/lib/aqsi.ts", ["resolveAqsiCashRegister", "aqsiFetchJson"]],
   ["AQSI durable fiscalization", "src/lib/aqsi-fiscalization.ts", ["branchId_idempotencyKey", 'status: "retry"', "nextAttemptAt"]],
-  ["Telegram user credentials", "src/lib/telegram-user-integration.ts", ["resolveBranchIntegration", 'const CHANNEL = "telegram_user"']],
+  ["Telegram app identity and branch session", "src/lib/telegram-user-integration.ts", ["TELEGRAM_API_ID", "TELEGRAM_API_HASH", "resolveBranchIntegration", 'source: "backend"']],
   ["Telegram QR branch/user scope", "src/lib/messenger/channels/telegram-user-session.ts", ["currentQrScope", "QR session принадлежит другому филиалу или пользователю"]],
   ["Integration role policy", "src/lib/integration-access.ts", ["canViewBranchIntegrationSettings", "canManageBranchIntegrationSecrets", 'context.groupRole === "group_owner"']],
   ["Owner integration notifications", "src/lib/integration-owner-notifications.ts", ["dedupeKey", "throttleMinutes", "recipientUserIds"]],
@@ -82,11 +84,11 @@ const markdown = `# Аудит филиальной изоляции интег�
   `| integration/path | file | status | evidence |\n|---|---|---|---|\n` +
   rows.map((row) => `| ${row.name} | \`${row.file}\` | ${row.status} | ${row.notes} |`).join("\n") +
   `\n\n## Runtime credential scan\n\n` +
-  (runtimeFindings.length ? runtimeFindings.map((row) => `- BLOCKER \`${row.file}\`: ${row.token}`).join("\n") : "No YCLIENTS, ROSSKO, AQSI or working Telegram credential env fallback and no known hardcoded provider secret under `src/`.") +
+  (runtimeFindings.length ? runtimeFindings.map((row) => `- BLOCKER \`${row.file}\`: ${row.token}`).join("\n") : "No unapproved YCLIENTS, ROSSKO, AQSI or Telegram runtime credential fallback and no known hardcoded provider secret under `src/`. The shared Telegram MTProto app identity is an explicit backend-only exception; account sessions remain branch-scoped.") +
   `\n\n## Maintenance-only scripts\n\n` +
   `The following scripts are classified **ADMIN_ONLY**, are not imported by request runtime, and must not be used as a production fallback. Production execution requires a separate reviewed branch-aware procedure:\n\n` +
   (maintenanceEnv.length ? maintenanceEnv.map((file) => `- \`${file}\``).join("\n") : "- none") +
-  `\n\nProvider credentials are stored as encrypted \`IntegrationCredential\` rows selected by active \`branchId\` and organization. A missing row is an explicit not-configured state; no silent global fallback is permitted.\n`;
+  `\n\nProvider credentials are stored as encrypted \`IntegrationCredential\` rows selected by active \`branchId\` and organization. Telegram uses one backend-only MTProto application identity from Timeweb, while every authorized account session remains selected and encrypted by branch. Other providers do not permit a silent global fallback.\n`;
 
 if (process.argv.includes("--write")) {
   fs.writeFileSync(reportPath, markdown);

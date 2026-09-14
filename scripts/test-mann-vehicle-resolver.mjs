@@ -50,6 +50,50 @@ const row = (fields) => ({
   condition: fields.condition ?? null,
 });
 
+for (const generation of [undefined, "I", "II", "III"]) {
+  const spaced = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "Nissan", modelRaw: "x trail", generationRaw: generation }));
+  const hyphenated = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "Nissan", modelRaw: "X-Trail", generationRaw: generation }));
+  assert.equal(spaced?.baseModel, hyphenated?.baseModel, "X-Trail spelling must preserve the model name");
+  assert.equal(spaced?.generation, generation, "X in X-Trail must not override a generation or invent X");
+}
+const spacedXTrail = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "Nissan", modelRaw: "x trail", generationRaw: "III", year: 2016, engineCode: "QR25DE" }));
+const xTrailEvaluation = evaluateMannCandidate(spacedXTrail, row({ make: "NISSAN", model: "X-Trail III(T32)", engineCode: "QR25DE", vehicleYearFrom: 2014 }));
+assert.ok(xTrailEvaluation.candidate, "same-model X-Trail must be a candidate");
+assert.ok(!xTrailEvaluation.candidate.mismatchedFields.includes("поколение"));
+const wrongGeneration = evaluateMannCandidate(spacedXTrail, row({ make: "NISSAN", model: "X-Trail I(T30)", engineCode: "QR25DE" }));
+assert.ok(wrongGeneration.candidate.mismatchedFields.includes("поколение"), "real generation conflicts must remain");
+
+for (const [model, generation, mismatch, missing] of [["V60", "I", false, true], ["S60", "II", false, false], ["S60", "I", true, false]]) {
+  const normalized = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "VOLVO", modelRaw: model, generationRaw: generation, engineCode: "B4164T3" }));
+  const evaluated = evaluateMannCandidate(normalized, row({ make: "VOLVO CARS", model: "S60 II/V60/Cross Country", engineCode: "B4164T3" }));
+  assert.ok(evaluated.candidate);
+  assert.equal(evaluated.candidate.mismatchedFields.includes("поколение"), mismatch);
+  assert.equal(evaluated.candidate.missingFields.includes("поколение MANN"), missing);
+}
+
+const generationLabel = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "Suzuki", modelRaw: "Grand Vitara", generationRaw: "II", bodyCode: "2GEN" }));
+for (const [generation, matched, mismatched] of [["III", true, false], ["II", false, true]]) {
+  const normalized = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "Suzuki", modelRaw: "Swift", generationRaw: generation, engineCode: "M16A" }));
+  const candidate = evaluateMannCandidate(normalized, row({ make: "SUZUKI", model: "Swift III(MZ/EZ/SG)", engineCode: "M16A" })).candidate;
+  assert.ok(candidate);
+  assert.equal(candidate.matchedFields.includes("поколение"), matched, 'platform slashes must preserve the model generation');
+  assert.equal(candidate.mismatchedFields.includes("поколение"), mismatched);
+  assert.equal(candidate.missingFields.includes("поколение MANN"), false);
+}
+for (const [model, generation, missing] of [["S60", "II", false], ["V60", "I", true]]) {
+  const normalized = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "Volvo", modelRaw: model, generationRaw: generation, engineCode: "B4164T3" }));
+  const candidate = evaluateMannCandidate(normalized, row({ make: "VOLVO CARS", model: "S60 II(FD/FS)/V60", engineCode: "B4164T3" })).candidate;
+  assert.ok(candidate);
+  assert.equal(candidate.missingFields.includes("поколение MANN"), missing, 'parentheses must not allow generation to leak into the next model');
+}
+assert.deepEqual(generationLabel.bodyCodes, []);
+const realPlatform = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "Nissan", modelRaw: "X-Trail", generationRaw: "III", bodyCode: "3GEN T32" }));
+assert.ok(!realPlatform.bodyCodes.includes("3GEN"));
+assert.ok(realPlatform.bodyCodes.includes("T32"));
+const explicitPlatform = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "Suzuki", modelRaw: "Grand Vitara", generationRaw: "II", bodyCode: "JT" }));
+assert.ok(explicitPlatform.bodyCodes.includes("JT"));
+assert.equal(generationLabel.generation, "II");
+
 const ford = normalizeDecodedVehicleForTest(vehicle({
   makeRaw: "FORD",
   modelRaw: "Mondeo",

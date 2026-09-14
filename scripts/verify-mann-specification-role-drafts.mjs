@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {sha,parseCopy} from './lib/mann-offline-scope.mjs';
+import {splitSpecificationSections} from './lib/mann-specification-sections-v2.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-market-month-scoped-preview-2026-09-14');
+const [planRaw,draftRaw,auditRaw,sql]=await Promise.all(['plan.json','specification-role-drafts-v1.json','specification-attribution-v2.json'].map(f=>readFile(resolve(dir,f),'utf8')).concat(readFile('/tmp/vehicle_fluid_requirements.sql','utf8')));
+const plan=JSON.parse(planRaw),draft=JSON.parse(draftRaw),audit=JSON.parse(auditRaw);
+assert.equal(draft.planHash,sha(planRaw));assert.equal(draft.sourceHash,sha(sql));assert.equal(draft.auditHash,sha(auditRaw));
+for(const [file,hash]of Object.entries({...audit.codeHashes,...draft.codeHashes}))assert.equal(hash,sha(await readFile(resolve(root,file),'utf8')));
+const sources=new Map(parseCopy(sql,'vehicle_fluid_requirements').map(s=>[s.id,s]));
+const expected=new Set(audit.findings.filter(f=>f.analogOnly?.length).flatMap(f=>f.candidateRevisionIds)),seen=new Set();
+for(const d of draft.drafts){
+ const old=plan.newRevisions.find(r=>r.id===d.originalRevisionId),r=d.revision,source=sources.get(r.sourceRequirementId);
+ assert.ok(old);assert.equal(sha(old),d.originalRevisionHash);assert.deepEqual(d.originalSource,source);assert.equal(sha(source),d.sourceHash);
+ assert.ok(expected.has(old.id));assert.ok(!seen.has(old.id));seen.add(old.id);
+ const sections=splitSpecificationSections(source.specificationText,source.analogText);assert.equal(sections.status,'EXPLICIT_ANALOG_SEPARATED');
+ const main=sections.main.text.trim(),technical=r.technicalDataJson,attribution=technical.sourceSpecificationAttribution;
+ assert.equal(technical.specificationText,main);assert.deepEqual(technical.specifications[0],{type:'SOURCE_REQUIREMENT_TEXT',value:main});
+ assert.equal(attribution.originalSpecificationText,source.specificationText);assert.equal(attribution.unverifiedAnalogText,sections.analog.text.trim());
+ assert.equal(attribution.metadataAndCautionText,sections.suffix.text.trim());assert.equal(attribution.oemVerified,false);assert.equal(attribution.automaticAnalogSelectionAllowed,false);
+ const f=audit.findings.find(f=>f.sourceRequirementId===source.id);
+ const expectedStructured=f.parsedByRole.mainSource.filter(s=>s.type!=='RAW');
+ assert.deepEqual(technical.specifications.slice(1),expectedStructured);
+ const restored=structuredClone(r);
+ restored.id=old.id;restored.semanticFingerprint=old.semanticFingerprint;
+ for(const field of ['specificationText','specifications','viscosityGrades'])restored.technicalDataJson[field]=old.technicalDataJson[field];
+ delete restored.technicalDataJson.sourceSpecificationAttribution;delete restored.provenanceJson.specificationRoleRepair;
+ assert.deepEqual(restored,old);assert.equal(r.applyEligible,false);assert.equal(r.verificationStatus,'UNVERIFIED');
+}
+assert.equal(seen.size,expected.size);assert.equal(seen.size,142);assert.equal(draft.held.length,0);
+assert.equal(sha(await readFile(resolve(dir,'plan.json'),'utf8')),sha(planRaw));
+const result={planHash:sha(planRaw),draftHash:sha(draftRaw),auditHash:sha(auditRaw),checked:seen.size,allExpectedDraftsPresent:true,nonSpecificationFieldsPreserved:true,originalSourcePreserved:true,productionApplyAllowed:false,canonicalPlanChanged:false};
+await writeFile(resolve(dir,'specification-role-draft-verification-v1.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
+console.log(JSON.stringify(result));

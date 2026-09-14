@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {createJiti} from 'jiti';
+import {explicitGearboxList} from './lib/mann-explicit-gearbox-list.mjs';
+import {parseCopy} from './lib/mann-offline-scope.mjs';
+const {explicitMannTransmissionModels:parse}=await createJiti(import.meta.url).import('../src/lib/mann-transmission-model-list.ts');
+assert.deepEqual(parse('- 716.605 - 716.628 - 716.631'),['716.605','716.628','716.631']);
+for(const raw of [null,undefined,{},[],5,'','722.904','- 722.904','- 725.0 - 725.031','- 722.904 - 722.904','- 722.904 до с/н 2834526 - 722.905','725.031 / W9S700','- 722.965 (W7X550) - 722.966 (W7X700)','- 722.904 - 722.905 *'])assert.equal(parse(raw),null);
+const sources=parseCopy(await readFile('/tmp/vehicle_fluid_requirements.sql','utf8'),'vehicle_fluid_requirements');
+for(const source of sources)assert.deepEqual(parse(source.componentModel),explicitGearboxList(source.componentModel));
+console.log(`Production/offline list parser parity: ${sources.length} source rows`);
+const {explicitMannCvtModels:cvt}=await createJiti(import.meta.url).import('../src/lib/mann-transmission-model-list.ts');
+assert.deepEqual(cvt('- RE0F10D - Jatco JF016E'),['RE0F10D','JATCO JF016E']);
+assert.deepEqual(cvt('- re0f10d\n- Jatco   JF016E'),['RE0F10D','JATCO JF016E']);
+for(const raw of [null,{},'', '- RE0F10D', 'RE0F10D / Jatco JF016E','- RE0F10D - RE0F10D','- RE0F10D - re0f10d','- RE0F10D - JF016E','- RE0F10D - Jatco JF016E *','- RE0F10D до 2015 - Jatco JF016E','- RE0F10D - Jatco JF016','- 716.605 - 716.628','- TY30A - TY40A'])assert.equal(cvt(raw),null);
+console.log('Explicit CVT list positive/negative tests passed; no bare JF016E alias.');

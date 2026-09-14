@@ -1,3 +1,5 @@
+import type { VehicleMarketEvidence } from "@/lib/vehicle-market";
+
 export type VehicleLookupInputType = "vin" | "plate" | "frame";
 export type VehicleSourceMethod = "tronk_vindecode" | "tronk_vindecode2" | "tronk_plate" | "tronk_frame" | "tronk_convertb2b" | "tronk_convertgate" | "manual" | "mann_manual";
 export type VinStatus = "valid" | "check_digit_absent" | "format_warning" | "invalid" | "frame_number" | "unknown";
@@ -34,6 +36,7 @@ export type NormalizedVehicleIdentity = {
   driveType?: string;
   steeringPosition?: string;
   market?: string;
+  marketEvidence?: VehicleMarketEvidence;
   countryOfOrigin?: string;
   mileage?: number;
   ownersCount?: number;

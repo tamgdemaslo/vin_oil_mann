@@ -1,0 +1,62 @@
+import { parseFluidCapacities, type ParsedFluidCapacity } from "./fluid-capacity-parser";
+import { normalizeEngineCode } from "./vehicle-normalization";
+
+export type FluidCapacityCondition =
+  | { kind: "transmission"; value: "automatic" | "manual" | "cvt" }
+  | { kind: "drive"; value: "2WD" | "4WD" | "AWD" | "FWD" | "RWD" }
+  | { kind: "engine"; value: string };
+export type ConditionalFluidCapacity = {
+  condition: FluidCapacityCondition;
+  capacity: ParsedFluidCapacity;
+  sourceSegment: string;
+  start: number;
+  end: number;
+};
+
+// An additive, strict parser. It never clears the original parser's warnings
+// or authorizes publication; unknown/shared conditions remain for review.
+export function parseConditionalFluidCapacities(value: unknown, systemCode?: string | null, explicitEngineCodes: string[] = []) {
+  const sourceText = String(value ?? "");
+  const normalizedText = sourceText.replace(/\u00a0/g, " ").trim();
+  const original = parseFluidCapacities(sourceText, systemCode);
+  const review = (reason: string) => ({ status: "review" as const, reason, sourceText, normalizedText, branches: [] as ConditionalFluidCapacity[], publicationAllowed: false as const });
+  if (original.capacities.length < 2) return review("NO_EXPLICIT_CAPACITY_ALTERNATIVES");
+  if (original.rejected.length || original.suspicious.some(d => d.code !== "UNRESOLVED_CONDITIONAL_CAPACITY")) return review("OTHER_PARSER_DIAGNOSTICS");
+  const capacities = [...original.capacities].sort((a, b) => a.start - b.start);
+  if (normalizedText.slice(0, capacities[0].start).trim()) return review("SHARED_PREFIX_CONDITION");
+  const allowedEngines = new Set(explicitEngineCodes.map(normalizeEngineCode).filter(Boolean));
+  const branches: ConditionalFluidCapacity[] = [];
+  for (let index = 0; index < capacities.length; index += 1) {
+    const token = capacities[index];
+    const end = capacities[index + 1]?.start ?? normalizedText.length;
+    const sourceSegment = normalizedText.slice(token.start, end);
+    const suffix = normalizedText.slice(token.end, end).trim().replace(/(?:\s+или|[;,])\s*$/iu, "").trim();
+    const qualifier = suffix.replace(/^(?:сервисный|общий)\s+объ[её]м\s+/iu, "");
+    let condition: FluidCapacityCondition;
+    const transmission = qualifier.match(/^(?:(?:для\s+моделей\s+)?[сc]|для)\s+(АКПП|МКПП|CVT)$/iu);
+    const drive = qualifier.match(/^для\s+(2WD|4WD|AWD|FWD|RWD)$/iu);
+    const engine = qualifier.match(/^для\s+([A-Z0-9][A-Z0-9-]{2,20})$/iu);
+    if (transmission) condition = { kind: "transmission", value: transmission[1].toUpperCase() === "АКПП" ? "automatic" : transmission[1].toUpperCase() === "CVT" ? "cvt" : "manual" };
+    else if (drive) condition = { kind: "drive", value: drive[1].toUpperCase() as "2WD" | "4WD" | "AWD" | "FWD" | "RWD" };
+    else if (engine && /\d/.test(engine[1]) && allowedEngines.has(normalizeEngineCode(engine[1]))) {
+      const code = normalizeEngineCode(engine[1])!;
+      if (/^(?:2WD|4WD|AWD|FWD|RWD|4X4|4X2)$/.test(code)) return review("DRIVE_LABEL_IS_NOT_ENGINE");
+      condition = { kind: "engine", value: code };
+    } else return review("UNSUPPORTED_OR_SHARED_CONDITION");
+    const parsed = parseFluidCapacities(sourceSegment, systemCode);
+    if (parsed.needsReview || parsed.rejected.length || parsed.capacities.length !== 1) return review("BRANCH_PARSER_DIAGNOSTICS");
+    if (branches.some(b => b.condition.kind !== condition.kind)) return review("MIXED_CONDITION_DIMENSIONS");
+    if (branches.some(b => b.condition.value === condition.value)) return review("DUPLICATE_CONDITION");
+    branches.push({ condition, capacity: parsed.capacities[0], sourceSegment, start: token.start, end });
+  }
+  return { status: "structured" as const, reason: null, sourceText, normalizedText, branches, publicationAllowed: false as const };
+}
+
+export function selectConditionalFluidCapacity(branches: ConditionalFluidCapacity[], context: { transmissionType?: string; engineCode?: string; driveMode?: string }) {
+  const matches = branches.filter(branch => branch.condition.kind === "transmission"
+    ? branch.condition.value === context.transmissionType
+    : branch.condition.kind === "drive"
+    ? branch.condition.value === context.driveMode?.trim().toUpperCase()
+    : Boolean(context.engineCode) && branch.condition.value === normalizeEngineCode(context.engineCode));
+  return matches.length === 1 ? matches[0] : null;
+}

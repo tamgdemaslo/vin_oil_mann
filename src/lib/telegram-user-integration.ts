@@ -9,6 +9,24 @@ import { notifyIntegrationOwner } from "@/lib/integration-owner-notifications";
 const CHANNEL = "telegram_user";
 const KEYS = ["apiId", "apiHash"] as const;
 
+type TelegramUserCredentials = {
+  apiId: number;
+  apiHash: string;
+  source: "backend" | "branch";
+};
+
+function backendCredentials(): TelegramUserCredentials | null {
+  const rawApiId = process.env.TELEGRAM_API_ID?.trim() ?? "";
+  const apiHash = process.env.TELEGRAM_API_HASH?.trim() ?? "";
+  if (!rawApiId && !apiHash) return null;
+
+  const apiId = Number(rawApiId);
+  if (!Number.isInteger(apiId) || apiId <= 0 || apiHash.length < 16) {
+    throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH некорректно настроены на backend");
+  }
+  return { apiId, apiHash, source: "backend" };
+}
+
 function tenantOrThrow() {
   const tenant = getRequestTenant();
   const branchId = getScopedBranchId();
@@ -32,13 +50,23 @@ async function audit(action: string, status: string, metadata: Record<string, un
   });
 }
 
-export async function resolveTelegramUserCredentials() {
-  const resolved = await resolveBranchIntegration(CHANNEL, KEYS, KEYS);
-  const apiId = Number(resolved.values.apiId);
-  if (!Number.isInteger(apiId) || apiId <= 0 || !resolved.values.apiHash) {
-    throw new IntegrationNotConfiguredForBranch(CHANNEL, [...KEYS]);
+export async function resolveTelegramUserCredentials(): Promise<TelegramUserCredentials> {
+  const backend = backendCredentials();
+  if (backend) return backend;
+
+  try {
+    const resolved = await resolveBranchIntegration(CHANNEL, KEYS, KEYS);
+    const apiId = Number(resolved.values.apiId);
+    if (!Number.isInteger(apiId) || apiId <= 0 || !resolved.values.apiHash) {
+      throw new IntegrationNotConfiguredForBranch(CHANNEL, [...KEYS]);
+    }
+    return { apiId, apiHash: resolved.values.apiHash, source: "branch" };
+  } catch (error) {
+    if (error instanceof IntegrationNotConfiguredForBranch) {
+      throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH не настроены на backend");
+    }
+    throw error;
   }
-  return { apiId, apiHash: resolved.values.apiHash };
 }
 
 async function currentValues() {
@@ -51,17 +79,18 @@ async function currentValues() {
 
 export async function getTelegramUserIntegrationStatus() {
   const tenant = tenantOrThrow();
-  const values = await currentValues();
+  const credentials = await resolveTelegramUserCredentials().catch(() => null);
   const account = await prisma.messengerAccount.findFirst({
     where: { branchId: tenant.branchId, organizationId: tenant.organizationId, channel: "telegram", mode: "user_session" },
     orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }],
     select: { id: true, displayName: true, phone: true, username: true, status: true, lastSyncAt: true, errorCode: true, errorMessage: true, updatedAt: true },
   });
-  const configured = Boolean(values.apiId && values.apiHash);
+  const configured = Boolean(credentials);
   return {
     configured,
-    apiIdConfigured: Boolean(values.apiId),
-    apiHashConfigured: Boolean(values.apiHash),
+    managedByBackend: credentials?.source === "backend",
+    apiIdConfigured: configured,
+    apiHashConfigured: configured,
     status: !configured ? "not_configured" : account?.status ?? "not_connected",
     account: account ? {
       id: account.id,

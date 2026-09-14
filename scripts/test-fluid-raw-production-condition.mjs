@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {createJiti} from 'jiti';
+const {extractRawProductionCondition:extract}=await createJiti(import.meta.url).import('../src/lib/fluid-raw-production-condition.ts');
+assert.equal(extract('до 2012 года').to,'2011-12');
+assert.equal(extract('c 2012 года').from,'2012-01');
+assert.equal(extract('С 2012').from,'2012-01');
+assert.equal(extract('после 2012').from,'2013-01');
+assert.equal(extract('до 08. 07. 2019').to,'2019-06');
+assert.equal(extract('с 08. 07. 2019').from,'2019-08');
+assert.equal(extract('с 08. 07. 2019').unresolvedBoundaryMonth,'2019-07');
+assert.equal(extract('до 31. 02. 2019').status,'REVIEW');
+assert.equal(extract('до 2012 года кроме 4WD').status,'REVIEW');
+assert.equal(extract('2009-2020'),null);
+console.log('Raw production qualifiers: strict year/day bounds and ambiguous residual rejection passed');

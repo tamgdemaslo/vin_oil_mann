@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {nissanXtrailEngineBranches as parse} from './lib/mann-nissan-xtrail-engine-branches.mjs';
+const text='- MR20-RM31 Hybrid / 2015-2022 - MR20DD / 144 л.с. / 2013-2022';
+const branches=parse(text);
+assert.equal(branches.length,2);
+assert.equal(branches[0].powerHp,null);
+assert.equal(branches[0].hybrid,true);
+assert.equal(branches[1].powerHp,144);
+assert.equal(branches[1].engineCode,'MR20DD');
+for(const invalid of [text+' extra',text.replace('144','144, 147'),text.replace('Hybrid',''),text.replace('2015-2022','2022-2015'),text.replace('MR20DD','MR20DE'),text.replace(' / 144 л.с.',''),text.replace('MR20-RM31','MR20DD'),text.replace('144','000')])assert.equal(parse(invalid),null,invalid);
+console.log('Nissan exact source branches: positive and 8 negative cases passed; hybrid power remains unknown.');

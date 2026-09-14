@@ -179,6 +179,8 @@ export function normalizeVehicleModel(value: unknown, make?: string): { raw?: st
     if (matchingForm) normalized = normalized.slice(matchingForm.length).trim();
   }
   normalized = transliterateVehicleText(normalizeMixedAlphabet(normalized));
+  // X is part of X-Trail's name, not a Roman generation numeral.
+  if (canonicalMake === "NISSAN") normalized = normalized.replace(/\bX\s+TRAIL\b/g, "X-TRAIL");
   // Provider placeholders are metadata, not a model family. Keep the payload
   // that follows them because it can still contain a useful family or code.
   normalized = normalized
@@ -192,7 +194,14 @@ export function normalizeVehicleModel(value: unknown, make?: string): { raw?: st
   // (for example "XX MODEL") while catalogues put it in parentheses. Restrict
   // this fallback to a short leading token followed by a substantial model word.
   const leadingPlatformCode = normalized.match(/^([A-Z]{2,3})\s+[A-Z]{4,}(?:\s|$)/)?.[1];
-  const generation = normalized.match(/(?:^|[\s(/,])(XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)(?=$|[\s(),/])/)?.[1];
+  // Opel catalogue letters are generation labels, not Roman numbers. Keep
+  // them literal: no assumption that (for example) B equals II for every model.
+  const opelLabelPattern = /\b(ASTRA|CORSA|ZAFIRA|VECTRA|MOKKA)[ -]+([A-Z])(?=$|[\s(/,])/g;
+  const opelLabels = canonicalMake === "OPEL" ? [...normalized.matchAll(opelLabelPattern)].map(match => match[2]) : [];
+  const generation = opelLabels.length
+    ? new Set(opelLabels).size === 1 ? opelLabels[0] : undefined
+    : normalized.match(/(?:^|[\s(/,])(XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)(?=$|[\s(),/])/)?.[1];
+  if (canonicalMake === "OPEL") normalized = normalized.replace(opelLabelPattern, "$1");
   const canonical = normalized
     .replace(/\([^)]*\)/g, " ")
     .replace(/(^|[\s(/,])(?:XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)(?=$|[\s(),/])/g, "$1")

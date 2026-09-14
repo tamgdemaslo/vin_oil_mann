@@ -25,11 +25,11 @@ for (const file of [
   "src/lib/rossko.ts",
   "src/lib/rossko-integration.ts",
 ]) {
-  reject(file, [/process\.env\.AQSI_/, /process\.env\.TELEGRAM_API_ID/, /process\.env\.TELEGRAM_API_HASH/, /process\.env\.TELEGRAM_USER_SESSION_ENABLED/, /process\.env\.ROSSKO_KEY/]);
+  reject(file, [/process\.env\.AQSI_/, /process\.env\.TELEGRAM_USER_SESSION_ENABLED/, /process\.env\.ROSSKO_KEY/]);
 }
 
 for (const file of [".env.example", ".env.local.template"]) {
-  reject(file, [/^\s*(?:#\s*)?(?:AQSI_|TELEGRAM_API_ID|TELEGRAM_API_HASH|TELEGRAM_USER_SESSION_ENABLED|ROSSKO_KEY)[A-Z0-9_]*\s*=/m]);
+  reject(file, [/^\s*(?:#\s*)?(?:AQSI_|TELEGRAM_USER_SESSION_ENABLED|ROSSKO_KEY)[A-Z0-9_]*\s*=/m]);
 }
 
 for (const entry of fs.readdirSync(path.join(root, "scripts"), { withFileTypes: true })) {
@@ -40,6 +40,17 @@ for (const entry of fs.readdirSync(path.join(root, "scripts"), { withFileTypes: 
     /process\.env\.ROSSKO_KEY[12]/,
   ]);
 }
+
+expect("src/lib/telegram-user-integration.ts", [
+  /process\.env\.TELEGRAM_API_ID/,
+  /process\.env\.TELEGRAM_API_HASH/,
+  /source:\s*"backend"/,
+  /resolveBranchIntegration/,
+]);
+reject("src/lib/messenger/channels/telegram-user-session.ts", [
+  /process\.env\.TELEGRAM_API_ID/,
+  /process\.env\.TELEGRAM_API_HASH/,
+]);
 
 expect("src/lib/branch-integration-credentials.ts", [
   /resolveBranchIntegration/,
@@ -69,6 +80,8 @@ expect("src/lib/system-release.ts", [
 ]);
 expect("src/lib/aqsi.ts", [/validateAqsiConfig/, /resolveAqsiBinding/, /publicAqsiDevices/, /needsDevice/, /normalizeAqsiCashierId/]);
 expect("src/app/cabinet/integrations/OperationalIntegrationsPanel.tsx", [/alerts\.map/, /retryFiscalization/, /disconnectAqsi/, /Связь с сервером прервалась/, /Мастер настройки нового филиала/, /Уведомления и журнал изменений/]);
+expect("src/app/cabinet/integrations/OperationalIntegrationsPanel.tsx", [/Серверные реквизиты Telegram готовы/, /Открыть подключение по QR/]);
+reject("src/app/cabinet/integrations/OperationalIntegrationsPanel.tsx", [/name="apiId"/, /name="apiHash"/, /Сохранить реквизиты/]);
 expect("src/lib/integration-access.ts", [/group_owner/, /group_admin/, /branch_owner/, /integrations\.manage/]);
 expect("src/lib/integration-owner-notifications.ts", [/dedupeKey/, /throttleMinutes/, /recipientUserIds/, /listIntegrationActivity/]);
 expect("src/app/api/integrations/activity/route.ts", [/canManageBranchIntegrationSecrets/, /listIntegrationActivity/]);

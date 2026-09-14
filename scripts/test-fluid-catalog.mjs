@@ -210,4 +210,35 @@ assert.equal(subaruEj255VariantCue.stats.reviewRequirements, 0);
 assert.equal(subaruEj255VariantCue.links.length, 1);
 assert.equal(subaruEj255VariantCue.links[0]?.mannVehicleText, "2.5XT-Turbo(SG)");
 
+for (const [slug, title, expected] of [
+  ['gen3', 'Vehicle', 'III'], ['3gen', 'Vehicle', 'III'],
+  ['gen11', 'Vehicle', 'XI'], ['gen15', 'Vehicle', 'XV'],
+  ['', 'Vehicle XI', 'XI'], ['', 'Vehicle (11 поколение)', 'XI'],
+  ['model_gen3_extra', 'Vehicle', null], ['200gen', 'Vehicle', null],
+  ['gen0', 'Vehicle', null], ['gen99', 'Vehicle', null],
+  ['8.5gen', 'Vehicle', null], ['8.5gen', 'Camry (8 поколение)', 'VIII'],
+  ['zafira_b', 'Опель Зафира Б', null],
+]) {
+  const prepared = prepareFluidCatalog({rowsNdjson: JSON.stringify({...rows[0], generation_slug: slug, page_title: title}), mannFiltersCsv: ''});
+  assert.equal(prepared.requirements[0].generation, expected, `${slug}: ${title}`);
+}
+const noPlaceholderBody = prepareFluidCatalog({rowsNdjson: JSON.stringify({...rows[0], page_title: 'Vehicle (3gen) (E150)', generation_slug: '3gen'}), mannFiltersCsv: ''});
+assert.deepEqual(noPlaceholderBody.requirements[0].bodyCodesJson, ['E150']);
+const generationConflict = prepareFluidCatalog({rowsNdjson: JSON.stringify({...rows[0], page_title: 'Mazda 626 (4 поколение)', generation_slug: 'gen5'}), mannFiltersCsv: ''});
+assert.equal(generationConflict.requirements[0].generation, null);
+assert.equal(generationConflict.requirements[0].rawRequirementJson.sourceIdentity.reason, 'GENERATION_SLUG_TITLE_CONFLICT');
+assert.equal(generationConflict.reviewRows[0].status, 'review_required');
+for (const [model, slug, title, expected] of [
+  ['zafira', 'zafira_b', 'Масло для Опель Зафира Б, 2005-2015', 'B'],
+  ['zafira', 'zafira_c', 'Масло для Опель Зафира С, 2012-2015', 'C'],
+  ['astra', 'astra_h', 'Масло для Опель Астра H, 2004-2011', 'H'],
+  ['astra', 'astra_j', 'Масло для Опель Астра J / 2009-2016', 'J'],
+  ['corsa', 'corsa_d', 'Масло для Опель Корса Д, 2006-2015', 'D'],
+  ['zafira', 'zafira_b', 'Масло для Опель Зафира С, 2012-2015', null],
+]) {
+  const result = prepareFluidCatalog({rowsNdjson: JSON.stringify({...rows[0], brand_slug:'opel',model_slug:model,generation_slug:slug,page_title:title}),mannFiltersCsv:''});
+  assert.equal(result.requirements[0].generation, expected, title);
+  if (!expected) assert.equal(result.requirements[0].rawRequirementJson.sourceIdentity.reviewRequired,true);
+}
+
 console.log("Fluid catalog normalization and MANN matching tests — passed");

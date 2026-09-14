@@ -1,10 +1,19 @@
 import { prisma } from "@/lib/db";
+import { readMannCapacityBranches } from "@/lib/mann-capacity-branches";
+import { selectConditionalFluidCapacity } from "@/lib/fluid-capacity-conditions";
+import { mannTransmissionComponent, mannExplicitTransmissionTypeCount } from "@/lib/mann-transmission-component";
+import { explicitMannTransmissionModels, explicitMannCvtModels, explicitMannAlphanumericModels, explicitMannTransmissionModelYears } from "@/lib/mann-transmission-model-list";
+import { mannTechnicalScopeMatches, type MannTechnicalVehicleContext } from "@/lib/mann-technical-applicability";
+import { readMannEquipmentScope, mannExactEquipmentModel, mannEquipmentComponentDrives, MANN_EQUIPMENT_COMPONENT_DRIVE_POLICY, MANN_EXACT_EQUIPMENT_MODEL_POLICY, type MannEquipmentConfirmation } from "@/lib/mann-equipment-scope";
 
 const PRIMARY_SOURCE_VERIFIED = "PRIMARY_SOURCE_VERIFIED";
 const PRIMARY_SOURCE_VERIFIED_FIELDS = "PRIMARY_SOURCE_VERIFIED_FIELDS";
 const UNVERIFIED = "UNVERIFIED";
 const CATALOG_PREVIEW_POLICY = "MANN_V9_CONSERVATIVE_MATCHER";
+const SCOPED_CATALOG_PREVIEW_POLICY = "MANN_ENGINE_DATE_SCOPED_PREVIEW_V1";
+const CONDITIONAL_CAPACITY_POLICY = "MANN_CONDITIONAL_CAPACITY_PREVIEW_V1";
 const CONDITIONAL_TRANSMISSION_POLICY = "USER_CONFIRMED_TRANSMISSION_V1";
+const CONDITIONAL_EQUIPMENT_POLICY = "USER_CONFIRMED_EQUIPMENT_V1";
 const TRANSMISSION_REVIEW_BLOCKER = "MANN variant не подтверждает тип или модель коробки";
 
 export const MANN_TRANSMISSION_TYPES = ["automatic", "manual", "cvt", "robot"] as const;
@@ -95,6 +104,9 @@ export type MannTechnicalProfileItem = {
   requiresReview: boolean;
   transmissionType?: MannTransmissionType;
   userConfirmedTransmission: boolean;
+  automaticSelectionEligible: boolean;
+  userConfirmedTransmissionModel?: boolean;
+  userConfirmedEquipment?: MannEquipmentConfirmation;
 };
 
 export type MannTechnicalTransmissionOption = {
@@ -110,6 +122,10 @@ export type MannUnifiedTechnicalProfile = {
   selectedTransmissionType?: MannTransmissionType;
   containsCatalogPreview: boolean;
   notice?: string;
+  transmissionComponentOptions?: string[];
+  transmissionGearCountOptions?: number[];
+  transmissionConditionsToReview?: string[];
+  equipmentOptions?: (MannEquipmentConfirmation & {systemCode: string; label: string})[];
 };
 
 type TechnicalRevisionRow = {
@@ -157,6 +173,7 @@ function strings(value: unknown): string[] {
 }
 
 function finitePositive(value: unknown, allowZero = false): number | undefined {
+  if (value == null || (typeof value === "string" && !value.trim())) return undefined;
   const number = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(number)) return undefined;
   if (allowZero ? number < 0 : number <= 0) return undefined;
@@ -219,13 +236,21 @@ function normalizeCapacity(value: unknown): MannTechnicalCapacity | undefined {
   };
 }
 
-function safeCapacities(row: TechnicalRevisionRow, data: Record<string, unknown>, catalogPreview: boolean, userConfirmedTransmission: boolean): MannTechnicalCapacity[] {
+function safeCapacities(row: TechnicalRevisionRow, data: Record<string, unknown>, catalogPreview: boolean, userConfirmedTransmission: boolean, selectedTransmissionType?: MannTransmissionType, vehicleContext?: MannTechnicalVehicleContext, userConfirmedEquipment = false): MannTechnicalCapacity[] {
   if (!catalogPreview) {
     if (!fieldIsVerified(row, "technical.capacity")) return [];
     const capacity = normalizeCapacity(data.capacity);
     return capacity ? [capacity] : [];
   }
-  if ((!userConfirmedTransmission && row.state !== "STAGED") || !fieldHasCatalogConfidence(row, "technical.capacity")) return [];
+  if ((!userConfirmedTransmission && !userConfirmedEquipment && row.state !== "STAGED") || !fieldHasCatalogConfidence(row, "technical.capacity")) return [];
+  if ("capacityBranches" in data) {
+    const branches = readMannCapacityBranches(data, row.applicabilityJson, row.systemCode);
+    if (!branches) return [];
+    const applicable = branches.filter(branch => mannTechnicalScopeMatches(branch.applicabilityJson, vehicleContext));
+    const selected = selectConditionalFluidCapacity(applicable, { transmissionType: selectedTransmissionType, engineCode: vehicleContext?.engineCode });
+    const capacity = selected ? normalizeCapacity(selected.capacity) : null;
+    return capacity ? [capacity] : [];
+  }
   if (!Array.isArray(data.capacities)) return [];
   return data.capacities.flatMap((capacity) => {
     const source = record(capacity);
@@ -288,6 +313,14 @@ function isCatalogPreview(row: TechnicalRevisionRow): boolean {
   const provenance = record(row.provenanceJson);
   const validation = record(provenance.independentValidation);
   const gates = record(row.run.gatesJson);
+  const policy = provenance.catalogPreviewPolicy;
+  const applicability = record(row.applicabilityJson);
+  const acceptedPolicy = policy === CATALOG_PREVIEW_POLICY
+    || ((policy === SCOPED_CATALOG_PREVIEW_POLICY || policy === CONDITIONAL_CAPACITY_POLICY)
+      && "window" in applicability
+      && "matchedEngineScope" in applicability
+      && provenance.sourceTechnicalReviewRequired === true
+      && (policy !== CONDITIONAL_CAPACITY_POLICY || readMannCapacityBranches(row.technicalDataJson, row.applicabilityJson, row.systemCode) !== null));
   return ["STAGED", "REVIEW"].includes(row.state)
     && !row.applyEligible
     && row.verificationStatus === UNVERIFIED
@@ -296,9 +329,9 @@ function isCatalogPreview(row: TechnicalRevisionRow): boolean {
     && row.run.mode === "STAGING"
     && !row.run.independentHumanSignoff
     && !row.run.productionApplyAuthorized
-    && gates.catalogPreviewPolicy === CATALOG_PREVIEW_POLICY
+    && acceptedPolicy
+    && gates.catalogPreviewPolicy === policy
     && gates.automaticProductSelection === false
-    && provenance.catalogPreviewPolicy === CATALOG_PREVIEW_POLICY
     && provenance.catalogPreviewEligible === true
     && validation.independentlyValidated === true
     && Array.isArray(validation.hardConflicts)
@@ -310,6 +343,61 @@ function isCatalogPreview(row: TechnicalRevisionRow): boolean {
 function transmissionTypeFor(row: TechnicalRevisionRow): MannTransmissionType | undefined {
   const value = text(record(row.applicabilityJson).transmissionType)?.toLowerCase();
   return MANN_TRANSMISSION_TYPES.find((candidate) => candidate === value);
+}
+
+// Opt-in only: old ambiguous source rows must not become eligible simply
+// because their text happens to resemble a list after a parser update.
+function conditionalTransmissionTypeCount(row: TechnicalRevisionRow): boolean {
+  const parsed=mannExplicitTransmissionTypeCount(row.componentModel);
+  if(!parsed)return false;
+  const scope=record(row.applicabilityJson),provenance=record(row.provenanceJson),gates=record(row.run.gatesJson);
+  const evidence=record(provenance.explicitTransmissionTypeCount),source=record(provenance.sourceTransmissionContext);
+  const sourceLabel=record(source.evidence).systemName;
+  if(typeof sourceLabel!=='string')return false;
+  const label=sourceLabel.trim().toUpperCase().replace(/\s+/g,' ').replace(/^(?:МАСЛО|ЖИДКОСТЬ) (?:В|ДЛЯ) /,'').match(/^(АКПП|МКПП|РОБОТ|РКПП|DCT|DSG)[ -](\d{1,2})$/);
+  if(!label||Number(label[2])!==parsed.gearCount||(label[1]==='АКПП'?'automatic':label[1]==='МКПП'?'manual':'robot')!==parsed.type)return false;
+  return gates.transmissionTypeCountPolicy==='EXPLICIT_SOURCE_TYPE_COUNT_V1'
+    && evidence.policy===gates.transmissionTypeCountPolicy
+    && evidence.sourceComponentModel===row.componentModel
+    && record(source.evidence).componentModel===row.componentModel
+    && JSON.stringify(evidence.typeCount)===JSON.stringify(parsed)
+    && scope.componentModel===row.componentModel && scope.transmissionType===parsed.type
+    && scope.transmissionGearCount===parsed.gearCount
+    && source.destinationSystemCode===row.systemCode && source.transmissionType===parsed.type
+    && source.transmissionGearCount===parsed.gearCount && source.hasAdditionalLabelConditions===false
+    && Array.isArray(source.issues) && source.issues.length===0
+    && !!scope.sourceVehicleScope && !!scope.window
+    && Array.isArray(scope.matchedEngineScope) && scope.matchedEngineScope.length>0;
+}
+
+function conditionalTransmissionModels(row: TechnicalRevisionRow): string[] | null {
+  const provenance = record(row.provenanceJson), gates = record(row.run.gatesJson);
+  const evidence = record(provenance.explicitTransmissionModelList);
+  const scope = record(row.applicabilityJson);
+  const cvt = gates.transmissionModelListPolicy === "EXPLICIT_CVT_SOURCE_MODEL_LIST_V1";
+  const alphanumeric = gates.transmissionModelListPolicy === "EXPLICIT_ALPHANUMERIC_SOURCE_MODEL_LIST_V1";
+  const dated = gates.transmissionModelListPolicy === "EXPLICIT_SOURCE_MODEL_YEAR_RANGE_V1";
+  const datedModel = dated ? explicitMannTransmissionModelYears(row.componentModel) : null;
+  if (dated) {
+    const interval = record(record(scope.window).intersection);
+    if (!datedModel || JSON.stringify(evidence.modelYearRange) !== JSON.stringify(datedModel)
+      || typeof interval.from !== 'string' || typeof interval.to !== 'string'
+      || !/^\d{4}-(0[1-9]|1[0-2])$/.test(interval.from) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(interval.to)
+      || interval.from > interval.to || interval.from < `${datedModel.yearFrom}-01` || interval.to > `${datedModel.yearTo}-12`) return null;
+  }
+  if (cvt || ((alphanumeric || dated) && row.systemCode === 'CVT_TRANSMISSION')) {
+    if (row.systemCode !== "CVT_TRANSMISSION" || scope.transmissionType !== "cvt"
+      || "transmissionGearCount" in scope) return null;
+  } else if ((!alphanumeric && !dated && gates.transmissionModelListPolicy !== "EXPLICIT_DECIMAL_MODEL_LIST_V1")
+    || !Number.isInteger(scope.transmissionGearCount)) return null;
+  const models = datedModel ? [datedModel.model] : alphanumeric ? explicitMannAlphanumericModels(row.componentModel) : cvt ? explicitMannCvtModels(row.componentModel) : explicitMannTransmissionModels(row.componentModel);
+  if (!models || evidence.policy !== gates.transmissionModelListPolicy
+    || evidence.sourceComponentModel !== row.componentModel
+    || JSON.stringify(evidence.models) !== JSON.stringify(models)
+    || scope.componentModel !== row.componentModel
+    || !scope.sourceVehicleScope || !scope.window
+    || !Array.isArray(scope.matchedEngineScope) || scope.matchedEngineScope.length === 0) return null;
+  return models;
 }
 
 function isConditionalTransmissionPreview(row: TechnicalRevisionRow): boolean {
@@ -340,9 +428,55 @@ function isConditionalTransmissionPreview(row: TechnicalRevisionRow): boolean {
     && reviewBlockers[0] === TRANSMISSION_REVIEW_BLOCKER;
 }
 
-function toProfileItem(row: TechnicalRevisionRow, catalogPreview: boolean, userConfirmedTransmission = false): MannTechnicalProfileItem | null {
+function isConditionalEquipmentPreview(row: TechnicalRevisionRow): boolean {
+  const scope = record(row.applicabilityJson), equipment = readMannEquipmentScope(scope.requiredEquipment);
+  if (!equipment || equipment.systemCode !== row.systemCode || !scope.sourceVehicleScope || !scope.window || !scope.matchedEngineScope) return false;
+  const provenance = record(row.provenanceJson), validation = record(provenance.independentValidation), gates = record(row.run.gatesJson);
+  const blocker = row.systemCode === "POWER_STEERING"
+    ? "MANN variant не подтверждает наличие этой гидравлической системы"
+    : "MANN variant не подтверждает привод или модель агрегата";
+  // This policy handles explicitly scoped circuits, not unparsed named models,
+  // multi-capacity branches or residual source conditions.
+  const source = record(provenance.sourceAggregateContext);
+  const modelEvidence = record(provenance.explicitEquipmentModel);
+  const driveEvidence = record(provenance.explicitComponentDriveCondition);
+  const sourceDrives = mannEquipmentComponentDrives(row.componentModel);
+  const driveConditionAllowed = equipment.componentModel === undefined && equipment.drive !== undefined
+    && gates.equipmentComponentDrivePolicy === MANN_EQUIPMENT_COMPONENT_DRIVE_POLICY
+    && driveEvidence.policy === MANN_EQUIPMENT_COMPONENT_DRIVE_POLICY
+    && driveEvidence.sourceComponentModel === row.componentModel
+    && scope.componentModel === row.componentModel && source.componentRaw === row.componentModel
+    && sourceDrives !== null && sourceDrives.includes(equipment.drive)
+    && JSON.stringify(driveEvidence.drives) === JSON.stringify(sourceDrives)
+    && (source.requiredDrive == null || source.requiredDrive === equipment.drive);
+  const modelAllowed = equipment.componentModel === undefined
+    ? /^(?:-|—)?$/.test((row.componentModel ?? "").trim())
+    : gates.equipmentModelPolicy === MANN_EXACT_EQUIPMENT_MODEL_POLICY
+      && modelEvidence.policy === MANN_EXACT_EQUIPMENT_MODEL_POLICY
+      && modelEvidence.sourceComponentModel === row.componentModel
+      && modelEvidence.model === equipment.componentModel
+      && mannExactEquipmentModel(row.componentModel) === equipment.componentModel
+      && scope.componentModel === row.componentModel;
+  return row.state === "REVIEW" && !row.applyEligible && row.verificationStatus === UNVERIFIED
+    && row.matchClass === "CONDITIONAL_EQUIPMENT" && row.matchScore >= 80
+    && row.run.status === "COMPLETED" && row.run.mode === "STAGING"
+    && !row.run.independentHumanSignoff && !row.run.productionApplyAuthorized
+    && gates.automaticProductSelection === false && gates.conditionalEquipmentPolicy === CONDITIONAL_EQUIPMENT_POLICY
+    && provenance.conditionalEquipmentPolicy === CONDITIONAL_EQUIPMENT_POLICY && provenance.conditionalEquipmentEligible === true
+    && provenance.sourceTechnicalReviewRequired === true && validation.vehicleIdentityIndependentlyValidated === true
+    && Array.isArray(validation.hardConflicts) && validation.hardConflicts.length === 0
+    && Array.isArray(validation.reviewBlockers) && validation.reviewBlockers.every(b => b === blocker)
+    && source.systemCode === equipment.systemCode && source.circuit === equipment.circuit && source.fluidRequired === true
+    && ((source.requiredDrive ?? undefined) === equipment.drive || driveConditionAllowed)
+    && (source.attachedTransmissionType ?? undefined) === equipment.attachedTransmissionType
+    && Array.isArray(source.issues) && source.issues.every(issue => ((equipment.componentModel !== undefined && modelAllowed) || driveConditionAllowed) && issue === 'COMPONENT_OR_CONDITIONS_REQUIRE_REVIEW')
+    && (modelAllowed || driveConditionAllowed)
+    && !("capacityBranches" in record(row.technicalDataJson));
+}
+
+function toProfileItem(row: TechnicalRevisionRow, catalogPreview: boolean, userConfirmedTransmission = false, selectedTransmissionType?: MannTransmissionType, vehicleContext?: MannTechnicalVehicleContext, userConfirmedEquipment = false): MannTechnicalProfileItem | null {
   const data = record(row.technicalDataJson);
-  const capacities = safeCapacities(row, data, catalogPreview, userConfirmedTransmission);
+  const capacities = safeCapacities(row, data, catalogPreview, userConfirmedTransmission, selectedTransmissionType, vehicleContext, userConfirmedEquipment);
   const specifications = safeStringList(
     row,
     data,
@@ -391,9 +525,10 @@ function toProfileItem(row: TechnicalRevisionRow, catalogPreview: boolean, userC
     replacementInterval,
     evidence,
     sourceStatus: catalogPreview ? "catalog_preview" : "primary_source",
-    requiresReview: catalogPreview && row.state === "REVIEW" && !userConfirmedTransmission,
+    requiresReview: catalogPreview && row.state === "REVIEW" && !userConfirmedTransmission && !userConfirmedEquipment,
     transmissionType: userConfirmedTransmission ? transmissionTypeFor(row) : undefined,
     userConfirmedTransmission,
+    automaticSelectionEligible: isActive(row),
   };
 }
 
@@ -414,47 +549,123 @@ function itemFingerprint(item: MannTechnicalProfileItem): string {
  * ACTIVE data always wins. STAGED data is returned solely as a labelled test
  * preview and must never be used for automatic product selection.
  */
-export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[], selectedTransmissionType?: MannTransmissionType): MannUnifiedTechnicalProfile {
+export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[], selectedTransmissionType?: MannTransmissionType, vehicleContext?: MannTechnicalVehicleContext): MannUnifiedTechnicalProfile {
+  // Only the explicit selection parameter supplies gearbox-type confirmation.
+  // An unrelated context object must not silently make this choice for the user.
+  vehicleContext = {...vehicleContext, confirmedTransmissionType: selectedTransmissionType};
+  // Discover vehicle-level gearbox conditions on any fluid, without making a
+  // selection. Only publication-eligible rows and the full remaining scope count.
+  const vehicleTransmissionChoices = rows.flatMap(row => {
+    if (!isActive(row) && !isStagedPreview(row) && !isCatalogPreview(row)) return [];
+    const condition = record(record(row.applicabilityJson).requiredTransmission);
+    const type = MANN_TRANSMISSION_TYPES.find(value => value === condition.type);
+    if (!type) return [];
+    const gearCount = typeof condition.gearCount === "number" ? condition.gearCount : undefined;
+    if (!mannTechnicalScopeMatches(row.applicabilityJson, {...vehicleContext,
+      confirmedTransmissionType: type, transmissionGearCount: gearCount})) return [];
+    return [{type, gearCount}];
+  });
+  const equipmentChoiceRows = rows.filter(row => {
+    if (!isConditionalEquipmentPreview(row)) return false;
+    const { requiredEquipment, ...rest } = record(row.applicabilityJson);
+    const equipment = readMannEquipmentScope(requiredEquipment)!;
+    return mannTechnicalScopeMatches(rest, vehicleContext)
+      && (!selectedTransmissionType || !equipment.attachedTransmissionType || selectedTransmissionType === equipment.attachedTransmissionType);
+  });
+  // Choice discovery may omit only the gear-count gate, never vehicle identity,
+  // engine, dates or publication policy. Actual items below use the full scope.
+  const gearChoiceRows = rows.filter(row => {
+    if (!isConditionalTransmissionPreview(row)) return false;
+    const { transmissionGearCount, ...rest } = record(row.applicabilityJson);
+    return typeof transmissionGearCount === "number" && Number.isInteger(transmissionGearCount)
+      && transmissionGearCount >= 3 && transmissionGearCount <= 18
+      && mannTechnicalScopeMatches(rest, vehicleContext);
+  });
+  rows = rows.filter(row => mannTechnicalScopeMatches(row.applicabilityJson, vehicleContext));
   const activeRows = rows.filter(isActive);
   const stagedRows = rows.filter(isStagedPreview);
   const catalogRows = rows.filter(isCatalogPreview);
-  const conditionalTransmissionRows = rows.filter(isConditionalTransmissionPreview);
+  const conditionalTransmissionRows = [...new Set([...rows.filter(isConditionalTransmissionPreview), ...gearChoiceRows])];
   const transmissionOptions = MANN_TRANSMISSION_TYPES.flatMap((type) => (
-    conditionalTransmissionRows.some((row) => transmissionTypeFor(row) === type)
+    (conditionalTransmissionRows.some((row) => transmissionTypeFor(row) === type)
+      || vehicleTransmissionChoices.some(choice => choice.type === type)
+      || catalogRows.some(row => readMannCapacityBranches(row.technicalDataJson, row.applicabilityJson, row.systemCode)?.some(branch => branch.condition.kind === "transmission" && branch.condition.value === type && mannTechnicalScopeMatches(branch.applicabilityJson, vehicleContext))))
       ? [{ type, label: TRANSMISSION_LABELS[type], systemCode: TRANSMISSION_SYSTEMS[type] }]
       : []
   ));
-  const status: MannTechnicalProfileStatus = activeRows.length
-    ? "active"
-    : stagedRows.length
-      ? "staged_preview"
-      : catalogRows.length
-        ? "catalog_preview"
-        : conditionalTransmissionRows.length && selectedTransmissionType
-          ? "catalog_preview"
-          : "none";
-  const eligibleRows = status === "active" ? activeRows : status === "staged_preview" ? stagedRows : status === "catalog_preview" ? catalogRows : [];
+  // Prefer verified data per system, not across the entire vehicle. An engine
+  // oil revision must not hide brake fluid or coolant from another tier.
+  const activeSystems = new Set(activeRows.filter(row => toProfileItem(row, false)).map(row => row.systemCode));
+  const visibleStaged = stagedRows.filter(row => !activeSystems.has(row.systemCode));
+  const primarySystems = new Set([...activeSystems, ...visibleStaged.filter(row => toProfileItem(row, false)).map(row => row.systemCode)]);
+  const eligibleRows = [...activeRows, ...visibleStaged, ...catalogRows.filter(row => !primarySystems.has(row.systemCode))];
   const selectedConditionalRows = selectedTransmissionType
-    ? conditionalTransmissionRows.filter((row) => transmissionTypeFor(row) === selectedTransmissionType)
+    ? conditionalTransmissionRows.filter((row) => transmissionTypeFor(row) === selectedTransmissionType && !primarySystems.has(row.systemCode))
     : [];
+  const transmissionComponentOptions = [...new Set(selectedConditionalRows.flatMap(row => {
+    const count = record(row.applicabilityJson).transmissionGearCount;
+    if (vehicleContext?.transmissionGearCount != null && count != null && count !== vehicleContext.transmissionGearCount) return [];
+    const component = mannTransmissionComponent(row.componentModel);
+    return component.kind === "model" ? [component.model] : conditionalTransmissionModels(row) ?? [];
+  }))].sort();
+  const transmissionConditionsToReview = [...new Set(selectedConditionalRows.flatMap(row => {
+    const component = mannTransmissionComponent(row.componentModel);
+    return component.kind === "conditions" && !conditionalTransmissionModels(row) && !conditionalTransmissionTypeCount(row) ? [component.text] : [];
+  }))];
+  const transmissionGearCountOptions = [...new Set([...selectedConditionalRows.flatMap(row => {
+    const count = record(row.applicabilityJson).transmissionGearCount;
+    return typeof count === "number" ? [count] : [];
+  }), ...vehicleTransmissionChoices.flatMap(choice => choice.type === selectedTransmissionType && choice.gearCount != null ? [choice.gearCount] : [])])].sort((a, b) => a - b);
+  const selectionDetails = {
+    ...(equipmentChoiceRows.some(row => !primarySystems.has(row.systemCode)) ? {
+      equipmentOptions: [...new Map(equipmentChoiceRows.filter(row => !primarySystems.has(row.systemCode)).map(row => {
+        const equipment = readMannEquipmentScope(record(row.applicabilityJson).requiredEquipment)!;
+        return [JSON.stringify(equipment), {...equipment, label: equipment.circuit === "ANGLE_GEAR" ? "Угловой редуктор" : SYSTEM_LABELS[equipment.systemCode]}];
+      })).values()],
+    } : {}),
+    ...(transmissionGearCountOptions.length ? { transmissionGearCountOptions } : {}),
+    ...(transmissionComponentOptions.length ? { transmissionComponentOptions } : {}),
+    ...(transmissionConditionsToReview.length ? { transmissionConditionsToReview } : {}),
+  };
+  const selectedModel = mannTransmissionComponent(vehicleContext?.transmissionModel);
   eligibleRows.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || left.id.localeCompare(right.id));
   selectedConditionalRows.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || left.id.localeCompare(right.id));
 
   const items = new Map<string, MannTechnicalProfileItem>();
+  for (const row of equipmentChoiceRows) {
+    if (primarySystems.has(row.systemCode) || !mannTechnicalScopeMatches(row.applicabilityJson, vehicleContext)) continue;
+    const item = toProfileItem(row, true, false, selectedTransmissionType, vehicleContext, true);
+    if (!item) continue;
+    const {systemCode, ...equipment} = readMannEquipmentScope(record(row.applicabilityJson).requiredEquipment)!;
+    item.userConfirmedEquipment = equipment;
+    if (equipment.circuit === "ANGLE_GEAR") item.systemLabel = "Угловой редуктор";
+    item.componentModel = equipment.componentModel;
+    const fingerprint = itemFingerprint(item);
+    if (!items.has(fingerprint)) items.set(fingerprint, item);
+  }
   for (const row of eligibleRows) {
-    const item = toProfileItem(row, status === "catalog_preview");
+    const item = toProfileItem(row, isCatalogPreview(row), false, selectedTransmissionType, vehicleContext);
     if (!item) continue;
     const fingerprint = itemFingerprint(item);
     if (!items.has(fingerprint)) items.set(fingerprint, item);
   }
   for (const row of selectedConditionalRows) {
+    if (!mannTechnicalScopeMatches(row.applicabilityJson, vehicleContext)) continue;
+    const component = mannTransmissionComponent(row.componentModel);
+    const modelList = conditionalTransmissionModels(row);
+    if (component.kind === "conditions" && !conditionalTransmissionTypeCount(row) && (!modelList || selectedModel.kind !== "model" || !modelList.includes(selectedModel.model))) continue;
+    if (component.kind === "model" && (selectedModel.kind !== "model" || component.model !== selectedModel.model)) continue;
     const item = toProfileItem(row, true, true);
     if (!item) continue;
+    if (component.kind === "model" || modelList) item.userConfirmedTransmissionModel = true;
     const fingerprint = itemFingerprint(item);
     if (!items.has(fingerprint)) items.set(fingerprint, item);
   }
 
   const resultItems = [...items.values()].sort((left, right) => left.systemLabel.localeCompare(right.systemLabel, "ru"));
+  const status: MannTechnicalProfileStatus = resultItems.some(item => item.automaticSelectionEligible) ? "active"
+    : resultItems.some(item => item.sourceStatus === "primary_source") ? "staged_preview"
+    : resultItems.length ? "catalog_preview" : "none";
   const containsCatalogPreview = resultItems.some((item) => item.sourceStatus === "catalog_preview");
   if (!resultItems.length) {
     return {
@@ -463,6 +674,7 @@ export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[], s
       transmissionOptions,
       selectedTransmissionType,
       containsCatalogPreview: false,
+      ...selectionDetails,
     };
   }
   return {
@@ -471,9 +683,12 @@ export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[], s
     transmissionOptions,
     selectedTransmissionType,
     containsCatalogPreview,
-    notice: status === "staged_preview"
+    ...selectionDetails,
+    notice: status === "active" && resultItems.some(item => !item.automaticSelectionEligible)
+      ? "Профиль содержит предварительные справочные данные. Для автоматического подбора разрешены только отдельно утверждённые записи."
+      : status === "staged_preview"
       ? containsCatalogPreview
-        ? "Основные данные проверены по первичному источнику. Данные для выбранной коробки предварительные и не участвуют в автоматическом подборе товаров."
+        ? "Профиль содержит данные первичных источников и предварительные данные каталога. До утверждения они доступны только как справка и не участвуют в автоматическом подборе товаров."
         : "Проверено по первичному источнику, но ещё не утверждено для автоматического подбора товаров. Используйте только как справку."
       : status === "catalog_preview" || containsCatalogPreview
         ? "Предварительные данные из технического каталога прошли автоматическое сопоставление с MANN, но не подтверждены производителем. Они не участвуют в автоматическом подборе товаров."
@@ -481,7 +696,7 @@ export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[], s
   };
 }
 
-export async function getMannUnifiedTechnicalProfile(variantKeys: string[], selectedTransmissionType?: MannTransmissionType): Promise<MannUnifiedTechnicalProfile> {
+export async function getMannUnifiedTechnicalProfile(variantKeys: string[], selectedTransmissionType?: MannTransmissionType, vehicleContext?: MannTechnicalVehicleContext): Promise<MannUnifiedTechnicalProfile> {
   const keys = [...new Set(variantKeys.map((key) => key.trim()).filter(Boolean))].slice(0, 20);
   if (!keys.length) return { status: "none", items: [], transmissionOptions: [], containsCatalogPreview: false };
 
@@ -531,7 +746,7 @@ export async function getMannUnifiedTechnicalProfile(variantKeys: string[], sele
     return buildMannUnifiedTechnicalProfile(revisions.map((revision) => ({
       ...revision,
       reviewConfirmed: revision.reviewDecisions.length > 0,
-    })), selectedTransmissionType);
+    })), selectedTransmissionType, vehicleContext);
   } catch (error) {
     // Environments that have not received the expand migration retain the
     // existing filter lookup instead of failing the whole vehicle workflow.

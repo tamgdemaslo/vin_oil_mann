@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {createJiti} from 'jiti';
+import {resolve} from 'node:path';
+import {gearboxSourceQuality} from './lib/mann-gearbox-source-quality.mjs';
+const jiti=createJiti(import.meta.url,{alias:{'@':resolve(import.meta.dirname,'../src')}});
+const {mannTransmissionComponent}=await jiti.import('../src/lib/mann-transmission-component.ts');
+const {extractFluidSourceSystemContext}=await jiti.import('../src/lib/fluid-source-system-context.ts');
+const source=(id,componentModel,count,make='mercedes')=>({id,make,componentModel,systemCode:'AUTOMATIC_TRANSMISSION',systemNameRaw:`МАСЛО в АКПП-${count}`});
+const check=rows=>gearboxSourceQuality(rows,mannTransmissionComponent,extractFluidSourceSystemContext);
+assert.equal(check([source('a','722.998',7),source('b','722.998',7)]).conflicts.length,0);
+const rows=[source('a','- 722.942 - 722.998',5),source('b','722.998',7),source('c','722.998',7),source('d','722.998',9,'different-make')];
+const result=check(rows);assert.equal(result.conflicts.length,1);assert.deepEqual([...result.heldBySource.keys()],['a','b','c']);
+assert.equal(check([source('a','722.998',7),source('b','722.998 до с/н 2834526',5)]).conflicts.length,0);
+assert.equal(check([source('a','725.0',7),source('b','725.0',9)]).conflicts.length,0);
+assert.equal(check([source('a','A343F',4,'toyota'),source('b','A343F',6,'toyota')]).heldBySource.size,2);
+assert.deepEqual(rows[0],source('a','- 722.942 - 722.998',5));
+console.log('Source quality: all contradictory sources held, majority/alias/family guesses rejected');

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Plus, QrCode, RefreshCw, Save, TestTube2, Unplug } from "lucide-react";
 import { EcoBadge, EcoButton, EcoCard, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import { safeReadJson } from "@/lib/http-json";
@@ -42,6 +42,7 @@ type AqsiDevice = { id: string; label: string; shopId?: string };
 type AqsiStatus = { configured: boolean; pendingFiscalizations: number; alerts: AqsiAlert[]; registers: AqsiRegister[] };
 type TelegramStatus = {
   configured: boolean;
+  managedByBackend: boolean;
   apiIdConfigured: boolean;
   apiHashConfigured: boolean;
   status: string;
@@ -155,12 +156,10 @@ export default function OperationalIntegrationsPanel({
   const [telegram, setTelegram] = useState<TelegramStatus | null>(null);
   const [rosskoConfigured, setRosskoConfigured] = useState(false);
   const [aqsiForm, setAqsiForm] = useState<AqsiForm>(EMPTY_AQSI);
-  const [telegramForm, setTelegramForm] = useState({ apiId: "", apiHash: "" });
   const [aqsiDevices, setAqsiDevices] = useState<AqsiDevice[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [activity, setActivity] = useState<IntegrationActivity[]>([]);
-  const telegramCredentialsFormRef = useRef<HTMLFormElement>(null);
 
   const selected = useMemo(() => aqsi?.registers.find((row) => row.id === aqsiForm.id) ?? null, [aqsi, aqsiForm.id]);
 
@@ -256,40 +255,6 @@ export default function OperationalIntegrationsPanel({
     setMessage(response.ok ? (data?.pending ? "Повтор запущен; AQSI пока недоступен, запись останется в очереди." : "Фискализация успешно отправлена в AQSI.") : data?.error ?? "Повторная отправка не выполнена.");
     setBusy(null);
     await load();
-  }
-
-  async function saveTelegram() {
-    const nativeForm = telegramCredentialsFormRef.current;
-    const nativeValues = nativeForm ? new FormData(nativeForm) : null;
-    const credentials = {
-      apiId: String(nativeValues?.get("apiId") ?? telegramForm.apiId).trim(),
-      apiHash: String(nativeValues?.get("apiHash") ?? telegramForm.apiHash).trim(),
-    };
-    if (!credentials.apiId || !credentials.apiHash) {
-      setMessage("Введите API ID и API Hash Telegram в оба поля.");
-      return;
-    }
-    if (!/^\d+$/.test(credentials.apiId) || Number(credentials.apiId) <= 0) {
-      setMessage("API ID Telegram должен быть положительным числом.");
-      return;
-    }
-    if (credentials.apiHash.length < 16) {
-      setMessage("Проверьте API Hash Telegram: значение выглядит слишком коротким.");
-      return;
-    }
-    setBusy("telegram-save"); setMessage(null);
-    try {
-      const response = await fetch("/api/integrations/telegram-user", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(credentials) });
-      const data = await safeReadJson<TelegramStatus & { error?: string }>(response);
-      if (response.ok && data) {
-        setTelegram(data); setTelegramForm({ apiId: "", apiHash: "" });
-        setMessage("API-реквизиты Telegram сохранены. Теперь подключите рабочий аккаунт по QR.");
-      } else setMessage(data?.error ?? "Настройки Telegram не сохранены.");
-    } catch {
-      setMessage("Связь с сервером прервалась. Реквизиты Telegram не сохранены; повторите после восстановления соединения.");
-    } finally {
-      setBusy(null);
-    }
   }
 
   async function checkTelegram() {
@@ -389,21 +354,20 @@ export default function OperationalIntegrationsPanel({
         </EcoCard>
 
         <EcoCard>
-          <div className="eco-card__head"><div><div className="eco-page-kicker">Рабочий аккаунт</div><h2>Telegram по QR</h2><p>Один рабочий user account на филиал. История сохраняется при отключении.</p></div><EcoBadge tone={telegram?.account?.status === "connected" ? "success" : telegram?.configured ? "warning" : "neutral"} dot>{label(telegram?.status ?? "not_configured", Boolean(telegram?.configured))}</EcoBadge></div>
-          <form ref={telegramCredentialsFormRef} onSubmit={(event) => { event.preventDefault(); void saveTelegram(); }}>
-            <div className="eco-tbank-settings-grid">
-              <label><span>API ID</span><EcoInput name="apiId" type="password" autoComplete="off" value={telegramForm.apiId} disabled={!canEditSecrets} placeholder={telegram?.apiIdConfigured ? "сохранён: ••••••••" : "my.telegram.org"} onChange={(e) => setTelegramForm((v) => ({ ...v, apiId: e.target.value }))} /></label>
-              <label><span>API Hash</span><EcoInput name="apiHash" type="password" autoComplete="off" value={telegramForm.apiHash} disabled={!canEditSecrets} placeholder={telegram?.apiHashConfigured ? "сохранён: ••••••••" : "my.telegram.org"} onChange={(e) => setTelegramForm((v) => ({ ...v, apiHash: e.target.value }))} /></label>
+          <div className="eco-card__head"><div><div className="eco-page-kicker">Рабочий аккаунт</div><h2>Telegram по QR</h2><p>Один рабочий user account на филиал. Реквизиты приложения настраиваются централизованно на backend.</p></div><EcoBadge tone={telegram?.account?.status === "connected" ? "success" : telegram?.configured ? "warning" : "neutral"} dot>{label(telegram?.status ?? "not_configured", Boolean(telegram?.configured))}</EcoBadge></div>
+          <div>
+            <div className={`eco-integration-note eco-integration-note--${telegram?.configured ? "success" : "warning"}`}>
+              {telegram?.configured ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+              <span>{telegram?.configured ? "Серверные реквизиты Telegram готовы. Для подключения филиала достаточно отсканировать QR." : "Telegram не настроен на backend. Добавьте TELEGRAM_API_ID и TELEGRAM_API_HASH в Timeweb."}</span>
             </div>
             {telegram?.account ? <div className="eco-integration-note eco-integration-note--info"><span>{telegram.account.displayName} · {telegram.account.phoneMasked ?? telegram.account.username ?? "номер скрыт"}</span></div> : null}
             {telegram?.account ? <div className="eco-integration-note eco-integration-note--info"><span>Последний успех: {dateTime(telegram.account.lastSyncAt)} · последняя ошибка: {telegram.account.lastError ? `${dateTime(telegram.account.updatedAt)} · ${telegram.account.lastError}` : "—"}</span></div> : null}
             <div className="eco-messenger-settings-actions">
-              {canEditSecrets ? <EcoButton type="submit" disabled={busy !== null}><Save size={15} />{busy === "telegram-save" ? "Сохраняем…" : "Сохранить реквизиты"}</EcoButton> : null}
               {telegram?.account?.status === "connected" ? <EcoButton type="button" variant="secondary" onClick={() => void checkTelegram()} disabled={busy !== null}><TestTube2 size={15} />{busy === "telegram-check" ? "Проверяем…" : "Проверить"}</EcoButton> : null}
               {canEditSecrets && telegram?.account?.status !== "disconnected" ? <EcoButton type="button" variant="ghost" onClick={() => void disconnectTelegram()} disabled={busy !== null}><Unplug size={15} />{busy === "telegram-disconnect" ? "Отключаем…" : "Отключить"}</EcoButton> : null}
               <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--secondary"><QrCode size={15} />Открыть подключение по QR</Link>
             </div>
-          </form>
+          </div>
         </EcoCard>
       </div>
       {canEditSecrets ? (

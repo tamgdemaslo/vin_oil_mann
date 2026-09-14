@@ -21,7 +21,7 @@ for(const c of cases){
     product('filter',{name:'TEST filter',article:'TEST-FILTER',sae:null,oem:null,atf:null,packageVolume:null,salePriceCents:50000}),
   ];
   f.mann={status:'resolved',decision:'MATCH',selectedApplication:{variantIds:['reviewed-fixture']},candidates:[],filters:[{filterType:'Oil Filter',mannArticle:'TEST-FILTER',condition:null}],localMatches:[{mannArticleNormalized:normalizeMannArticle('TEST-FILTER'),compatibleProducts:[{id:'filter',name:'TEST filter',price:500,available:10}]}]};
-  f.profile={status:'active',items:[{systemCode:'ENGINE_OIL',revisionId:'reviewed-fixture',sourceStatus:'primary_source',requiresReview:false,specifications:['TEST-SPEC 123'],viscosityGrades:[],capacities:[{nominalLiters:4.3,serviceContext:'WITH_FILTER'}],evidence:[{publisher:'Reviewed synthetic OEM source',url:'https://example.test/manual'}]}]};
+  f.profile={status:'active',items:[{systemCode:'ENGINE_OIL',revisionId:'reviewed-fixture',sourceStatus:'primary_source',automaticSelectionEligible:true,requiresReview:false,specifications:['TEST-SPEC 123'],viscosityGrades:[],capacities:[{nominalLiters:4.3,serviceContext:'WITH_FILTER'}],evidence:[{publisher:'Reviewed synthetic OEM source',url:'https://example.test/manual'}]}]};
   f.responses=[call('build_quote_and_tech_card',{input:input({selectedProducts:[],service:{...input().service,standardTechnicalQuantityLiters:4.3,filterAccess:'external_replaceable'}})})];
   await run('Рассчитай замену моторного масла и фильтра с вашими материалами');
   const a=artifact(f),o=a.quoteSet.options[0],line=o.lines.find(l=>l.role==='fluid');

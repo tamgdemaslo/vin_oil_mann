@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {compareSpecificationSets as compare} from './lib/mann-specification-comparison.mjs';
+assert.equal(compare(['VW 502.00','VW 504.00'],['vw 504.00','VW  502.00']).kind,'IDENTICAL');
+assert.equal(compare(['VW 502.00'],['VW 504.00']).kind,'DISJOINT');
+assert.equal(compare(['VW 502.00'],['VW 502.00','VW 504.00']).kind,'SUBSET');
+assert.equal(compare(['A','B'],['B','C']).kind,'PARTIAL_OVERLAP');
+assert.equal(compare([],['DOT 4']).kind,'MISSING_ON_ONE_SIDE');
+assert.equal(compare(['VW 502.00'],['VW 50200']).kind,'DISJOINT');
+assert.equal(compare(['DOT 4'],['DOT 4']).compatibilityVerified,false);
+console.log('Specification comparison preserves approval identifiers and never infers compatibility');

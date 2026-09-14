@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {conditionalVehicleIdentityReasons as check} from './lib/mann-conditional-vehicle-identity.mjs';
+const source={generation:'II',bodyCodesJson:['J32']},candidate={featureContributions:[{feature:'базовая модель',weight:22}],matchedFields:['год','точный код двигателя','мощность']};
+assert.deepEqual(check(source,candidate),['MISSING_EXPLICIT_CHASSIS_IDENTITY']);
+for(const field of ['поколение','код кузова'])assert.deepEqual(check(source,{...candidate,matchedFields:[...candidate.matchedFields,field]}),[]);
+assert.deepEqual(check({bodyCodesJson:['J32']},candidate),['MISSING_EXPLICIT_CHASSIS_IDENTITY']);
+assert.deepEqual(check({},candidate),[]);
+assert.ok(check(source,{...candidate,featureContributions:[]}).includes('NO_STRONG_MODEL_IDENTITY'));
+assert.ok(check(source,null).includes('MISSING_EXPLICIT_CHASSIS_IDENTITY'));
+console.log('Conditional vehicle identity: dates/engine/power do not substitute for explicit generation/body evidence.');

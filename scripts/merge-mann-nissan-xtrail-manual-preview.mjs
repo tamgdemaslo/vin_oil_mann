@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+import {parseCopy,sha} from './lib/mann-offline-scope.mjs';
+import {nissanXtrailEngineBranches} from './lib/mann-nissan-xtrail-engine-branches.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-nissan-xtrail-cvt-preview-2026-09-14');
+const [raw,sRaw,pRaw,sql]=await Promise.all([readFile(resolve(dir,'plan.json'),'utf8'),readFile(resolve(dir,'nissan-xtrail-manual-preview-v1.json'),'utf8'),readFile(resolve(dir,'nissan-xtrail-manual-partition-v1.json'),'utf8'),readFile('/tmp/vehicle_fluid_requirements.sql','utf8')]);
+const parent=JSON.parse(raw),s=JSON.parse(sRaw),p=JSON.parse(pRaw);
+assert.equal(s.planHash,sha(raw));assert.equal(p.supplementHash,sha(sRaw));assert.equal(s.sourceHash,sha(sql));assert.equal(p.sourceHash,s.sourceHash);
+assert.equal(s.mannHash,sha(await readFile('/tmp/mann_filter_applications.sql','utf8')));
+const liveRaw=await readFile(resolve(root,parent.inputFiles.live),'utf8');assert.equal(s.liveHash,sha(liveRaw));assert.equal(parent.inputHashes.live,sha(liveRaw));const live=JSON.parse(liveRaw);
+assert.equal(s.rawHash,sha(await readFile(resolve(root,'../vin-oil-mann/outputs/podbormasla-20260723/podbormasla_rows.ndjson'),'utf8')));assert.equal(p.rawHash,s.rawHash);
+for(const [file,hash] of Object.entries(s.codeHashes))assert.equal(hash,sha(await readFile(resolve(root,file),'utf8')));
+assert.deepEqual(s.summary,{considered:1,revisions:1,review:0,checks:21960});
+assert.equal(p.total,216);assert.equal(p.covered,100);assert.equal(p.pending,116);assert.equal(p.noOverlaps,true);assert.equal(p.noGaps,true);assert.equal(s.pending.length,2);assert.equal(s.revisions.length,1);
+const sources=new Map(parseCopy(sql,'vehicle_fluid_requirements').map(r=>[r.id,r]));
+const denied=new Set(JSON.parse(await readFile(resolve(root,'data/mann-technical-association-denylist-v1.json'),'utf8')).rejectedAssociationFingerprints);
+const {parseFluidCapacities}=await createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}).import('../src/lib/fluid-capacity-parser.ts');
+for(const r of s.revisions){
+ assert.equal(r.state,'REVIEW');assert.equal(r.applyEligible,false);assert.equal(r.verificationStatus,'UNVERIFIED');assert.deepEqual(r.replacesRevisionIds,[]);
+ assert.ok(!live.some(v=>v.sourceRequirementId===r.sourceRequirementId&&v.vehicleVariantKey===r.vehicleVariantKey));
+ assert.ok(!parent.newRevisions.some(v=>v.id===r.id||(v.sourceRequirementId===r.sourceRequirementId&&v.vehicleVariantKey===r.vehicleVariantKey)));
+ const original=sources.get(r.sourceRequirementId);assert.ok(original);assert.equal(original.systemCode,'MANUAL_TRANSMISSION');assert.equal(r.systemCode,original.systemCode);assert.equal(r.componentModel,original.componentModel);
+ for(const field of ['fillVolumeText','specificationText','recommendationText','replacementIntervalText','replacementKmMin','replacementKmMax','replacementMonths','controlIntervalText','analogText'])assert.deepEqual(r.technicalDataJson[field],original[field]);
+ assert.deepEqual(r.technicalDataJson.specifications,original.specificationsJson);assert.deepEqual(r.technicalDataJson.viscosityGrades,original.viscosityGradesJson);
+ const capacity=parseFluidCapacities(original.fillVolumeText,original.systemCode);assert.equal(capacity.needsReview,false);assert.equal(capacity.capacities.length,1);assert.equal(capacity.capacities[0].nominalLiters,2);assert.deepEqual(r.technicalDataJson.capacities,capacity.capacities);
+ assert.ok(!denied.has(r.provenanceJson.sourceAssociationFingerprint));
+ assert.equal(r.applicabilityJson.transmissionType,'manual');assert.equal(r.applicabilityJson.componentModel,'RS6F52A');assert.equal(r.applicabilityJson.transmissionGearCount,6);
+ assert.deepEqual(r.applicabilityJson.matchedEngineScope,['MR20DD']);
+ const engines=nissanXtrailEngineBranches(r.provenanceJson.sourceEngineEvidence.originalRow.model);assert.equal(engines.length,2);
+ for(const entry of s.pending){assert.equal(entry.sourceRequirementId,r.sourceRequirementId);assert.deepEqual(entry.originalSource,original);assert.equal(entry.sourceHash,sha(original));assert.ok(engines.some(e=>sha(e)===sha(entry.sourceEngineBranch)));assert.equal(entry.publicationAllowed,false);assert.deepEqual(entry.requiredTransmission,{type:'manual',model:'RS6F52A',gearCount:6});if(entry.sourceEngineBranch.hybrid)assert.equal(entry.sourceEngineBranch.powerHp,null);}
+ const policy=r.provenanceJson.conditionalTransmissionPolicy;assert.equal(policy,'USER_CONFIRMED_TRANSMISSION_V1');
+ const hash=sha({policy,sourceRequirementId:r.sourceRequirementId,vehicleVariantKey:r.vehicleVariantKey,applicabilityJson:r.applicabilityJson,technicalDataJson:r.technicalDataJson});assert.equal(hash,r.semanticFingerprint);assert.equal(r.id,`mtar_${hash.slice(0,24)}`);
+}
+const newRevisions=[...parent.newRevisions,...s.revisions];
+const plan={...parent,newRevisions,nissanTransmissionPending:[...(parent.nissanTransmissionPending??[]),...s.pending],nissanTransmissionHistory:{previous:parent.nissanTransmissionHistory??null,parentHash:sha(raw),parentPath:resolve(dir,'plan.json'),supplementHash:sha(sRaw),partitionHash:sha(pRaw),addedIds:s.revisions.map(r=>r.id)},summary:{...parent.summary,candidateRevisions:newRevisions.length,sourceRequirements:new Set(newRevisions.map(r=>r.sourceRequirementId)).size,nissanTransmissionAdded:(parent.summary.nissanTransmissionAdded??0)+1},productionApplyAllowed:false};
+for(const key of Object.keys(parent).filter(k=>!['newRevisions','summary','nissanTransmissionHistory','nissanTransmissionPending'].includes(k)))assert.deepEqual(plan[key],parent[key]);assert.deepEqual(newRevisions.slice(0,parent.newRevisions.length),parent.newRevisions);
+const out=resolve(root,'outputs/mann-nissan-xtrail-manual-preview-2026-09-14');await mkdir(out);const serialized=JSON.stringify(plan,null,2)+'\n';await writeFile(resolve(out,'plan.json'),serialized,{flag:'wx'});
+const proof={planHash:sha(serialized),parentHash:sha(raw),added:1,preserved:parent.newRevisions.length,changedActions:0,newPendingIntervals:2,productionApplyAllowed:false};await writeFile(resolve(out,'merge-verification.json'),JSON.stringify(proof,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify({...proof,revisions:newRevisions.length,sources:plan.summary.sourceRequirements,out}));

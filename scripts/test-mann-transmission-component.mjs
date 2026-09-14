@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {createJiti} from 'jiti';
+const jiti=createJiti(import.meta.url,{alias:{'@':new URL('../src',import.meta.url).pathname}});
+const {mannTransmissionComponent:parse}=await jiti.import('../src/lib/mann-transmission-component.ts');
+for(const text of ['722.695','- 716.628',' — 725.034 '])assert.equal(parse(text).kind,'model');
+assert.deepEqual(parse('- 716.628'),{kind:'model',model:'716.628'});
+for(const text of ['725.0','717.4','722.695/722.699','722.695, 722.699','722.904 до серийного номера 2834526','- 716.628 - 716.631','725.031 / W9S700','722.695 для W203','722.695*','-722.695'])assert.equal(parse(text).kind,'conditions',text);
+assert.deepEqual(parse('A4CF1'),{kind:'model',model:'A4CF1'});
+assert.deepEqual(parse('АКПП'),{kind:'type'});
+console.log('Exact dotted gearbox codes accepted; families, lists and serial conditions preserved');

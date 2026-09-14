@@ -6,7 +6,7 @@ const {verifiedLocalTechnicalInput}=await jiti.import(process.cwd()+'/src/lib/ai
 const {createQuoteAndTechCardPlan,parseQuoteAndTechCardInput}=await jiti.import(process.cwd()+'/src/lib/ai-assistant/quote-and-tech-card.ts');
 let count=0;
 async function test(name,work){await work();count++;console.log(`PASS ${name}`);}
-const profile=(capacities)=>({status:'active',items:[{revisionId:'reviewed-test',systemCode:'AUTOMATIC_TRANSMISSION',componentModel:'TEST-9',sourceStatus:'primary_source',requiresReview:false,specifications:['TEST-ATF'],viscosityGrades:[],capacities,evidence:[{publisher:'OEM fixture',url:'https://example.test/manual'}]}]});
+const profile=(capacities)=>({status:'active',items:[{revisionId:'reviewed-test',systemCode:'AUTOMATIC_TRANSMISSION',componentModel:'TEST-9',sourceStatus:'primary_source',automaticSelectionEligible:true,requiresReview:false,specifications:['TEST-ATF'],viscosityGrades:[],capacities,evidence:[{publisher:'OEM fixture',url:'https://example.test/manual'}]}]});
 const sourceCapacities=[{nominalLiters:4,serviceContext:'WITHOUT_FILTER'},{nominalLiters:7,serviceContext:'WITH_FILTER'}];
 function setup(capacities=sourceCapacities){
   const f=reset();
@@ -20,6 +20,12 @@ function request(overrides={}){
 const verified=value=>runWithRequestTenant(tenant,()=>verifiedLocalTechnicalInput(value,'org-a'));
 const lookup=(args,context=ctx)=>runWithRequestTenant(tenant,()=>executeAssistantTool('lookup_technical_data',args,context));
 
+await test('mixed active profile cannot promote staged or legacy items to verified facts',async()=>{
+  for(const eligibility of [false,undefined]){
+    const f=setup();f.profile.items[0].automaticSelectionEligible=eligibility;
+    assert.equal((await verified(request())).facts.length,0);
+  }
+});
 await test('both service capacities survive profile → plan independently',async()=>{
   setup();const v=await verified(request());const plan=createQuoteAndTechCardPlan(v.input,{},v.facts);
   assert.deepEqual(plan.options.map(o=>[o.code,o.technicalQuantityLiters,o.billableQuantityLiters,o.blocker]),[['partial',4,4,null],['filter_service',7,7,null]]);

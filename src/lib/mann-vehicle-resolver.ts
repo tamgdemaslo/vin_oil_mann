@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { splitMannEngineCodeList } from "@/lib/mann-engine-code-list";
 import { isMannNonVehicleVariantText, listMannFilters, matchMannArticlesToLocalProducts, normalizeMannSearchText, normalizeMannText, type MannArticleMatchResult } from "@/lib/mann-catalog";
 import type { NormalizedVehicleIdentity } from "@/lib/vehicle-identity";
 import { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-normalization";
@@ -14,7 +15,11 @@ export type NormalizedMannVehicle = {
   generation?: string;
   bodyCodes: string[];
   year?: number;
+  // Catalogue applicability range, not an individual vehicle's build year.
+  applicabilityYears?: { from?: number; to?: number };
   exactEngineCode?: string;
+  // Explicit alternatives from a catalogue requirement, never inferred for a VIN.
+  sourceExactEngineCodes?: string[];
   engineFamily?: string;
   engineSeries?: string;
   engineVolumeCc?: number;
@@ -136,6 +141,9 @@ const MANN_MAKE_FORMS: Record<string, string[]> = {
   MINI: ["MINI", "MINI (BMW GROUP)"],
   "DS AUTOMOBILES": ["DS AUTOMOBILES", "DS"],
   CHEVROLET: ["CHEVROLET", "CHEVROLET EUROPE / DAEWOO (GM)"],
+  DAEWOO: ["DAEWOO", "CHEVROLET EUROPE / DAEWOO (GM)", "DAEWOO - FS LUBLIN"],
+  FAW: ["FAW", "BESTURN / FAW"],
+  EXEED: ["EXEED", "EXEED (CHERY)"],
   "LAND ROVER": ["LAND ROVER", "LANDROVER"],
   SSANGYONG: ["SSANGYONG", "SSANG YONG"],
   "GREAT WALL": ["GREAT WALL", "GREATWALL"],
@@ -144,7 +152,7 @@ const MANN_MAKE_FORMS: Record<string, string[]> = {
 };
 
 const ROMAN_GENERATION = /(?:^|[\s(/,])(XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)(?=$|[\s(),/])/g;
-const BODY_CODE = /\b(?:[A-Z]{1,3}\d{1,3}[A-Z]{0,3}|\d[A-Z]{1,3})\b/g;
+const BODY_CODE = /\b(?:[A-Z]{1,3}\d{1,3}[A-Z]{0,3}|(?<!\b\d{1,2}[.,])\d[A-Z]{1,3}\d{0,2})\b/g;
 
 function unique(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
@@ -159,7 +167,8 @@ function text(value: unknown): string {
 }
 
 function generationFromText(value: unknown): string | undefined {
-  const matches = [...text(value).toUpperCase().matchAll(ROMAN_GENERATION)];
+  const generationText = text(value).toUpperCase().replace(/\bX\s+TRAIL\b/g, "X-TRAIL");
+  const matches = [...generationText.matchAll(ROMAN_GENERATION)];
   return matches.at(-1)?.[1] || undefined;
 }
 
@@ -167,11 +176,23 @@ function vehicleGeneration(value: unknown): string | undefined {
   return generationFromText(value);
 }
 
+function decodedGeneration(vehicle: DecodedVehicle, rawModel: string, make: string): string | undefined {
+  if (make === "OPEL") {
+    const modelLabel = normalizeVehicleModel(rawModel, make).generation;
+    const explicitLabel = normalizeVehicleModel(`${canonicalBaseModel(rawModel, make)} ${vehicle.generationCanonical ?? vehicle.generationRaw ?? ""}`, make).generation;
+    if (modelLabel && explicitLabel && modelLabel !== explicitLabel) return "CONFLICT";
+    if (explicitLabel || modelLabel) return explicitLabel ?? modelLabel;
+  }
+  return vehicleGeneration(`${vehicle.generationCanonical ?? ""} ${vehicle.generationRaw ?? ""} ${rawModel}`);
+}
+
 function bodyCodesFromText(value: unknown): string[] {
   const normalized = text(value).toUpperCase();
   const exactAlphabeticCode = /^[A-Z]{2,3}$/.test(normalized) ? normalized : undefined;
   return unique([exactAlphabeticCode, ...(normalized.match(BODY_CODE) ?? []).filter((code) => (
     !/^(?:I|II|III|IV|V|VI|VII|VIII|IX|X)$/.test(code)
+    && !/^\d+GEN$/.test(code)
+    && !/^(?:2WD|4WD|AWD|FWD|RWD|4X4|4X2|2X4)$/.test(code)
     && !/^V(?:6|8|10|12)$/.test(code)
     && !/^(?:GLK|GL|GLE|GLS|ML)\d{2,3}$/.test(code)
     && !/^\d{3}[DIE]$/.test(code)
@@ -184,6 +205,13 @@ function bodyCodesCompatible(left: string, right: string): boolean {
   const [shorter, longer] = left.length <= right.length ? [left, right] : [right, left];
   return (shorter.length >= 2 && longer.startsWith(shorter))
     || (shorter.length >= 3 && longer.includes(shorter));
+}
+
+// Numeric chassis identifiers must come from the dedicated field, never
+// arbitrary engine/power/year text. Keep the scope to the documented VW codes.
+function explicitVwNumericBodyCodes(value: unknown, make: string): string[] {
+  if (make !== "VOLKSWAGEN") return [];
+  return unique(text(value).split(/[\s,;/]+/).filter(code => /^(?:357|362|365)$/.test(code)));
 }
 
 function canonicalBaseModel(value: unknown, make?: string): string | undefined {
@@ -258,6 +286,21 @@ function candidateBaseModels(row: MannRow, make: string): string[] {
   ]);
 }
 
+// Retrieval similarity is not evidence of fluid applicability. Only canonical
+// identity or a model explicitly listed in the catalogue heading can pass.
+export function hasExactMannModelIdentity(model: string, make: string, row: MannResolverTestRow): boolean {
+  const source = modelComparisonKey(canonicalBaseModel(model, make));
+  const exact = Boolean(source) && candidateBaseModels(row, make)
+    .some(candidate => modelComparisonKey(candidate) === source);
+  if (exact) return true;
+  // Only the base-name gate accepts a literal Passat B-series heading.
+  // Keep retrieval, generation and body identities unchanged. Whole-segment
+  // matching prevents CC, Alltrack and other trims from becoming aliases.
+  return make === "VOLKSWAGEN" && source === "PASSAT"
+    && row.model.replace(/\([^)]*\)/g, " ").split(/[+/;,]+/)
+      .some(part => /^PASSAT B(?:[1-9]|5\.5)$/.test(normalizeVehicleModel(part, make).canonical ?? ""));
+}
+
 function engineFamily(value?: string | null): string | undefined {
   const normalized = normalizeEngineCode(value);
   if (!normalized) return undefined;
@@ -304,9 +347,7 @@ function engineVolumeCcFromRow(row: MannRow): number | null {
 }
 
 function engineCodes(value?: string | null): string[] {
-  return unique(String(value ?? "").split(/[;,/|]+/).map((part) => normalizeEngineCode(
-    part.replace(/\b(?:AND ALWAYS|UND IMMER|FOR OUR COMPLETE).*$/i, "").trim()
-  )));
+  return unique(splitMannEngineCodeList(value).map(part => normalizeEngineCode(part.trim())));
 }
 
 export function normalizeMannFuel(value?: string | null): MannFuelKind | undefined {
@@ -366,9 +407,7 @@ export async function normalizeDecodedVehicle(vehicle: DecodedVehicle): Promise<
   const baseModel = alias?.canonicalBaseModel ?? canonicalBaseModel(model.canonical ?? rawModel, canonicalMake);
   if (!baseModel) return null;
   const aliasBodyCodes = alias ? jsonStrings(alias.bodyCodesJson) : [];
-  const generation = alias?.canonicalGeneration ?? vehicleGeneration(
-    `${vehicle.generationCanonical ?? ""} ${vehicle.generationRaw ?? ""} ${rawModel}`,
-  );
+  const generation = alias?.canonicalGeneration ?? decodedGeneration(vehicle, rawModel, canonicalMake);
   return {
     canonicalMake,
     baseModel,
@@ -376,6 +415,7 @@ export async function normalizeDecodedVehicle(vehicle: DecodedVehicle): Promise<
     bodyCodes: unique([
       ...aliasBodyCodes,
       ...bodyCodesFromText(vehicle.bodyCode),
+      ...explicitVwNumericBodyCodes(vehicle.bodyCode, canonicalMake),
       ...bodyCodesFromText(vehicle.bodyName),
       ...bodyCodesFromText(vehicle.generationCanonical),
       ...bodyCodesFromText(vehicle.generationRaw),
@@ -395,15 +435,63 @@ export async function normalizeDecodedVehicle(vehicle: DecodedVehicle): Promise<
 }
 
 function rowGeneration(row: MannRow): string | undefined {
+  if (normalizeVehicleMake(row.make) === "OPEL") return normalizeVehicleModel(row.model, "OPEL").generation;
   return vehicleGeneration(`${row.model} ${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""}`);
 }
 
-function rowBodyCodes(row: MannRow): string[] {
+function rowGenerationForVehicle(row: MannRow, vehicle: NormalizedMannVehicle): string | undefined {
+  // Slashes inside platform-code parentheses are not model separators:
+  // Swift III(MZ/EZ/SG) is one model, unlike S60 II/V60.
+  const parts: string[] = [];
+  let depth = 0, start = 0;
+  for (let index = 0; index < row.model.length; index += 1) {
+    const char = row.model[index];
+    if (char === "(") depth += 1;
+    else if (char === ")") depth = Math.max(0, depth - 1);
+    else if (char === "/" && depth === 0) {
+      parts.push(row.model.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(row.model.slice(start));
+  if (parts.length === 1) return rowGeneration(row);
+  // A shared catalogue heading can contain different generations of different
+  // models (S60 II/V60). Only the matching model may supply its generation.
+  const matching = parts.filter(part => canonicalBaseModel(part, vehicle.canonicalMake) === vehicle.baseModel);
+  if (matching.length === 0) return undefined;
+  const generations = matching.map(part => vehicle.canonicalMake === "OPEL" ? normalizeVehicleModel(part, "OPEL").generation : vehicleGeneration(part));
+  if (generations.some(generation => !generation)) return undefined;
+  return new Set(generations).size === 1 ? generations[0] : undefined;
+}
+
+export function rowBodyCodes(row: MannRow): string[] {
   const generation = rowGeneration(row);
   const alphabeticPlatformCodes = [...row.model.matchAll(/\(([A-Z]{2,3})\)/gi)].map((match) => match[1]?.toUpperCase());
+  // The archived Solaris rows explicitly print 1.4(RB) / 1.6(RB).
+  // Do not infer alphabetic chassis from arbitrary trim or gearbox text.
+  if (normalizeVehicleMake(row.make) === "HYUNDAI" && /^Solaris$/i.test(row.model.trim())
+    && [row.vehicleText, row.effectiveVehicleText].some(value => /^1\.[46]\s*\(RB\)$/i.test(text(value)))) {
+    alphabeticPlatformCodes.push("RB");
+  }
+  const headingCodes = unique([
+    ...bodyCodesFromText(row.model), ...alphabeticPlatformCodes,
+    ...(/^Passat\s+(?:B[5-8]|CCB6)\b/i.test(row.model)
+      ? [...row.model.matchAll(/\(([^)]*)\)/g)].flatMap(match => explicitVwNumericBodyCodes(match[1], normalizeVehicleMake(row.make) ?? "")) : []),
+  ]).filter(code => code !== generation && code !== generation?.split(".")[0]);
+  // A specific row can select one chassis from a shared model heading.
+  // Accept only complete parenthesized lists of codes already in that heading;
+  // engine sizes, power figures and unrecognized qualifiers are not chassis.
+  const specificCodes = unique([row.vehicleText, row.effectiveVehicleText].flatMap(value =>
+    [...text(value).matchAll(/\(([^)]*)\)/g)].flatMap(match => {
+      const codes = match[1].toUpperCase().trim().split(/[\s,;/]+/).filter(Boolean);
+      return codes.length && codes.every(code => headingCodes.includes(code)) ? codes : [];
+    })));
+  if (specificCodes.length) return specificCodes;
   return unique([
     ...bodyCodesFromText(`${row.model} ${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""}`),
     ...alphabeticPlatformCodes,
+    ...(/^Passat\s+(?:B[5-8]|CCB6)\b/i.test(row.model)
+      ? [...row.model.matchAll(/\(([^)]*)\)/g)].flatMap(match => explicitVwNumericBodyCodes(match[1], "VOLKSWAGEN")) : []),
   ])
     .filter((code) => code !== generation && code !== generation?.split(".")[0]);
 }
@@ -494,7 +582,7 @@ function rowAnchorStrength(vehicle: NormalizedMannVehicle, row: MannRow): number
   let strength = 0;
   const codes = engineCodes(row.engineCode);
   const families = unique(codes.map(engineFamily));
-  if (vehicle.exactEngineCode && codes.includes(vehicle.exactEngineCode)) strength += 4;
+  if (unique([vehicle.exactEngineCode, ...(vehicle.sourceExactEngineCodes ?? [])]).some(code => codes.includes(code))) strength += 4;
   else if ((vehicle.engineFamily && families.includes(vehicle.engineFamily)) || (vehicle.engineSeries && codes.includes(vehicle.engineSeries))) strength += 3;
   const vehicleCodes = vehicle.bodyCodes.filter((code) => normalizeMannSearchText(code) !== vehicle.baseModel);
   const candidateCodes = rowBodyCodes(row).filter((code) => normalizeMannSearchText(code) !== vehicle.baseModel);
@@ -510,9 +598,13 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
   if (isGenericMannVariant(row)) return reject("общая применяемость MANN, не модификация автомобиля");
   if (isQualifierOnlyVariant(row)) return reject("служебное условие PDF, не модификация автомобиля");
   const rowMake = normalizeVehicleMake(row.make);
-  if (!rowMake || rowMake !== vehicle.canonicalMake) return reject("марка не совпадает");
+  // Catalogue headings can name several brands; this is not a global brand alias.
+  // Check the original heading, never a caller-supplied makeNormalized override.
+  const declaredHeading = makeForms(vehicle.canonicalMake).includes(normalizeMannText(row.make));
+  if (!rowMake || (rowMake !== vehicle.canonicalMake && !declaredHeading)) return reject("марка не совпадает");
   const rowModels = candidateBaseModels(row, vehicle.canonicalMake);
   const baseModelSimilarity = Math.max(0, ...rowModels.map((rowModel) => modelSimilarity(rowModel, vehicle.baseModel)));
+  if (rowMake !== vehicle.canonicalMake && baseModelSimilarity < 0.8) return reject("базовая модель составного раздела MANN не совпадает");
   const anchorStrength = rowAnchorStrength(vehicle, row);
   if (baseModelSimilarity < 0.8 && anchorStrength < 3) return reject("базовая модель не совпадает");
 
@@ -539,7 +631,7 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
     reasons.push(`retrieved by structured anchors ${anchorStrength}`);
   }
 
-  const candidateGeneration = rowGeneration(row);
+  const candidateGeneration = rowGenerationForVehicle(row, vehicle);
   if (vehicle.generation && candidateGeneration) {
     if (vehicle.generation === candidateGeneration) contribute("поколение", `${vehicle.generation}`, 12, "match");
     else contribute("поколение", `${vehicle.generation} ≠ ${candidateGeneration}`, -15, "mismatch");
@@ -556,7 +648,24 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
     contribute("код кузова MANN", "код отсутствует", 0, "missing");
   }
 
-  if (vehicle.year) {
+  if (vehicle.applicabilityYears) {
+    const from = vehicle.applicabilityYears.from ?? -Infinity;
+    const to = vehicle.applicabilityYears.to ?? Infinity;
+    const rowFrom = row.vehicleYearFrom ?? -Infinity;
+    const rowTo = row.vehicleYearTo ?? Infinity;
+    const rangeText = `${vehicle.applicabilityYears.from ?? "…"}–${vehicle.applicabilityYears.to ?? "…"}`;
+    if (from > to) contribute("год", `некорректный диапазон ${rangeText}`, -12, "mismatch");
+    else if (row.vehicleYearFrom == null && row.vehicleYearTo == null) {
+      contribute("диапазон годов MANN", "диапазон отсутствует", 0, "missing");
+    } else if (Math.max(from, rowFrom) > Math.min(to, rowTo)) {
+      contribute("год", `${rangeText} не пересекается с ${row.vehicleYears ?? `${rowFrom}–${rowTo}`}`, -12, "mismatch");
+    } else if (rowFrom <= from && rowTo >= to) {
+      contribute("год", `${rangeText} входит в диапазон MANN`, 10, "match");
+    } else {
+      contribute("диапазон годов MANN", `${rangeText}: только частичное покрытие`, 0, "missing");
+      warnings.push("Требуется ограничить применяемость пересечением диапазонов годов.");
+    }
+  } else if (vehicle.year) {
     if (row.vehicleYearFrom != null || row.vehicleYearTo != null) {
       const before = row.vehicleYearFrom != null ? row.vehicleYearFrom - vehicle.year : 0;
       const after = row.vehicleYearTo != null ? vehicle.year - row.vehicleYearTo : 0;
@@ -574,14 +683,15 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
   const candidateCodes = engineCodes(row.engineCode);
   const candidateFamilies = unique(candidateCodes.map(engineFamily));
   const hasSpecificCandidateEngineCode = candidateCodes.some((code) => code.replace(/[^A-Z0-9]/g, "").length >= 4);
-  const exactEngineMatch = Boolean(vehicle.exactEngineCode && candidateCodes.includes(vehicle.exactEngineCode));
+  const matchingEngineCodes = unique([vehicle.exactEngineCode, ...(vehicle.sourceExactEngineCodes ?? [])]).filter(code => candidateCodes.includes(code));
+  const exactEngineMatch = matchingEngineCodes.length > 0;
   // Catalogue rows may name an explicitly supplied series (e.g. Theta2)
   // instead of the decoder's engine code. This does not infer a code-to-series
   // mapping; different actual engine codes still conflict.
   const seriesEngineMatch = Boolean(vehicle.engineSeries && candidateCodes.includes(vehicle.engineSeries));
   const familyEngineMatch = Boolean(vehicle.engineFamily && candidateFamilies.includes(vehicle.engineFamily)) || seriesEngineMatch;
   if (vehicle.exactEngineCode) {
-    if (exactEngineMatch) contribute("точный код двигателя", `${vehicle.exactEngineCode}`, 24, "match");
+    if (exactEngineMatch) contribute("точный код двигателя", matchingEngineCodes.join(", "), 24, "match");
     else if (familyEngineMatch) contribute("семейство двигателя", `${seriesEngineMatch ? vehicle.engineSeries : vehicle.engineFamily}`, 17, "match");
     else if (candidateCodes.length > 0 && hasSpecificCandidateEngineCode) contribute("код двигателя", `${vehicle.exactEngineCode} ≠ ${candidateCodes.join(",")}`, -24, "mismatch");
     else if (candidateCodes.length > 0) contribute("код двигателя MANN", `${candidateCodes.join(",")} — общее обозначение семейства`, 0, "missing");
@@ -669,13 +779,14 @@ export function normalizeDecodedVehicleForTest(vehicle: DecodedVehicle): Normali
   if (!canonicalMake || !rawModel) return null;
   const baseModel = canonicalBaseModel(rawModel, canonicalMake);
   if (!baseModel) return null;
-  const generation = vehicleGeneration(`${vehicle.generationCanonical ?? ""} ${vehicle.generationRaw ?? ""} ${rawModel}`);
+  const generation = decodedGeneration(vehicle, rawModel, canonicalMake);
   return {
     canonicalMake,
     baseModel,
     generation,
     bodyCodes: unique([
       ...bodyCodesFromText(vehicle.bodyCode),
+      ...explicitVwNumericBodyCodes(vehicle.bodyCode, canonicalMake),
       ...bodyCodesFromText(vehicle.bodyName),
       ...bodyCodesFromText(vehicle.generationCanonical),
       ...bodyCodesFromText(vehicle.generationRaw),

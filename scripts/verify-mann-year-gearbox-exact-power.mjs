@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {sha,parseCopy} from './lib/mann-offline-scope.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-whole-source-current-recheck-2026-09-14');
+const draftRaw=await readFile(resolve(dir,'gearbox-year-drafts-v1.json'),'utf8'),draft=JSON.parse(draftRaw);
+assert.equal(sha(draftRaw),'8d6cdec1065825297b8b8bf098decbc9165d14041ced5e819f29296e8861a22f');
+const sql=await readFile('/tmp/vehicle_fluid_requirements.sql','utf8'),mannRaw=await readFile('/tmp/mann_filter_applications.sql','utf8');
+assert.equal(sha(sql),draft.sourceHash);assert.equal(sha(mannRaw),draft.mannHash);
+const rawPath=resolve(root,'../vin-oil-mann/outputs/podbormasla-20260723/podbormasla_rows.ndjson'),archive=await readFile(rawPath,'utf8');
+assert.equal(sha(archive),'e69dcb74c344c793e4a2cf091077143efb0d332ed24660af7415795b031f01ae');
+const rawRows=archive.trim().split('\n').map(JSON.parse),sources=new Map(parseCopy(sql,'vehicle_fluid_requirements').map(r=>[r.id,r])),targets=Map.groupBy(parseCopy(mannRaw,'mann_filter_applications'),r=>r.vehicleVariantKey);
+assert.equal(draft.heldEntries.length,1);const held=draft.heldEntries[0],s=sources.get(held.sourceRequirementId);assert.deepEqual(s,held.originalSource);
+const row=rawRows.find(r=>r.row_id===s.sourceRowId);assert.ok(row);assert.equal(row.source_url,s.sourceUrl);assert.equal(row.model,s.componentModel);
+const table=rawRows.filter(r=>r.source_url===row.source_url&&r.table_index===row.table_index);
+const anchors=table.filter(r=>r.system_name==='МАСЛО в ДВИГАТЕЛЬ');assert.equal(anchors.length,1);
+const anchor=anchors[0];assert.ok(anchor.row_index<row.row_index);
+// Whole explicit engine/power source model; no fuzzy power/unit conversion.
+const parsed=anchor.model?.trim().match(/^-\s*(2UZ-FE)\s*\/\s*(235)\s*л\.с\.$/);assert.ok(parsed,anchor.model);
+assert.deepEqual(s.engineCodesJson,[parsed[1]]);assert.equal(s.powerHp,Number(parsed[2]));assert.equal(s.contextConfidence,'table_engine');
+const decisions=held.candidateRows.map(c=>{
+ assert.equal(c.variantIds.length,1);const rows=targets.get(c.variantIds[0]);assert.deepEqual(rows,c.rows);assert.ok(rows.length);
+ assert.ok(rows.every(r=>r.engineCode===parsed[1]));
+ assert.ok(rows.every(r=>/^\d+$/.test(r.hp)));const powers=[...new Set(rows.map(r=>Number(r.hp)))];assert.equal(powers.length,1);
+ return {variantId:c.variantIds[0],score:c.score,powerHp:powers[0],targetRows:rows,status:powers[0]===s.powerHp?'EXACT_SOURCE_POWER_SCOPE':'NOT_COVERED_BY_THIS_SOURCE_POWER',reason:powers[0]===s.powerHp?'Every target row equals the same-table source engine power':'Different literal power; no unit/region equivalence established'};
+});
+assert.equal(decisions.length,2);assert.equal(decisions.filter(d=>d.status==='EXACT_SOURCE_POWER_SCOPE').length,1);assert.equal(decisions[0].status,'EXACT_SOURCE_POWER_SCOPE');assert.equal(decisions[1].powerHp,238);
+const report={policy:'SAME_TABLE_EXACT_POWER_DISAMBIGUATION_V1',draftHash:sha(draftRaw),planHash:draft.planHash,sourceHash:sha(sql),mannHash:sha(mannRaw),archivePath:rawPath,archiveHash:sha(archive),sourceRequirementId:s.id,originalSource:s,rawFluidRow:row,rawEngineAnchor:anchor,requiredSourcePowerHp:s.powerHp,selectedVariantId:decisions[0].variantId,decisions,publicationAllowed:false,oemVerified:false,limitation:'Secondary-source identity scope only. Does not prove that fluid is wrong for the other variant, infer installed gearbox, or verify capacities/specifications. Source model/year and all other applicability gates remain mandatory.'};
+await writeFile(resolve(dir,'gearbox-year-exact-power-scope-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
+console.log(JSON.stringify({source:s.id,selectedPower:s.powerHp,decisions:decisions.map(({targetRows,...d})=>d),publicationAllowed:false}));

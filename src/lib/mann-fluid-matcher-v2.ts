@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { MANN_MIN_PRESENTABLE_SCORE, diagnoseMannCandidatesForTest, evaluateMannCandidate, mannMakeFormsForTest, normalizeDecodedVehicleForTest, type MannResolverTestRow, type MannVehicleCandidate, type NormalizedMannVehicle } from "@/lib/mann-vehicle-resolver";
 import { normalizeMannSearchText, normalizeMannText } from "@/lib/mann-catalog";
+import { normalizeEngineCode, normalizeVehicleModel } from "@/lib/vehicle-normalization";
+import { hasExactMannModelIdentity } from "@/lib/mann-vehicle-resolver";
 
-export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v8" as const;
+export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v10" as const;
 
 export type MannFluidMatchStatus =
   | "CONFIRMED_SINGLE"
@@ -142,7 +144,11 @@ function strings(value: unknown): string[] {
 }
 
 function sourceEngineCodes(requirement: MannFluidRequirementForMatch): string[] {
-  return unique([requirement.engineCodeNormalized, ...strings(requirement.engineCodesJson)]);
+  // Legacy imports sometimes put drivetrain labels in the engine list. Keep
+  // raw source data intact, but never use these labels as engine identity or
+  // infer a vehicle's drive configuration from this contaminated field.
+  return unique([requirement.engineCodeNormalized, ...strings(requirement.engineCodesJson)])
+    .filter(code => !/^(?:2WD|4WD|AWD|FWD|RWD|4X4|4X2)$/u.test(normalizeEngineCode(code) ?? ""));
 }
 
 function hasSourceEngineIdentity(requirement: MannFluidRequirementForMatch): boolean {
@@ -190,6 +196,23 @@ function technicalApplicabilityBlockers(
   candidate: MannVehicleCandidate,
 ): string[] {
   const blockers: string[] = [];
+  const raw = requirement.rawRequirementJson as {sourceIdentity?: {reviewRequired?: boolean}} | null;
+  if (raw?.sourceIdentity?.reviewRequired === true) blockers.push("исходные сведения о модели или поколении противоречат друг другу");
+  const vehicle = normalizeFluidRequirementVehicle(requirement);
+  if (!vehicle || !hasExactMannModelIdentity(requirement.model, vehicle.canonicalMake, row)) {
+    blockers.push("не подтверждена точная модель источника в MANN; сходства названий недостаточно для жидкостей");
+  }
+  if (vehicle?.canonicalMake === "OPEL" && normalizeVehicleModel(row.model, "OPEL").generation
+      && !vehicle.generation && !candidate.matchedFields.includes("код кузова")) {
+    blockers.push("для буквенного поколения Opel не подтверждено поколение или точный кузов источника");
+  }
+  if (yearsOverlap(requirement, row) === true) {
+    const from = requirement.yearFrom ?? -Infinity;
+    const to = requirement.yearTo ?? Infinity;
+    if ((row.vehicleYearFrom ?? -Infinity) > from || (row.vehicleYearTo ?? Infinity) < to) {
+      blockers.push("диапазон MANN покрывает только часть лет источника; требуется ограничить применяемость");
+    }
+  }
   const rowText = normalizeMannSearchText(`${row.model} ${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""} ${row.condition ?? ""}`);
   const identifiers = componentIdentifiers(requirement.componentModel);
   const componentConfirmed = identifiers.length > 0 && identifiers.some((identifier) => rowText.includes(identifier));
@@ -250,17 +273,10 @@ export function fluidSystemFamily(systemCode: string): MannFluidSystemFamily {
   return "GENERAL";
 }
 
-function representativeYear(requirement: MannFluidRequirementForMatch): number | undefined {
-  const from = requirement.yearFrom ?? undefined;
-  const to = requirement.yearTo ?? undefined;
-  if (from && to) return Math.round((from + to) / 2);
-  return from ?? to;
-}
-
 export function normalizeFluidRequirementVehicle(requirement: MannFluidRequirementForMatch): NormalizedMannVehicle | null {
   const engineCodes = sourceEngineCodes(requirement);
   const bodyCodes = strings(requirement.bodyCodesJson);
-  return normalizeDecodedVehicleForTest({
+  const vehicle = normalizeDecodedVehicleForTest({
     makeRaw: requirement.make,
     makeCanonical: requirement.makeNormalized ?? requirement.make,
     modelRaw: requirement.model,
@@ -268,11 +284,9 @@ export function normalizeFluidRequirementVehicle(requirement: MannFluidRequireme
     generationRaw: requirement.generation ?? undefined,
     generationCanonical: requirement.generation ?? undefined,
     bodyCode: bodyCodes.join(" ") || undefined,
-    year: representativeYear(requirement),
     modelYearFrom: requirement.yearFrom ?? undefined,
     modelYearTo: requirement.yearTo ?? undefined,
     engineCode: engineCodes[0],
-    engineSeries: engineCodes[1],
     engineVolumeCc: requirement.engineVolumeCc ?? undefined,
     powerKw: requirement.powerKw ?? undefined,
     powerHp: requirement.powerHp ?? undefined,
@@ -284,6 +298,12 @@ export function normalizeFluidRequirementVehicle(requirement: MannFluidRequireme
     rawResultIds: [requirement.id],
     vinStatus: "unknown",
   });
+  if (vehicle) vehicle.sourceExactEngineCodes = unique(engineCodes.map(normalizeEngineCode));
+  if (vehicle && (requirement.yearFrom != null || requirement.yearTo != null)) {
+    vehicle.year = undefined;
+    vehicle.applicabilityYears = { from: requirement.yearFrom ?? undefined, to: requirement.yearTo ?? undefined };
+  }
+  return vehicle;
 }
 
 function relevantRowsForMake(vehicle: NormalizedMannVehicle, rows: MannResolverTestRow[]): MannResolverTestRow[] {
@@ -322,8 +342,8 @@ function sourceContextScore(requirement: MannFluidRequirementForMatch, family: M
 
 function yearsOverlap(requirement: MannFluidRequirementForMatch, row: MannResolverTestRow): boolean | null {
   if ((requirement.yearFrom == null && requirement.yearTo == null) || (row.vehicleYearFrom == null && row.vehicleYearTo == null)) return null;
-  const requirementFrom = requirement.yearFrom ?? requirement.yearTo ?? Number.NEGATIVE_INFINITY;
-  const requirementTo = requirement.yearTo ?? requirement.yearFrom ?? Number.POSITIVE_INFINITY;
+  const requirementFrom = requirement.yearFrom ?? Number.NEGATIVE_INFINITY;
+  const requirementTo = requirement.yearTo ?? Number.POSITIVE_INFINITY;
   const candidateFrom = row.vehicleYearFrom ?? Number.NEGATIVE_INFINITY;
   const candidateTo = row.vehicleYearTo ?? Number.POSITIVE_INFINITY;
   return Math.max(requirementFrom, candidateFrom) <= Math.min(requirementTo, candidateTo);
@@ -588,7 +608,20 @@ export function matchFluidRequirementToMann(
     if (hasConflict) conflictTypes = topAssessment.hardConflicts;
     reviewReasons.push(hasConflict ? "Top candidates противоречат source context" : hasPlausible ? "кандидаты не проходят строгую system-aware policy" : "при достаточном source context безопасный кандидат не найден");
   } else {
-    const closePlausible = assessments.filter((assessment) => assessment.plausible && assessment.candidate.score >= topEligible.candidate.score - 11);
+    // A family-only alternative with an explicit different engine is not an
+    // ambiguity for a system that requires exact engine identity. Keep rows
+    // with missing engine data or any other blocker in the review path.
+    const excludedByExactEngine = (assessment: CandidateAssessment): boolean =>
+      EXACT_ENGINE_REQUIRED_SYSTEMS.has(requirement.systemCode)
+      && topEligible.candidate.matchedFields.includes("точный код двигателя")
+      && assessment.hardConflicts.length === 0
+      && assessment.reviewBlockers.length === 1
+      && assessment.reviewBlockers[0] === "для этой технической системы не подтверждён точный код двигателя"
+      && assessment.targets.length > 0
+      && assessment.targets.every(target => Boolean(rowsByVariant.get(target.vehicleVariantKey)?.engineCode?.trim())
+        && !target.matchedFields.includes("точный код двигателя"));
+    const closePlausible = assessments.filter((assessment) => assessment.plausible
+      && !excludedByExactEngine(assessment) && assessment.candidate.score >= topEligible.candidate.score - 11);
     const closeEligible = closePlausible.filter((assessment) => assessment.eligible);
     const closeConflicting = assessments.filter((assessment) => assessment.hardConflicts.length > 0 && assessment.candidate.score >= topEligible.candidate.score - 11);
     if (closeConflicting.length > 0 || closePlausible.length > closeEligible.length || !equivalentMultiApplicability(requirement, family, closeEligible)) {

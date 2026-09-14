@@ -6,6 +6,8 @@ import { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel, split
 
 export { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-normalization";
 
+import { resolveVehicleMarket, mergeVehicleMarketEvidence, type VehicleMarketEvidence } from "@/lib/vehicle-market";
+
 export type VehicleLookupInputType = "vin" | "plate" | "frame";
 export type VehicleSourceMethod = "tronk_vindecode" | "tronk_vindecode2" | "tronk_plate" | "tronk_frame" | "tronk_convertb2b" | "tronk_convertgate" | "manual" | "mann_manual";
 export type VinStatus = "valid" | "check_digit_absent" | "format_warning" | "invalid" | "frame_number" | "unknown";
@@ -53,6 +55,7 @@ export type NormalizedVehicleIdentity = {
   driveType?: string;
   steeringPosition?: string;
   market?: string;
+  marketEvidence?: VehicleMarketEvidence;
   countryOfOrigin?: string;
   mileage?: number;
   ownersCount?: number;
@@ -278,6 +281,9 @@ export function toVehicle(input: RecordValue, method: VehicleSourceMethod, ident
     driveType: firstText(data, [["DriveType"], ["drive_type"], ["Drive"], ["tech_param", "drive_type"]]),
     steeringPosition: firstText(data, [["SteeringPosition"], ["steering_wheel"], ["steering"]]),
     market: firstText(data, [["Market"], ["market"], ["vendor_detail", "market"]]),
+    marketEvidence: resolveVehicleMarket([
+      firstText(data, [["Market"]]), firstText(data, [["market"]]), firstText(data, [["vendor_detail", "market"]]),
+    ]),
     countryOfOrigin: firstText(data, [["CountryOfOrigin"], ["country_of_origin"], ["country"], ["vendor_detail", "assembly_country"]]),
     mileage: firstNumber(data, [["Mileage"], ["mileage"]]),
     ownersCount: firstNumber(data, [["OwnersCount"], ["pts_owners_count"], ["owners_count"]]),
@@ -300,6 +306,7 @@ function mergeVehicle(primary: NormalizedVehicleIdentity, secondary: NormalizedV
   merged.sourceMethods = [...new Set([...primary.sourceMethods, ...secondary.sourceMethods])];
   merged.rawResultIds = [...new Set([...primary.rawResultIds, ...secondary.rawResultIds])];
   merged.confidence = primary.makeCanonical && primary.modelCanonical ? primary.confidence : secondary.confidence;
+  merged.marketEvidence = mergeVehicleMarketEvidence(primary, secondary);
   return merged;
 }
 

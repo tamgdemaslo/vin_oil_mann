@@ -335,24 +335,47 @@ const ROMAN_VALUES: Record<string, number> = {
   VIII: 8,
   IX: 9,
   X: 10,
+  XI: 11,
+  XII: 12,
+  XIII: 13,
+  XIV: 14,
+  XV: 15,
 };
 
 function generationNumber(value: unknown): number | null {
   const text = normalizeSearch(value);
   const numeric = text.match(/(?:^|\s)(\d{1,2})(?:\s*(?:GEN|ПОКОЛЕН))/)?.[1];
   if (numeric) return Number(numeric);
-  const roman = text.match(/(?:^|\s)(VIII|VII|VI|IV|III|II|IX|V|I|X)(?:\s|$)/)?.[1];
+  const roman = text.match(/(?:^|\s)(XV|XIV|XIII|XII|XI|VIII|VII|VI|IV|III|II|IX|V|I|X)(?:\s|$)/)?.[1];
   return roman ? ROMAN_VALUES[roman] ?? null : null;
 }
 
 function generationFromSlug(value: unknown): number | null {
-  const match = clean(value).match(/(\d{1,2})\s*gen/i);
-  return match?.[1] ? Number(match[1]) : generationNumber(value);
+  // These are explicit generation fields, not arbitrary digits in model names.
+  const match = clean(value).match(/^(?:gen[ _-]?(\d{1,2})|(\d{1,2})[ _-]?gen)$/i);
+  const number = Number(match?.[1] ?? match?.[2]);
+  if (number >= 1 && number <= 15) return number;
+  // Do not reinterpret the fractional part of 8.5gen as generation 5.
+  if (/gen/i.test(clean(value))) return null;
+  return generationNumber(value);
 }
 
 function romanGeneration(value: number | null): string | null {
   if (!value) return null;
   return Object.entries(ROMAN_VALUES).find(([, number]) => number === value)?.[0] ?? String(value);
+}
+
+function opelSourceGeneration(row: PodbormaslaRow): {label: string | null; conflict: boolean} {
+  if (normalizeMake(row.brand_slug) !== "OPEL") return {label: null, conflict: false};
+  const modelNames: Record<string, string> = {astra: "ASTRA|АСТРА", corsa: "CORSA|КОРСА", zafira: "ZAFIRA|ЗАФИРА"};
+  const model = clean(row.model_slug).toLowerCase();
+  if (!modelNames[model]) return {label: null, conflict: false};
+  const slug = clean(row.generation_slug).match(new RegExp(`^${model}_([a-z])$`, "i"))?.[1]?.toUpperCase();
+  if (!slug) return {label: null, conflict: false};
+  const titleLetter = clean(row.page_title).toUpperCase().match(new RegExp(`(?:${modelNames[model]})\\s+([A-ZА-Я])(?=$|[^A-ZА-Я])`))?.[1];
+  const label = titleLetter === "Б" ? "B" : titleLetter === "Д" ? "D" : titleLetter ? latinLookalikes(titleLetter) : null;
+  // Restore a source label only when both stored fields explicitly agree.
+  return {label: label === slug ? slug : null, conflict: label !== slug};
 }
 
 function baseModel(value: unknown, make?: string): string {
@@ -805,7 +828,7 @@ function bodyCodes(row: PodbormaslaRow): string[] {
   const title = latinLookalikes(row.page_title);
   const inlineCodes = [...title.matchAll(/\b(?:[A-Z]{1,3}\d{1,3}[A-Z]?|\d[A-Z]{1,3})\b/g)].map((match) => match[0]);
   return unique([...bodyCodeTokens(row.page_title), ...inlineCodes])
-    .filter((code) => !/^(?:19|20)\d{2}$/.test(code) && normalizeCompact(code) !== modelToken);
+    .filter((code) => !/^(?:(?:19|20)\d{2}|\d{1,2}GEN|GEN\d{1,2})$/.test(code) && normalizeCompact(code) !== modelToken);
 }
 
 function parseSourceRows(rowsNdjson: string): PodbormaslaRow[] {
@@ -948,7 +971,11 @@ function buildRequirement(
   const model = clean(row.model_slug).replace(/[_-]+/g, " ") || "UNKNOWN";
   const makeNormalized = normalizeMake(make);
   const modelNormalized = baseModel(model, makeNormalized);
-  const generation = generationFromSlug(row.generation_slug) ?? generationNumber(row.page_title);
+  const slugGeneration = generationFromSlug(row.generation_slug);
+  const titleGeneration = generationNumber(row.page_title);
+  const opelGeneration = opelSourceGeneration(row);
+  const generationConflict = opelGeneration.conflict || (slugGeneration != null && titleGeneration != null && slugGeneration !== titleGeneration);
+  const generation = generationConflict ? null : slugGeneration ?? titleGeneration;
   const capacities = parseCapacities(part.fillVolumeText);
   const capacity = capacitySummary(capacities);
   const grades = unique([
@@ -969,7 +996,7 @@ function buildRequirement(
     makeNormalized,
     model,
     modelNormalized,
-    generation: romanGeneration(generation),
+    generation: opelGeneration.label ?? romanGeneration(generation),
     generationNumber: generation,
     bodyCodesJson: bodyCodes(row),
     yearFrom: context.yearFrom,
@@ -1002,7 +1029,11 @@ function buildRequirement(
     controlIntervalText: nullable(row.control_interval),
     analogText: nullable(row.analog),
     contextConfidence: context.confidence,
-    rawRequirementJson: { sourceRowId: row.row_id, part: part.raw } as Prisma.InputJsonValue,
+    rawRequirementJson: { sourceRowId: row.row_id, part: part.raw,
+      ...(generationConflict ? { sourceIdentity: { reviewRequired: true, reason: "GENERATION_SLUG_TITLE_CONFLICT",
+        generationSlug: row.generation_slug, pageTitle: row.page_title, slugGeneration, titleGeneration,
+        ...(opelGeneration.conflict ? {letterGenerationConflict: true} : {}) } } : {}),
+    } as Prisma.InputJsonValue,
   };
 }
 
@@ -1264,7 +1295,8 @@ function matchRequirements(requirements: PreparedFluidRequirement[], variants: M
       .sort((left, right) => right.score - left.score || left.variant.variantKey.localeCompare(right.variant.variantKey));
     const exactCandidates = candidates.filter((candidate) => (candidate.exactEngine || candidate.specializedFamilyEngine) && candidate.score >= 80 && candidate.mismatched.length === 0);
     const broadCandidates = broadContextAutoCandidates(requirement, candidates);
-    const autoCandidates = exactCandidates.length > 0
+    const identityReviewRequired = (requirement.rawRequirementJson as {sourceIdentity?: {reviewRequired?: boolean}})?.sourceIdentity?.reviewRequired === true;
+    const autoCandidates = identityReviewRequired ? [] : exactCandidates.length > 0
       ? exactCandidates
       : broadCandidates.length > 0
         ? broadCandidates
@@ -1272,7 +1304,7 @@ function matchRequirements(requirements: PreparedFluidRequirement[], variants: M
     const selected = autoCandidates.length > 0
       ? autoCandidates
       : candidates.filter(isActionableReviewCandidate).slice(0, 3);
-    const status: FluidReviewRow["status"] = autoCandidates.length > 0 ? "auto_matched" : selected.length > 0 ? "review_required" : "unmatched";
+    const status: FluidReviewRow["status"] = autoCandidates.length > 0 ? "auto_matched" : identityReviewRequired || selected.length > 0 ? "review_required" : "unmatched";
     for (const candidate of selected) links.push(linkFor(requirement, candidate, status === "auto_matched" ? "auto_matched" : "review_required"));
     const best = candidates[0];
     reviewRows.push({
@@ -1291,7 +1323,7 @@ function matchRequirements(requirements: PreparedFluidRequirement[], variants: M
       bestMannModel: best?.variant.model ?? "",
       bestMannVehicle: best?.variant.effectiveVehicleText ?? best?.variant.vehicleText ?? "",
       bestMannEngine: best?.variant.engineCode ?? "",
-      evidence: best ? [...best.matched, ...best.missing.map((item) => `missing:${item}`), ...best.mismatched.map((item) => `mismatch:${item}`)].join("; ") : "",
+      evidence: [identityReviewRequired ? "source_identity_conflict" : "", best ? [...best.matched, ...best.missing.map((item) => `missing:${item}`), ...best.mismatched.map((item) => `mismatch:${item}`)].join("; ") : ""].filter(Boolean).join("; "),
     });
   }
   return { links, reviewRows };

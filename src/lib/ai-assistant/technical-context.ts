@@ -10,7 +10,12 @@ export function mannContext(organizationId: string, vehicle: NormalizedVehicleId
   return assistantMemo("mann-context", { organizationId, branchId: getScopedBranchId(), vehicle }, async () => {
     const resolution = await resolveMannVehicle({ organizationId, vehicle });
     const keys = resolution.status === "resolved" ? resolution.selectedApplication?.variantIds ?? [] : [];
-    const profile = await getMannUnifiedTechnicalProfile(keys);
+    const profile = await getMannUnifiedTechnicalProfile(keys, undefined, {
+      make: vehicle.makeRaw ?? vehicle.makeCanonical ?? undefined,
+      model: vehicle.modelRaw ?? vehicle.modelCanonical ?? undefined,
+      generation: vehicle.generationRaw ?? vehicle.generationCanonical ?? undefined,
+      engineCode: vehicle.engineCode ?? undefined, year: vehicle.year ?? undefined,
+    });
     return { resolution, profile };
   });
 }
@@ -61,7 +66,7 @@ export async function verifiedLocalTechnicalInput(input: QuoteAndTechCardInput, 
   // Preview, staged, mixed or unreviewed data is available to an employee but
   // cannot confirm an operational fact. Never guess front versus rear axle.
   if (result.profile.status !== "active" || result.resolution.status !== "resolved") return { input, facts, ...result };
-  const matches = result.profile.items.filter(item => item.systemCode === technicalSystems[service.type] && item.sourceStatus === "primary_source" && !item.requiresReview);
+  const matches = result.profile.items.filter(item => item.systemCode === technicalSystems[service.type] && item.automaticSelectionEligible === true && item.sourceStatus === "primary_source" && !item.requiresReview);
   if (matches.length !== 1) return { input, facts, ...result };
   const item = matches[0];
   const aggregate = input.vehicle.aggregateCode || service.aggregate || (service.type === "engine_oil" ? String(input.vehicle.snapshot?.engineCode ?? "") : null) || item.componentModel || null;

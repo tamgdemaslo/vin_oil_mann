@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import {splitSpecificationSections as split} from './lib/mann-specification-sections.mjs';
+import {createJiti} from 'jiti';
+import {resolve} from 'node:path';
+for(const marker of ['Аналог:','АНАЛОГ :','Аналоги:']){
+ const text=`TOYOTA SLLC ${marker} VW TL 774-F (G12+) Периодичность замены: 80 тыс. км`;
+ const r=split(text,'VW TL 774-F (G12+)');
+ assert.equal(r.status,'EXPLICIT_ANALOG_SEPARATED');
+ assert.equal(r.main.text.trim(),'TOYOTA SLLC');
+ assert.equal(r.main.text+r.marker.text+r.analog.text+r.suffix.text,text);
+ for(const section of [r.main,r.marker,r.analog,r.suffix])assert.equal(text.slice(section.start,section.end),section.text);
+}
+assert.equal(split('Аналог: API GL-4','API GL-4').main.text,'');
+assert.equal(split('API GL-4 Аналог: API GL-4','API GL-4').main.text.trim(),'API GL-4');
+assert.equal(split('API GL-4','API GL-4').status,'NO_EXPLICIT_MARKER');
+assert.equal(split('Аналог: API GL-4','API GL-5').status,'ANALOG_FIELD_MISMATCH');
+assert.equal(split('Аналог: API GL-4',null).status,'ANALOG_FIELD_MISMATCH');
+assert.equal(split('Аналог: API GL-4 Аналог: API GL-5','API GL-4').status,'AMBIGUOUS_MARKERS');
+assert.equal(split('НеАналог: API GL-4','API GL-4').status,'NO_EXPLICIT_MARKER');
+assert.equal(split('Аналог: API GL-4 Рекомендация: X','API GL-4').suffix.text,'Рекомендация: X');
+const jiti=createJiti(import.meta.url,{alias:{'@':resolve(import.meta.dirname,'../src')}});
+const {parseSpecifications}=await jiti.import('../src/lib/fluid-catalog.ts');
+const coolant=split('TOYOTA SUPER LONG LIFE COOLANT Аналог: VW TL 774-F (G12+)','VW TL 774-F (G12+)');
+assert.ok(parseSpecifications(coolant.originalText).some(s=>s.type==='VW'));
+assert.ok(!parseSpecifications(coolant.main.text).some(s=>s.type==='VW'));
+assert.equal(parseSpecifications(coolant.main.text)[0].value,'TOYOTA SUPER LONG LIFE COOLANT');
+const shared=split('API GL-4 Аналог: API GL-4','API GL-4');
+assert.ok(parseSpecifications(shared.main.text).some(s=>s.type==='API'));
+const viscosity=split('HONDA HGO-3 Аналог: API GL-4 SAE 75W-85','API GL-4 SAE 75W-85');
+assert.ok(!parseSpecifications(viscosity.main.text).some(s=>s.type==='API'||s.type==='SAE'));
+console.log('Specification attribution boundaries: PASS');

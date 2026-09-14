@@ -213,7 +213,7 @@ async function completeOilFixture(volume=5,bulk=true){
     product('gasket',{name:'Fixture gasket',article:'TEST-GASKET',sae:null,oem:null,atf:null,packageVolume:null,salePriceCents:10000}),
   ];
   f.mann={status:'resolved',decision:'MATCH',selectedApplication:{variantIds:['reviewed-fixture']},candidates:[],filters:[{filterType:'Oil Filter',mannArticle:'TEST-FILTER',condition:null}],localMatches:[{mannArticleNormalized:normalizeMannArticle('TEST-FILTER'),compatibleProducts:[{id:'filter',name:'Fixture oil filter',price:500,available:10}]}]};
-  f.profile={status:'active',items:[{systemCode:'ENGINE_OIL',revisionId:'reviewed-fixture',sourceStatus:'primary_source',requiresReview:false,specifications:['TEST-SPEC 123'],viscosityGrades:[],capacities:[{nominalLiters:volume,serviceContext:'WITH_FILTER'}],evidence:[{publisher:'Reviewed OEM fixture',url:'https://example.test/manual'}]}]};
+  f.profile={status:'active',items:[{systemCode:'ENGINE_OIL',revisionId:'reviewed-fixture',sourceStatus:'primary_source',automaticSelectionEligible:true,requiresReview:false,specifications:['TEST-SPEC 123'],viscosityGrades:[],capacities:[{nominalLiters:volume,serviceContext:'WITH_FILTER'}],evidence:[{publisher:'Reviewed OEM fixture',url:'https://example.test/manual'}]}]};
   f.responses=[call('build_quote_and_tech_card',{input:input({selectedProducts:[],consumables:[{productId:'gasket',quantity:1,role:'hardware'}],service:{...input().service,standardTechnicalQuantityLiters:volume,filterAccess:'external_replaceable',serviceHardware:[{type:'Fixture gasket',quantity:1,requirement:'mandatory',requiredForQuote:true,evidence:null}]}})})];
   await run('Рассчитай замену моторного масла и фильтра с вашими материалами');
   return artifact(f);

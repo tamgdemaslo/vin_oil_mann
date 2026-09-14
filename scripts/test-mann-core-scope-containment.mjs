@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {coreScopeContains as contains} from './lib/mann-core-scope-containment.mjs';
+const scope=(from,to,engines=['CAVA'])=>({sourceVehicleScope:{make:'volkswagen',model:'tiguan',generation:'I'},matchedEngineScope:engines,window:{intersection:{from,to}}});
+const outer=scope('2011-01','2017-12'),inner=scope('2011-01','2016-12');
+assert.equal(contains(outer,inner),true);assert.equal(contains(inner,outer),false);
+assert.equal(contains(outer,scope('2010-12','2016-12')),false);
+assert.equal(contains(outer,scope('2011-01','2016-12',['CTHA'])),false);
+assert.equal(contains({...outer,requiredTransmission:{type:'manual'}},inner),false);
+assert.equal(contains(outer,{...inner,requiredEquipment:{circuit:'TRANSFER_CASE'}}),false);
+assert.equal(contains({...outer,driveType:'4WD'},inner),false);
+assert.equal(contains({...outer,sourceVehicleScope:{...outer.sourceVehicleScope,generation:'II'}},inner),false);
+assert.equal(contains({...outer,window:{intersection:{from:'2011-13',to:null}}},inner),false);
+assert.equal(contains(scope(null,null),inner),true);
+console.log('Core scope containment: engine, identity, date bounds and unknown-condition rejection passed');

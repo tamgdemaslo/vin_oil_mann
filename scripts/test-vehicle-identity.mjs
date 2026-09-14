@@ -17,6 +17,10 @@ const {
 } = await jiti.import("../src/lib/vehicle-identity.ts");
 
 assert.equal(normalizeVinInput(" wba5e-7101 fg155636 "), "WBA5E7101FG155636");
+assert.equal(toVehicle({Market:'Russia'},'tronk_vindecode').marketEvidence.confirmedMarket,'RU');
+assert.equal(toVehicle({Market:'RU',market:'DE'},'tronk_vindecode').marketEvidence.confirmedMarket,undefined);
+assert.equal(toVehicle({Market:'RU',vendor_detail:{market:'Europe'}},'tronk_vindecode').marketEvidence.confirmedMarket,undefined);
+assert.equal(toVehicle({CountryOfOrigin:'RU',country:'Россия'},'tronk_vindecode').marketEvidence.confirmedMarket,undefined);
 assert.equal(normalizeFrameInput(" zvw52-3030148 "), "ZVW523030148");
 assert.deepEqual(normalizePlateInput("Т 332 ЕК 39"), { original: "Т 332 ЕК 39", normalized: "Т332ЕК39" });
 assert.deepEqual(normalizePlateInput("T-744-KO-39"), { original: "T-744-KO-39", normalized: "Т744КО39" });

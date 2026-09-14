@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+import {parseCopy,sha} from './lib/mann-offline-scope.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-nissan-xtrail-manual-preview-2026-09-14');
+const [sql,planRaw]=await Promise.all([readFile('/tmp/vehicle_fluid_requirements.sql','utf8'),readFile(resolve(dir,'plan.json'),'utf8')]);
+const sources=parseCopy(sql,'vehicle_fluid_requirements'),plan=JSON.parse(planRaw);
+const jiti=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),{explicitMannCvtModels:parse}=await jiti.import('../src/lib/mann-transmission-model-list.ts'),{extractFluidSourceSystemContext:label}=await jiti.import('../src/lib/fluid-source-system-context.ts');
+const parsed=sources.filter(s=>parse(s.componentModel)).map(s=>({sourceRequirementId:s.id,make:s.make,model:s.model,systemCode:s.systemCode,sourceComponent:s.componentModel,models:parse(s.componentModel),context:label(s.systemNameRaw,s.componentModel),sourceHash:sha(s)}));
+const existingOptIn=plan.newRevisions.filter(r=>r.provenanceJson.explicitTransmissionModelList?.policy==='EXPLICIT_CVT_SOURCE_MODEL_LIST_V1');assert.equal(existingOptIn.length,0);
+const matchingOldRows=plan.newRevisions.filter(r=>parse(r.componentModel)).map(r=>({id:r.id,sourceRequirementId:r.sourceRequirementId,policy:r.provenanceJson.explicitTransmissionModelList?.policy??null}));
+const files=['src/lib/mann-transmission-model-list.ts','src/lib/mann-unified-technical-profile.ts','src/lib/mann-transmission-component.ts','src/lib/mann-technical-applicability.ts','scripts/audit-mann-combined-profiles.mjs'];
+const report={sourceHash:sha(sql),planHash:sha(planRaw),codeHashes:Object.fromEntries(await Promise.all(files.map(async f=>[f,sha(await readFile(resolve(root,f),'utf8'))]))),summary:{sourceRows:sources.length,explicitSourceLists:parsed.length,existingRevisions:plan.newRevisions.length,existingNewPolicyOptIns:existingOptIn.length,matchingOldRows:matchingOldRows.length},parsed,matchingOldRows,productionApplyAllowed:false,limitation:'Parser inventory only, not vehicle matching or alias validation. New policy must be explicitly enabled on individually audited records.'};
+await writeFile(resolve(dir,'cvt-model-list-impact-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(report.summary));

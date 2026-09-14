@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import type { MannTechnicalCapacity, MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
+import { mannTechnicalContextFromVehicle } from "@/lib/mann-technical-request-context";
+import { mannEquipmentChoiceKey } from "@/lib/mann-equipment-scope";
 
 type LookupTab = "vin" | "plate" | "manual";
 type LookupFeedbackTone = "neutral" | "success" | "warning";
@@ -146,11 +148,23 @@ function TechnicalProfile({
   loading,
   error,
   onSelectTransmission,
+  selectedTransmissionModel,
+  onSelectTransmissionModel,
+  selectedTransmissionGearCount,
+  onSelectTransmissionGearCount,
+  confirmedEquipment,
+  onSelectEquipment,
 }: {
   profile: MannUnifiedTechnicalProfile | null;
   loading: boolean;
   error: string;
   onSelectTransmission: (transmissionType: MannTransmissionType) => void;
+  selectedTransmissionModel: string;
+  onSelectTransmissionModel: (model: string) => void;
+  selectedTransmissionGearCount: number | undefined;
+  onSelectTransmissionGearCount: (count: number | undefined) => void;
+  confirmedEquipment: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>[];
+  onSelectEquipment: (circuit: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>['circuit'], option?: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>) => void;
 }) {
   return (
     <div className="eco-vehicle-lookup__profile" aria-live="polite" aria-busy={loading}>
@@ -181,6 +195,64 @@ function TechnicalProfile({
           </div>
         </fieldset>
       ) : null}
+      {profile?.transmissionGearCountOptions?.length ? (
+        <fieldset className="eco-vehicle-lookup__transmission-choice">
+          <legend>Число передач</legend>
+          <label>
+            Передач в установленной коробке
+            <select value={selectedTransmissionGearCount ?? ""} disabled={loading} onChange={event => onSelectTransmissionGearCount(event.target.value ? Number(event.target.value) : undefined)}>
+              <option value="">Не подтверждено</option>
+              {profile.transmissionGearCountOptions.map(count => <option key={count} value={count}>{count}</option>)}
+            </select>
+          </label>
+          <p>Уточните по документации автомобиля. Число передач не выбирается автоматически.</p>
+        </fieldset>
+      ) : null}
+      {profile?.transmissionComponentOptions?.length ? (
+        <fieldset className="eco-vehicle-lookup__transmission-choice">
+          <legend>Модель коробки</legend>
+          <label>
+            Установленный агрегат
+            <select value={selectedTransmissionModel} disabled={loading} onChange={event => onSelectTransmissionModel(event.target.value)}>
+              <option value="">Не подтверждён</option>
+              {profile.transmissionComponentOptions.map(model => <option key={model} value={model}>{model}</option>)}
+            </select>
+          </label>
+          <p>Укажите код с таблички агрегата или из документации автомобиля. Модель не выбирается автоматически.</p>
+        </fieldset>
+      ) : null}
+      {profile?.equipmentOptions?.length ? (
+        <fieldset className="eco-vehicle-lookup__transmission-choice">
+          <legend>Оборудование автомобиля</legend>
+          <p>Подтвердите установленные узлы по документации или осмотру. Наличие узла не определяется по списку возможных жидкостей.</p>
+          {[...new Set(profile.equipmentOptions.map(option => option.circuit))].map(circuit => {
+            const options = profile.equipmentOptions!.filter(option => option.circuit === circuit);
+            const current = confirmedEquipment.find(option => option.circuit === circuit);
+            const key = mannEquipmentChoiceKey;
+            return <label key={circuit}>
+              {options[0].label}
+              <select aria-label={`Подтвердить: ${options[0].label}`} value={key(current)} disabled={loading} onChange={event => {
+                const chosen = options.find(option => key(option) === event.target.value);
+                onSelectEquipment(circuit, chosen ? {circuit: chosen.circuit, ...(chosen.componentModel ? {componentModel: chosen.componentModel} : {}), ...(chosen.drive ? {drive: chosen.drive} : {}), ...(chosen.attachedTransmissionType ? {attachedTransmissionType: chosen.attachedTransmissionType} : {})} : undefined);
+              }}>
+                <option value="">Не подтверждено</option>
+                {options.map(option => <option key={key(option)} value={key(option)}>{[
+                  'Установлен', option.componentModel ?? '', option.drive ?? '',
+                  option.attachedTransmissionType ? `с ${ {automatic:'АКПП',manual:'МКПП',cvt:'вариатором',robot:'роботом'}[option.attachedTransmissionType]}` : '',
+                ].filter(Boolean).join(' · ')}</option>)}
+              </select>
+              {current?.drive ? <span>{current.drive === '4WD' ? 'Подтверждён полный привод (4WD).' : 'Подтверждены два ведущих колеса (2WD).'}</span> : null}
+              {current?.attachedTransmissionType ? <span>Связанная коробка: { {automatic:'АКПП',manual:'МКПП',cvt:'вариатор',robot:'робот'}[current.attachedTransmissionType]}.</span> : null}
+            </label>;
+          })}
+        </fieldset>
+      ) : null}
+      {profile?.transmissionConditionsToReview?.length ? (
+        <details className="eco-vehicle-lookup__profile-source">
+          <summary>Дополнительные условия по коробке — нужна проверка</summary>
+          <ul>{profile.transmissionConditionsToReview.map(condition => <li key={condition}>{condition}</li>)}</ul>
+        </details>
+      ) : null}
       {loading ? (
         <div className="eco-vehicle-lookup__profile-loading" role="status">
           <span className="eco-sr-only">Загружаем технический профиль…</span>
@@ -206,6 +278,9 @@ function TechnicalProfile({
                   ) : null}
                 </div>
                 {item.userConfirmedTransmission ? <span className="is-confirmed">Тип коробки подтверждён вручную.</span> : null}
+                {item.userConfirmedTransmissionModel ? <span className="is-confirmed">Модель коробки указана вручную. Данные остаются предварительными.</span> : null}
+                {item.userConfirmedEquipment ? <span className="is-confirmed">Наличие узла указано вручную. Данные остаются предварительными.</span> : null}
+                {item.userConfirmedEquipment && !item.capacities.length ? <span className="is-muted">Объём в источнике не указан.</span> : null}
                 {item.specifications.length ? (
                   <span><em>Допуски / классы</em>{item.specifications.join(" · ")}</span>
                 ) : null}
@@ -241,7 +316,7 @@ function TechnicalProfile({
           {profile.notice ? <p className="eco-vehicle-lookup__profile-notice">{profile.notice}</p> : null}
         </>
       ) : (
-        <div className="eco-vehicle-lookup__profile-state">Для этой модификации технических данных пока нет.</div>
+        <div className="eco-vehicle-lookup__profile-state">{profile?.transmissionGearCountOptions?.length && selectedTransmissionGearCount == null ? "Для показа жидкости укажите число передач установленной коробки." : profile?.transmissionComponentOptions?.length ? "Для показа жидкости укажите модель установленной коробки." : profile?.equipmentOptions?.length ? "Для показа жидкости подтвердите установленное оборудование." : "Нет данных с подтверждённой применяемостью. При необходимости уточните месяц выпуска или условия агрегата."}</div>
       )}
     </div>
   );
@@ -261,6 +336,12 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   const [technicalProfile, setTechnicalProfile] = useState<MannUnifiedTechnicalProfile | null>(null);
   const [technicalProfileVariantKeys, setTechnicalProfileVariantKeys] = useState<string[]>([]);
   const [selectedTransmissionType, setSelectedTransmissionType] = useState<MannTransmissionType | undefined>();
+  const [selectedTransmissionModel, setSelectedTransmissionModel] = useState("");
+  const [selectedTransmissionGearCount, setSelectedTransmissionGearCount] = useState<number | undefined>();
+  const [confirmedEquipment, setConfirmedEquipment] = useState<NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>[]>([]);
+  const [productionMonthDraft, setProductionMonthDraft] = useState("");
+  const [productionMonth, setProductionMonth] = useState("");
+  const productionMonthRef = useRef<HTMLInputElement | null>(null);
   const [technicalProfileLoading, setTechnicalProfileLoading] = useState(false);
   const [technicalProfileError, setTechnicalProfileError] = useState("");
   const lookupRequestIdRef = useRef(0);
@@ -293,17 +374,27 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setTechnicalProfile(null);
     setTechnicalProfileVariantKeys([]);
     setSelectedTransmissionType(undefined);
+    setSelectedTransmissionModel("");
+    setSelectedTransmissionGearCount(undefined);
+    setConfirmedEquipment([]);
+    setProductionMonth("");
+    setProductionMonthDraft("");
     setTechnicalProfileLoading(false);
     setTechnicalProfileError("");
   };
 
-  const loadTechnicalProfile = async (variantKeys: string[], transmissionType?: MannTransmissionType) => {
+  const loadTechnicalProfile = async (variantKeys: string[], vehicle: NormalizedVehicleIdentity, transmissionType?: MannTransmissionType, details: { transmissionModel?: string; transmissionGearCount?: number; productionMonth?: string; confirmedEquipment?: typeof confirmedEquipment } = {}) => {
     const requestId = ++technicalProfileRequestIdRef.current;
     technicalProfileControllerRef.current?.abort();
     const controller = new AbortController();
     technicalProfileControllerRef.current = controller;
     setTechnicalProfileVariantKeys(variantKeys);
     setSelectedTransmissionType(transmissionType);
+    setSelectedTransmissionModel(details.transmissionModel ?? "");
+    setSelectedTransmissionGearCount(details.transmissionGearCount);
+    setConfirmedEquipment(details.confirmedEquipment ?? []);
+    setProductionMonth(details.productionMonth ?? "");
+    setProductionMonthDraft(details.productionMonth ?? "");
     if (!transmissionType) {
       setTechnicalProfile(null);
     } else {
@@ -315,7 +406,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
       const response = await fetch("/api/mann-catalog/technical-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variantKeys, transmissionType }),
+        body: JSON.stringify({ variantKeys, transmissionType, vehicleContext: mannTechnicalContextFromVehicle(vehicle, details) }),
         signal: controller.signal,
       });
       const data = await responseJson<MannUnifiedTechnicalProfile & { error?: string }>(response);
@@ -368,7 +459,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
         setAppliedVehicle(vehicle);
         setAppliedFromCache(Boolean(fromCache));
         setFeedback(null);
-        if (data.selectedApplication) void loadTechnicalProfile(data.selectedApplication.variantIds);
+        if (data.selectedApplication) void loadTechnicalProfile(data.selectedApplication.variantIds, vehicle);
         return;
       }
 
@@ -416,6 +507,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     const body = tab === "plate" ? { plate: value, organizationId, refresh } : { vin: value, organizationId, refresh };
     const requestId = ++lookupRequestIdRef.current;
     resolutionRequestIdRef.current += 1;
+    technicalProfileRequestIdRef.current += 1;
     lookupControllerRef.current?.abort();
     resolutionControllerRef.current?.abort();
     technicalProfileControllerRef.current?.abort();
@@ -433,6 +525,11 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setTechnicalProfile(null);
     setTechnicalProfileVariantKeys([]);
     setSelectedTransmissionType(undefined);
+    setSelectedTransmissionModel("");
+    setSelectedTransmissionGearCount(undefined);
+    setConfirmedEquipment([]);
+    setProductionMonth("");
+    setProductionMonthDraft("");
     setTechnicalProfileLoading(false);
     setTechnicalProfileError("");
 
@@ -515,7 +612,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setAppliedVehicle(vehicle);
     setAppliedFromCache(Boolean(lookup?.fromCache));
     setFeedback(null);
-    void loadTechnicalProfile(candidate.variantIds);
+    void loadTechnicalProfile(candidate.variantIds, vehicle);
     onConfirmMannCandidate(vehicle, candidate);
   };
 
@@ -526,6 +623,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     }
     lookupRequestIdRef.current += 1;
     resolutionRequestIdRef.current += 1;
+    technicalProfileRequestIdRef.current += 1;
     lookupControllerRef.current?.abort();
     resolutionControllerRef.current?.abort();
     technicalProfileControllerRef.current?.abort();
@@ -538,6 +636,11 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setTechnicalProfile(null);
     setTechnicalProfileVariantKeys([]);
     setSelectedTransmissionType(undefined);
+    setSelectedTransmissionModel("");
+    setSelectedTransmissionGearCount(undefined);
+    setConfirmedEquipment([]);
+    setProductionMonth("");
+    setProductionMonthDraft("");
     setTechnicalProfileLoading(false);
     setTechnicalProfileError("");
     setInput("");
@@ -591,14 +694,53 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             </details>
           </div>
         </div>
+        <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date">
+          <summary>Уточнить месяц выпуска</summary>
+          <fieldset className="eco-vehicle-lookup__transmission-choice">
+            <legend>Дата производства автомобиля</legend>
+            <label>Месяц и год выпуска
+              <input ref={productionMonthRef} type="month" min="1886-01" max="2100-12" value={productionMonthDraft} disabled={technicalProfileLoading}
+                onChange={event => { event.target.setCustomValidity(""); setProductionMonthDraft(event.target.value); }} />
+            </label>
+            <p>Используйте дату производства, а не регистрации. Она нужна на границах применяемости жидкости.</p>
+            <button type="button" disabled={technicalProfileLoading || !technicalProfileVariantKeys.length} onClick={() => {
+              const control = productionMonthRef.current;
+              if (productionMonthDraft && appliedVehicle.year && Number(productionMonthDraft.slice(0, 4)) !== appliedVehicle.year) {
+                control?.setCustomValidity("Год отличается от данных автомобиля. Сначала уточните выбранный автомобиль.");
+              }
+              if (control && !control.reportValidity()) return;
+              void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { productionMonth: productionMonthDraft || undefined });
+            }}>Применить дату</button>
+          </fieldset>
+        </details>
         <TechnicalProfile
           profile={technicalProfile}
           loading={technicalProfileLoading}
           error={technicalProfileError}
+          selectedTransmissionModel={selectedTransmissionModel}
+          selectedTransmissionGearCount={selectedTransmissionGearCount}
+          confirmedEquipment={confirmedEquipment}
+          onSelectEquipment={(circuit, option) => {
+            if (!technicalProfileVariantKeys.length) return;
+            const next = confirmedEquipment.filter(item => item.circuit !== circuit);
+            if (option) next.push(option);
+            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, {
+              transmissionModel: selectedTransmissionModel || undefined, transmissionGearCount: selectedTransmissionGearCount,
+              productionMonth: productionMonth || undefined, confirmedEquipment: next,
+            });
+          }}
+          onSelectTransmissionGearCount={count => {
+            if (!technicalProfileVariantKeys.length || !selectedTransmissionType) return;
+            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { transmissionGearCount: count, productionMonth: productionMonth || undefined });
+          }}
+          onSelectTransmissionModel={model => {
+            if (!technicalProfileVariantKeys.length || !selectedTransmissionType) return;
+            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { transmissionModel: model || undefined, transmissionGearCount: selectedTransmissionGearCount, productionMonth: productionMonth || undefined });
+          }}
           onSelectTransmission={(transmissionType) => {
             if (!technicalProfileVariantKeys.length || transmissionType === selectedTransmissionType) return;
             onConfirmTransmission?.(appliedVehicle, transmissionType, technicalProfileVariantKeys);
-            void loadTechnicalProfile(technicalProfileVariantKeys, transmissionType);
+            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, transmissionType, { productionMonth: productionMonth || undefined });
           }}
         />
       </section>
