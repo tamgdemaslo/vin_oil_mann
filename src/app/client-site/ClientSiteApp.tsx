@@ -2328,12 +2328,14 @@ function ShopPage() {
 }
 
 function FilterGroup({ title, items, active, onToggle }) {
+  const router = useRoute();
   return (
     <div style={{marginBottom: 28}}>
       <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.14em', color: '#6B6B6B', textTransform: 'uppercase', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid #0a0a0a'}}>{title}</div>
       <ul style={{margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4}}>
         {items.map(v => {
           const on = active.has(v);
+          const count = OILS.filter(o => o.brand === v || o.visc === v || o.volume === v || o.type.includes(v)).length;
           return (
             <li key={v}>
               <label style={{display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '6px 0', fontSize: 13}}>
@@ -2344,7 +2346,7 @@ function FilterGroup({ title, items, active, onToggle }) {
                 }}>{on && <span style={{color: '#F5F2ED', fontSize: 11, lineHeight: 1}}>✓</span>}</span>
                 <span style={{color: '#0a0a0a'}}>{v}</span>
                 <span style={{marginLeft: 'auto', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B'}}>
-                  {OILS.filter(o => o.brand === v || o.visc === v || o.volume === v || o.type.includes(v)).length}
+                  {router.catalogLoadingMore ? `${count}+` : count}
                 </span>
                 <input type="checkbox" checked={on} onChange={() => onToggle(v)} style={{display: 'none'}} />
               </label>
