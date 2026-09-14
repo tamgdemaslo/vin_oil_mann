@@ -654,7 +654,9 @@ function OilProductVisual({ oil, variant = 'shop', priority = false }) {
   const [imageAttempt, setImageAttempt] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  const [imageVisible, setImageVisible] = useState(product || priority);
   const retryTimerRef = useRef(null);
+  const viewportRef = useRef(null);
 
   useEffect(() => {
     if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
@@ -667,7 +669,27 @@ function OilProductVisual({ oil, variant = 'shop', priority = false }) {
     };
   }, [oil.imageHref]);
 
+  useEffect(() => {
+    if (!oil.imageHref || product || priority) {
+      setImageVisible(true);
+      return;
+    }
+    const node = viewportRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setImageVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      setImageVisible(true);
+      observer.disconnect();
+    }, { rootMargin: '240px 0px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [oil.imageHref, product, priority]);
+
   const showImage = Boolean(oil.imageHref) && !imageFailed;
+  const requestImage = showImage && imageVisible;
   const imageWidth = product ? 1200 : 480;
   const imageParams = [`width=${imageWidth}`];
   if (imageAttempt > 0) imageParams.push(`retry=${imageAttempt}`);
@@ -688,14 +710,14 @@ function OilProductVisual({ oil, variant = 'shop', priority = false }) {
     }, retryDelay);
   };
   const inner = (
-    <div aria-busy={showImage && !imageLoaded} style={{position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+    <div ref={viewportRef} aria-busy={requestImage && !imageLoaded} style={{position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
       {showImage && !imageLoaded && <OilImageSkeleton variant={variant} />}
       {!showImage && (
         <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
           <OilCanFallback oil={oil} variant={variant} />
         </div>
       )}
-      {showImage && (
+      {requestImage && (
         <img
           key={imageSrc}
           src={imageSrc}
@@ -775,10 +797,12 @@ function SectionHead({ eyebrow, title, right, paper, num }) {
 /* ---------- Router context ---------- */
 const RouterCtx = createContext(null);
 function useRoute() { return useContext(RouterCtx); }
+const CLIENT_SITE_BASE_PATH = '/client-site';
+const clientSiteHref = (to) => to === '/' ? CLIENT_SITE_BASE_PATH : `${CLIENT_SITE_BASE_PATH}${to}`;
 function Link({ to, children, ...rest }) {
   const r = useRoute();
   return (
-    <a href={'#' + to} onClick={e => { e.preventDefault(); r.go(to); }} {...rest}>{children}</a>
+    <a href={clientSiteHref(to)} onClick={e => { e.preventDefault(); r.go(to); }} {...rest}>{children}</a>
   );
 }
 
@@ -827,7 +851,7 @@ const apiPost = (path, body) => apiRequest(path, {
 
 function TopBar() {
   const r = useRoute();
-  const path = r.path;
+  const path = r.path || '';
   const nav = [
     {to: '/', label: 'Главная'},
     {to: '/shop', label: 'Магазин'},
@@ -2203,6 +2227,7 @@ function vinToMinutes(time) {
 // ====================================================================
 
 function ShopPage() {
+  const router = useRoute();
   const [brands, setBrands] = useState(new Set());
   const [viscs, setViscs] = useState(new Set());
   const [types, setTypes] = useState(new Set());
@@ -2230,6 +2255,7 @@ function ShopPage() {
   const allViscs = [...new Set(OILS.map(o => o.visc))];
   const allVols = [...new Set(OILS.map(o => o.volume))];
   const allTypes = ['Бензин', 'Дизель', 'Гибрид', 'DPF'];
+  const catalogTotal = Math.max(router.catalogTotal || 0, OILS.length);
 
   return (
     <main style={{background: '#F5F2ED', color: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
@@ -2245,7 +2271,7 @@ function ShopPage() {
           <div style={{textAlign: 'right'}}>
             <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginBottom: 6}}>В каталоге</div>
             <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 64, lineHeight: 1, color: '#0a0a0a'}}>{filtered.length}</div>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginTop: 4}}>из {OILS.length} ПОЗИЦИЙ</div>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginTop: 4}}>из {catalogTotal} ПОЗИЦИЙ</div>
           </div>
         </div>
 
@@ -2275,7 +2301,7 @@ function ShopPage() {
             {/* sort */}
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22, paddingBottom: 16, borderBottom: '1px solid #D9D3C5'}}>
               <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', textTransform: 'uppercase'}}>
-                Показываем {filtered.length}
+                Показываем {filtered.length}{router.catalogLoadingMore ? ` · загружаем остальные (${OILS.length}/${catalogTotal})` : ''}
               </div>
               <div style={{display: 'flex', gap: 14, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase'}}>
                 <span style={{color: '#6B6B6B'}}>Сортировка:</span>
@@ -3380,34 +3406,47 @@ function OfferPage() {
 //  app.jsx — router + mount
 // ====================================================================
 
-function useHashRoute() {
+function useClientRoute(initialPath) {
   const parse = () => {
-    if (typeof window === 'undefined') return '/';
-    const h = window.location.hash.replace(/^#/, '') || '/';
-    return h;
+    if (typeof window === 'undefined') return initialPath;
+    const legacyHash = window.location.hash.replace(/^#/, '');
+    if (legacyHash.startsWith('/')) return legacyHash;
+    const pathname = window.location.pathname;
+    if (pathname === CLIENT_SITE_BASE_PATH) return '/';
+    if (pathname.startsWith(`${CLIENT_SITE_BASE_PATH}/`)) return pathname.slice(CLIENT_SITE_BASE_PATH.length) || '/';
+    return initialPath || '/';
   };
-  // Keep the first client render identical to SSR; apply the URL hash after mount.
-  const [path, setPath] = useState('/');
+  const [path, setPath] = useState(initialPath);
   const [state, setState] = useState({});
 
   useEffect(() => {
-    const onHash = () => { setPath(parse()); window.scrollTo({ top: 0, behavior: 'auto' }); };
-    onHash();
-    window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
-  }, []);
+    const syncFromLocation = () => {
+      const nextPath = parse() || '/';
+      const legacyHash = window.location.hash.replace(/^#/, '');
+      if (legacyHash.startsWith('/')) {
+        window.history.replaceState(window.history.state, '', clientSiteHref(nextPath));
+      }
+      setPath(nextPath);
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    };
+    syncFromLocation();
+    window.addEventListener('popstate', syncFromLocation);
+    window.addEventListener('hashchange', syncFromLocation);
+    return () => {
+      window.removeEventListener('popstate', syncFromLocation);
+      window.removeEventListener('hashchange', syncFromLocation);
+    };
+  }, [initialPath]);
 
   const go = (to, st = {}) => {
     setState(st);
-    window.location.hash = to;
-    if (window.location.hash === '#' + to) {
-      // already same hash — force scroll
-      window.scrollTo({ top: 0, behavior: 'auto' });
-    }
+    window.history.pushState({}, '', clientSiteHref(to));
+    setPath(to);
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   // Parse params
-  const segs = path.split('/').filter(Boolean);
+  const segs = (path || '').split('/').filter(Boolean);
   const params = {};
   if (segs[0] === 'product' && segs[1]) params.id = segs[1];
   if (segs[0] === 'case' && segs[1]) params.id = segs[1];
@@ -3415,37 +3454,104 @@ function useHashRoute() {
   return { path, go, state, params };
 }
 
-function App() {
-  const router = useHashRoute();
+function App({ initialPath = null }: { initialPath?: string | null }) {
+  const router = useClientRoute(initialPath);
   const [catalogVersion, setCatalogVersion] = useState(0);
   const [catalogStatus, setCatalogStatus] = useState('loading');
   const [catalogError, setCatalogError] = useState('');
+  const [catalogTotal, setCatalogTotal] = useState(0);
+  const [catalogLoadingMore, setCatalogLoadingMore] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     let inFlight = false;
+    let generation = 0;
+    let backgroundTimer = null;
+    let idleHandle = null;
     setCatalogStatus('loading');
     setCatalogError('');
+
+    const publishCatalog = (items) => {
+      OILS = items;
+      window.OILS = items;
+      setCatalogVersion(version => version + 1);
+    };
+
+    const mergeCatalog = (current, incoming) => {
+      const byId = new Map(current.map(item => [item.id, item]));
+      incoming.forEach(item => byId.set(item.id, item));
+      return [...byId.values()];
+    };
+
+    const loadRemainingCatalog = async (run, initialItems, initialNextOffset, total, publishProgress) => {
+      let items = initialItems;
+      let nextOffset = initialNextOffset;
+      try {
+        while (!cancelled && run === generation && Number.isFinite(nextOffset)) {
+          const data = await apiGet(`/api/oils?limit=100&offset=${nextOffset}`);
+          if (cancelled || run !== generation) return;
+          const pageItems = Array.isArray(data?.items) ? data.items : [];
+          items = mergeCatalog(items, pageItems);
+          nextOffset = data?.nextOffset;
+          setCatalogTotal(Number.isFinite(data?.total) ? data.total : total);
+          if (publishProgress) publishCatalog(items);
+        }
+        if (!cancelled && run === generation) publishCatalog(items);
+      } catch (error) {
+        if (!cancelled && run === generation) {
+          console.warn('[catalog] Не удалось подгрузить остальные масла:', error.message);
+        }
+      } finally {
+        if (!cancelled && run === generation) setCatalogLoadingMore(false);
+      }
+    };
+
+    const scheduleRemainingCatalog = (run, items, nextOffset, total, publishProgress) => {
+      if (!Number.isFinite(nextOffset)) {
+        publishCatalog(items);
+        setCatalogLoadingMore(false);
+        return;
+      }
+      setCatalogLoadingMore(true);
+      const start = () => void loadRemainingCatalog(run, items, nextOffset, total, publishProgress);
+      backgroundTimer = window.setTimeout(() => {
+        if (typeof window.requestIdleCallback === 'function') {
+          idleHandle = window.requestIdleCallback(start, { timeout: 1500 });
+        } else {
+          start();
+        }
+      }, 1200);
+    };
 
     const refreshCatalog = async () => {
       if (inFlight || document.visibilityState !== 'visible') return;
       inFlight = true;
+      generation += 1;
+      const run = generation;
+      if (backgroundTimer != null) window.clearTimeout(backgroundTimer);
+      if (idleHandle != null && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleHandle);
       try {
-        const data = await apiGet('/api/oils?limit=100');
+        const data = await apiGet('/api/oils?limit=24&offset=0');
         const oils = Array.isArray(data?.items) ? data.items : [];
-        if (cancelled) return;
-        OILS = oils;
-        window.OILS = oils;
-        setCatalogVersion(version => version + 1);
+        if (cancelled || run !== generation) return;
+        const total = Number.isFinite(data?.total) ? data.total : oils.length;
+        const publishProgress = OILS.length === 0;
+        if (publishProgress) publishCatalog(oils);
+        setCatalogTotal(total);
         setCatalogStatus('ready');
         setCatalogError('');
+        scheduleRemainingCatalog(run, oils, data?.nextOffset, total, publishProgress);
       } catch (error) {
-        if (cancelled) return;
+        if (cancelled || run !== generation) return;
         console.warn('[catalog] Не удалось обновить масла:', error.message);
-        OILS = [];
-        window.OILS = [];
-        setCatalogError(error.message || 'Не удалось загрузить каталог масел.');
-        setCatalogStatus('error');
+        setCatalogLoadingMore(false);
+        if (OILS.length) {
+          setCatalogStatus('ready');
+        } else {
+          publishCatalog([]);
+          setCatalogError(error.message || 'Не удалось загрузить каталог масел.');
+          setCatalogStatus('error');
+        }
       } finally {
         inFlight = false;
       }
@@ -3461,13 +3567,16 @@ function App() {
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      if (backgroundTimer != null) window.clearTimeout(backgroundTimer);
+      if (idleHandle != null && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleHandle);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
 
-  const seg = router.path.split('/').filter(Boolean);
+  const seg = (router.path || '').split('/').filter(Boolean);
   let page;
-  if (router.path === '/' || router.path === '') page = <HomePage />;
+  if (router.path == null) page = <CatalogGate title="Открываем сайт" />;
+  else if (router.path === '/' || router.path === '') page = <HomePage />;
   else if (seg[0] === 'privacy') page = <PrivacyPage />;
   else if (seg[0] === 'offer') page = <OfferPage />;
   else if (seg[0] === 'cases') page = <CasesPage />;
@@ -3483,7 +3592,7 @@ function App() {
   else page = <HomePage />;
 
   return (
-    <RouterCtx.Provider value={{ ...router, catalogVersion }}>
+    <RouterCtx.Provider value={{ ...router, catalogVersion, catalogTotal, catalogLoadingMore }}>
       <TopBar />
       {page}
       <Footer />

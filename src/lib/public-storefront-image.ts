@@ -3,23 +3,20 @@ import { isSafeStorefrontImageContentType, storefrontPublicImageHref } from "@/l
 
 export async function getSelectedPublicStorefrontImage(storefrontProductId: string, photoId: string) {
   const expectedHref = storefrontPublicImageHref(storefrontProductId, photoId);
-  const product = await prisma.storefrontProduct.findFirst({
-    where: {
-      id: storefrontProductId,
-      publicationState: "PUBLISHED",
-      publicImageHref: expectedHref,
-    },
-    select: { id: true },
-  });
-  if (!product) return null;
-
   const photo = await prisma.localProductPhoto.findFirst({
     where: {
       id: photoId,
       purpose: "STOREFRONT",
       product: {
         storefrontBindings: {
-          some: { storefrontProductId: product.id, status: "CONFIRMED" },
+          some: {
+            storefrontProductId,
+            status: "CONFIRMED",
+            storefrontProduct: {
+              publicationState: "PUBLISHED",
+              publicImageHref: expectedHref,
+            },
+          },
         },
       },
     },

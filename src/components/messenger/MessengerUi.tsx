@@ -421,6 +421,7 @@ export function MessengerWidget() {
   const hidden =
     pathname === "/login" ||
     pathname === "/client-site" ||
+    pathname.startsWith("/client-site/") ||
     pathname === "/booking" ||
     pathname.startsWith("/booking/") ||
     pathname === "/messages" ||

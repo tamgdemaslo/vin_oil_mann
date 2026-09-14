@@ -15,7 +15,7 @@ function segment(pathname: string, index: number) {
 }
 
 const routeTitleRules: RouteTitleRule[] = [
-  { match: (pathname) => pathname === "/client-site", title: () => "Сайт | Там где масло." },
+  { match: (pathname) => pathname === "/client-site" || pathname.startsWith("/client-site/"), title: () => "Сайт | Там где масло." },
   { match: (pathname) => pathname === "/login", title: () => `Вход | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/", title: () => `Главная | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/dashboard", title: () => `Сводка | ${APP_SUFFIX}` },

@@ -194,7 +194,7 @@ function compactUserName(user: NonNullable<PlatformUser>) {
 
 function shouldHideShell(pathname: string) {
   if (pathname === "/login") return true;
-  if (pathname === "/client-site") return true;
+  if (pathname === "/client-site" || pathname.startsWith("/client-site/")) return true;
   if (pathname === "/booking" || pathname.startsWith("/booking/")) return true;
   if (pathname.startsWith("/report/")) return true;
   return /^\/shipment\/[^/]+\/(poster|tags)(?:\/)?$/.test(pathname);

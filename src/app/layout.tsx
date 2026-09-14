@@ -1,10 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
-import { MessengerProvider } from "@/components/messenger/MessengerProvider";
-import { MessengerWidget } from "@/components/messenger/MessengerUi";
-import PlatformShell from "@/components/platform/PlatformShell";
-import RouteTitle from "@/components/platform/RouteTitle";
+import PlatformChrome from "@/components/platform/PlatformChrome";
 import { BROWSER_REQUEST_CONTEXT_SCRIPT } from "@/lib/browser-request-context";
 
 export const metadata: Metadata = {
@@ -31,12 +28,9 @@ export default function RootLayout({
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: BROWSER_REQUEST_CONTEXT_SCRIPT }}
         />
-        <MessengerProvider>
-          <RouteTitle />
-          <PlatformShell />
+        <PlatformChrome>
           {children}
-          <MessengerWidget />
-        </MessengerProvider>
+        </PlatformChrome>
       </body>
     </html>
   );

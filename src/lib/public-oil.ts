@@ -58,15 +58,53 @@ export type PublicOilRecommendation = PublicOilCard & {
   why: string[];
 };
 
+const STOREFRONT_OIL_ROW_SELECT = {
+  id: true,
+  slug: true,
+  publicName: true,
+  publicDescription: true,
+  publicImageHref: true,
+  updatedAt: true,
+  contentSource: {
+    select: {
+      name: true,
+      description: true,
+      article: true,
+      brand: true,
+      sae: true,
+      acea: true,
+      aceaExtra: true,
+      apiSpec: true,
+      ilsac: true,
+      oem: true,
+      packageVolume: true,
+      uomName: true,
+      currencyName: true,
+      salePriceCents: true,
+    },
+  },
+  bindings: {
+    where: { status: "CONFIRMED" },
+    select: {
+      branchId: true,
+      localProduct: {
+        select: {
+          archived: true,
+          uomName: true,
+          salePriceCents: true,
+          currencyName: true,
+          updatedAt: true,
+          stockBalances: {
+            select: { storeId: true, available: true, syncedAt: true },
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.StorefrontProductSelect;
+
 type StorefrontOilRow = Prisma.StorefrontProductGetPayload<{
-  include: {
-    contentSource: true;
-    bindings: {
-      include: {
-        localProduct: { include: { stockBalances: true } };
-      };
-    };
-  };
+  select: typeof STOREFRONT_OIL_ROW_SELECT;
 }>;
 
 type PublicOilQuery = {
@@ -249,13 +287,7 @@ async function loadStorefrontOilRows(params: PublicOilQuery = {}, options: { lim
   const [rows, total] = await Promise.all([
     prisma.storefrontProduct.findMany({
       where,
-      include: {
-        contentSource: true,
-        bindings: {
-          where: { status: "CONFIRMED" },
-          include: { localProduct: { include: { stockBalances: true } } },
-        },
-      },
+      select: STOREFRONT_OIL_ROW_SELECT,
       orderBy: [{ publicName: "asc" }, { id: "asc" }],
       skip: Math.max(0, options.offset ?? 0),
       ...(options.limit == null ? {} : { take: options.limit }),

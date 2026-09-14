@@ -116,8 +116,16 @@ export function getClientSiteData() {
 }
 
 export async function getClientOils(searchParams?: URLSearchParams) {
-  const oils = await loadClientOils(clientOilLimit(searchParams));
-  return filterClientOils(oils, searchParams);
+  return (await getClientOilPage(searchParams)).items;
+}
+
+export async function getClientOilPage(searchParams?: URLSearchParams) {
+  const page = await loadClientOilPage(clientOilLimit(searchParams), clientOilOffset(searchParams));
+  return {
+    items: filterClientOils(page.items, searchParams),
+    total: page.total,
+    nextOffset: page.nextOffset,
+  };
 }
 
 export async function getClientOilById(id: string) {
@@ -227,14 +235,23 @@ export class ClientApiError extends Error {
   }
 }
 
-async function loadClientOils(limit = 100) {
-  const publicResult = await withTimeout(listPublicOils({ limit }), ECO_OIL_TIMEOUT_MS);
-  return uniqueById(publicResult.oils.map(publicOilToClientOil)).sort(compareClientOils);
+async function loadClientOilPage(limit = 100, offset = 0) {
+  const publicResult = await withTimeout(listPublicOils({ limit, offset }), ECO_OIL_TIMEOUT_MS);
+  return {
+    items: uniqueById(publicResult.oils.map(publicOilToClientOil)),
+    total: publicResult.total,
+    nextOffset: publicResult.nextOffset,
+  };
 }
 
 function clientOilLimit(searchParams?: URLSearchParams) {
   const parsed = Number.parseInt(searchParams?.get("limit") ?? "", 10);
   return Number.isFinite(parsed) ? Math.min(100, Math.max(1, parsed)) : 30;
+}
+
+function clientOilOffset(searchParams?: URLSearchParams) {
+  const parsed = Number.parseInt(searchParams?.get("offset") ?? "", 10);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
@@ -371,13 +388,6 @@ function oilSpecFromRequirements(requirements: unknown) {
     .map((value) => String(value).trim())
     .filter(Boolean)
     .join(" / ");
-}
-
-function compareClientOils(left: ClientOil, right: ClientOil) {
-  const stockOrder = Number(right.stock > 0) - Number(left.stock > 0);
-  if (stockOrder !== 0) return stockOrder;
-  if (right.stock !== left.stock) return right.stock - left.stock;
-  return `${left.brand} ${left.line}`.localeCompare(`${right.brand} ${right.line}`, "ru");
 }
 
 function splitParam(value: string) {

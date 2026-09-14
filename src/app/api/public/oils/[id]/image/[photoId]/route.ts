@@ -120,7 +120,7 @@ export async function GET(
       data = await sharp(data)
         .rotate()
         .resize({ width, height: width, fit: "inside", withoutEnlargement: true })
-        .webp({ quality: 84, effort: 4 })
+        .webp({ quality: 84, effort: 2 })
         .toBuffer();
       contentType = "image/webp";
       fileName = optimizedFileName(photo.fileName, width);

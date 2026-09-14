@@ -154,7 +154,7 @@ function isMessagesPagePath(pathname: string) {
 }
 
 function messengerDisabledPath(pathname: string) {
-  return pathname === "/login" || pathname === "/client-site" || pathname === "/booking" || pathname.startsWith("/booking/") || pathname.startsWith("/report/");
+  return pathname === "/login" || pathname === "/client-site" || pathname.startsWith("/client-site/") || pathname === "/booking" || pathname.startsWith("/booking/") || pathname.startsWith("/report/");
 }
 
 export function MessengerProvider({ children }: { children: ReactNode }) {
