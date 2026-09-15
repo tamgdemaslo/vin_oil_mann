@@ -5,7 +5,8 @@ import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-veh
 import type { MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import { mannCapacityLabel as capacityLabel } from "@/lib/mann-capacity-label";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
-import { mannTechnicalContextFromVehicle } from "@/lib/mann-technical-request-context";
+import { canConfirmVehicleDestinationMarket, unsupportedVehicleMarketLabels, mannTechnicalContextFromVehicle, type MannTechnicalContextDetails } from "@/lib/mann-technical-request-context";
+import { isVehicleDestinationMarket, type VehicleDestinationMarket } from "@/lib/vehicle-market";
 import { mannEquipmentChoiceKey } from "@/lib/mann-equipment-scope";
 
 type LookupTab = "vin" | "plate" | "manual";
@@ -322,6 +323,11 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   const [productionMonthDraft, setProductionMonthDraft] = useState("");
   const [productionMonth, setProductionMonth] = useState("");
   const [confirmedDrive, setConfirmedDrive] = useState<"2WD" | "4WD" | undefined>();
+  const [confirmedEngineCode, setConfirmedEngineCode] = useState<string | undefined>();
+  const [confirmedMarket, setConfirmedMarket] = useState<VehicleDestinationMarket | undefined>();
+  const [marketClarification, setMarketClarification] = useState<MannTechnicalContextDetails['marketClarification']>();
+  const [marketCorrectionDraft, setMarketCorrectionDraft] = useState("");
+  const [marketEvidenceDraft, setMarketEvidenceDraft] = useState("");
   const [rearAirConditioning, setRearAirConditioning] = useState<boolean | undefined>();
   const productionMonthRef = useRef<HTMLInputElement | null>(null);
   const [technicalProfileLoading, setTechnicalProfileLoading] = useState(false);
@@ -332,6 +338,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   const lookupControllerRef = useRef<AbortController | null>(null);
   const resolutionControllerRef = useRef<AbortController | null>(null);
   const technicalProfileControllerRef = useRef<AbortController | null>(null);
+  const confirmedTechnicalCandidateRef = useRef<MannVehicleCandidate | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastAutomaticLookupRef = useRef("");
 
@@ -345,6 +352,12 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   };
 
   const resetLookupState = () => {
+    confirmedTechnicalCandidateRef.current = undefined;
+    setConfirmedEngineCode(undefined);
+    setConfirmedMarket(undefined);
+    setMarketClarification(undefined);
+    setMarketCorrectionDraft("");
+    setMarketEvidenceDraft("");
     technicalProfileRequestIdRef.current += 1;
     technicalProfileControllerRef.current?.abort();
     setLookup(null);
@@ -365,7 +378,12 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setTechnicalProfileError("");
   };
 
-  const loadTechnicalProfile = async (variantKeys: string[], vehicle: NormalizedVehicleIdentity, transmissionType?: MannTransmissionType, details: { transmissionModel?: string; transmissionGearCount?: number; productionMonth?: string; confirmedEquipment?: typeof confirmedEquipment; rearAirConditioning?: boolean; confirmedDrive?: "2WD" | "4WD" } = {}) => {
+  const loadTechnicalProfile = async (variantKeys: string[], vehicle: NormalizedVehicleIdentity, transmissionType?: MannTransmissionType, details: MannTechnicalContextDetails = {}) => {
+    // Retain explicit clarification only for the same selected vehicle and market.
+    const retainedClarification = details.marketClarification ?? (vehicle === appliedVehicle && details.confirmedMarket === confirmedMarket ? marketClarification : undefined);
+    details = { ...details, marketClarification: retainedClarification };
+    setMarketClarification(retainedClarification);
+    if (vehicle !== appliedVehicle) { setMarketCorrectionDraft(""); setMarketEvidenceDraft(""); }
     const requestId = ++technicalProfileRequestIdRef.current;
     technicalProfileControllerRef.current?.abort();
     const controller = new AbortController();
@@ -377,6 +395,8 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setConfirmedEquipment(details.confirmedEquipment ?? []);
     setRearAirConditioning(details.rearAirConditioning);
     setConfirmedDrive(details.confirmedDrive);
+    setConfirmedEngineCode(details.confirmedEngineCode);
+    setConfirmedMarket(details.confirmedMarket);
     setProductionMonth(details.productionMonth ?? "");
     setProductionMonthDraft(details.productionMonth ?? "");
     if (!transmissionType) {
@@ -390,7 +410,10 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
       const response = await fetch("/api/mann-catalog/technical-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variantKeys, transmissionType, vehicleContext: mannTechnicalContextFromVehicle(vehicle, details) }),
+        body: JSON.stringify({ variantKeys, transmissionType, vehicleContext: mannTechnicalContextFromVehicle(vehicle, details,
+          confirmedTechnicalCandidateRef.current?.variantIds.length === variantKeys.length
+            && variantKeys.every(key => confirmedTechnicalCandidateRef.current?.variantIds.includes(key))
+            ? confirmedTechnicalCandidateRef.current : undefined) }),
         signal: controller.signal,
       });
       const data = await responseJson<MannUnifiedTechnicalProfile & { error?: string }>(response);
@@ -410,6 +433,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   };
 
   const handleResolution = async (vehicle: NormalizedVehicleIdentity, fromCache?: boolean) => {
+    confirmedTechnicalCandidateRef.current = undefined;
     const requestId = ++resolutionRequestIdRef.current;
     resolutionControllerRef.current?.abort();
     const controller = new AbortController();
@@ -443,7 +467,10 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
         setAppliedVehicle(vehicle);
         setAppliedFromCache(Boolean(fromCache));
         setFeedback(null);
-        if (data.selectedApplication) void loadTechnicalProfile(data.selectedApplication.variantIds, vehicle);
+        if (data.selectedApplication) {
+          confirmedTechnicalCandidateRef.current = data.selectedApplication;
+          void loadTechnicalProfile(data.selectedApplication.variantIds, vehicle);
+        }
         return;
       }
 
@@ -593,6 +620,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   };
 
   const confirmMannCandidate = (vehicle: NormalizedVehicleIdentity, candidate: MannVehicleCandidate) => {
+    confirmedTechnicalCandidateRef.current = candidate;
     setAppliedVehicle(vehicle);
     setAppliedFromCache(Boolean(lookup?.fromCache));
     setFeedback(null);
@@ -678,6 +706,78 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             </details>
           </div>
         </div>
+        {!appliedVehicle.engineCode && (confirmedTechnicalCandidateRef.current?.technicalIdentity?.engineOptions?.length ?? 0) > 1 ? (
+          <fieldset className="eco-vehicle-lookup__transmission-choice eco-vehicle-lookup__engine-choice">
+            <legend>Уточнение двигателя</legend>
+            <label>Код двигателя
+              <select value={confirmedEngineCode ?? ""} disabled={technicalProfileLoading} aria-label="Код двигателя" aria-describedby="vehicle-engine-help"
+                onChange={event => {
+                  const code = event.target.value;
+                  if (code && !confirmedTechnicalCandidateRef.current?.technicalIdentity?.engineOptions?.includes(code)) return;
+                  void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, undefined, {
+                    confirmedEngineCode: code || undefined, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined,
+                  });
+                }}>
+                <option value="">Не указан</option>
+                {confirmedTechnicalCandidateRef.current?.technicalIdentity?.engineOptions?.map(code => <option key={code} value={code}>{code}</option>)}
+              </select>
+            </label>
+            <p id="vehicle-engine-help">В этой модификации несколько двигателей. Уточните код по данным автомобиля — жидкости для разных двигателей могут отличаться.</p>
+          </fieldset>
+        ) : null}
+        {canConfirmVehicleDestinationMarket(appliedVehicle) ? (
+          <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date">
+            <summary>Уточнить рынок автомобиля{confirmedMarket ? ` · ${confirmedMarket}` : ""}</summary>
+            <fieldset className="eco-vehicle-lookup__transmission-choice">
+              <legend>Рынок первоначальной продажи</legend>
+              <label>Для какого рынка выпущен автомобиль?
+                <select value={confirmedMarket ?? ""} disabled={technicalProfileLoading} aria-label="Рынок автомобиля" aria-describedby="vehicle-market-help"
+                  onChange={event => {
+                    const market = event.target.value;
+                    if (!technicalProfileVariantKeys.length || (market && !isVehicleDestinationMarket(market))) return;
+                    void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, undefined, {
+                      confirmedMarket: isVehicleDestinationMarket(market) ? market : undefined,
+                      confirmedEngineCode, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined,
+                    });
+                  }}>
+                  <option value="">Не уточнён</option>
+                  <option value="RU">Россия</option>
+                  <option value="JP">Япония</option>
+                  <option value="US">США</option>
+                  <option value="KR">Южная Корея</option>
+                  <option value="AE">ОАЭ</option>
+                  <option value="EU">Европа</option>
+                  <option value="SOUTHEAST_ASIA">Юго-Восточная Азия</option>
+                </select>
+              </label>
+              <p id="vehicle-market-help">Укажите рынок по документам или заводским данным. Это не страна сборки и не текущая регистрация. Если не знаете, оставьте «Не уточнён» — жидкости с ограничением по рынку останутся скрыты.</p>
+            </fieldset>
+          </details>
+        ) : null}
+        {unsupportedVehicleMarketLabels(appliedVehicle).length > 0 ? (
+          <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date">
+            <summary>Проверить рынок из ответа VIN{marketClarification && confirmedMarket ? ` · ${confirmedMarket}` : ""}</summary>
+            <fieldset className="eco-vehicle-lookup__transmission-choice">
+              <legend>Уточнение по документам автомобиля</legend>
+              <p>Декодер указал: {unsupportedVehicleMarketLabels(appliedVehicle).join(", ")}. Это значение не определяет поддерживаемый рынок. Исходный ответ останется без изменений.</p>
+              <label>Подтверждённый рынок
+                <select aria-label="Подтверждённый рынок" value={marketCorrectionDraft} disabled={technicalProfileLoading} onChange={e => setMarketCorrectionDraft(e.target.value)}>
+                  <option value="">Не выбран</option>
+                  <option value="RU">Россия</option><option value="JP">Япония</option><option value="US">США</option><option value="KR">Южная Корея</option><option value="AE">ОАЭ</option><option value="EU">Европа</option><option value="SOUTHEAST_ASIA">Юго-Восточная Азия</option>
+                </select>
+              </label>
+              <label>По каким данным проверен рынок?
+                <input type="text" className="eco-vehicle-lookup__market-evidence" value={marketEvidenceDraft} maxLength={500} disabled={technicalProfileLoading} onChange={e => setMarketEvidenceDraft(e.target.value)} placeholder="Документ или ссылка на заводскую комплектацию" />
+              </label>
+              <p>Не используйте страну сборки или текущую регистрацию. Подтверждение действует только для этого подбора.</p>
+              <button type="button" disabled={technicalProfileLoading || !isVehicleDestinationMarket(marketCorrectionDraft) || marketEvidenceDraft.trim().length < 8} onClick={() => {
+                if (!isVehicleDestinationMarket(marketCorrectionDraft) || !technicalProfileVariantKeys.length) return;
+                void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { confirmedMarket: marketCorrectionDraft, marketClarification: { sourceLabels: unsupportedVehicleMarketLabels(appliedVehicle), evidenceReference: marketEvidenceDraft.trim() }, confirmedEngineCode, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
+              }}>Подтверждаю рынок по указанным данным</button>
+              {marketClarification ? <><p>Основание: {marketClarification.evidenceReference}</p><button type="button" disabled={technicalProfileLoading} onClick={() => void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { confirmedEngineCode, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined })}>Снять подтверждение рынка</button></> : null}
+            </fieldset>
+          </details>
+        ) : null}
         <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date">
           <summary>Уточнить месяц выпуска</summary>
           <fieldset className="eco-vehicle-lookup__transmission-choice">
@@ -693,7 +793,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
                 control?.setCustomValidity("Год отличается от данных автомобиля. Сначала уточните выбранный автомобиль.");
               }
               if (control && !control.reportValidity()) return;
-              void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { confirmedDrive, rearAirConditioning, productionMonth: productionMonthDraft || undefined });
+              void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { confirmedEngineCode, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonthDraft || undefined });
             }}>Применить дату</button>
           </fieldset>
         </details>
@@ -707,7 +807,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
                   const drive = event.target.value === "2WD" ? "2WD" : event.target.value === "4WD" ? "4WD" : undefined;
                   void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, {
                     transmissionModel: selectedTransmissionModel || undefined, transmissionGearCount: selectedTransmissionGearCount,
-                    productionMonth: productionMonth || undefined, confirmedEquipment, rearAirConditioning, confirmedDrive: drive,
+                    productionMonth: productionMonth || undefined, confirmedEngineCode, confirmedMarket, confirmedEquipment, rearAirConditioning, confirmedDrive: drive,
                   });
                 }}>
                 <option value="">Не уточнено</option>
@@ -729,7 +829,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
                   const answer = event.target.value === "" ? undefined : event.target.value === "yes";
                   void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, {
                     transmissionModel: selectedTransmissionModel || undefined, transmissionGearCount: selectedTransmissionGearCount,
-                    productionMonth: productionMonth || undefined, confirmedEquipment, confirmedDrive, rearAirConditioning: answer,
+                    productionMonth: productionMonth || undefined, confirmedEngineCode, confirmedMarket, confirmedEquipment, confirmedDrive, rearAirConditioning: answer,
                   });
                 }}>
                 <option value="">Не уточнено</option>
@@ -753,21 +853,21 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             if (option) next.push(option);
             void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, {
               transmissionModel: selectedTransmissionModel || undefined, transmissionGearCount: selectedTransmissionGearCount,
-              confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined, confirmedEquipment: next,
+              confirmedEngineCode, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined, confirmedEquipment: next,
             });
           }}
           onSelectTransmissionGearCount={count => {
             if (!technicalProfileVariantKeys.length || !selectedTransmissionType) return;
-            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { transmissionGearCount: count, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
+            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { confirmedEngineCode, confirmedMarket, transmissionGearCount: count, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
           onSelectTransmissionModel={model => {
             if (!technicalProfileVariantKeys.length || !selectedTransmissionType) return;
-            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { transmissionModel: model || undefined, transmissionGearCount: selectedTransmissionGearCount, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
+            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { confirmedEngineCode, confirmedMarket, transmissionModel: model || undefined, transmissionGearCount: selectedTransmissionGearCount, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
           onSelectTransmission={(transmissionType) => {
             if (!technicalProfileVariantKeys.length || transmissionType === selectedTransmissionType) return;
             onConfirmTransmission?.(appliedVehicle, transmissionType, technicalProfileVariantKeys);
-            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, transmissionType, { confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
+            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, transmissionType, { confirmedEngineCode, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
         />
       </section>

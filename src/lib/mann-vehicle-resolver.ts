@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { MANN_RESOLVER_ROW_SELECT } from "@/lib/mann-resolver-row-select";
 import { splitMannEngineCodeList } from "@/lib/mann-engine-code-list";
+import { mannConfirmableEngineCodes } from "@/lib/mann-confirmable-engine-codes";
 import { mannRowIdentityEvidence } from "@/lib/mann-row-identity-evidence";
 import { mannRowGenerationEvidence } from "@/lib/mann-row-generation-evidence";
 import { isMannNonVehicleVariantText, listMannFilters, matchMannArticlesToLocalProducts, normalizeMannSearchText, normalizeMannText, type MannArticleMatchResult } from "@/lib/mann-catalog";
@@ -37,6 +38,9 @@ export type MannFuelKind = "gasoline" | "diesel" | "bifuel" | "lpg" | "cng" | "h
 export type MannFuelCompatibility = "exact" | "compatible" | "conditional" | "conflict" | "unknown";
 
 export type MannVehicleCandidate = {
+  // Applicable only after this candidate is explicitly selected (or restored
+  // from a persisted selection). Never infer a build date or equipment here.
+  technicalIdentity?: { engineCode?: string; engineOptions?: string[]; generation?: string };
   applicationId: string;
   variantId: string;
   variantIds: string[];
@@ -183,7 +187,7 @@ function vehicleGeneration(value: unknown): string | undefined {
 }
 
 function decodedGeneration(vehicle: DecodedVehicle, rawModel: string, make: string): string | undefined {
-  if (make === "OPEL") {
+  if (make === "OPEL" || make === "HONDA") {
     const modelLabel = normalizeVehicleModel(rawModel, make).generation;
     const explicitLabel = normalizeVehicleModel(`${canonicalBaseModel(rawModel, make)} ${vehicle.generationCanonical ?? vehicle.generationRaw ?? ""}`, make).generation;
     if (modelLabel && explicitLabel && modelLabel !== explicitLabel) return "CONFLICT";
@@ -444,6 +448,7 @@ export async function normalizeDecodedVehicle(vehicle: DecodedVehicle): Promise<
 
 function rowGeneration(row: MannRow): string | undefined {
   if (normalizeVehicleMake(row.make) === "OPEL") return normalizeVehicleModel(row.model, "OPEL").generation;
+  if (normalizeVehicleMake(row.make) === "HONDA" && /^CR[- ]?V/i.test(row.model)) return normalizeVehicleModel(row.model, "HONDA").generation;
   return vehicleGeneration(`${row.model} ${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""}`) ?? mannRowGenerationEvidence(row);
 }
 
@@ -774,7 +779,16 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
   if (row.condition) warnings.push("У строки MANN есть дополнительное условие применяемости; оно не повышает score без подтверждения.");
 
   const score = Math.max(0, Math.min(100, Math.round(rawScore)));
-  return { candidate: candidateFromRow(row, score, matchedFields, mismatchedFields, missingFields, reasons, warnings, featureContributions) };
+  const candidate = candidateFromRow(row, score, matchedFields, mismatchedFields, missingFields, reasons, warnings, featureContributions);
+  if (mismatchedFields.length === 0 && hasExactMannModelIdentity(vehicle.baseModel, vehicle.canonicalMake, row)) {
+    const codes = mannConfirmableEngineCodes(row.engineCode);
+    candidate.technicalIdentity = {
+      engineCode: codes.length === 1 ? codes[0] : undefined,
+      ...(codes.length > 1 ? { engineOptions: codes } : {}),
+      generation: rowGenerationForVehicle(row, vehicle),
+    };
+  }
+  return { candidate };
 }
 
 /** Pure seam for regression cases; production resolution obtains rows from Prisma separately. */
@@ -898,6 +912,12 @@ function rankMannRows(vehicle: NormalizedMannVehicle, rows: MannRow[]) {
       ...preferred,
       variantIds: unique([...current.variantIds, ...candidate.variantIds]),
       warnings: unique([...current.warnings, ...candidate.warnings]),
+      technicalIdentity: {
+        engineCode: current.technicalIdentity?.engineCode === candidate.technicalIdentity?.engineCode ? current.technicalIdentity?.engineCode : undefined,
+        ...(JSON.stringify(current.technicalIdentity?.engineOptions) === JSON.stringify(candidate.technicalIdentity?.engineOptions)
+          && current.technicalIdentity?.engineOptions ? { engineOptions: current.technicalIdentity.engineOptions } : {}),
+        generation: current.technicalIdentity?.generation === candidate.technicalIdentity?.generation ? current.technicalIdentity?.generation : undefined,
+      },
     });
   }
   const consolidated = [...groupedCandidates.values()];

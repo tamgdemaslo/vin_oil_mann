@@ -1,0 +1,45 @@
+{
+  "kind": "EXTERNAL_CONFIGURATION_EVIDENCE_NOT_FLUID_APPROVAL",
+  "reviewedOn": "2026-09-15",
+  "sourceRequirementId": "5ec641efc1d85f23ba9b1872cc3c2e293f96d47dbd574149b40c0e20bce652a1",
+  "vehicleVariantKey": "90e6fb5f49633317341b0bd0d25b91975bc56ed79b32e78720bad53628102701",
+  "sourceVehicle": {"make": "PEUGEOT", "model": "PARTNER TEPEE", "generation": "II", "engineCode": "TU5JP4B", "powerHp": 90},
+  "sourceBranchWindow": {"from": "2012-01", "to": "2014-12"},
+  "observations": [
+    {
+      "publisher": "MANN-FILTER",
+      "url": "https://www.mann-filter.com/mx-es/catalogo/resultados-de-la-busqueda/producto.html/wk58/3_mann-filter.html",
+      "product": "WK 58/3",
+      "model": "Partner II",
+      "engineCode": "TU5JP4B",
+      "displacementCc": 1587,
+      "powerKw": 66,
+      "powerHp": 90,
+      "fromMonth": "2008-04",
+      "toMonth": null,
+      "inspection": "Opened HTML application table; relevant row is separate from EC5F Maxi/Tepee 116 hp."
+    },
+    {
+      "publisher": "HOLA",
+      "url": "https://www.hola-auto.ru/production/clutch-parts/CHD017/",
+      "product": "CHD017",
+      "model": "PARTNER Tepee 1.6 VTi",
+      "engineCode": "NFR (TU5JP4B)",
+      "displacementCc": 1587,
+      "powerKw": 66,
+      "powerHp": 90,
+      "fromMonth": "2008-04",
+      "toMonth": null,
+      "inspection": "Opened HTML application table under PARTNER Tepee. The following van group separately lists the same engine and power."
+    }
+  ],
+  "conclusion": "The source Tepee engine configuration exists and its identity dimensions agree with the generic MANN Partner II row. This does not make Tepee and van fluid requirements interchangeable.",
+  "requiredBeforeDraft": [
+    "Use an explicitly scoped model-evidence path, not a global Partner/Tepee alias.",
+    "Retain PARTNER TEPEE and generation II in runtime sourceVehicleScope.",
+    "Retain TU5JP4B and the source 2012-01 through 2014-12 branch window.",
+    "Require actual profile checks rejecting generic Partner, van, wrong engine and dates outside that source window.",
+    "Reconcile source fluid contents independently; component catalogues establish configuration, not oil specifications."
+  ],
+  "productionApplyAllowed": false
+}

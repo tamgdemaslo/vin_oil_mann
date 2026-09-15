@@ -3,8 +3,9 @@ import { MANN_MIN_PRESENTABLE_SCORE, diagnoseMannCandidatesForTest, evaluateMann
 import { normalizeMannSearchText, normalizeMannText } from "@/lib/mann-catalog";
 import { normalizeEngineCode, normalizeVehicleModel } from "@/lib/vehicle-normalization";
 import { hasExactMannModelIdentity } from "@/lib/mann-vehicle-resolver";
+import { hasReviewedMannModelScope } from "@/lib/mann-reviewed-model-scope";
 
-export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v10" as const;
+export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v11" as const;
 
 export type MannFluidMatchStatus =
   | "CONFIRMED_SINGLE"
@@ -199,7 +200,7 @@ function technicalApplicabilityBlockers(
   const raw = requirement.rawRequirementJson as {sourceIdentity?: {reviewRequired?: boolean}} | null;
   if (raw?.sourceIdentity?.reviewRequired === true) blockers.push("исходные сведения о модели или поколении противоречат друг другу");
   const vehicle = normalizeFluidRequirementVehicle(requirement);
-  if (!vehicle || !hasExactMannModelIdentity(requirement.model, vehicle.canonicalMake, row)) {
+  if (!vehicle || (!hasExactMannModelIdentity(requirement.model, vehicle.canonicalMake, row) && !hasReviewedMannModelScope(requirement, row))) {
     blockers.push("не подтверждена точная модель источника в MANN; сходства названий недостаточно для жидкостей");
   }
   if (vehicle?.canonicalMake === "OPEL" && normalizeVehicleModel(row.model, "OPEL").generation
@@ -456,6 +457,12 @@ function assessCandidate(
   }
   const hardConflicts = unique(targets.flatMap((target) => target.hardConflicts));
   const reviewBlockers = unique(targets.flatMap((target) => target.reviewBlockers));
+  // Surface the existing eligibility gate: an exact engine and matching years
+  // do not prove a generation/body explicitly specified by the source.
+  if (Boolean(requirement.generation || strings(requirement.bodyCodesJson).length > 0)
+      && !candidateEvidence(candidate).chassisIdentity) {
+    reviewBlockers.push("не подтверждено указанное источником поколение или точный код кузова; совпадения двигателя и годов недостаточно");
+  }
   const independentlyValidated = targets.length > 0 && targets.every((target) => target.independentlyValidated);
   return {
     candidate,

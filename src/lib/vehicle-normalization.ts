@@ -181,6 +181,15 @@ export function normalizeVehicleModel(value: unknown, make?: string): { raw?: st
   normalized = transliterateVehicleText(normalizeMixedAlphabet(normalized));
   // X is part of X-Trail's name, not a Roman generation numeral.
   if (canonicalMake === "NISSAN") normalized = normalized.replace(/\bX\s+TRAIL\b/g, "X-TRAIL");
+  // MANN joins CR-V and its generation: CR-VII, CR-VIV, CR-VV(RW).
+  // The first V belongs to the model, not to the generation numeral.
+  if (canonicalMake === "HONDA") {
+    normalized = normalized.replace(/^CR\s+V(?=$|[\s(/,]|[IVX])/u, "CR-V");
+    normalized = normalized.replace(
+      /^CR[- ]?V(?=(?:XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)(?=$|[\s(/,]))/u,
+      "CR-V ",
+    );
+  }
   // Provider placeholders are metadata, not a model family. Keep the payload
   // that follows them because it can still contain a useful family or code.
   normalized = normalized

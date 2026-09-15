@@ -69257,6 +69257,13 @@ select[size="1"]::-ms-expand {
   cursor: pointer;
 }
 
+.eco-shipment-new-page .eco-vehicle-lookup__engine-choice {
+  margin: 0 12px 12px;
+  color: #4f4a43;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .eco-shipment-new-page .eco-vehicle-lookup__production-date > fieldset {
   margin-top: 10px;
 }
@@ -69269,6 +69276,7 @@ select[size="1"]::-ms-expand {
 }
 
 .eco-shipment-new-page .eco-vehicle-lookup__transmission-choice select,
+.eco-shipment-new-page .eco-vehicle-lookup__transmission-choice .eco-vehicle-lookup__market-evidence,
 .eco-shipment-new-page .eco-vehicle-lookup__transmission-choice input[type="month"] {
   width: 100%;
   max-width: 24rem;

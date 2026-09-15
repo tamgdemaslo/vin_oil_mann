@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+import {parseCopy} from './lib/mann-offline-scope.mjs';
+const j=createJiti(import.meta.url,{alias:{'@':resolve(import.meta.dirname,'../src')}});
+const {mannRowGenerationEvidence:generation}=await j.import('../src/lib/mann-row-generation-evidence.ts');
+const {normalizeDecodedVehicleForTest:normalize,rankMannCandidatesForTest:rank}=await j.import('../src/lib/mann-vehicle-resolver.ts');
+const {mannTechnicalContextFromVehicle:context}=await j.import('../src/lib/mann-technical-request-context.ts');
+const rows=parseCopy(await readFile('/tmp/mann_filter_applications.sql','utf8'),'mann_filter_applications');
+const matched=rows.filter(r=>r.make==='SUZUKI'&&generation(r)==='I');
+assert.equal(matched.length,2);assert.deepEqual([...new Set(matched.map(r=>r.vehicleVariantKey))],['e9e3954baeb4d3934dbd0d97eb2041467f5928380634d1a8dd6a345b1ec4fbd3']);
+const row=matched[0];
+for(const change of [{make:'FIAT'},{model:'SX4 S-Cross'},{engineCode:'M15A'},{kw:'88'},{hp:'120'},{vehicleYears:'09/13-12/16'},{modelYears:'13 ->'}])assert.equal(generation({...row,...change}),undefined);
+const vehicle={makeRaw:'Suzuki',modelRaw:'SX4',year:2010,engineCode:'M16A',powerHp:112,sourceMethods:['manual']};
+const before=JSON.stringify(vehicle),candidate=rank(normalize(vehicle),matched)[0];assert.ok(candidate);assert.equal(candidate.technicalIdentity.generation,'I');assert.equal(context(vehicle,{},candidate).generation,'I');assert.equal(JSON.stringify(vehicle),before);
+const contradictory=rank(normalize({...vehicle,generationRaw:'II'}),matched)[0];assert.ok(contradictory.mismatchedFields.includes('поколение'));
+console.log('PASS: exact two-row SX4 application gets corroborated generation; sibling identities unchanged, wrong generation rejected, VIN data untouched.');

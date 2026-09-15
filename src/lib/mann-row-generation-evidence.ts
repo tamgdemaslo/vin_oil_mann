@@ -23,6 +23,14 @@ export function mannRowGenerationEvidence(row: {
   hp?: string | number | null;
   vehicleYears?: string | null;
 }): "I" | undefined {
+  // Exact archived application corroborated by MANN's current C 2964 table.
+  // Suzuki distinguishes the SX4 introduced in 2006 from its 2013 S-CROSS
+  // successor. Do not transfer this identity to other SX4 powers or periods.
+  // https://www.mann-filter.com/de-de/katalog/suchergebnisse/produkt.html/c2964_mann-filter.html
+  // https://www.globalsuzuki.com/globalnews/2016/0929a.html
+  if (row.make === "SUZUKI" && row.model === "SX4" && row.modelYears == null
+      && row.engineCode === "M16A" && String(row.kw) === "82"
+      && String(row.hp) === "112" && row.vehicleYears === "06/06-12/15") return "I";
   // Volvo's V50 2003–2012 model line maps to local generation I.
   // Bound to the literal MANN model period, not all bare model names.
   // https://www.volvocars.com/intl/media/press-releases/9DDB78D308D773EB/

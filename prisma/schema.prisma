@@ -3271,6 +3271,19 @@ model MannTechnicalMaterializationRun {
   @@map("mann_technical_materialization_runs")
 }
 
+/// Audit receipts survive removal of imported rows; no cascading relations.
+/// Presence of a receipt is not primary-source verification or approval.
+model MannTechnicalImportReceipt {
+  batchId          String   @id @map("batch_id")
+  planSha256       String   @map("plan_sha256")
+  authorizationRef String   @map("authorization_ref")
+  databaseName     String   @default(dbgenerated("current_database()")) @map("database_name")
+  journalJson      Json     @map("journal_json")
+  committedAt      DateTime @default(now()) @map("committed_at") @db.Timestamptz(6)
+
+  @@map("mann_technical_import_receipts")
+}
+
 /// Неизменяемая техническая ревизия. Source requirement хранится логическим ID,
 /// а не FK: очистка staging-импорта не должна удалять canonical audit history.
 model MannTechnicalAssociationRevision {
