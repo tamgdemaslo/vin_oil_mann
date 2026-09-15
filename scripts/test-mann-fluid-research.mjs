@@ -7,7 +7,8 @@ const {researchMissingMannFluids:run,citedResearchItems,missingMannFluids}=await
 const profile={items:[],status:'none',transmissionOptions:[],containsCatalogPreview:false};
 const input={organizationId:'org1',variantKeys:['key'],vehicleContext:{make:'Test',model:'Car',engineCode:'ABC',year:2020},profile};
 const item={systemCode:'ENGINE_OIL',specification:'TEST',volumeText:'5 л. с фильтром',sourceUrl:'https://example.com/manual',sourceTitle:'Manual',excerpt:'Test excerpt'};
-const reset=()=>globalThis.fluidResearchTest={rows:[],calls:0,payload:{items:[item],unresolved:[]}};
+const application={vehicleVariantKey:'key',make:'FORD',model:'Mondeo V',effectiveVehicleText:'2.5(CNG)',vehicleText:'2.5(CNG)',engineCode:'C25HDEX',vehicleYears:'05/15 ->',modelYears:null,kw:'110',hp:'150'};
+const reset=()=>globalThis.fluidResearchTest={applications:[application,{...application}],rows:[],calls:0,payload:{items:[item],unresolved:[]}};
 const previous=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY='test-only-not-a-real-key';
 try {
  let s=reset();assert.equal((await run({...input,variantKeys:['a','b']})).status,'needs_context');assert.equal(s.calls,0);
@@ -16,6 +17,17 @@ try {
  const first=await run(input);assert.equal(first.status,'saved');assert.equal(s.request.model,'gpt-5.6-terra');assert.equal(s.request.tool_choice,'required');assert.equal(s.rows[0].status,'pending_review');assert.equal(s.rows[0].confidence,0);
  assert.deepEqual((await run(input)).items,first.items);assert.equal(s.calls,1,'cached, no repeat cost');
  await run({...input,organizationId:'org2'});assert.equal(s.calls,2,'no tenant cache leak');
+ s=reset();await run({...input,vehicleContext:{make:'FORD',model:'Mondeo V',year:2014}});
+ const vehicle=JSON.parse(s.request.input).vehicle;
+ assert.equal(vehicle.variants.length,1,'filter rows deduplicated');
+ assert.equal(vehicle.variants[0].engineCode,'C25HDEX');assert.equal(vehicle.variants[0].productionYears,'05/15 ->');
+ assert.equal(JSON.stringify(vehicle).includes('2014'),false,'card year must not override MANN');
+ await run({...input,vehicleContext:undefined});assert.equal(s.calls,1,'same selected MANN cache without card');
+ s=reset();s.applications.push({...application,vehicleVariantKey:'key2'});
+ assert.equal((await run({...input,variantKeys:['key2','key'],vehicleContext:undefined})).status,'saved');
+ await run({...input,variantKeys:['key','key2','key']});assert.equal(s.calls,1,'group keys stable and deduplicated');
+ s=reset();s.applications=[{...application,engineCode:null}];
+ assert.equal((await run({...input,vehicleContext:undefined})).status,'saved','catalog description sufficient without engine code');
  const gaps=missingMannFluids(profile);assert.deepEqual(citedResearchItems({items:[{...item,sourceUrl:'https://invented.example/manual'}],unresolved:[]},new Set([item.sourceUrl]),gaps),[]);
  assert.equal(citedResearchItems({items:[item],unresolved:[]},new Set([item.sourceUrl]),[{systemCode:'ENGINE_OIL',specification:false,volume:true}])[0].specification,'');
  s=reset();s.fail=true;assert.equal((await run(input)).status,'unavailable');assert.equal(s.rows[0].status,'failed');assert.equal((await run(input)).status,'unavailable');assert.equal(s.calls,1);

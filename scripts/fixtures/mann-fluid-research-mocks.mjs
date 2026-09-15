@@ -1,4 +1,7 @@
 export const prisma = {
+  mannFilterApplication: {
+    findMany: async ({where}) => globalThis.fluidResearchTest.applications.filter(row => where.vehicleVariantKey.in.includes(row.vehicleVariantKey)),
+  },
   $transaction: async fn => fn(prisma),
   $queryRaw: async () => [],
   aIAgentTechnicalEvidence: {
