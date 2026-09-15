@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+import {sha,parseCopy,applicabilityWindow,originalAssociationFingerprint} from './lib/mann-offline-scope.mjs';
+import {loadIdentityOverlay} from './lib/mann-source-identity-overlay.mjs';
+import {applyAuditedTablePower} from './lib/mann-table-power-overlay.mjs';
+import {applyAuditedSourceFuel} from './lib/mann-source-fuel-overlay.mjs';
+import {splitSpecificationSections,specificationCautionSignals} from './lib/mann-specification-sections-v2.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-current-full-rematch-2026-09-14-v2');
+const branchAware=process.argv[2]==='--branch-aware';
+assert.ok(process.argv.length===2||(process.argv.length===3&&branchAware));
+const groups=JSON.parse(await readFile(resolve(dir,'action-groups-v1.json'),'utf8'));
+const manifest=JSON.parse(await readFile(resolve(dir,'manifest.json'),'utf8'));assert.equal(sha(manifest),groups.manifestHash);
+const planRaw=await readFile(resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14/plan.json'),'utf8');assert.equal(sha(planRaw),manifest.planHash);const plan=JSON.parse(planRaw);
+const sql=await readFile('/tmp/vehicle_fluid_requirements.sql','utf8'),mannRaw=await readFile('/tmp/mann_filter_applications.sql','utf8');assert.equal(sha(sql),manifest.sourceHash);assert.equal(sha(mannRaw),manifest.mannHash);
+const raw=await readFile(resolve(root,'../vin-oil-mann/outputs/podbormasla-20260723/podbormasla_rows.ndjson'),'utf8');assert.equal(sha(raw),manifest.rawHash);
+const rawRows=raw.trim().split('\n').map(JSON.parse),byRaw=new Map(rawRows.map(r=>[r.row_id,r]));
+const identity=await loadIdentityOverlay(root,sql,resolve(root,'outputs/mann-identity-scoped-2026-09-14/source-identity-corrections.json'),'fbbe7b991ba80e19d62b42aaece22cb739860443256a8d935160f69ab9f90d34');
+const power=await applyAuditedTablePower(root,identity.requirements,raw),fuel=await applyAuditedSourceFuel(root,power.requirements,raw);
+const corrected=fuel.requirements.map(s=>({...s,engineCodeNormalized:fuel.fresh.get(s.id).engineCodeNormalized,engineCodesJson:fuel.fresh.get(s.id).engineCodesJson}));assert.equal(sha(corrected),manifest.correctedSourcesHash);
+const sources=new Map(corrected.map(s=>[s.id,s])),variants=Map.groupBy(parseCopy(mannRaw,'mann_filter_applications'),r=>r.vehicleVariantKey);
+const denied=new Set(JSON.parse(await readFile(resolve(root,'data/mann-technical-association-denylist-v1.json'),'utf8')).rejectedAssociationFingerprints);
+const live=JSON.parse(await readFile(resolve(root,'outputs/mann-live-audit-1789415211923/revisions.json'),'utf8'));
+const j=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),{parseFluidCapacities:capacity}=await j.import('../src/lib/fluid-capacity-parser.ts'),{normalizeEngineCode:norm}=await j.import('../src/lib/vehicle-normalization.ts'),{extractRawProductionCondition:dateCondition}=await j.import('../src/lib/fluid-raw-production-condition.ts');
+const findings=[],batches=new Map();
+for(const entry of groups.findings.filter(r=>r.route==='MATCHED_NEEDS_TECHNICAL_DRAFT')){
+ if(!batches.has(entry.batchFile))batches.set(entry.batchFile,JSON.parse(await readFile(resolve(dir,entry.batchFile),'utf8')));
+ const saved=batches.get(entry.batchFile).findings.find(f=>f.sourceRequirementId===entry.sourceRequirementId);
+ const s=sources.get(entry.sourceRequirementId),original=identity.originalById.get(s.id),row=byRaw.get(s.sourceRowId);assert.equal(sha(s),saved.sourceHash);assert.ok(row);
+ assert.equal(plan.newRevisions.some(r=>r.sourceRequirementId===s.id),false);
+ const table=rawRows.filter(r=>r.source_url===row.source_url&&r.table_index===row.table_index);
+ const anchors=table.filter(r=>r.system_name?.startsWith('МАСЛО в ДВИГАТЕЛЬ')&&(!branchAware||s.systemCode!=='ENGINE_OIL'||r.row_id===row.row_id));
+ const reasons=[],parsedCapacity=capacity(original.fillVolumeText,s.systemCode),sections=splitSpecificationSections(original.specificationText,original.analogText);
+ if(parsedCapacity.needsReview||!parsedCapacity.capacities.length)reasons.push('CAPACITY_OR_SERVICE_CONDITION');
+ if(!['NO_EXPLICIT_MARKER','EXPLICIT_ANALOG_SEPARATED'].includes(sections.status)||specificationCautionSignals(original.specificationText).length)reasons.push('SPECIFICATION_ROLE_OR_PROHIBITION');
+ if(!String(original.specificationText??'').trim()&&!['FUEL_TANK','ADBLUE'].includes(s.systemCode))reasons.push('MISSING_SPECIFICATION');
+ if(/DPF|GPF|сажев|ниже\s*[-−]?\d|выше\s*[-−]?\d|с\s+кодом|без\s+кода/iu.test(original.specificationText??''))reasons.push('CONDITIONAL_SPECIFICATION');
+ const scopeText=[row.application,row.model,...anchors.map(a=>a.application)].join('\n');
+ if(/Россия|Япония|Европа|США|ОАЭ|Китай|Корея|Азия/iu.test(scopeText))reasons.push('SOURCE_MARKET_SCOPE');
+ if(/\b(?:2WD|4WD|AWD|FWD|RWD|4X4|4X2)\b/iu.test(scopeText))reasons.push('SOURCE_DRIVE_SCOPE');
+ if(dateCondition(row.production_years??''))reasons.push('SOURCE_RAW_DATE_CONDITION');
+ if(['AUTOMATIC_TRANSMISSION','MANUAL_TRANSMISSION'].includes(s.systemCode))reasons.push('TRANSMISSION_EQUIPMENT_CONFIRMATION');
+ const anchorEvidence=anchors.map(a=>{
+  const lines=String(a.model??'').split(/\n/).map(l=>l.trim()).filter(Boolean);
+  const branches=lines.map(l=>l.match(/^-\s*([A-Z0-9.-]+)\s*(?:\/\s*(\d+)\s*л\.с\.)?\s*$/u));
+  return {rowId:a.row_id,rowHash:sha(a),application:a.application,model:a.model,simpleCodes:lines.length&&branches.every(Boolean)?branches.map(b=>norm(b[1])):null};
+ });
+ if(!branchAware&&(anchorEvidence.length!==1||!anchorEvidence[0].simpleCodes||anchorEvidence[0].simpleCodes.length!==1))reasons.push('ENGINE_BRANCH_SCOPE_REQUIRES_PARSE');
+ if(s.rawRequirementJson?.sourceFuelCorrection?.marketReviewRequired)reasons.push('SOURCE_FUEL_MARKET_REVIEW');
+ const pairs=saved.decision.targets.filter(t=>t.independentlyValidated).map(target=>{
+  const rows=variants.get(target.vehicleVariantKey);assert.ok(rows?.length);
+  const pairReasons=[...reasons],windows=rows.map(r=>applicabilityWindow(s,r)),window=windows[0];
+  if(!window||!window.intersection.from||!window.intersection.to||windows.some(w=>sha(w)!==sha(window)))pairReasons.push('UNBOUNDED_OR_INCONSISTENT_WINDOW');
+  const targetCodes=[...new Set(rows.map(r=>norm(r.engineCode)))];
+  const matchingAnchors=branchAware?anchorEvidence.filter(a=>a.simpleCodes?.length===1&&a.simpleCodes[0]===targetCodes[0]):anchorEvidence;
+  if(branchAware&&(targetCodes.length!==1||matchingAnchors.length!==1||anchorEvidence.some(a=>!a.simpleCodes)))pairReasons.push('ENGINE_BRANCH_SCOPE_REQUIRES_PARSE');
+  const codes=matchingAnchors[0]?.simpleCodes;
+  if(!codes||codes.length!==1||!rows.every(r=>norm(r.engineCode)===codes[0]))pairReasons.push('EXACT_SINGLE_ENGINE_SCOPE_NOT_PROVEN');
+  const fingerprint=originalAssociationFingerprint(target.vehicleVariantKey,original,parsedCapacity);
+  if(denied.has(fingerprint))pairReasons.push('DENIED_ORIGINAL_ASSOCIATION');
+  const predecessors=live.filter(r=>r.sourceRequirementId===s.id&&r.vehicleVariantKey===target.vehicleVariantKey);
+  if(predecessors.length)pairReasons.push(predecessors.some(r=>r.reviewConfirmed||r.applyEligible||r.verificationStatus!=='UNVERIFIED')?'PROTECTED_PREDECESSOR':'EXISTING_PREDECESSOR_RECONCILIATION');
+  if(branchAware&&matchingAnchors.length===1){
+   const anchor=byRaw.get(matchingAnchors[0].rowId),years=String(anchor.production_years??'').match(/^\s*(\d{4})\s*-\s*(\d{4})?\s*$/);
+   if(!years||!window?.intersection.from||Number(window.intersection.from.slice(0,4))<Number(years[1])||(years[2]&&(!window.intersection.to||Number(window.intersection.to.slice(0,4))>Number(years[2]))))pairReasons.push('SOURCE_ENGINE_ANCHOR_DATE_SCOPE');
+  }
+  return {vehicleVariantKey:target.vehicleVariantKey,window,target,matchedAnchorRowIds:matchingAnchors.map(a=>a.rowId),originalAssociationFingerprint:fingerprint,reasons:[...new Set(pairReasons)],publicationAllowed:false};
+ });
+ findings.push({sourceRequirementId:s.id,sourceHash:sha(original),effectiveHash:sha(s),make:s.make,systemCode:s.systemCode,sourceUrl:s.sourceUrl,anchorEvidence,parsedCapacity,sections,pairs,publicationAllowed:false});
+}
+assert.equal(findings.length,126);
+const pairs=findings.flatMap(f=>f.pairs),reasons={};for(const p of pairs)for(const r of p.reasons)reasons[r]=(reasons[r]??0)+1;
+const report={kind:'ALL126_UNPLANNED_MATCHES_SOURCE_PREFLIGHT',manifestHash:sha(manifest),planHash:sha(planRaw),summary:{sources:findings.length,validatedTargetPairs:pairs.length,clearPairs:pairs.filter(p=>!p.reasons.length).length,reasons},findings,productionApplyAllowed:false,limitations:['Clear preflight is not technical approval or a canonical draft.','Strict simple-anchor parser deliberately leaves complex branch formats for shared parsing, not guessed scope.','Saved original association fingerprints preserve prior rejection protection.']};
+await writeFile(resolve(dir,branchAware?'unplanned-matches-preflight-v2.json':'unplanned-matches-preflight-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(report.summary));

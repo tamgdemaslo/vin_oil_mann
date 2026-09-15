@@ -321,6 +321,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   const [confirmedEquipment, setConfirmedEquipment] = useState<NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>[]>([]);
   const [productionMonthDraft, setProductionMonthDraft] = useState("");
   const [productionMonth, setProductionMonth] = useState("");
+  const [rearAirConditioning, setRearAirConditioning] = useState<boolean | undefined>();
   const productionMonthRef = useRef<HTMLInputElement | null>(null);
   const [technicalProfileLoading, setTechnicalProfileLoading] = useState(false);
   const [technicalProfileError, setTechnicalProfileError] = useState("");
@@ -363,7 +364,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setTechnicalProfileError("");
   };
 
-  const loadTechnicalProfile = async (variantKeys: string[], vehicle: NormalizedVehicleIdentity, transmissionType?: MannTransmissionType, details: { transmissionModel?: string; transmissionGearCount?: number; productionMonth?: string; confirmedEquipment?: typeof confirmedEquipment } = {}) => {
+  const loadTechnicalProfile = async (variantKeys: string[], vehicle: NormalizedVehicleIdentity, transmissionType?: MannTransmissionType, details: { transmissionModel?: string; transmissionGearCount?: number; productionMonth?: string; confirmedEquipment?: typeof confirmedEquipment; rearAirConditioning?: boolean } = {}) => {
     const requestId = ++technicalProfileRequestIdRef.current;
     technicalProfileControllerRef.current?.abort();
     const controller = new AbortController();
@@ -373,6 +374,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setSelectedTransmissionModel(details.transmissionModel ?? "");
     setSelectedTransmissionGearCount(details.transmissionGearCount);
     setConfirmedEquipment(details.confirmedEquipment ?? []);
+    setRearAirConditioning(details.rearAirConditioning);
     setProductionMonth(details.productionMonth ?? "");
     setProductionMonthDraft(details.productionMonth ?? "");
     if (!transmissionType) {
@@ -689,10 +691,32 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
                 control?.setCustomValidity("Год отличается от данных автомобиля. Сначала уточните выбранный автомобиль.");
               }
               if (control && !control.reportValidity()) return;
-              void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { productionMonth: productionMonthDraft || undefined });
+              void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { rearAirConditioning, productionMonth: productionMonthDraft || undefined });
             }}>Применить дату</button>
           </fieldset>
         </details>
+        {technicalProfile?.rearAirConditioningRequired ? (
+          <fieldset className="eco-vehicle-lookup__transmission-choice">
+            <legend>Комплектация системы охлаждения</legend>
+            <label>Есть ли задний кондиционер?
+              <select value={rearAirConditioning === undefined ? "" : rearAirConditioning ? "yes" : "no"} disabled={technicalProfileLoading}
+                aria-describedby="rear-air-conditioning-help"
+                onChange={event => {
+                  if (!technicalProfileVariantKeys.length) return;
+                  const answer = event.target.value === "" ? undefined : event.target.value === "yes";
+                  void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, {
+                    transmissionModel: selectedTransmissionModel || undefined, transmissionGearCount: selectedTransmissionGearCount,
+                    productionMonth: productionMonth || undefined, confirmedEquipment, rearAirConditioning: answer,
+                  });
+                }}>
+                <option value="">Не уточнено</option>
+                <option value="yes">Да, есть</option>
+                <option value="no">Нет</option>
+              </select>
+            </label>
+            <p id="rear-air-conditioning-help">От этого зависит объём антифриза. Если комплектация неизвестна, оставьте «Не уточнено» — объём не будет выбран автоматически.</p>
+          </fieldset>
+        ) : null}
         <TechnicalProfile
           profile={technicalProfile}
           loading={technicalProfileLoading}
@@ -706,21 +730,21 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             if (option) next.push(option);
             void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, {
               transmissionModel: selectedTransmissionModel || undefined, transmissionGearCount: selectedTransmissionGearCount,
-              productionMonth: productionMonth || undefined, confirmedEquipment: next,
+              rearAirConditioning, productionMonth: productionMonth || undefined, confirmedEquipment: next,
             });
           }}
           onSelectTransmissionGearCount={count => {
             if (!technicalProfileVariantKeys.length || !selectedTransmissionType) return;
-            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { transmissionGearCount: count, productionMonth: productionMonth || undefined });
+            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { transmissionGearCount: count, rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
           onSelectTransmissionModel={model => {
             if (!technicalProfileVariantKeys.length || !selectedTransmissionType) return;
-            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { transmissionModel: model || undefined, transmissionGearCount: selectedTransmissionGearCount, productionMonth: productionMonth || undefined });
+            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { transmissionModel: model || undefined, transmissionGearCount: selectedTransmissionGearCount, rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
           onSelectTransmission={(transmissionType) => {
             if (!technicalProfileVariantKeys.length || transmissionType === selectedTransmissionType) return;
             onConfirmTransmission?.(appliedVehicle, transmissionType, technicalProfileVariantKeys);
-            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, transmissionType, { productionMonth: productionMonth || undefined });
+            void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, transmissionType, { rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
         />
       </section>

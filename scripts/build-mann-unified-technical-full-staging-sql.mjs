@@ -98,6 +98,17 @@ const revisionRows = plan.revisions.map((revision) => `(
   ${sqlNullableString(revision.supersedesRevisionId)}
 )`).join(",\n");
 
+// Idempotency requires identical payloads, not merely an existing ID/count.
+// Keep this list aligned with the explicit revision INSERT below; timestamps
+// are deliberately excluded because they are assigned by the database.
+const revisionColumns = [
+  "id", "run_id", "vehicle_variant_key", "source_requirement_id", "system_code",
+  "component_model", "applicability_json", "verified_fields_json", "technical_data_json",
+  "field_confidence_json", "evidence_json", "provenance_json", "match_class", "match_score",
+  "semantic_fingerprint", "state", "verification_status", "apply_eligible", "supersedes_revision_id",
+];
+const payloadArray = (alias) => `jsonb_build_array(${revisionColumns.map(column => `${alias}.${column}`).join(", ")})`;
+
 const vehicleKeys = sqlList(plan.canonicalVehicles.map((vehicle) => vehicle.key));
 const revisionIds = sqlList(plan.revisions.map((revision) => revision.id));
 const vehicleHashRows = plan.canonicalVehicles
@@ -138,9 +149,36 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM mann_technical_materialization_runs
     WHERE id = ${sqlString(plan.materializationRun.id)}
-      AND (mode <> 'STAGING' OR independent_human_signoff OR production_apply_authorized)
+      AND (mode <> 'STAGING' OR independent_human_signoff OR production_apply_authorized
+        OR status <> 'COMPLETED'
+        OR matcher_version IS DISTINCT FROM ${sqlString(plan.materializationRun.matcherVersion)}
+        OR capacity_parser_version IS DISTINCT FROM ${sqlString(plan.materializationRun.capacityParserVersion)}
+        OR git_commit IS DISTINCT FROM ${sqlString(plan.materializationRun.gitCommit)}
+        OR verification_set_version IS DISTINCT FROM ${sqlNullableString(plan.materializationRun.verificationSetVersion)}
+        OR source_snapshot_json IS DISTINCT FROM ${sqlJson(plan.materializationRun.sourceSnapshot)}
+        OR source_counts_json IS DISTINCT FROM ${sqlJson(plan.materializationRun.sourceCounts)}
+        OR gates_json IS DISTINCT FROM ${sqlJson(gates)}
+        OR approval_json IS DISTINCT FROM ${sqlJson(approval)})
   ) THEN
     RAISE EXCEPTION 'existing run conflicts with staging-only safety gates';
+  END IF;
+END $$;
+
+CREATE TEMP TABLE _mann_full_staging_expected_revisions ON COMMIT DROP AS
+SELECT ${revisionColumns.join(", ")}
+FROM mann_technical_association_revisions WHERE FALSE;
+
+INSERT INTO _mann_full_staging_expected_revisions (${revisionColumns.join(", ")}) VALUES
+${revisionRows};
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM mann_technical_association_revisions actual
+    JOIN _mann_full_staging_expected_revisions expected ON actual.id = expected.id
+    WHERE ${payloadArray("actual")} IS DISTINCT FROM ${payloadArray("expected")}
+  ) THEN
+    RAISE EXCEPTION 'existing revision payload conflict; refusing to skip or overwrite';
   END IF;
 END $$;
 
@@ -150,7 +188,9 @@ SELECT
   (SELECT count(*) FROM vehicle_fluid_requirements) AS vehicle_fluid_requirements,
   (SELECT count(*) FROM fluid_source_rows) AS fluid_source_rows;
 
-INSERT INTO mann_vehicle_variants (
+CREATE TEMP TABLE _mann_full_staging_inserted (kind text NOT NULL, id text NOT NULL, PRIMARY KEY(kind,id)) ON COMMIT DROP;
+
+WITH inserted AS (INSERT INTO mann_vehicle_variants (
   variant_key, make, make_normalized, model, model_normalized, generation,
   body_codes_json, model_years, year_from, year_to, vehicle_text,
   engine_code, engine_code_normalized, engine_codes_json, engine_volume_cc,
@@ -158,9 +198,10 @@ INSERT INTO mann_vehicle_variants (
   canonical_payload_hash, source_hashes_json, first_seen_at, last_seen_at
 ) VALUES
 ${vehicleRows}
-ON CONFLICT (variant_key) DO NOTHING;
+ON CONFLICT (variant_key) DO NOTHING RETURNING variant_key)
+INSERT INTO _mann_full_staging_inserted SELECT 'vehicles', variant_key FROM inserted;
 
-INSERT INTO mann_technical_materialization_runs (
+WITH inserted AS (INSERT INTO mann_technical_materialization_runs (
   id, status, mode, matcher_version, capacity_parser_version, git_commit,
   verification_set_version, source_snapshot_json, source_counts_json,
   gates_json, approval_json, independent_human_signoff,
@@ -172,9 +213,10 @@ INSERT INTO mann_technical_materialization_runs (
   ${sqlJson(plan.materializationRun.sourceSnapshot)}, ${sqlJson(plan.materializationRun.sourceCounts)},
   ${sqlJson(gates)}, ${sqlJson(approval)}, FALSE, FALSE, CURRENT_TIMESTAMP
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING RETURNING id)
+INSERT INTO _mann_full_staging_inserted SELECT 'runs', id FROM inserted;
 
-INSERT INTO mann_technical_association_revisions (
+WITH inserted AS (INSERT INTO mann_technical_association_revisions (
   id, run_id, vehicle_variant_key, source_requirement_id, system_code,
   component_model, applicability_json, verified_fields_json,
   technical_data_json, field_confidence_json, evidence_json, provenance_json,
@@ -182,14 +224,23 @@ INSERT INTO mann_technical_association_revisions (
   apply_eligible, supersedes_revision_id
 ) VALUES
 ${revisionRows}
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING RETURNING id)
+INSERT INTO _mann_full_staging_inserted SELECT 'revisions', id FROM inserted;
 
 UPDATE mann_technical_materialization_runs
 SET status = 'COMPLETED', completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
-WHERE id = ${sqlString(plan.materializationRun.id)} AND status <> 'COMPLETED';
+WHERE id = ${sqlString(plan.materializationRun.id)} AND status <> 'COMPLETED'
+  AND id IN (SELECT id FROM _mann_full_staging_inserted WHERE kind='runs');
 
 DO $$
 BEGIN
+  IF EXISTS (
+    SELECT 1 FROM _mann_full_staging_expected_revisions expected
+    LEFT JOIN mann_technical_association_revisions actual ON actual.id = expected.id
+    WHERE actual.id IS NULL OR ${payloadArray("actual")} IS DISTINCT FROM ${payloadArray("expected")}
+  ) THEN
+    RAISE EXCEPTION 'persisted revision payload mismatch';
+  END IF;
   IF (SELECT count(*) FROM mann_vehicle_variants WHERE variant_key IN (${vehicleKeys})) <> ${plan.counts.canonicalVehicles} THEN
     RAISE EXCEPTION 'canonical vehicle count mismatch';
   END IF;
@@ -236,10 +287,21 @@ BEGIN
   END IF;
 END $$;
 
+-- Capture exact committed-image candidates inside the transaction. The receipt
+-- is emitted only after successful COMMIT; pre-existing rows are not owned.
+CREATE TEMP TABLE _mann_full_staging_receipt ON COMMIT PRESERVE ROWS AS
+SELECT jsonb_build_object(
+ 'kind','INSERTED_ROWS_ONLY', 'planSha256',${sqlString(planSha256)},
+ 'vehicles',COALESCE((SELECT jsonb_agg(to_jsonb(v) ORDER BY v.variant_key) FROM mann_vehicle_variants v JOIN _mann_full_staging_inserted i ON i.kind='vehicles' AND i.id=v.variant_key),'[]'::jsonb),
+ 'runs',COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM mann_technical_materialization_runs r JOIN _mann_full_staging_inserted i ON i.kind='runs' AND i.id=r.id),'[]'::jsonb),
+ 'revisions',COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM mann_technical_association_revisions r JOIN _mann_full_staging_inserted i ON i.kind='revisions' AND i.id=r.id),'[]'::jsonb)
+) AS journal;
+
 COMMIT;
 
 SELECT json_build_object(
   'database', current_database(),
+  'insertedJournal', (SELECT journal FROM _mann_full_staging_receipt),
   'run', (
     SELECT json_build_object(
       'id', id, 'status', status, 'mode', mode,

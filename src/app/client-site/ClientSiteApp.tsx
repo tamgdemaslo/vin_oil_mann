@@ -186,57 +186,178 @@ const CASES = [
     ],
   },
   {
-    id: 'mercedes-e213-9gtronic',
-    title: 'Mercedes E-class W213 — 9G-Tronic, плановая замена',
-    year: 2020,
-    mileage: '78 500 км',
-    fluid: 'MB 236.17',
-    duration: '1 ч 30 мин',
-    cost: 17200,
-    summary: 'Плановое обслуживание АКПП 725.0 на 80 тыс. Машина чистая, ничего лишнего.',
-    hero: 'mb',
-    palette: ['#1c1c1c', '#3D3D3D', '#C2410C'],
+    id: 'toyota-camry-70-u760',
+    title: 'Toyota Camry 70 2.5 — аппаратная замена масла в U760',
+    year: 'XV70 · 2.5',
+    mileage: 'без жалоб',
+    fluid: '12 л ATF',
+    duration: 'около 3 ч',
+    cost: 4990,
+    costLabel: 'Со своим маслом',
+    summary: 'Входная диагностика не выявила ошибок и течей, но слитое масло оказалось тёмным и с запахом гари. Проверили поддон и обновили 12 л жидкости аппаратным методом.',
+    hero: 'toyota',
+    heroImage: '/cases/toyota-camry-u760/hero.jpg',
+    heroAlt: 'Toyota Camry 70 2.5 на подъёмнике перед аппаратной заменой масла в АКПП',
+    heroEyebrow: 'U760 · 6 СТУПЕНЕЙ · 12 Л ATF',
+    palette: ['#111111', '#333333', '#C2410C'],
+    stats: [
+      {k: 'Масло', v: '12', u: 'литров'},
+      {k: 'Время работы', v: '≈ 3', u: 'часа'},
+      {k: 'Работы', v: '4,99', u: 'тыс. ₽'},
+    ],
     body: [
-      {h: 'Что было', t: 'По регламенту MB — замена ATF в АКПП каждые 80 000 км. Машина ездит в основном по городу, режим спокойный.'},
-      {h: 'Что сделали', t: 'Сняли поддон с интегрированным фильтром, заменили на оригинальный A 725 270 02 00. Залили 9.5 л Fuchs Titan ATF 9G со спецификацией MB 236.17. Корректировка через XENTRY.'},
-      {h: 'Результат', t: 'Коробка переключается едва ощутимо. Документы и наряд-заказ на руках клиента.'},
+      {h: 'Входная диагностика', t: 'Обсудили с владельцем работу коробки, проверили электронный блок управления и осмотрели АКПП на течи. Жалоб, ошибок и внешних неисправностей не обнаружили — можно было переходить к обслуживанию.'},
+      {h: 'Состояние масла', t: 'Слилось около 2,6 л тёмной жидкости с запахом гари. Металлической стружки и алюминиевой пыли не нашли. Сам по себе запах не означает неисправность, поэтому решение приняли после осмотра поддона и оценки продуктов износа.'},
+      {h: 'Подключение аппарата', t: 'Сняли теплообменник и установили специальный переходник. Через контрольную пробку вернули в поддон 3 л жидкости, затем подключили установку и выполнили аппаратную замену. Общий расход составил 12 л ATF.'},
+      {h: 'Уровень и контроль', t: 'Финальный уровень выставили при температуре масла 35–45 °C. Коробку пришлось охлаждать около часа. Сливную и контрольную пробки затянули заданными моментами; весь цикл занял примерно три часа.'},
+    ],
+    process: [
+      {t: '01', s: 'Диагностика', d: 'Опрос владельца, сканер, осмотр на течи и первичная оценка жидкости.'},
+      {t: '02', s: 'Слив', d: 'Получили около 2,6 л и проверили масло на стружку и алюминиевую пыль.'},
+      {t: '03', s: 'Адаптер', d: 'Сняли теплообменник и подключили аппарат через специальный переходник.'},
+      {t: '04', s: 'Замена', d: 'Вернули 3 л в поддон и обновили в системе суммарно 12 л ATF.'},
+      {t: '05', s: 'Уровень', d: 'Охладили коробку и выставили уровень в диапазоне 35–45 °C.'},
+    ],
+    quote: 'Запах гари требует внимания, но состояние коробки оценивают по совокупности признаков: ошибкам, поддону, наличию стружки и поведению АКПП.',
+    quoteAuthor: 'Результат входной диагностики',
+    gallery: [
+      {src: '/cases/toyota-camry-u760/diagnostics.jpg', alt: 'Диагностика Toyota Camry 70 перед заменой масла в АКПП', caption: 'Проверка до начала работ'},
+      {src: '/cases/toyota-camry-u760/drained-atf.jpg', alt: 'Слитое масло из АКПП U760 Toyota Camry', caption: 'Состояние старого масла'},
+      {src: '/cases/toyota-camry-u760/pan-inspection.jpg', alt: 'Осмотр поддона АКПП Toyota Camry 70', caption: 'Осмотр поддона'},
+      {src: '/cases/toyota-camry-u760/heat-exchanger.jpg', alt: 'Теплообменник АКПП U760 перед подключением аппарата', caption: 'Доступ к теплообменнику'},
+      {src: '/cases/toyota-camry-u760/adapter.jpg', alt: 'Специальный адаптер для подключения аппарата к АКПП U760', caption: 'Подключение адаптера'},
+      {src: '/cases/toyota-camry-u760/prefill.jpg', alt: 'Предварительная заливка масла в поддон АКПП Toyota Camry', caption: 'Предварительная заливка'},
+      {src: '/cases/toyota-camry-u760/machine.jpg', alt: 'Теплообменник Toyota Camry во время обслуживания АКПП', caption: 'Контроль уплотнений'},
+      {src: '/cases/toyota-camry-u760/level.jpg', alt: 'Финальная проверка уровня масла в АКПП Toyota Camry', caption: 'Выставление уровня'},
     ],
     spec: [
-      {k: 'Машина', v: 'Mercedes-Benz E 220 d (W213)'},
-      {k: 'Двигатель', v: 'OM 654 (2.0 дизель)'},
-      {k: 'Пробег', v: '78 500 км'},
-      {k: 'Коробка', v: '725.0 (9G-Tronic)'},
-      {k: 'Масло', v: 'Fuchs Titan ATF 9G — 9.5 л'},
-      {k: 'Спецификация', v: 'MB-Approval 236.17'},
-      {k: 'Время работы', v: '1 ч 30 мин'},
-      {k: 'Сумма', v: '17 200 ₽'},
+      {k: 'Машина', v: 'Toyota Camry 70 2.5'},
+      {k: 'Коробка', v: 'U760 · 6 ступеней'},
+      {k: 'Сливаемый объём', v: '3–3,5 л'},
+      {k: 'Фактически слилось', v: 'около 2,6 л'},
+      {k: 'Аппаратная замена', v: '12 л ATF'},
+      {k: 'Температура уровня', v: '35–45 °C'},
+      {k: 'Время работы', v: 'около 3 часов'},
+      {k: 'Работа со своим маслом', v: '4 990 ₽'},
+      {k: 'При покупке масла у нас', v: '2 490 ₽ за работу'},
     ],
   },
   {
-    id: 'porsche-cayenne-aisin',
-    title: 'Porsche Cayenne — Aisin TR-80SD, полная замена',
-    year: 2016,
-    mileage: '189 300 км',
-    fluid: 'VAG G 055 540',
-    duration: '3 ч 10 мин',
-    cost: 32100,
-    summary: 'Машина с пробегом, владелец понимает что делает. Полный аппаратный цикл с двойной промывкой.',
-    hero: 'porsche',
-    palette: ['#0e0e0e', '#3D3D3D', '#C2410C'],
+    id: 'audi-a8-zf-09l',
+    title: 'Audi A8 — аппаратная замена масла в ZF 09L',
+    year: '6HP19A',
+    mileage: 'после частичной замены',
+    fluid: 'Hengst ATF 8 Speed',
+    duration: 'полный цикл',
+    cost: null,
+    costLabel: 'Стоимость',
+    summary: 'Несмотря на недавнюю частичную замену, слилось около 5 л загрязнённого масла с алюминиевой пылью. Показали результат владельцу, согласовали риски и продолжили аппаратную замену.',
+    hero: 'audi',
+    heroImage: '/cases/audi-a8-zf09l/hero.jpg',
+    heroAlt: 'Audi A8 в сервисе перед аппаратной заменой масла в АКПП ZF 09L',
+    heroEyebrow: 'ZF 09L · 6HP19A · G 060 162 A2',
+    palette: ['#101010', '#2f2f2f', '#C2410C'],
+    stats: [
+      {k: 'Первичный слив', v: '≈ 5', u: 'литров'},
+      {k: 'Объём замены', v: '12', u: 'литров'},
+      {k: 'Уровень при', v: '35–45', u: '°C'},
+    ],
     body: [
-      {h: 'Что было', t: 'Cayenne 958 с пробегом под 190 тыс. Жалоб на коробку нет, но владелец хочет «прожить ещё столько же». Запрос — полная замена с промывкой.'},
-      {h: 'Что сделали', t: 'Промыли систему через аппарат, потом залили чистые 13 литров. Поменяли поддон в сборе (фильтр интегрирован). Обнулили адаптации.'},
-      {h: 'Результат', t: 'Машина едет ровнее, реакция на педаль чётче. Гарантия — 6 мес. / 15 000 км.'},
+      {h: 'Диагностика до работ', t: 'Проверили жалобы владельца, электронные блоки, возможные течи и состояние ATF. Для коробки 09L предусмотрен допуск VAG G 060 162 A2; владелец привёз Hengst ATF 8 Speed.'},
+      {h: 'Состояние масла', t: 'За несколько сотен километров до визита фильтр и масло частично меняли в другом сервисе, поэтому поддон повторно не снимали. Слилось около 5 л заметно загрязнённой жидкости; проверка на просвет показала алюминиевую пыль.'},
+      {h: 'Решение с владельцем', t: 'При таком состоянии жидкости важно не скрывать риск. Владельцу показали результат проверки и объяснили возможные последствия частичной и аппаратной замены. После его согласия продолжили работу.'},
+      {h: 'Аппаратная замена', t: 'Подключились к теплообменнику рядом с правым приводом. Сначала нагнетательной установкой вернули в поддон слитые 5 л через контрольное отверстие, затем запустили аппаратный цикл. Всего использовали 12 л масла.'},
+      {h: 'Финальная проверка', t: 'Прогрели коробку, прошли селектором по всем передачам и выставили уровень при 35–45 °C, ориентируясь на 40 °C. Масло из контрольного отверстия не пошло, поэтому использовали заранее оставленный резерв.'},
+    ],
+    process: [
+      {t: '01', s: 'Приёмка', d: 'Опрос, диагностика блоков, осмотр на течи и проверка состояния ATF.'},
+      {t: '02', s: 'Слив', d: 'Получили около 5 л грязного масла и обнаружили алюминиевую пыль.'},
+      {t: '03', s: 'Согласование', d: 'Показали владельцу состояние жидкости и обсудили риски продолжения.'},
+      {t: '04', s: 'Аппарат', d: 'Подключились к теплообменнику и использовали 12 л нового масла.'},
+      {t: '05', s: 'Уровень', d: 'Прошли все режимы селектора и проверили уровень при 35–45 °C.'},
+    ],
+    quote: 'Если состояние масла вызывает вопросы, владелец должен увидеть картину и принять решение после понятного объяснения рисков.',
+    quoteAuthor: 'Согласование перед заменой',
+    gallery: [
+      {src: '/cases/audi-a8-zf09l/diagnostics.jpg', alt: 'Диагностика АКПП Audi A8 перед заменой масла', caption: 'Входная диагностика'},
+      {src: '/cases/audi-a8-zf09l/pan.jpg', alt: 'Нижняя часть коробки ZF 09L Audi A8', caption: 'Доступ к коробке'},
+      {src: '/cases/audi-a8-zf09l/access.jpg', alt: 'Подготовка Audi A8 к сливу масла из АКПП', caption: 'Подготовка к замене'},
+      {src: '/cases/audi-a8-zf09l/drained-atf.jpg', alt: 'Загрязнённое масло, слитое из АКПП Audi A8', caption: 'Около 5 л старого масла'},
+      {src: '/cases/audi-a8-zf09l/fluid-inspection.jpg', alt: 'Проверка масла Audi A8 на алюминиевую пыль', caption: 'Проверка на просвет'},
+      {src: '/cases/audi-a8-zf09l/connection.jpg', alt: 'Подключение аппарата к теплообменнику АКПП Audi A8', caption: 'Точка подключения'},
+      {src: '/cases/audi-a8-zf09l/prefill.jpg', alt: 'Заливка масла через контрольное отверстие АКПП Audi A8', caption: 'Предварительная заливка'},
+      {src: '/cases/audi-a8-zf09l/machine.jpg', alt: 'Уплотнительное кольцо патрубков теплообменника Audi A8', caption: 'Новое уплотнение'},
     ],
     spec: [
-      {k: 'Машина', v: 'Porsche Cayenne 958 S'},
-      {k: 'Двигатель', v: '3.6 V6 (M55.01)'},
-      {k: 'Пробег', v: '189 300 км'},
-      {k: 'Коробка', v: 'Aisin TR-80SD'},
-      {k: 'Масло', v: 'VAG G 055 540 A2 — 13.0 л'},
-      {k: 'Поддон', v: '95532102510 (в сборе)'},
-      {k: 'Время работы', v: '3 ч 10 мин'},
-      {k: 'Сумма', v: '32 100 ₽'},
+      {k: 'Машина', v: 'Audi A8'},
+      {k: 'Коробка', v: '09L · 6HP19A · AL420-6Q'},
+      {k: 'Допуск', v: 'VAG G 060 162 A2'},
+      {k: 'Масло клиента', v: 'Hengst ATF 8 Speed'},
+      {k: 'Первичный слив', v: 'около 5 л'},
+      {k: 'Объём замены', v: '12 л'},
+      {k: 'Температура уровня', v: '35–45 °C'},
+      {k: 'Фильтр', v: 'HansPries 113744786'},
+      {k: 'Кольцо патрубков', v: 'VAG N 906 660 03'},
+      {k: 'Контрольная пробка', v: 'VAG 01V 321 376'},
+    ],
+  },
+  {
+    id: 'skoda-kodiaq-dq250-haldex5',
+    title: 'Skoda Kodiaq — DSG DQ250, Haldex 5 и редукторы',
+    year: '2.0 TSI',
+    mileage: '110 000 км',
+    fluid: '4 агрегата',
+    duration: 'регламентный сервис',
+    cost: null,
+    costLabel: 'Стоимость',
+    summary: 'Обслужили всю трансмиссию: заменили масло и фильтр в DSG DQ250, очистили сетку насоса Haldex 5 и обновили масло в заднем редукторе и раздатке.',
+    hero: 'skoda',
+    heroImage: '/cases/skoda-kodiaq-dq250/hero.jpg',
+    heroAlt: 'Skoda Kodiaq 2.0 TSI в цехе перед обслуживанием DSG DQ250 и Haldex 5',
+    heroEyebrow: 'DQ250 · HALDEX 5 · 110 000 КМ',
+    palette: ['#111111', '#343434', '#C2410C'],
+    stats: [
+      {k: 'DSG DQ250', v: '4,9', u: 'литра'},
+      {k: 'Haldex 5', v: '0,85', u: 'литра'},
+      {k: 'Редукторы', v: '≈ 1,8', u: 'литра'},
+    ],
+    body: [
+      {h: 'Входная диагностика', t: 'Обсудили с владельцем работу коробки, проверили блок управления и осмотрели корпуса на течи. Жалоб, ошибок и внешних дефектов не обнаружили.'},
+      {h: 'DSG DQ250', t: 'Для доступа ко внешнему фильтру сняли аккумулятор и его площадку. Слили масло, заменили фильтр Denckermann A220026 и залили 4,9 л Eurol DCF 1404 с допуском VAG G 052 182.'},
+      {h: 'Муфта Haldex 5', t: 'Сняли насос, очистили его сетку и корпус, установили новое уплотнение. Залили около 850 мл Swag 30101172 с допуском VAG G 060 175 A2 — до перелива.'},
+      {h: 'Редуктор и раздатка', t: 'В заднем редукторе и раздаточной коробке обновили примерно по 0,9 л Febi 32590 75W-90 GL-5 с допуском VAG G 052 145 A1. Все пробки собрали с новыми медными шайбами и затянули по регламенту.'},
+      {h: 'Уровень и контроль', t: 'Масло в DSG прогрели до 35–45 °C при 1 500 об/мин. Излишек слили через переливной стакан; уровень выставили по прерывающейся струе.'},
+    ],
+    process: [
+      {t: '01', s: 'Диагностика', d: 'Проверили жалобы, ошибки, течи и состояние старых жидкостей.'},
+      {t: '02', s: 'DSG', d: 'Заменили фильтр и 4,9 л масла с допуском G 052 182.'},
+      {t: '03', s: 'Haldex', d: 'Сняли насос, очистили сетку и залили 0,85 л масла.'},
+      {t: '04', s: 'Редукторы', d: 'Обновили масло в заднем редукторе и раздаточной коробке.'},
+      {t: '05', s: 'Уровень', d: 'Прогрели DSG до 35–45 °C и выставили точный уровень.'},
+    ],
+    quote: 'У Haldex 5 нет сменного фильтра, поэтому состояние сетки насоса — отдельный пункт обслуживания полного привода.',
+    quoteAuthor: 'Практика обслуживания Haldex 5',
+    gallery: [
+      {src: '/cases/skoda-kodiaq-dq250/dsg-access.jpg', alt: 'Доступ к фильтру DSG DQ250 после снятия аккумулятора', caption: 'Доступ к фильтру DSG'},
+      {src: '/cases/skoda-kodiaq-dq250/haldex-pump.jpg', alt: 'Насос Haldex 5 на Skoda Kodiaq', caption: 'Снятие насоса Haldex'},
+      {src: '/cases/skoda-kodiaq-dq250/haldex-pump-detail.jpg', alt: 'Демонтированный насос Haldex 5', caption: 'Насос и уплотнения'},
+      {src: '/cases/skoda-kodiaq-dq250/haldex-mesh-before.jpg', alt: 'Загрязнённая сетка насоса Haldex 5', caption: 'Сетка до очистки'},
+      {src: '/cases/skoda-kodiaq-dq250/haldex-mesh-after.jpg', alt: 'Сетка насоса Haldex 5 после очистки', caption: 'Сетка после очистки'},
+      {src: '/cases/skoda-kodiaq-dq250/materials.jpg', alt: 'Масла и фильтр для DSG, Haldex и редукторов Skoda Kodiaq', caption: 'Материалы для всех агрегатов'},
+    ],
+    spec: [
+      {k: 'Машина', v: 'Skoda Kodiaq 2.0 TSI'},
+      {k: 'Пробег', v: '110 000 км'},
+      {k: 'Коробка', v: 'DSG6 DQ250 · мокрая'},
+      {k: 'DSG', v: '4,9 л · Eurol DCF 1404'},
+      {k: 'Допуск DSG', v: 'VAG G 052 182'},
+      {k: 'Фильтр DSG', v: 'Denckermann A220026'},
+      {k: 'Haldex 5', v: '0,85 л · Swag 30101172'},
+      {k: 'Допуск Haldex', v: 'VAG G 060 175 A2'},
+      {k: 'Редуктор и раздатка', v: 'по ≈ 0,9 л'},
+      {k: 'Трансмиссионное масло', v: 'Febi 32590 75W-90 GL-5'},
+      {k: 'Температура уровня DSG', v: '35–45 °C'},
+      {k: 'Моменты DSG', v: '45 / 20 Н·м'},
     ],
   },
 ];
@@ -1019,21 +1140,6 @@ function HomeHero() {
 
   return (
     <section style={{background: '#0a0a0a', borderBottom: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}} className="home-hero grain">
-      {/* Top strip: F1 poster header */}
-      <div style={{borderBottom: '1px solid var(--line)'}}>
-        <div className="container" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#9A9A9A'}}>
-          <div style={{display: 'flex', gap: 24}}>
-            <span><span style={{color: '#C2410C'}}>76</span> · KALININGRAD</span>
-            <span>SERVICE STATION №01</span>
-            <span>MOSKOVSKY 244</span>
-          </div>
-          <div style={{display: 'flex', gap: 24}}>
-            <span>54.689°N · 20.493°E</span>
-            <span>EST. 2023</span>
-          </div>
-        </div>
-      </div>
-
       <div className="container home-hero__grid" style={{padding: '60px 24px 0', display: 'grid', gridTemplateColumns: '1.05fr 1fr', gap: 56, alignItems: 'start'}}>
         {/* Left: poster headline & portrait */}
         <div className="home-hero__poster">
@@ -1059,7 +1165,7 @@ function HomeHero() {
 
           {/* Portrait + quote */}
           <div className="home-hero__portrait-grid" style={{display: 'grid', gridTemplateColumns: '320px 1fr', gap: 28, alignItems: 'stretch'}}>
-            <div style={{aspectRatio: '4/5', border: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
+            <div className="home-hero__portrait" style={{aspectRatio: '29/36', alignSelf: 'start', border: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
               <MasterPhoto master={master} label="1" sublabel={master.name} priority />
             </div>
             <div style={{display: 'flex', flexDirection: 'column', justifyContent: 'space-between'}}>
@@ -1084,12 +1190,11 @@ function HomeHero() {
         {/* Right: booking by VIN card */}
         <div className="home-hero__booking" style={{position: 'sticky', top: 110, alignSelf: 'start'}}>
           <div style={{background: '#F5F2ED', color: '#0a0a0a', padding: '28px 28px 26px', position: 'relative'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22}}>
+            <div style={{marginBottom: 22}}>
               <div>
                 <div className="t-eyebrow" style={{color: '#C2410C', marginBottom: 8}}>Запись по VIN</div>
                 <div className="t-headline" style={{fontSize: 28, lineHeight: 1, letterSpacing: '-0.02em'}}>Подберём масло за 12 секунд</div>
               </div>
-              <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 56, lineHeight: 0.9, color: '#0a0a0a'}}>01</div>
             </div>
 
             <label style={{display: 'block', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.14em', color: '#858585', textTransform: 'uppercase', marginBottom: 8}}>VIN автомобиля · 17 знаков</label>
@@ -2599,7 +2704,7 @@ function CasesPage() {
                 </div>
                 <div style={{textAlign: 'right'}}>
                   <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.12em', marginBottom: 6}}>{c.costLabel || 'Сумма работы'}</div>
-                  <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 38, color: '#F5F2ED', lineHeight: 1}}>{fmtMoney(c.cost)}</div>
+                  <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: c.cost == null ? 24 : 38, color: '#F5F2ED', lineHeight: 1}}>{c.cost == null ? 'ПО СОГЛАСОВАНИЮ' : fmtMoney(c.cost)}</div>
                   <div style={{marginTop: 14, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em'}}>ОТКРЫТЬ →</div>
                 </div>
               </div>
@@ -2745,7 +2850,7 @@ function CasePage() {
               </table>
               <div style={{marginTop: 22, paddingTop: 18, borderTop: '2px solid #C2410C', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline'}}>
                 <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.14em', textTransform: 'uppercase'}}>{c.costLabel || 'Итого'}</span>
-                <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 36, color: '#F5F2ED'}}>{fmtMoney(c.cost)}</span>
+                <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: c.cost == null ? 22 : 36, color: '#F5F2ED', textAlign: 'right'}}>{c.cost == null ? 'ПО СОГЛАСОВАНИЮ' : fmtMoney(c.cost)}</span>
               </div>
               <a href="/booking" className="btn rust" style={{width: '100%', marginTop: 18, justifyContent: 'space-between'}}>
                 Записать свою машину <span className="arr">→</span>

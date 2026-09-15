@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
+import { MANN_RESOLVER_ROW_SELECT } from "@/lib/mann-resolver-row-select";
 import { splitMannEngineCodeList } from "@/lib/mann-engine-code-list";
 import { mannRowIdentityEvidence } from "@/lib/mann-row-identity-evidence";
+import { mannRowGenerationEvidence } from "@/lib/mann-row-generation-evidence";
 import { isMannNonVehicleVariantText, listMannFilters, matchMannArticlesToLocalProducts, normalizeMannSearchText, normalizeMannText, type MannArticleMatchResult } from "@/lib/mann-catalog";
 import type { NormalizedVehicleIdentity } from "@/lib/vehicle-identity";
 import { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-normalization";
@@ -118,6 +120,7 @@ type MannRow = {
   makeNormalized: string;
   model: string;
   modelNormalized: string;
+  modelYears?: string | null;
   vehicleText: string | null;
   effectiveVehicleText: string | null;
   engineCode: string | null;
@@ -441,7 +444,7 @@ export async function normalizeDecodedVehicle(vehicle: DecodedVehicle): Promise<
 
 function rowGeneration(row: MannRow): string | undefined {
   if (normalizeVehicleMake(row.make) === "OPEL") return normalizeVehicleModel(row.model, "OPEL").generation;
-  return vehicleGeneration(`${row.model} ${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""}`);
+  return vehicleGeneration(`${row.model} ${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""}`) ?? mannRowGenerationEvidence(row);
 }
 
 function rowGenerationForVehicle(row: MannRow, vehicle: NormalizedMannVehicle): string | undefined {
@@ -991,7 +994,7 @@ export async function resolveMannVehicle(options: ResolveOptions): Promise<MannV
   const queryStartedAt = Date.now();
   const rows = await prisma.mannFilterApplication.findMany({
     where: { makeNormalized: { in: forms } },
-    select: { vehicleVariantKey: true, make: true, makeNormalized: true, model: true, modelNormalized: true, vehicleText: true, effectiveVehicleText: true, engineCode: true, engineCodeNormalized: true, kw: true, hp: true, vehicleYears: true, vehicleYearFrom: true, vehicleYearTo: true, condition: true },
+    select: MANN_RESOLVER_ROW_SELECT,
     take: 25_000,
   }) as MannRow[];
   const queryMs = Date.now() - queryStartedAt;

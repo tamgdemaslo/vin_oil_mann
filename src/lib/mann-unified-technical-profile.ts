@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { normalizeEngineCode } from "@/lib/vehicle-normalization";
+import { hasContradictoryLegacySourceDate } from "@/lib/mann-source-date-exclusions";
 import { readMannCapacityBranches } from "@/lib/mann-capacity-branches";
 import { selectConditionalFluidCapacity } from "@/lib/fluid-capacity-conditions";
 import { mannTransmissionComponent, mannExplicitTransmissionTypeCount } from "@/lib/mann-transmission-component";
@@ -126,11 +128,14 @@ export type MannUnifiedTechnicalProfile = {
   transmissionComponentOptions?: string[];
   transmissionGearCountOptions?: number[];
   transmissionConditionsToReview?: string[];
+  rearAirConditioningRequired?: boolean;
+  vehicleDriveRequired?: boolean;
   equipmentOptions?: (MannEquipmentConfirmation & {systemCode: string; label: string})[];
 };
 
 type TechnicalRevisionRow = {
   id: string;
+  vehicleVariantKey?: string;
   sourceRequirementId: string;
   systemCode: string;
   componentModel: string | null;
@@ -251,7 +256,7 @@ function safeCapacities(row: TechnicalRevisionRow, data: Record<string, unknown>
     const branches = readMannCapacityBranches(data, row.applicabilityJson, row.systemCode);
     if (!branches) return [];
     const applicable = branches.filter(branch => mannTechnicalScopeMatches(branch.applicabilityJson, vehicleContext));
-    const selected = selectConditionalFluidCapacity(applicable, { transmissionType: selectedTransmissionType, engineCode: vehicleContext?.engineCode });
+    const selected = selectConditionalFluidCapacity(applicable, { transmissionType: selectedTransmissionType, engineCode: vehicleContext?.engineCode, rearAirConditioning: vehicleContext?.rearAirConditioning });
     const capacity = selected ? normalizeCapacity(selected.capacity) : null;
     return capacity ? [capacity] : [];
   }
@@ -314,6 +319,7 @@ function isStagedPreview(row: TechnicalRevisionRow): boolean {
 }
 
 function isCatalogPreview(row: TechnicalRevisionRow): boolean {
+  if (!row.reviewConfirmed && hasContradictoryLegacySourceDate(row)) return false;
   const provenance = record(row.provenanceJson);
   const validation = record(provenance.independentValidation);
   const gates = record(row.run.gatesJson);
@@ -554,9 +560,18 @@ function itemFingerprint(item: MannTechnicalProfileItem): string {
  * preview and must never be used for automatic product selection.
  */
 export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[], selectedTransmissionType?: MannTransmissionType, vehicleContext?: MannTechnicalVehicleContext): MannUnifiedTechnicalProfile {
+  const sourceRows = rows;
   // Only the explicit selection parameter supplies gearbox-type confirmation.
   // An unrelated context object must not silently make this choice for the user.
   vehicleContext = {...vehicleContext, confirmedTransmissionType: selectedTransmissionType};
+  const vehicleDriveChoiceRows = rows.filter(row => {
+    if (!isActive(row) && !isStagedPreview(row) && !isCatalogPreview(row)) return false;
+    const required = record(row.applicabilityJson).requiredVehicleDrive;
+    if (required !== "2WD" && required !== "4WD") return false;
+    const confirmedContext: MannTechnicalVehicleContext = {...vehicleContext, confirmedDrive: required};
+    return mannTechnicalScopeMatches(row.applicabilityJson, confirmedContext)
+      && Boolean(toProfileItem(row, true, false, selectedTransmissionType, confirmedContext));
+  });
   // Discover vehicle-level gearbox conditions on any fluid, without making a
   // selection. Only publication-eligible rows and the full remaining scope count.
   const vehicleTransmissionChoices = rows.flatMap(row => {
@@ -588,12 +603,35 @@ export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[], s
   rows = rows.filter(row => mannTechnicalScopeMatches(row.applicabilityJson, vehicleContext));
   const activeRows = rows.filter(isActive);
   const stagedRows = rows.filter(isStagedPreview);
-  const catalogRows = rows.filter(isCatalogPreview);
+  const catalogCandidates = rows.filter(isCatalogPreview);
+  // A scoped reparse of the SAME source supersedes its old unscoped display
+  // only for this exact vehicle key and a context already proven above.
+  // Do not rank unrelated sources, protected reviews or different components.
+  const scopedCatalogRows = catalogCandidates.filter(row => {
+    const applicability = record(row.applicabilityJson);
+    const policy = record(row.provenanceJson).catalogPreviewPolicy;
+    return Boolean(row.vehicleVariantKey)
+      && (policy === SCOPED_CATALOG_PREVIEW_POLICY || policy === CONDITIONAL_CAPACITY_POLICY)
+      && Array.isArray(applicability.matchedEngineScope)
+      && applicability.matchedEngineScope.length > 0
+      && Boolean(applicability.window)
+      && Boolean(toProfileItem(row, true, false, selectedTransmissionType, vehicleContext));
+  });
+  const catalogRows = catalogCandidates.filter(row => {
+    if (row.reviewConfirmed || !row.vehicleVariantKey) return true;
+    const applicability = record(row.applicabilityJson);
+    if ("matchedEngineScope" in applicability || "window" in applicability) return true;
+    return !scopedCatalogRows.some(scoped => scoped.id !== row.id
+      && scoped.vehicleVariantKey === row.vehicleVariantKey
+      && scoped.sourceRequirementId === row.sourceRequirementId
+      && scoped.systemCode === row.systemCode
+      && (scoped.componentModel?.trim().toUpperCase() ?? "") === (row.componentModel?.trim().toUpperCase() ?? ""));
+  });
   const conditionalTransmissionRows = [...new Set([...rows.filter(isConditionalTransmissionPreview), ...gearChoiceRows])];
   const transmissionOptions = MANN_TRANSMISSION_TYPES.flatMap((type) => (
     (conditionalTransmissionRows.some((row) => transmissionTypeFor(row) === type)
       || vehicleTransmissionChoices.some(choice => choice.type === type)
-      || catalogRows.some(row => readMannCapacityBranches(row.technicalDataJson, row.applicabilityJson, row.systemCode)?.some(branch => branch.condition.kind === "transmission" && branch.condition.value === type && mannTechnicalScopeMatches(branch.applicabilityJson, vehicleContext))))
+      || catalogRows.some(row => readMannCapacityBranches(row.technicalDataJson, row.applicabilityJson, row.systemCode)?.some(branch => ((branch.condition.kind === "transmission" && branch.condition.value === type) || (branch.condition.kind === "engineTransmission" && branch.condition.transmissionType === type && branch.condition.engineCode === normalizeEngineCode(vehicleContext?.engineCode))) && mannTechnicalScopeMatches(branch.applicabilityJson, vehicleContext))))
       ? [{ type, label: TRANSMISSION_LABELS[type], systemCode: TRANSMISSION_SYSTEMS[type] }]
       : []
   ));
@@ -621,6 +659,8 @@ export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[], s
     return typeof count === "number" ? [count] : [];
   }), ...vehicleTransmissionChoices.flatMap(choice => choice.type === selectedTransmissionType && choice.gearCount != null ? [choice.gearCount] : [])])].sort((a, b) => a - b);
   const selectionDetails = {
+    ...(vehicleDriveChoiceRows.some(row => !primarySystems.has(row.systemCode)) ? {vehicleDriveRequired:true} : {}),
+    ...(catalogRows.some(row => !primarySystems.has(row.systemCode) && readMannCapacityBranches(row.technicalDataJson,row.applicabilityJson,row.systemCode)?.some(branch => branch.condition.kind === "rearAirConditioning" && mannTechnicalScopeMatches(branch.applicabilityJson,vehicleContext))) ? {rearAirConditioningRequired:true} : {}),
     ...(equipmentChoiceRows.some(row => !primarySystems.has(row.systemCode)) ? {
       equipmentOptions: [...new Map(equipmentChoiceRows.filter(row => !primarySystems.has(row.systemCode)).map(row => {
         const equipment = readMannEquipmentScope(record(row.applicabilityJson).requiredEquipment)!;
@@ -666,7 +706,32 @@ export function buildMannUnifiedTechnicalProfile(rows: TechnicalRevisionRow[], s
     if (!items.has(fingerprint)) items.set(fingerprint, item);
   }
 
-  const resultItems = [...items.values()].sort((left, right) => left.systemLabel.localeCompare(right.systemLabel, "ru"));
+  const displayedIds = new Set([...items.values()].map(item => item.revisionId));
+  const resultItems = [...items.values()].filter(item => {
+    const old = sourceRows.find(row => row.id === item.revisionId);
+    if (!old || old.reviewConfirmed || old.verificationStatus !== UNVERIFIED || !old.vehicleVariantKey) return true;
+    const oldScope = record(old.applicabilityJson);
+    if ("matchedEngineScope" in oldScope || "window" in oldScope) return true;
+    return !sourceRows.some(next => {
+      if (next.id === old.id || next.vehicleVariantKey !== old.vehicleVariantKey
+        || next.sourceRequirementId !== old.sourceRequirementId || next.systemCode !== old.systemCode
+        || (next.componentModel?.trim().toUpperCase() ?? "") !== (old.componentModel?.trim().toUpperCase() ?? "")) return false;
+      const scope = record(next.applicabilityJson);
+      if (!Array.isArray(scope.matchedEngineScope) || !scope.matchedEngineScope.length || !scope.window) return false;
+      if (!isCatalogPreview(next) && !isConditionalTransmissionPreview(next)) return false;
+      // A displayed, fully qualified reparse replaces the old same-source item.
+      if (displayedIds.has(next.id)) return true;
+      // An explicit selected gearbox can exclude this source's old generic row.
+      // All other source/engine/date/market gates must still hold.
+      const {transmissionGearCount, ...remainingScope} = scope;
+      return typeof transmissionGearCount === "number"
+        && vehicleContext?.transmissionGearCount != null
+        && transmissionGearCount !== vehicleContext.transmissionGearCount
+        && selectedTransmissionType != null
+        && transmissionTypeFor(next) === selectedTransmissionType
+        && mannTechnicalScopeMatches(remainingScope, vehicleContext);
+    });
+  }).sort((left, right) => left.systemLabel.localeCompare(right.systemLabel, "ru"));
   const status: MannTechnicalProfileStatus = resultItems.some(item => item.automaticSelectionEligible) ? "active"
     : resultItems.some(item => item.sourceStatus === "primary_source") ? "staged_preview"
     : resultItems.length ? "catalog_preview" : "none";
@@ -713,6 +778,7 @@ export async function getMannUnifiedTechnicalProfile(variantKeys: string[], sele
       },
       select: {
         id: true,
+        vehicleVariantKey: true,
         sourceRequirementId: true,
         systemCode: true,
         componentModel: true,

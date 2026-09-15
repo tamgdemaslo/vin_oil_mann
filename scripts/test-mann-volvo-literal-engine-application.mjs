@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {parseVolvoLiteralEngineApplication as parse} from './lib/mann-volvo-literal-engine-application.mjs';
+const text='МАСЛО в ДВИГАТЕЛЬ 2.0 D3\nМодель:\n- 2.0 D3 (D5204T3) / 163 л.с. / 2010-2015\n- 2.0 D3 (D5204T7) / 136 л.с. / 2015-2018\nТип топлива: Дизель\nОбъём двигателя: 2.0 л.\nГоды выпуска: 2010-2018';
+const r=parse(text,'VOLVO');assert.ok(r);assert.equal(r.rawApplication,text);assert.deepEqual(r.branches.map(b=>[b.engineCode,b.powerHp,b.sourceEngineLabel,b.effectiveDates]),[['D5204T3',[163],'2.0 D3',{from:'2010-01',to:'2015-12'}],['D5204T7',[136],'2.0 D3',{from:'2015-01',to:'2018-12'}]]);
+for(const bad of [text.replaceAll('2.0 D3','2.0MT'),text.replace('163 л.с.','163 л.с. / Hybrid'),text.replace('Дизель','Бензин'),text+'\n* только специальные модели',text.replace('2010-2015','2016-2015'),text.replace('D5204T3','UNKNOWN')])assert.equal(parse(bad,'VOLVO'),null);
+assert.equal(parse(text,'FORD'),null);
+const bare='МАСЛО в ДВИГАТЕЛЬ T4\nМодель:\n- B4204T31 / 190 л.с.\n- B4204T44 / 190 л.с.\nТип топлива: Бензин\nОбъём двигателя: 2.0 л.\nГоды выпуска: 2017-2022';assert.equal(parse(bare,'volvo').branches.length,2);
+assert.equal(parse(text.replace('Модель:\n',''),'VOLVO').branches.length,2);
+assert.equal(parse(text.replace('163 л.с. / 2010-2015','163 л.с. / 2010-2015 / 2WD'),'VOLVO').branches[0].driveCondition,'2WD');
+console.log('PASS complete Volvo tables, source labels/dates/power/drive preservation, unknown qualifiers and fuel conflict rejection');

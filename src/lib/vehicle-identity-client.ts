@@ -20,6 +20,7 @@ export type NormalizedVehicleIdentity = {
   bodyCode?: string;
   bodyType?: string;
   year?: number;
+  productionMonth?: string;
   modelYearFrom?: number;
   modelYearTo?: number;
   engineName?: string;

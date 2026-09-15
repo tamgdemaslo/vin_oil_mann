@@ -9,6 +9,7 @@ const bodySchema = z.object({
   variantKeys: z.array(z.string().trim().min(1).max(160)).min(1).max(20),
   transmissionType: z.enum(MANN_TRANSMISSION_TYPES).optional(),
   vehicleContext: z.object({
+    rearAirConditioning: z.boolean().optional(),
     make: z.string().trim().min(1).max(80).optional(),
     model: z.string().trim().min(1).max(160).optional(),
     generation: z.string().trim().min(1).max(80).optional(),

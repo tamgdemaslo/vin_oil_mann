@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {createJiti} from 'jiti';
+import {resolve} from 'node:path';
+import {mercedesSourceEngineEvidence} from './lib/mann-mercedes-source-engine.mjs';
+const root=resolve(import.meta.dirname,'..'),j=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}});
+const {explicitMercedesSourceEngineCodes:extract}=await j.import('../src/lib/fluid-mercedes-source-engine.ts');
+for(const [text,expected] of [['628.963 (OM 628 DE 40)',['OM628.963']],['112.970 (M 112 E 37)',['M112.970']],['612.963 (OM 612 DE 27 LA)',['OM612.963']],['271.948 (M 271 E 18 ML/1)',['M271.948']],['642.826 (OM 642 LS DE 30 LA) - 642.864 (OM 642 LS DE 30 LA)',['OM642.826','OM642.864']]])assert.deepEqual(extract(text),expected);
+for(const text of ['M 113 E 50','M 156 E 62','M 272 DE 35','M 273 E 55','271.948','271.948 (M 272 E 18)','271.948 (OM 271','722.902','113.980, 981',undefined])assert.deepEqual(extract(text),[]);
+const rows=(await readFile(resolve(root,'../vin-oil-mann/outputs/podbormasla-20260723/podbormasla_rows.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+for(const row of rows)for(const field of ['model','application'])assert.deepEqual(extract(row[field]),mercedesSourceEngineEvidence(row[field]?.toUpperCase()).map(r=>r.code));
+console.log(`Explicit Mercedes source parser matches reviewed offline extraction across ${rows.length} raw rows; family-only negatives pass`);

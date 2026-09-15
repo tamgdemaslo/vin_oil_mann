@@ -7,6 +7,7 @@ import { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel, split
 export { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-normalization";
 
 import { resolveVehicleMarket, mergeVehicleMarketEvidence, type VehicleMarketEvidence } from "@/lib/vehicle-market";
+import { consistentVehicleProductionMonth } from "@/lib/vehicle-production-month";
 
 export type VehicleLookupInputType = "vin" | "plate" | "frame";
 export type VehicleSourceMethod = "tronk_vindecode" | "tronk_vindecode2" | "tronk_plate" | "tronk_frame" | "tronk_convertb2b" | "tronk_convertgate" | "manual" | "mann_manual";
@@ -39,6 +40,7 @@ export type NormalizedVehicleIdentity = {
   bodyCode?: string;
   bodyType?: string;
   year?: number;
+  productionMonth?: string;
   modelYearFrom?: number;
   modelYearTo?: number;
   engineName?: string;
@@ -265,6 +267,7 @@ export function toVehicle(input: RecordValue, method: VehicleSourceMethod, ident
     bodyCode: firstText(data, [["BodyCode"], ["body_code"]]) ?? model.bodyCode,
     bodyType: firstText(data, [["BodyType"], ["body_type"], ["Body"], ["body"]]),
     year: year ? Math.round(year) : undefined,
+    productionMonth: consistentVehicleProductionMonth([data.ProduceDate, data.produce_date], year),
     modelYearFrom: firstYear(data, [["ModelYearFrom"], ["model_year_from"], ["StartYear"], ["super_gen", "year_from"]]),
     modelYearTo: firstYear(data, [["ModelYearTo"], ["model_year_to"], ["FinishYear"], ["super_gen", "year_to"]]),
     engineName: firstText(data, [["EngineName"], ["engine_name"], ["EngineDescription"], ["engine_description"], ["Modification"], ["engine", "name"], ["tech_param", "human_name"]]),
@@ -307,6 +310,7 @@ function mergeVehicle(primary: NormalizedVehicleIdentity, secondary: NormalizedV
   merged.rawResultIds = [...new Set([...primary.rawResultIds, ...secondary.rawResultIds])];
   merged.confidence = primary.makeCanonical && primary.modelCanonical ? primary.confidence : secondary.confidence;
   merged.marketEvidence = mergeVehicleMarketEvidence(primary, secondary);
+  merged.productionMonth = consistentVehicleProductionMonth([primary.productionMonth, secondary.productionMonth], merged.year);
   return merged;
 }
 

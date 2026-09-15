@@ -1,0 +1,387 @@
+{
+  "evidenceHash": "6778a1b462a7fdadddb6b50cfbb0f7899f7405a091a2fbf42de295c6c0cd21cd",
+  "documents": [
+    {
+      "id": "s40-my12",
+      "url": "https://ldgsvccassets.blob.core.windows.net/pdfs/3b2dc914ca807879995b3bd1e01a75305a73fb2c/S40_owners_manual_MY12_EN_tp14006.pdf",
+      "sha256": "f68a2b61fba69af78bcbad4aa54b58836198ec6c435a7638435d9f9d2de5af04",
+      "bytes": 8857036
+    },
+    {
+      "id": "v50-my12",
+      "url": "https://ldgsvccassets.blob.core.windows.net/pdfs/6314aac781be23932c6215ad2d4e9968ab717ef4/V50_owners_manual_MY12_EN_tp14033.pdf",
+      "sha256": "25cc0a069dba58e1b4c247de82be02457691ee119f0fa55a57e5c9c896db122c",
+      "bytes": 8982564
+    },
+    {
+      "id": "v50-my10",
+      "url": "https://ldgsvccassets.blob.core.windows.net/pdfs/18939bdb9d7f579ebf9812040b32cd622be31e4c/V50_owners_manual_MY10_EN_tp10852.pdf",
+      "sha256": "319b9e0e72222cfb7893af53dcf4bd1feb87e9086a3e4bf5db8c8a05334759c1",
+      "bytes": 8999736
+    }
+  ],
+  "anchors": [
+    {
+      "sourceRowId": "1fd8a4c461f280e4c0c686ef66ab927a5715f9927e9c475d540e4d5f337bd8f3",
+      "sourceRowHash": "b4d3d86f93d8b12f569aca6bb69fa7ee03a43354efbcfc244b8c0534ce91b99f",
+      "evidence": [
+        {
+          "code": "D4162T",
+          "fact": {
+            "model": "s40",
+            "engineCode": "D4162T",
+            "label": "D2 / DRIVe",
+            "fuel": "diesel",
+            "documentId": "s40-my12",
+            "modelYear": 2012,
+            "printedEnginePage": 285,
+            "printedFuelPage": 290,
+            "marketNote": "Not all engines available in all markets",
+            "visuallyReviewed": true
+          }
+        }
+      ]
+    },
+    {
+      "sourceRowId": "841abdfc4375e8db11f81b3f1fc89b9e1e6f54422259c05897e5dc63820a59b7",
+      "sourceRowHash": "7a1fbba1672a725ee0bcb152b3cd18927df355574d9acdac91871d9db63e73fa",
+      "evidence": [
+        {
+          "code": "D5204T5",
+          "fact": {
+            "model": "s40",
+            "engineCode": "D5204T5",
+            "label": "D3",
+            "fuel": "diesel",
+            "documentId": "s40-my12",
+            "modelYear": 2012,
+            "printedEnginePage": 285,
+            "printedFuelPage": 290,
+            "marketNote": "Not all engines available in all markets",
+            "visuallyReviewed": true
+          }
+        }
+      ]
+    },
+    {
+      "sourceRowId": "1f6d0536f52762dd3341e7d457ec5a78c13c34ac966fffaf5fd66bdecf8147da",
+      "sourceRowHash": "17c70cfbd4fdb82479440c39d48bea652259a7227800a18896f2f425d5c15fe9",
+      "evidence": [
+        {
+          "code": "D5204T",
+          "fact": {
+            "model": "s40",
+            "engineCode": "D5204T",
+            "label": "D4",
+            "fuel": "diesel",
+            "documentId": "s40-my12",
+            "modelYear": 2012,
+            "printedEnginePage": 285,
+            "printedFuelPage": 290,
+            "marketNote": "Not all engines available in all markets",
+            "visuallyReviewed": true
+          }
+        }
+      ]
+    },
+    {
+      "sourceRowId": "770fff818cc017749d2d67eb19c97a5fe49ec047cc7e7f0d9ca43ba610e59f8a",
+      "sourceRowHash": "7a81201d333b38e9d3458633ffe29350909697c2c7043ba73fe95d8ed3cf1ec4",
+      "evidence": [
+        {
+          "code": "D4164T",
+          "fact": {
+            "model": "v50",
+            "engineCode": "D4164T",
+            "label": "1.6D",
+            "fuel": "diesel",
+            "documentId": "v50-my10",
+            "modelYear": 2010,
+            "printedEnginePage": 266,
+            "printedFuelPage": 273,
+            "marketNote": "No per-engine market footnote in inspected table",
+            "visuallyReviewed": true
+          }
+        }
+      ]
+    },
+    {
+      "sourceRowId": "21966b29b7bd6a1b826d2994092c08d4f0de25b44fdca23e32d2c430b86b6fec",
+      "sourceRowHash": "44e652ca0267a5415d686646d31b6c4be8f4cf0e80fdb883a96d3728a85a993d",
+      "evidence": [
+        {
+          "code": "D4162T",
+          "fact": {
+            "model": "v50",
+            "engineCode": "D4162T",
+            "label": "D2 / DRIVe",
+            "fuel": "diesel",
+            "documentId": "v50-my12",
+            "modelYear": 2012,
+            "printedEnginePage": 291,
+            "printedFuelPage": 296,
+            "marketNote": "Not all engines available in all markets",
+            "visuallyReviewed": true
+          }
+        }
+      ]
+    },
+    {
+      "sourceRowId": "c555bfa645a1484e29bc0d8924b25992fa593f17ff6a8b3750b854f72c7734cd",
+      "sourceRowHash": "976f11432b343311bd7d8dec986dc78297d3a20882449e56fe155c0113bc6d85",
+      "evidence": [
+        {
+          "code": "D5204T5",
+          "fact": {
+            "model": "v50",
+            "engineCode": "D5204T5",
+            "label": "D3",
+            "fuel": "diesel",
+            "documentId": "v50-my12",
+            "modelYear": 2012,
+            "printedEnginePage": 291,
+            "printedFuelPage": 296,
+            "marketNote": "Not all engines available in all markets",
+            "visuallyReviewed": true
+          }
+        }
+      ]
+    },
+    {
+      "sourceRowId": "4caba51831ccf34821a81afeeafdad471dfe90c8867ad41e209cccaa39ccfc9d",
+      "sourceRowHash": "283365f6182c1228ff5bdde99e9e000555de4e326a08c3fea6c3088c8e3ecc1a",
+      "evidence": [
+        {
+          "code": "D5204T",
+          "fact": {
+            "model": "v50",
+            "engineCode": "D5204T",
+            "label": "D4",
+            "fuel": "diesel",
+            "documentId": "v50-my12",
+            "modelYear": 2012,
+            "printedEnginePage": 291,
+            "printedFuelPage": 296,
+            "marketNote": "Not all engines available in all markets",
+            "visuallyReviewed": true
+          }
+        }
+      ]
+    },
+    {
+      "sourceRowId": "5215201a7f196a94b048d6c45f9c68d05d18b02713bcc5eb4b013c3e5f139334",
+      "sourceRowHash": "9f91a44f35c9fc9173c4a03706de1c3c10d1fc13af9df4d22b28debb6b4171f1",
+      "evidence": [
+        {
+          "code": "D5244T8",
+          "fact": {
+            "model": "v50",
+            "engineCode": "D5244T8",
+            "label": "D5",
+            "fuel": "diesel",
+            "documentId": "v50-my10",
+            "modelYear": 2010,
+            "printedEnginePage": 266,
+            "printedFuelPage": 273,
+            "marketNote": "No per-engine market footnote in inspected table",
+            "visuallyReviewed": true
+          }
+        },
+        {
+          "code": "D5244T9",
+          "fact": {
+            "model": "v50",
+            "engineCode": "D5244T9",
+            "label": "D5",
+            "fuel": "diesel",
+            "documentId": "v50-my10",
+            "modelYear": 2010,
+            "printedEnginePage": 266,
+            "printedFuelPage": 273,
+            "marketNote": "Belgium only",
+            "visuallyReviewed": true
+          }
+        }
+      ]
+    }
+  ],
+  "corrections": [
+    {
+      "id": "541a5062736fd8e997e39074a5f8b2102a7934dda3a648d2e1b36ff317676e48",
+      "sourceRowId": "1fd8a4c461f280e4c0c686ef66ab927a5715f9927e9c475d540e4d5f337bd8f3",
+      "sourceRowHash": "b4d3d86f93d8b12f569aca6bb69fa7ee03a43354efbcfc244b8c0534ce91b99f",
+      "anchorIds": [
+        "1fd8a4c461f280e4c0c686ef66ab927a5715f9927e9c475d540e4d5f337bd8f3"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "5751e040e6f57a1a902844e1b1443f72255488c731ed20cfded43b6a4b6e69e6",
+      "sourceRowId": "841abdfc4375e8db11f81b3f1fc89b9e1e6f54422259c05897e5dc63820a59b7",
+      "sourceRowHash": "7a1fbba1672a725ee0bcb152b3cd18927df355574d9acdac91871d9db63e73fa",
+      "anchorIds": [
+        "841abdfc4375e8db11f81b3f1fc89b9e1e6f54422259c05897e5dc63820a59b7"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "f7926b07fe16dcdb67eb2e311e76a50ea89ad5fb8cebd4cbc8de482b0bbfe118",
+      "sourceRowId": "1f6d0536f52762dd3341e7d457ec5a78c13c34ac966fffaf5fd66bdecf8147da",
+      "sourceRowHash": "17c70cfbd4fdb82479440c39d48bea652259a7227800a18896f2f425d5c15fe9",
+      "anchorIds": [
+        "1f6d0536f52762dd3341e7d457ec5a78c13c34ac966fffaf5fd66bdecf8147da"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "21ae14f4fc98122b7876b9cc255da7afb1b9b79695b1b16c0c69f268cdb2fe7c",
+      "sourceRowId": "770fff818cc017749d2d67eb19c97a5fe49ec047cc7e7f0d9ca43ba610e59f8a",
+      "sourceRowHash": "7a81201d333b38e9d3458633ffe29350909697c2c7043ba73fe95d8ed3cf1ec4",
+      "anchorIds": [
+        "770fff818cc017749d2d67eb19c97a5fe49ec047cc7e7f0d9ca43ba610e59f8a"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "d1089df5146883df3b9758a2752454cd8a7b689297706e7be2bedc795cc5669c",
+      "sourceRowId": "21966b29b7bd6a1b826d2994092c08d4f0de25b44fdca23e32d2c430b86b6fec",
+      "sourceRowHash": "44e652ca0267a5415d686646d31b6c4be8f4cf0e80fdb883a96d3728a85a993d",
+      "anchorIds": [
+        "21966b29b7bd6a1b826d2994092c08d4f0de25b44fdca23e32d2c430b86b6fec"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "0d24b0b8398496e9414541b40c864ea547c5c15afefcd2b57b9a8d8b0089eed8",
+      "sourceRowId": "8897f60516dcf072e761ff1cc2cb0783165826fe4f30cad83f3d85a2d59f40bb",
+      "sourceRowHash": "17fa971cb804752326d4b24dede346c86c368da3ab821da72a8bc6fd864d8c88",
+      "anchorIds": [
+        "770fff818cc017749d2d67eb19c97a5fe49ec047cc7e7f0d9ca43ba610e59f8a",
+        "21966b29b7bd6a1b826d2994092c08d4f0de25b44fdca23e32d2c430b86b6fec"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "46d25c0a2e72bdc9a00dab682d7672d71790946bf735a4e3524bde70aa72bfbb",
+      "sourceRowId": "c9e75dbcc5411ccd6ae34bdc5beaaeab5686c75b5f1b27dd98ec162140ad40d6",
+      "sourceRowHash": "f82af0fd75babe73ebe2286eb777463cfd80eba1debf24814ce5159526ba992c",
+      "anchorIds": [
+        "770fff818cc017749d2d67eb19c97a5fe49ec047cc7e7f0d9ca43ba610e59f8a",
+        "21966b29b7bd6a1b826d2994092c08d4f0de25b44fdca23e32d2c430b86b6fec"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "76b27254c6ab2d044a434f4c33feec97a7f0bc21de043508151c821d6d1338bb",
+      "sourceRowId": "52fee57a29c9a6ba544044214afedbe944767daa200ba51f37bce7d23628fa15",
+      "sourceRowHash": "859b2206c2851cce84468818fd3e3075e57b0c81d7aa7b86cfa069c7c6a26cb6",
+      "anchorIds": [
+        "770fff818cc017749d2d67eb19c97a5fe49ec047cc7e7f0d9ca43ba610e59f8a",
+        "21966b29b7bd6a1b826d2994092c08d4f0de25b44fdca23e32d2c430b86b6fec"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "49dadb37c9d1257bc4b66835de9df51f182fbfa61bc1776794e6895e6ce27f92",
+      "sourceRowId": "eaefa1b20a55ef0e7b649e39891804ca1f7bb2de67e040fa86ee265be67bdbf1",
+      "sourceRowHash": "a0e547f6d81fe58de499d212d85aa71c76d1a3ac52e582449f48e3c12f63a6ca",
+      "anchorIds": [
+        "770fff818cc017749d2d67eb19c97a5fe49ec047cc7e7f0d9ca43ba610e59f8a",
+        "21966b29b7bd6a1b826d2994092c08d4f0de25b44fdca23e32d2c430b86b6fec"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "ed8ed7358ab9e1e7d60197b26170e9ac3e38e3e1bef76ac8784b88797ec4768a",
+      "sourceRowId": "909fed07abcd80d51ce4c070b14b30eeaf2996be57a3697c5d82478755016699",
+      "sourceRowHash": "0ae995b565f850a5d0714a4e1604d66dfe67b726defc5d53a4360cdbe7197384",
+      "anchorIds": [
+        "770fff818cc017749d2d67eb19c97a5fe49ec047cc7e7f0d9ca43ba610e59f8a",
+        "21966b29b7bd6a1b826d2994092c08d4f0de25b44fdca23e32d2c430b86b6fec"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "34b068b57fc394276bfd28e8a55dd8257db9c353c785e1bb0042e67370b14021",
+      "sourceRowId": "67e614a8faefeea0d49ac2aba67c0589fd7169c96ef79385e52dbe2228fcec18",
+      "sourceRowHash": "9a0ecb3df1cc09c396ff298365319a598a1b8b966b1ea5bae4d78dbeb8ac095e",
+      "anchorIds": [
+        "770fff818cc017749d2d67eb19c97a5fe49ec047cc7e7f0d9ca43ba610e59f8a",
+        "21966b29b7bd6a1b826d2994092c08d4f0de25b44fdca23e32d2c430b86b6fec"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "2879678675d362960e5aef17eff29dcaf64a4960df46ff9e96c087d59beb6114",
+      "sourceRowId": "c555bfa645a1484e29bc0d8924b25992fa593f17ff6a8b3750b854f72c7734cd",
+      "sourceRowHash": "976f11432b343311bd7d8dec986dc78297d3a20882449e56fe155c0113bc6d85",
+      "anchorIds": [
+        "c555bfa645a1484e29bc0d8924b25992fa593f17ff6a8b3750b854f72c7734cd"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "3de6e5cb954a385d3088b7d2c2aa10cb82bde862caaf18f296125557df098ecc",
+      "sourceRowId": "4caba51831ccf34821a81afeeafdad471dfe90c8867ad41e209cccaa39ccfc9d",
+      "sourceRowHash": "283365f6182c1228ff5bdde99e9e000555de4e326a08c3fea6c3088c8e3ecc1a",
+      "anchorIds": [
+        "4caba51831ccf34821a81afeeafdad471dfe90c8867ad41e209cccaa39ccfc9d"
+      ],
+      "marketReviewRequired": false
+    },
+    {
+      "id": "ce6e710ccbfcf5f77d73c9aafce1f1e4e2d350089b1247285dc755fce5341c97",
+      "sourceRowId": "5215201a7f196a94b048d6c45f9c68d05d18b02713bcc5eb4b013c3e5f139334",
+      "sourceRowHash": "9f91a44f35c9fc9173c4a03706de1c3c10d1fc13af9df4d22b28debb6b4171f1",
+      "anchorIds": [
+        "5215201a7f196a94b048d6c45f9c68d05d18b02713bcc5eb4b013c3e5f139334"
+      ],
+      "marketReviewRequired": true
+    },
+    {
+      "id": "7f2df68c53d5516d68466aa6097ab5f1e7d4a453f813f2cd9c9108dd3b3919df",
+      "sourceRowId": "43a84f97516367a58c13bf17dac6280844ab045cea883373eb3d3b9f6e8d20fa",
+      "sourceRowHash": "53045aaf774d0f360d78d49fbdb78e8d1d35a212c7e0268e147c6bd5c205b834",
+      "anchorIds": [
+        "5215201a7f196a94b048d6c45f9c68d05d18b02713bcc5eb4b013c3e5f139334"
+      ],
+      "marketReviewRequired": true
+    },
+    {
+      "id": "c62bf3175f9babbe735e7ce2f7574f08e9c50f144440190e3c3d3c56d1ab4763",
+      "sourceRowId": "1b68a5a4a240be73046a3a65e77ab6abe0e4fefc83c1c00f55956b8e426b1096",
+      "sourceRowHash": "bd6930336b436a2342d25acacc3f87a5b74265929b298a36dc3f1bc187212709",
+      "anchorIds": [
+        "5215201a7f196a94b048d6c45f9c68d05d18b02713bcc5eb4b013c3e5f139334"
+      ],
+      "marketReviewRequired": true
+    },
+    {
+      "id": "83bca1778046b8143725344ccc8da470b1d224536b41553f69941a7233697acf",
+      "sourceRowId": "c3d9c5d4446a9289230c5a74dc101bc647da7effb3632eb500ec7aa27472aafd",
+      "sourceRowHash": "3aa9e2b5495ca79a2a064e439ab762bd236bb4cbaaeaf5e7889297279fc08fa2",
+      "anchorIds": [
+        "5215201a7f196a94b048d6c45f9c68d05d18b02713bcc5eb4b013c3e5f139334"
+      ],
+      "marketReviewRequired": true
+    },
+    {
+      "id": "ffb0e501a50d21da27054c8d80552d035a6eb60b8efb4471733ca261878d9fab",
+      "sourceRowId": "5a848eb03cdbfd566134a5f5628043ace0055bc222b1c68c1d94c579f57c0ab8",
+      "sourceRowHash": "412700d291050d3bc18939e5205c598f54339dc81cce956e14c06d5b18eb00f2",
+      "anchorIds": [
+        "5215201a7f196a94b048d6c45f9c68d05d18b02713bcc5eb4b013c3e5f139334"
+      ],
+      "marketReviewRequired": true
+    },
+    {
+      "id": "ab6ef5e5d54a1aa373beb6e4c003e0687c41752d77c972d213c63cd45b28f217",
+      "sourceRowId": "9500f32c82019a5f2b41402c8a2114d4ecdda3c0873c3a61a8b3735efd6e7e16",
+      "sourceRowHash": "68869a60dd79df70dd8a4aa36c076bb2b74602e0f7dd68b269068a9b756f49a1",
+      "anchorIds": [
+        "5215201a7f196a94b048d6c45f9c68d05d18b02713bcc5eb4b013c3e5f139334"
+      ],
+      "marketReviewRequired": true
+    }
+  ]
+}

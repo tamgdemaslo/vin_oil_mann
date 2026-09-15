@@ -52,10 +52,87 @@ export async function loadIdentityOverlay(root, fluidRaw, path, expectedHash) {
   const sourceRows=new Map(snapshotRaw.trim().split('\n').map(JSON.parse).map(r=>[r.row_id,r]));
   const jiti=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}});
   const {prepareFluidCatalog}=await jiti.import(resolve(root,'src/lib/fluid-catalog.ts'));
-  const prepared=prepareFluidCatalog({rowsNdjson:snapshotRaw,mannFiltersCsv:''});
+  let prepared=prepareFluidCatalog({rowsNdjson:snapshotRaw,mannFiltersCsv:''});
+  const freshlyPrepared=prepared;
   let parserCompatibility;
   let compatibilityParserHash=currentParserHash;
   let compatibilityPreparedHash=sha(prepared);
+  let fuelCompatibility;
+  if(currentParserHash==='7c4545766c940fbe789a68af0c96c61afed45fa28aba29fa45412b0ff30b5a91'){
+    const dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+    const baselineRaw=await readFile(resolve(dir,'volvo-fuel-import-baseline-v1.json'),'utf8');
+    const transitionRaw=await readFile(resolve(dir,'volvo-fuel-import-transition-v1.json'),'utf8');
+    assert.equal(sha(baselineRaw),'4a54dc8dceca53ebec9fd2d5660df6e340572495fffa85ee15d7baa78ebb6b7b');
+    assert.equal(sha(transitionRaw),'e08d9e5f718c9cd37fd280b1147971d0b4ece3e8be3870ee60f7925e5958accf');
+    const baseline=JSON.parse(baselineRaw),transition=JSON.parse(transitionRaw);
+    assert.equal(transition.helperHash,sha(await readFile(resolve(root,'src/lib/fluid-volvo-source-fuel.ts'),'utf8')));
+    assert.equal(transition.dataHash,sha(await readFile(resolve(root,'src/lib/fluid-volvo-source-fuel-data.json'),'utf8')));
+    assert.equal(baseline.rawHash,sha(snapshotRaw));assert.equal(transition.rawHash,sha(snapshotRaw));
+    assert.equal(transition.baselineHash,sha(baselineRaw));assert.equal(transition.beforeParserHash,baseline.parserHash);assert.equal(transition.afterParserHash,currentParserHash);
+    assert.equal(prepared.requirements.length,baseline.requirements.length);
+    const differences=new Map(transition.differences.map(d=>[d.id,d]));let changed=0;
+    for(let i=0;i<prepared.requirements.length;i++){
+      const before=baseline.requirements[i],after=prepared.requirements[i],difference=differences.get(after.id);
+      if(!difference){assert.deepEqual(after,before);continue;}
+      assert.equal(before.id,after.id);assert.equal(before.fuelType,difference.beforeFuel);assert.equal(after.fuelType,difference.afterFuel);
+      const {sourceFuelCorrection,...rest}=after.rawRequirementJson;assert.deepEqual(sourceFuelCorrection,difference.provenance);
+      assert.deepEqual({...after,fuelType:before.fuelType,rawRequirementJson:rest},before);changed++;
+    }
+    assert.equal(changed,19);assert.equal(changed,differences.size);assert.equal(changed,transition.summary.changed);
+    prepared={...prepared,requirements:baseline.requirements};compatibilityParserHash=baseline.parserHash;
+    fuelCompatibility={transitionHash:sha(transitionRaw),scope:'EXACT_FUEL_AND_CORRECTION_PROVENANCE_ONLY'};
+  }
+  let engineCompatibilityRequirements=prepared.requirements;
+  let volvoCompatibility;
+  if(compatibilityParserHash==='27204ec4b2b92106085793c38fcf5d2e7c24622289ca924bebbc06a855f72615'){
+    const dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+    const baselineRaw=await readFile(resolve(dir,'volvo-import-parser-baseline-v1.json'),'utf8');
+    const transitionRaw=await readFile(resolve(dir,'volvo-import-parser-transition-v1.json'),'utf8');
+    assert.equal(sha(baselineRaw),'a1b2d2ed70b4c485c58f3d9ea65ad70d0a8a72d2adf21a7d0912471bc3facd65');
+    assert.equal(sha(transitionRaw),'508215709dc8bef70b0fa9440efe7de821cb90d8029abb9c4b9e6e872720a28a');
+    const baseline=JSON.parse(baselineRaw),transition=JSON.parse(transitionRaw);
+    assert.equal(transition.helperHash,sha(await readFile(resolve(root,'src/lib/fluid-volvo-component-engine-list.ts'),'utf8')));
+    assert.equal(baseline.rawHash,sha(snapshotRaw));assert.equal(transition.rawHash,sha(snapshotRaw));
+    assert.equal(transition.baselineHash,sha(baselineRaw));assert.equal(transition.beforeParserHash,baseline.parserHash);assert.equal(transition.afterParserHash,compatibilityParserHash);
+    assert.equal(prepared.requirements.length,baseline.requirements.length);
+    const differences=new Map(transition.differences.map(d=>[d.id,d]));let changed=0;
+    for(let i=0;i<prepared.requirements.length;i++){
+      const before=baseline.requirements[i],after=prepared.requirements[i];
+      if(sha(before)===sha(after)){assert.ok(!differences.has(after.id));continue;}
+      const difference=differences.get(after.id);assert.ok(difference);assert.equal(before.id,after.id);
+      assert.deepEqual(before.engineCodesJson,difference.before);assert.deepEqual(after.engineCodesJson,difference.after);
+      assert.deepEqual({...after,engineCodesJson:before.engineCodesJson,engineCodeNormalized:before.engineCodeNormalized},before);
+      changed++;
+    }
+    assert.equal(changed,transition.summary.changed);assert.equal(changed,differences.size);
+    engineCompatibilityRequirements=baseline.requirements;compatibilityParserHash=baseline.parserHash;
+    volvoCompatibility={transitionHash:sha(transitionRaw),baselineHash:sha(baselineRaw),scope:'EXACT_VOLVO_ENGINE_FIELDS_ONLY'};
+  }
+  if(compatibilityParserHash==='ffab595af8525552090c85c1df7af762fa3f5ce48466905827373dd7a1f1b7f1'){
+    // New engine extraction does not change generation/body identity. Verify
+    // every rebuilt requirement against the immutable pre-change baseline;
+    // the all-source identity replay below is still mandatory.
+    const dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+    const baselineRaw=await readFile(resolve(dir,'mercedes-import-parser-baseline-v1.json'),'utf8');
+    assert.equal(sha(baselineRaw),'fea8c313b6c95327f982a4c5b9bc09a8613cf13b2cfcee13a4debe65cd14c31d');
+    const transitionRaw=await readFile(resolve(dir,'mercedes-import-parser-transition-v1.json'),'utf8');
+    assert.equal(sha(transitionRaw),'84090fd6c9072abced2f53664a7b26f61bb15614d30152cf6be48366b4a47e07');
+    const baseline=JSON.parse(baselineRaw),transition=JSON.parse(transitionRaw);
+    assert.equal(baseline.rawHash,sha(snapshotRaw));assert.equal(transition.rawHash,sha(snapshotRaw));
+    assert.equal(transition.baselineHash,sha(baselineRaw));assert.equal(transition.beforeParserHash,baseline.parserHash);assert.equal(transition.afterParserHash,compatibilityParserHash);
+    assert.equal(engineCompatibilityRequirements.length,baseline.requirements.length);
+    const differences=new Map(transition.differences.map(d=>[d.id,d]));let changed=0;
+    for(let i=0;i<engineCompatibilityRequirements.length;i++){
+      const before=baseline.requirements[i],after=engineCompatibilityRequirements[i];
+      if(sha(before)===sha(after)){assert.ok(!differences.has(after.id));continue;}
+      const difference=differences.get(after.id);assert.ok(difference);assert.equal(before.id,after.id);
+      assert.deepEqual(before.engineCodesJson,difference.before);assert.deepEqual(after.engineCodesJson,difference.after);
+      assert.deepEqual({...after,engineCodesJson:before.engineCodesJson,engineCodeNormalized:before.engineCodeNormalized},before);
+      changed++;
+    }
+    assert.equal(changed,transition.summary.changed);assert.equal(changed,differences.size);
+    parserCompatibility={currentParserHash,transitionHash:sha(transitionRaw),baselineHash:sha(baselineRaw),volvoCompatibility,fuelCompatibility,scope:'AUDITED_ENGINE_AND_FUEL_FIELDS_PLUS_FULL_IDENTITY_REPLAY'};
+  }
   if(currentParserHash==='46e51357b407df2bb3d17af2d93742140cb365cce036154d9bacfb12f0eb5a40'){
     const dotRaw=await readFile(resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14/dot-token-transition-v4.json'),'utf8');
     assert.equal(sha(dotRaw),'0a41c9207446bb0f4a9ac43ad6e80ceeea964b0ea17cca0539ca1521492dedb9');
@@ -74,7 +151,7 @@ export async function loadIdentityOverlay(root, fluidRaw, path, expectedHash) {
     compatibilityParserHash='4f9abf60a140b3ed5cb5b1b034190d86a2f39c3de3cb80e3f517adb881cdb233';
     compatibilityPreparedHash='61daaaa182cf15d0de21343c3738c79d89d8109ac31cc5f11b0a96363fc64751';
   }
-  if(report.hashes.parser!==currentParserHash){
+  if(report.hashes.parser!==currentParserHash&&!parserCompatibility){
     // One fully audited transition: capacity scalar semantics only. No arbitrary
     // parser hash is accepted, and the entire fresh parse must equal its proof.
     assert.equal(report.hashes.parser,'6885c95dbe512c6d85f72a8f7bb93ab3dba4c8d0aa0c590eabb82e1bc9cbe397');
@@ -88,7 +165,7 @@ export async function loadIdentityOverlay(root, fluidRaw, path, expectedHash) {
     assert.equal(compatibilityPreparedHash,proof.preparedHash);
     parserCompatibility={proofHash:proof.proofHash,compatibilityHash:sha(proofRaw),currentParserHash,scope:currentParserHash===compatibilityParserHash?'CAPACITY_SCALARS_ONLY_IDENTITY_UNCHANGED':'CAPACITY_AND_TABLE_POWER_SCALARS_ONLY_IDENTITY_UNCHANGED'};
   }
-  const reparsed=new Map(prepared.requirements.map(r=>[r.id,r]));
+  const reparsed=new Map(freshlyPrepared.requirements.map(r=>[r.id,r]));
   assert.equal(reparsed.size,originals.length);
   const result=applyIdentityCorrections(originals,report,sha(fluidRaw));
   // Full replay of identity extraction also detects omitted corrections.

@@ -2,9 +2,11 @@ import { parseFluidCapacities, type ParsedFluidCapacity } from "./fluid-capacity
 import { normalizeEngineCode } from "./vehicle-normalization";
 
 export type FluidCapacityCondition =
+  | { kind: "rearAirConditioning"; value: "present" | "absent" }
   | { kind: "transmission"; value: "automatic" | "manual" | "cvt" }
   | { kind: "drive"; value: "2WD" | "4WD" | "AWD" | "FWD" | "RWD" }
-  | { kind: "engine"; value: string };
+  | { kind: "engine"; value: string }
+  | { kind: "engineTransmission"; value: string; engineCode: string; transmissionType: "manual" | "automatic" | "robot" | "cvt" };
 export type ConditionalFluidCapacity = {
   condition: FluidCapacityCondition;
   capacity: ParsedFluidCapacity;
@@ -31,12 +33,20 @@ export function parseConditionalFluidCapacities(value: unknown, systemCode?: str
     const end = capacities[index + 1]?.start ?? normalizedText.length;
     const sourceSegment = normalizedText.slice(token.start, end);
     const suffix = normalizedText.slice(token.end, end).trim().replace(/(?:\s+или|[;,])\s*$/iu, "").trim();
-    const qualifier = suffix.replace(/^(?:сервисный|общий)\s+объ[её]м\s+/iu, "");
+    const qualifier = suffix.replace(/^-\s*/u, "").replace(/^(?:сервисный|общий)\s+объ[её]м\s+/iu, "");
     let condition: FluidCapacityCondition;
     const transmission = qualifier.match(/^(?:(?:для\s+моделей\s+)?[сc]|для)\s+(АКПП|МКПП|CVT)$/iu);
     const drive = qualifier.match(/^для\s+(2WD|4WD|AWD|FWD|RWD)$/iu);
     const engine = qualifier.match(/^для\s+([A-Z0-9][A-Z0-9-]{2,20})$/iu);
-    if (transmission) condition = { kind: "transmission", value: transmission[1].toUpperCase() === "АКПП" ? "automatic" : transmission[1].toUpperCase() === "CVT" ? "cvt" : "manual" };
+    const compound = qualifier.match(/^для\s+([A-Z0-9][A-Z0-9-]{2,20})\s+с\s+(МКПП|АКПП|РКПП|CVT)$/iu);
+    const rearAir = qualifier.match(/^для моделей (без заднего кондиционера|с задним кондиционером)$/u);
+    if (rearAir) condition = {kind:"rearAirConditioning",value:rearAir[1].startsWith("без")?"absent":"present"};
+    else if (compound && /\d/.test(compound[1]) && allowedEngines.has(normalizeEngineCode(compound[1]))) {
+      const engineCode = normalizeEngineCode(compound[1])!;
+      if (/^(?:2WD|4WD|AWD|FWD|RWD|4X4|4X2)$/.test(engineCode)) return review("DRIVE_LABEL_IS_NOT_ENGINE");
+      const transmissionType = ({МКПП:"manual",АКПП:"automatic",РКПП:"robot",CVT:"cvt"} as const)[compound[2].toUpperCase() as "МКПП"|"АКПП"|"РКПП"|"CVT"];
+      condition = {kind:"engineTransmission",value:`${engineCode}:${transmissionType}`,engineCode,transmissionType};
+    } else if (transmission) condition = { kind: "transmission", value: transmission[1].toUpperCase() === "АКПП" ? "automatic" : transmission[1].toUpperCase() === "CVT" ? "cvt" : "manual" };
     else if (drive) condition = { kind: "drive", value: drive[1].toUpperCase() as "2WD" | "4WD" | "AWD" | "FWD" | "RWD" };
     else if (engine && /\d/.test(engine[1]) && allowedEngines.has(normalizeEngineCode(engine[1]))) {
       const code = normalizeEngineCode(engine[1])!;
@@ -45,15 +55,23 @@ export function parseConditionalFluidCapacities(value: unknown, systemCode?: str
     } else return review("UNSUPPORTED_OR_SHARED_CONDITION");
     const parsed = parseFluidCapacities(sourceSegment, systemCode);
     if (parsed.needsReview || parsed.rejected.length || parsed.capacities.length !== 1) return review("BRANCH_PARSER_DIAGNOSTICS");
-    if (branches.some(b => b.condition.kind !== condition.kind)) return review("MIXED_CONDITION_DIMENSIONS");
+    const engineScoped = (kind: FluidCapacityCondition["kind"]) => kind === "engine" || kind === "engineTransmission";
+    if (branches.some(b => b.condition.kind !== condition.kind && !(engineScoped(b.condition.kind) && engineScoped(condition.kind)))) return review("MIXED_CONDITION_DIMENSIONS");
+    // A general engine branch must not overlap a gearbox-specific branch.
+    if (branches.some(b => b.condition.kind === "engine" && condition.kind === "engineTransmission" && b.condition.value === condition.engineCode
+      || b.condition.kind === "engineTransmission" && condition.kind === "engine" && b.condition.engineCode === condition.value)) return review("OVERLAPPING_ENGINE_CONDITIONS");
     if (branches.some(b => b.condition.value === condition.value)) return review("DUPLICATE_CONDITION");
     branches.push({ condition, capacity: parsed.capacities[0], sourceSegment, start: token.start, end });
   }
   return { status: "structured" as const, reason: null, sourceText, normalizedText, branches, publicationAllowed: false as const };
 }
 
-export function selectConditionalFluidCapacity(branches: ConditionalFluidCapacity[], context: { transmissionType?: string; engineCode?: string; driveMode?: string }) {
-  const matches = branches.filter(branch => branch.condition.kind === "transmission"
+export function selectConditionalFluidCapacity(branches: ConditionalFluidCapacity[], context: { transmissionType?: string; engineCode?: string; driveMode?: string; rearAirConditioning?: boolean }) {
+  const matches = branches.filter(branch => branch.condition.kind === "rearAirConditioning"
+    ? typeof context.rearAirConditioning === "boolean" && (branch.condition.value === "present") === context.rearAirConditioning
+    : branch.condition.kind === "engineTransmission"
+    ? branch.condition.engineCode === normalizeEngineCode(context.engineCode) && branch.condition.transmissionType === context.transmissionType
+    : branch.condition.kind === "transmission"
     ? branch.condition.value === context.transmissionType
     : branch.condition.kind === "drive"
     ? branch.condition.value === context.driveMode?.trim().toUpperCase()

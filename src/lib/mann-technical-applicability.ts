@@ -3,6 +3,8 @@ import { mannEquipmentScopeMatches, type MannEquipmentConfirmation } from "@/lib
 import { isVehicleDestinationMarket, type VehicleDestinationMarket } from "@/lib/vehicle-market";
 
 export type MannTechnicalVehicleContext = {
+  /** Explicit equipment confirmation; absence of an answer is not false. */
+  rearAirConditioning?: boolean;
   make?: string;
   model?: string;
   generation?: string;

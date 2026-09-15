@@ -5,8 +5,10 @@ import {createJiti} from 'jiti';
 import {sha} from './lib/mann-offline-scope.mjs';
 import {coreScopeContains} from './lib/mann-core-scope-containment.mjs';
 const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
-const raw=await readFile(resolve(dir,'plan.json'),'utf8');assert.equal(sha(raw),'df04fc11f498bb6e4c48d0b2976e2f01ecc9442ae6fcbc7c3973c7329224c3e5');const plan=JSON.parse(raw);
-const auditRaw=await readFile(resolve(dir,'profile-composition-audit-v7.json'),'utf8'),audit=JSON.parse(auditRaw);assert.equal(audit.planSha256,sha(raw));
+const version=process.argv[2]??'v1',versions={v1:{hash:'df04fc11f498bb6e4c48d0b2976e2f01ecc9442ae6fcbc7c3973c7329224c3e5',audit:'v7'},v2:{hash:'33fcc0c9b7396f57fca01ae9e062eb5faecf1e7b37a56f15a6fa4d9ec0a68596',audit:'v8'}};
+assert.ok(versions[version]);
+const raw=await readFile(resolve(dir,'plan.json'),'utf8');assert.equal(sha(raw),versions[version].hash);const plan=JSON.parse(raw);
+const auditRaw=await readFile(resolve(dir,`profile-composition-audit-${versions[version].audit}.json`),'utf8'),audit=JSON.parse(auditRaw);assert.equal(audit.planSha256,sha(raw));
 assert.equal(audit.capacityConflictCases,0);assert.equal(audit.droppedExpectedItems,0);
 const unseen=new Set(audit.unseenCandidateRevisions),byId=new Map(plan.newRevisions.map(r=>[r.id,r]));
 const held=plan.newRevisions.filter(r=>r.provenanceJson.sourcePowerReviewHold);assert.equal(held.length,3);
@@ -31,4 +33,4 @@ const previous=JSON.parse(await readFile(resolve(dir,'profile-composition-audit-
 assert.deepEqual(audit.specificationDifferences,previous.specificationDifferences);
 assert.equal(audit.specificationDivergencePairs,4);
 const report={kind:'DOT_JOINT_PROFILE_EXPLICIT_ACCOUNTING',planHash:sha(raw),auditHash:sha(auditRaw),cases:audit.cases,individuallyExercised:audit.individuallyExercisedCandidates,held:held.length,findings,monthChecks,unaccounted:0,capacityConflicts:0,unchangedTireRimPairs:4,productionApplyAllowed:false,limitations:['Combined audit retains its strict assertions and may fail on explicitly held/contained records. This separate report accounts for them without deleting records or approving publication.','Synthetic scope endpoints plus containment-month checks, not actual VIN/production HTTP or OEM fact verification.']};
-await writeFile(resolve(dir,'dot-joint-profile-accounting-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify({...report,findings:undefined}));
+await writeFile(resolve(dir,`dot-joint-profile-accounting-${version}.json`),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify({...report,findings:undefined}));

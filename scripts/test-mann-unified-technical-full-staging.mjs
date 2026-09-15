@@ -113,6 +113,23 @@ assert.match(sql, /'STAGED'/u);
 assert.match(sql, /'REVIEW'/u);
 assert.match(sql, /'UNVERIFIED'/u);
 assert.match(sql, /legacy table counts changed during full staging import/u);
+assert.match(sql, /existing revision payload conflict; refusing to skip or overwrite/u);
+assert.match(sql, /persisted revision payload mismatch/u);
+assert.ok(sql.indexOf('existing revision payload conflict') < sql.indexOf('INSERT INTO mann_technical_association_revisions'));
+assert.ok(sql.indexOf('persisted revision payload mismatch') > sql.indexOf('INSERT INTO mann_technical_association_revisions'));
+const expectedFields = [
+  'id', 'run_id', 'vehicle_variant_key', 'source_requirement_id', 'system_code',
+  'component_model', 'applicability_json', 'verified_fields_json', 'technical_data_json',
+  'field_confidence_json', 'evidence_json', 'provenance_json', 'match_class', 'match_score',
+  'semantic_fingerprint', 'state', 'verification_status', 'apply_eligible', 'supersedes_revision_id',
+];
+for (const alias of ['actual', 'expected']) {
+  const comparisons = [...sql.matchAll(new RegExp(`jsonb_build_array\\(([^)]*${alias}\\.supersedes_revision_id)\\)`, 'gu'))];
+  assert.equal(comparisons.length, 2, `${alias}: require both preflight and postflight`);
+  for (const match of comparisons) assert.deepEqual(match[1].split(', ').map(value => value.replace(`${alias}.`, '')), expectedFields);
+}
+const insertFields = sql.match(/INSERT INTO mann_technical_association_revisions \(([\s\S]*?)\) VALUES/u)[1].split(',').map(value=>value.trim());
+assert.deepEqual(insertFields, expectedFields, 'Payload guards cover every inserted revision field');
 assert.match(sql, /COMMIT;/u);
 assert.doesNotMatch(sql, /SET\s+state\s*=\s*'ACTIVE'/iu);
 assert.doesNotMatch(sql, /\b(?:DELETE\s+FROM|TRUNCATE\s+TABLE|DROP\s+TABLE)\b/iu);
@@ -128,3 +145,4 @@ assert.notEqual(forbidden.status, 0);
 assert.match(`${forbidden.stdout}${forbidden.stderr}`, /production activation is forbidden/u);
 
 console.log("MANN unified technical full staging tests — passed");
+if (process.argv.includes('--report-fixture')) console.log(JSON.stringify({fixtureDir,planPath,sqlPath}));

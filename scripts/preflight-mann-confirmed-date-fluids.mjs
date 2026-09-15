@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import {readFile,readdir,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+import {sha,parseCopy} from './lib/mann-offline-scope.mjs';
+import {splitSpecificationSections,specificationCautionSignals} from './lib/mann-specification-sections-v2.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-current-full-rematch-2026-09-14-v2');
+const read=async p=>{const raw=await readFile(p,'utf8');return {raw,data:JSON.parse(raw)}};
+const plan=await read(resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14/plan.json')),pre=await read(resolve(dir,'date-backlog-preflight-v1.json')),summary=await read(resolve(dir,'date-backlog-rematch-summary-v1.json'));
+assert.equal(sha(plan.raw),summary.data.planHash);assert.equal(sha(pre.raw),summary.data.preflightHash);
+const sql=await readFile('/tmp/vehicle_fluid_requirements.sql','utf8'),mannRaw=await readFile('/tmp/mann_filter_applications.sql','utf8');assert.equal(sha(sql),plan.data.inputHashes.source);assert.equal(sha(mannRaw),'5e34efadc60014077b55655e0c62cdcbb8b1f44d3a8aace2399e941b45003fda');
+const sourceMap=new Map(parseCopy(sql,'vehicle_fluid_requirements').map(r=>[r.id,r])),variants=Map.groupBy(parseCopy(mannRaw,'mann_filter_applications'),r=>r.vehicleVariantKey);
+const raw=await readFile(resolve(root,'../vin-oil-mann/outputs/podbormasla-20260723/podbormasla_rows.ndjson'),'utf8');
+const manifest=await read(resolve(dir,'manifest.json'));assert.equal(sha(raw),manifest.data.rawHash);
+const byRaw=new Map(raw.trim().split('\n').map(JSON.parse).map(r=>[r.row_id,r]));
+const live=await read(resolve(root,'outputs/mann-live-audit-1789415211923/revisions.json')),reviews=await read(resolve(root,'outputs/mann-live-audit-1789415211923/reviewDecisions.json'));
+const protectedIds=new Set(reviews.data.filter(r=>r.decision==='CONFIRM').map(r=>r.revisionId));
+const denied=new Set(JSON.parse(await readFile(resolve(root,'data/mann-technical-association-denylist-v1.json'),'utf8')).rejectedAssociationFingerprints);
+const j=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),{parseFluidCapacities:capacity}=await j.import('../src/lib/fluid-capacity-parser.ts'),{normalizeEngineCode:norm}=await j.import('../src/lib/vehicle-normalization.ts'),{extractRawProductionCondition:dateCondition}=await j.import('../src/lib/fluid-raw-production-condition.ts');
+const matches=[];
+for(const file of (await readdir(dir)).filter(f=>/^date-rematch-.*-v1.json$/.test(f))){const batch=await read(resolve(dir,file));assert.equal(batch.data.inputHash,summary.data.inputHash);matches.push(...batch.data.findings.filter(f=>f.targetValidated));}
+assert.equal(matches.length,90);const findings=[];
+for(const f of matches){
+ const s=sourceMap.get(f.sourceRequirementId),a=pre.data.findings.find(p=>p.sourceRequirementId===s.id),row=byRaw.get(s.sourceRowId);assert.equal(sha(s),f.originalSourceHash);assert.equal(sha(row),a.rawRowHash);
+ const target=f.decision.targets.find(t=>t.vehicleVariantKey===f.vehicleVariantKey&&t.independentlyValidated);assert.ok(target);
+ assert.equal(plan.data.newRevisions.some(r=>r.sourceRequirementId===s.id),false);
+ const reasons=[],rows=variants.get(f.vehicleVariantKey),codes=[...new Set(rows.map(r=>norm(r.engineCode)))],powers=[...new Set(rows.map(r=>Number(r.hp)))];
+ if(!a.engineApplications.length||a.engineApplications.some(e=>!e.parsed))reasons.push('UNPARSED_ENGINE_APPLICATION');
+ for(const anchor of a.engineApplications)assert.equal(sha(byRaw.get(anchor.rowId)),anchor.rowHash);
+ const branches=a.engineApplications.flatMap(e=>(e.parsed?.branches??[]).map(b=>({...b,anchorRowId:e.rowId,anchorHash:e.rowHash})));
+ const matching=branches.filter(b=>codes.length===1&&norm(b.engineCode)===codes[0]&&powers.length===1&&b.powerHp.includes(powers[0])&&b.effectiveDates.from<=f.window.intersection.from&&(!b.effectiveDates.to||b.effectiveDates.to>=f.window.intersection.to));
+ if(matching.length!==1)reasons.push('EXACT_UNIQUE_ENGINE_POWER_DATE_BRANCH_NOT_PROVEN');
+ const branch=matching.length===1?matching[0]:null;
+ if(branch?.driveCondition)reasons.push('SOURCE_DRIVE_REQUIRES_EQUIPMENT_SCOPE');
+ const labels={ENGINE_COOLANT:['АНТИФРИЗ','АНТИФРИЗ В СИСТЕМУ ОХЛАЖДЕНИЯ'],BRAKE_FLUID:['ТОРМОЗНАЯ ЖИДКОСТЬ','МАСЛО в ТОРМОЗНУЮ СИСТЕМУ'],FUEL_TANK:['ТОПЛИВНЫЙ БАК']};
+ if(s.systemCode==='ENGINE_OIL'){if(branch?.anchorRowId!==row.row_id)reasons.push('OWN_ENGINE_APPLICATION_NOT_PROVEN');}
+ else if(!labels[s.systemCode]?.includes(row.application?.trim())||row.model?.trim())reasons.push('OWN_FLUID_APPLICATION_REQUIRES_REVIEW');
+ if(dateCondition(row.production_years??''))reasons.push('RAW_PRODUCTION_CONDITION');
+ const parsedCapacity=capacity(s.fillVolumeText,s.systemCode),asNeeded=s.systemCode==='BRAKE_FLUID'&&row.fill_volume?.trim()==='по необходимости'&&!parsedCapacity.capacities.length;
+ if(!asNeeded&&(parsedCapacity.needsReview||!parsedCapacity.capacities.length))reasons.push('CAPACITY_OR_SERVICE_CONDITION');
+ const sections=splitSpecificationSections(s.specificationText,s.analogText);
+ if(!['NO_EXPLICIT_MARKER','EXPLICIT_ANALOG_SEPARATED'].includes(sections.status)||specificationCautionSignals(s.specificationText).length)reasons.push('SPECIFICATION_ROLE_OR_PROHIBITION');
+ if(!s.specificationText?.trim()&&s.systemCode!=='FUEL_TANK')reasons.push('MISSING_SPECIFICATION');
+ if(/DPF|GPF|сажев|ниже\s*[-−]?\d|выше\s*[-−]?\d|с\s+кодом|без\s+кода/iu.test(s.specificationText??''))reasons.push('CONDITIONAL_SPECIFICATION');
+ if(/Россия|Япония|Европа|США|ОАЭ|Китай|Корея|Азия/iu.test([row.fill_volume,row.specification,row.recommendation].join('\n')))reasons.push('OWN_FLUID_MARKET_CONDITION');
+ const predecessors=live.data.filter(r=>r.sourceRequirementId===s.id&&r.vehicleVariantKey===f.vehicleVariantKey);
+ if(predecessors.some(r=>r.reviewConfirmed||protectedIds.has(r.id)||r.applyEligible||r.verificationStatus!=='UNVERIFIED'))reasons.push('PROTECTED_PREDECESSOR');
+ if(denied.has(f.originalAssociationFingerprint))reasons.push('DENIED_ORIGINAL_ASSOCIATION');
+ const v=f.decision.normalizedVehicle,scope={sourceVehicleScope:{make:v.canonicalMake,model:v.baseModel,...(v.generation?{generation:v.generation}:{})},matchedEngineScope:codes,window:f.window,...(branch?.requiredMarket?{requiredMarket:branch.requiredMarket}:{})};
+ findings.push({sourceRequirementId:s.id,vehicleVariantKey:f.vehicleVariantKey,sourceHash:sha(s),rawRowHash:sha(row),systemCode:s.systemCode,sourceUrl:s.sourceUrl,branch,scope,parsedCapacity,asNeeded,sections,predecessors:predecessors.map(r=>({id:r.id,hash:sha(r)})),originalAssociationFingerprint:f.originalAssociationFingerprint,target,reasons:[...new Set(reasons)],status:reasons.length?'HOLD':'READY_FOR_SCOPED_DRAFT',productionApplyAllowed:false});
+}
+const stats={pairs:findings.length,ready:findings.filter(f=>!f.reasons.length).length,reasons:Object.fromEntries([...Map.groupBy(findings.flatMap(f=>f.reasons),r=>r)].map(([r,rows])=>[r,rows.length]))};
+await writeFile(resolve(dir,'confirmed-date-fluid-preflight-v1.json'),JSON.stringify({kind:'ALL90_CONFIRMED_DATE_FLUID_PREFLIGHT',planHash:sha(plan.raw),preflightHash:sha(pre.raw),rematchSummaryHash:sha(summary.raw),liveHash:sha(live.raw),reviewsHash:sha(reviews.raw),summary:stats,findings,productionApplyAllowed:false,limitations:['Source-specific preview readiness, not OEM verification or publication.','Joint profile and predecessor display tests still required before candidate merge.']},null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(stats));

@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { parseFluidCapacities, type ParsedFluidCapacity } from "@/lib/fluid-capacity-parser";
+import { explicitMercedesSourceEngineCodes } from "@/lib/fluid-mercedes-source-engine";
+import { volvoComponentEngineList } from "@/lib/fluid-volvo-component-engine-list";
+import { volvoSourceFuelCorrection } from "@/lib/fluid-volvo-source-fuel";
 
 const SOURCE_NAME = "podbormasla.ru";
 const SOURCE_URL = "https://podbormasla.ru";
@@ -441,7 +444,7 @@ const ENGINE_CODE_STOPWORDS = new Set([
 
 function extractEngineCodes(value: unknown, includePureLetters = false): string[] {
   const raw = clean(value).toUpperCase();
-  const candidates: string[] = [];
+  const candidates: string[] = explicitMercedesSourceEngineCodes(raw);
   for (const match of raw.matchAll(/(?:^|\s-\s|^\-\s*)([A-ZА-Я0-9][A-ZА-Я0-9._-]{1,30})(?=\s*\/)/g)) {
     if (match[1]) candidates.push(match[1]);
   }
@@ -1065,7 +1068,19 @@ function buildRequirements(rows: PodbormaslaRow[]): PreparedFluidRequirement[] {
         : isEngineRow(row)
           ? contextFromRows([row], row, "row_engine")
           : tableContext;
-      for (const part of requirementParts(row)) requirements.push(buildRequirement(row, part, context));
+      // A complete component restriction overrides the broader shared-table
+      // engine list. This does not establish which gearbox a VIN has installed.
+      const componentList = row.brand_slug === "volvo" ? volvoComponentEngineList(row.application) : null;
+      const scopedContext = componentList?.status === "EXPLICIT"
+        ? { ...context, engineCodes: componentList.branches.map(branch => branch.engineCode) }
+        : context;
+      for (const part of requirementParts(row)) {
+        const requirement = buildRequirement(row, part, scopedContext);
+        const correction = volvoSourceFuelCorrection(requirement.id, row, engineRows, requirement.fuelType);
+        requirements.push(correction ? { ...requirement, fuelType: correction.correctedFuel,
+          rawRequirementJson: { ...(requirement.rawRequirementJson as Prisma.InputJsonObject), sourceFuelCorrection: correction },
+        } : requirement);
+      }
     }
   }
   return requirements;

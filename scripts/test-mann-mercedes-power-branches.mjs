@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {mercedesPowerBranches as parse,mercedesPowerModelMatches as matches} from './lib/mann-mercedes-power-branches.mjs';
+assert.deepEqual(parse('184 л.с. / 204 л.с.','2018 - 2021').map(b=>b.powerHp),[184,204]);
+assert.deepEqual(parse('249, 250, 258 л.с.','2012 - 2015').map(b=>b.powerHp),[249,250,258]);
+const dated=parse('- 476 л.с. для AMG GLC 63 (2017-2019 г.в.) - 510 л.с. для AMG GLC 63 S (2017-2022 г.в.)','2017 - 2022');
+assert.equal(dated[0].window.to,'2019-12');assert.equal(dated[1].window.to,'2022-12');
+assert.ok(matches(dated[0].model,'GLC63AMG(253.388/988)'));assert.ok(!matches(dated[0].model,'GLC63SAMG(253.389/989)'));assert.ok(matches(dated[1].model,'GLC63SAMG(253.389/989)'));
+assert.ok(matches('GLC 200','GLC200EQBoost(253)'));assert.ok(!matches('GLC 200','GLC300EQBoost(253)'));
+assert.ok(matches('GLE 63 S AMG','GLE63AMGS(W166)'));assert.ok(!matches('GLE 63 S AMG','GLE63AMG(W166)'));
+for(const text of ['184/204 л.с.','184 л.с. Россия','184, 184 л.с.','184-204 л.с.','- 249 л.с. в неизвестной модели','- 476 л.с. для AMG GLC 63 (2016-2019 г.в.)'])assert.equal(parse(text,'2017 - 2022'),null);
+console.log('Literal Mercedes power/model/year branch tests passed');

@@ -196,6 +196,22 @@ const catalogBase = {
 };
 
 const catalog = buildMannUnifiedTechnicalProfile([catalogBase]);
+// Scope-local preference must never become a cross-source/vehicle overwrite.
+const legacySameSource={...catalogBase,vehicleVariantKey:'variant-a'};
+const scopedSameSource={...legacySameSource,id:'scoped-same-source',
+ applicabilityJson:{matchedEngineScope:['CAXA'],window:{intersection:{from:'2012-10',to:'2015-06'}}},
+ technicalDataJson:{specifications:[{type:'OEM',value:'VW 504 00'}]},
+ provenanceJson:{...catalogBase.provenanceJson,catalogPreviewPolicy:'MANN_ENGINE_DATE_SCOPED_PREVIEW_V1',sourceTechnicalReviewRequired:true},
+ run:{...catalogBase.run,gatesJson:{...catalogBase.run.gatesJson,catalogPreviewPolicy:'MANN_ENGINE_DATE_SCOPED_PREVIEW_V1'}}};
+const scopeContext={engineCode:'CAXA',productionMonth:'2013-01'};
+const displayIds=(old=legacySameSource,next=scopedSameSource,context=scopeContext)=>buildMannUnifiedTechnicalProfile([old,next],undefined,context).items.map(i=>i.revisionId);
+assert.deepEqual(displayIds(),['scoped-same-source']);
+for(const context of [{},{engineCode:'WRONG',productionMonth:'2013-01'},{engineCode:'CAXA',productionMonth:'2016-01'}])assert.deepEqual(displayIds(legacySameSource,scopedSameSource,context),[legacySameSource.id]);
+for(const patch of [{sourceRequirementId:'another-source'},{vehicleVariantKey:'variant-b'},{vehicleVariantKey:undefined},{componentModel:'different'}])assert.equal(displayIds(legacySameSource,{...scopedSameSource,...patch}).length,2);
+assert.equal(displayIds({...legacySameSource,reviewConfirmed:true}).length,2);
+assert.deepEqual(displayIds(legacySameSource,{...scopedSameSource,technicalDataJson:{}}),[legacySameSource.id]);
+assert.deepEqual(displayIds(legacySameSource,{...scopedSameSource,run:{...scopedSameSource.run,status:'PLANNED'}}),[legacySameSource.id]);
+assert.equal(displayIds({...legacySameSource,applicabilityJson:scopedSameSource.applicabilityJson}).length,2);
 assert.equal(catalog.status, "catalog_preview");
 assert.equal(catalog.items.length, 1);
 assert.deepEqual(catalog.items[0].capacities.map((capacity) => [capacity.nominalLiters, capacity.serviceContext]), [
@@ -290,6 +306,18 @@ const conditionalManual = {
     specifications: [{ type: "OEM", value: "API GL-4" }],
   },
 };
+
+const oldGear={...conditionalTransmission,vehicleVariantKey:'gear-variant'};
+const scopedGear={...oldGear,id:'scoped-gear',applicabilityJson:{transmissionType:'automatic',matchedEngineScope:['G4LC'],window:{intersection:{from:'2012-01',to:'2015-12'}},transmissionGearCount:6},technicalDataJson:{...oldGear.technicalDataJson,specifications:[{type:'OEM',value:'TEST REPARSED ATF'}]}};
+const gearCtx={engineCode:'G4LC',productionMonth:'2013-01',transmissionGearCount:6};
+const gearIds=(old=oldGear,next=scopedGear,ctx=gearCtx)=>buildMannUnifiedTechnicalProfile([old,next],'automatic',ctx).items.map(i=>i.revisionId);
+assert.deepEqual(gearIds(),['scoped-gear']);
+assert.deepEqual(gearIds(oldGear,scopedGear,{...gearCtx,transmissionGearCount:4}),[]);
+for(const patch of [{engineCode:'OTHER'},{productionMonth:'2016-01'},{transmissionGearCount:undefined}])assert.deepEqual(gearIds(oldGear,scopedGear,{...gearCtx,...patch}),[oldGear.id]);
+assert.equal(gearIds({...oldGear,reviewConfirmed:true}).length,2);
+assert.deepEqual(gearIds(oldGear,{...scopedGear,sourceRequirementId:'other-source'},{...gearCtx,transmissionGearCount:4}),[oldGear.id]);
+assert.deepEqual(gearIds(oldGear,{...scopedGear,run:{...scopedGear.run,status:'PLANNED'}},{...gearCtx,transmissionGearCount:4}),[oldGear.id]);
+assert.deepEqual(gearIds(oldGear,{...scopedGear,applicabilityJson:{...scopedGear.applicabilityJson,requiredMarket:'JP'}},{...gearCtx,transmissionGearCount:4}),[oldGear.id]);
 
 const beforeTransmissionChoice = buildMannUnifiedTechnicalProfile([catalogBase, conditionalTransmission, conditionalManual]);
 assert.deepEqual(beforeTransmissionChoice.transmissionOptions.map((option) => [option.type, option.label]), [

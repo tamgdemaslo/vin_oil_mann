@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {sha,parseCopy} from './lib/mann-offline-scope.mjs';
+import {parseVolvoLiteralEngineApplication as parse} from './lib/mann-volvo-literal-engine-application.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-current-full-rematch-2026-09-14-v2');
+const read=async p=>{const raw=await readFile(p,'utf8');return {raw,data:JSON.parse(raw)}};
+const old=await read(resolve(dir,'confirmed-date-fluid-preflight-v1.json')),pre=await read(resolve(dir,'date-backlog-preflight-v1.json')),manifest=await read(resolve(dir,'manifest.json'));
+assert.equal(sha(pre.raw),old.data.preflightHash);
+const plan=await read(resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14/plan.json'));
+assert.equal(sha(plan.raw),'37ffc2703cec30045bf8d524a584ff9b2dbd842e34e6ffed9d81e44da51e1221');
+const raw=await readFile(resolve(root,'../vin-oil-mann/outputs/podbormasla-20260723/podbormasla_rows.ndjson'),'utf8');assert.equal(sha(raw),manifest.data.rawHash);
+const rows=new Map(raw.trim().split('\n').map(JSON.parse).map(r=>[r.row_id,r]));
+const sql=await readFile('/tmp/vehicle_fluid_requirements.sql','utf8');assert.equal(sha(sql),plan.data.inputHashes.source);
+const sources=new Map(parseCopy(sql,'vehicle_fluid_requirements').map(s=>[s.id,s]));
+const mann=await readFile('/tmp/mann_filter_applications.sql','utf8');assert.equal(sha(mann),'5e34efadc60014077b55655e0c62cdcbb8b1f44d3a8aace2399e941b45003fda');
+const variants=Map.groupBy(parseCopy(mann,'mann_filter_applications'),r=>r.vehicleVariantKey),findings=[];
+for(const f of old.data.findings.filter(f=>f.reasons.includes('UNPARSED_ENGINE_APPLICATION'))){
+ const s=sources.get(f.sourceRequirementId);assert.equal(sha(s),f.sourceHash);
+ const p=pre.data.findings.find(p=>p.sourceRequirementId===s.id);
+ const anchors=p.engineApplications.map(a=>{const row=rows.get(a.rowId);assert.equal(sha(row),a.rowHash);return {...a,parsed:a.parsed??parse(row.application,s.makeNormalized)}});
+ const targetRows=variants.get(f.vehicleVariantKey),codes=[...new Set(targetRows.map(r=>r.engineCode))],powers=[...new Set(targetRows.map(r=>Number(r.hp)))];
+ const branches=anchors.flatMap(a=>(a.parsed?.branches??[]).map(b=>({...b,anchorRowId:a.rowId,anchorHash:a.rowHash})));
+ const matches=branches.filter(b=>codes.length===1&&codes[0]===b.engineCode&&powers.length===1&&b.powerHp.includes(powers[0])&&b.effectiveDates.from<=f.scope.window.intersection.from&&(!b.effectiveDates.to||b.effectiveDates.to>=f.scope.window.intersection.to));
+ findings.push({sourceRequirementId:s.id,vehicleVariantKey:f.vehicleVariantKey,sourceHash:sha(s),systemCode:s.systemCode,originalReasons:f.reasons,allAnchorsParsed:anchors.length>0&&anchors.every(a=>a.parsed),anchors,exactEnginePowerWindowBranches:matches,independentTechnicalReviewStillRequired:true,alreadyDrafted:plan.data.newRevisions.some(r=>r.sourceRequirementId===s.id),productionApplyAllowed:false});
+}
+assert.equal(findings.length,35);
+const summary={pairs:35,allAnchorsNowParsed:findings.filter(f=>f.allAnchorsParsed).length,uniqueExactEnginePowerWindow:findings.filter(f=>f.allAnchorsParsed&&f.exactEnginePowerWindowBranches.length===1).length,stillUnparsed:findings.filter(f=>!f.allAnchorsParsed).length};
+await writeFile(resolve(dir,'date-volvo-anchor-recheck-v1.json'),JSON.stringify({kind:'DATE_VOLVO_ANCHOR_RECHECK',planHash:sha(plan.raw),oldPreflightHash:sha(old.raw),anchorPreflightHash:sha(pre.raw),rawHash:sha(raw),parserHash:sha(await readFile(resolve(root,'scripts/lib/mann-volvo-literal-engine-application.mjs'),'utf8')),summary,findings,productionApplyAllowed:false,limitations:['Parser recovery is not a new draft or evidence of full fluid applicability.','Original own-fluid, capacity, drive, specification, market and protected-predecessor checks still apply.','Conflicting fuel/unsupported labels remain held; no guessed corrections.']},null,2)+'\n',{flag:'wx'});
+console.log(JSON.stringify(summary));

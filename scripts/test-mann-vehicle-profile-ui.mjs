@@ -127,6 +127,7 @@ try {
     const model = body.vehicleContext.transmissionModel;
     return route.fulfill({ json: {
       status: 'catalog_preview', selectedTransmissionType: body.transmissionType,
+      rearAirConditioningRequired: true,
       transmissionOptions: [{ type: 'automatic', label: 'АКПП' }, { type: 'manual', label: 'МКПП' }],
       transmissionComponentOptions: body.transmissionType === 'automatic' ? ['09G', 'DQ200'] : [],
       transmissionConditionsToReview: body.transmissionType === 'automatic' ? ['Для особых условий нужна проверка'] : [],
@@ -138,6 +139,11 @@ try {
   await page.getByLabel('VIN или номер кузова').fill('WVWZZZ1KZDW000001');
   await ready();
   assert.deepEqual(requests.at(-1).vehicleContext, {make:'Volkswagen',model:'Golf',generation:'VI', engineCode: 'CAXA', year: 2013 });
+  const rearAir = page.getByLabel('Есть ли задний кондиционер?');
+  assert.equal(await rearAir.inputValue(),'');
+  await rearAir.selectOption('yes');await ready();assert.equal(requests.at(-1).vehicleContext.rearAirConditioning,true);
+  await rearAir.selectOption('no');await ready();assert.equal(requests.at(-1).vehicleContext.rearAirConditioning,false);
+  await rearAir.selectOption('');await ready();assert.equal(requests.at(-1).vehicleContext.rearAirConditioning,undefined);
   await page.getByRole('button', { name: 'АКПП', exact: true }).click(); await ready();
   const model = page.getByLabel('Установленный агрегат');
   assert.equal(await model.inputValue(), '');
@@ -162,6 +168,9 @@ try {
   assert.equal(await model.inputValue(), '');
   await model.selectOption('09G'); await ready();
   assert.equal(requests.at(-1).vehicleContext.productionMonth, '2013-05');
+  await rearAir.selectOption('no');await ready();
+  assert.equal(requests.at(-1).vehicleContext.transmissionModel,'09G');
+  assert.equal(requests.at(-1).vehicleContext.productionMonth,'2013-05');
   const out = path.resolve(root, process.env.MANN_UI_TEST_OUTPUT || 'outputs/mann-profile-ui-test'); mkdirSync(out, { recursive: true });
   await page.screenshot({ path: path.join(out, 'desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -284,6 +293,7 @@ try {
     assert.equal(requests.at(-1).vehicleContext.model,modelName);
     assert.equal(requests.at(-1).vehicleContext.transmissionGearCount,undefined,'Vehicle change resets gear');
     assert.equal(requests.at(-1).vehicleContext.confirmedEquipment,undefined,'Vehicle change resets equipment');
+    assert.equal(requests.at(-1).vehicleContext.rearAirConditioning,undefined,'Vehicle change resets rear air conditioning');
     assert.equal(requests.at(-1).vehicleContext.generation,generation);
     for(const fixture of identityFixtures)assert.equal(await page.getByText(fixture.id,{exact:false}).count(),fixture.id===expected?1:0,`${modelName} ${generation}: ${fixture.id}`);
     if(index===0)await page.screenshot({path:path.join(out,'identity-mobile.png'),fullPage:true});

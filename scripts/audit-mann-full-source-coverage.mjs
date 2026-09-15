@@ -18,6 +18,78 @@ const revisions=Map.groupBy(plan.newRevisions,r=>r.sourceRequirementId),contexts
 for(const id of revisions.keys())assert.ok(sourceIds.has(id));
 // A candidate does not resolve a held source variant or a disputed date slice.
 const obligations=new Map();
+// New branch additions do not settle the rest of the original source table.
+// Keep both accepted-slice reconciliation and rejected/undecided pairs visible.
+const originalById=new Map(sources.map(s=>[s.id,s]));
+const tg81History=plan.xc60Tg81ConditionalHistory;
+for(const entry of tg81History?.pending??[]){
+ assert.ok(sourceIds.has(entry.sourceRequirementId));assert.equal(entry.publicationAllowed,false);assert.equal(entry.requiredTransmissionModel,'TG-81SC');
+ const candidates=plan.newRevisions.filter(r=>r.sourceRequirementId===entry.sourceRequirementId&&r.vehicleVariantKey===entry.vehicleVariantKey);
+ assert.equal(candidates.length,1);const candidate=candidates[0];assert.ok(tg81History.newRevisionIds.includes(candidate.id));
+ assert.equal(candidate.componentModel,'TG-81SC');assert.equal(candidate.applicabilityJson.transmissionGearCount,8);assert.equal(candidate.applyEligible,false);
+ assert.deepEqual(candidate.applicabilityJson.matchedEngineScope,entry.acceptedEngineScope);assert.deepEqual(candidate.applicabilityJson.window.intersection,entry.acceptedWindow);
+ const list=obligations.get(entry.sourceRequirementId)??[];
+ list.push({...entry,reason:'TG81_CONDITIONAL_SOURCE_AND_SERVICE_VOLUME_REVIEW',originalReason:entry.reason,candidateRevisionIds:[candidate.id],draftHash:tg81History.draftHash});obligations.set(entry.sourceRequirementId,list);
+}
+const xc60History=plan.xc60ScopedHistory;
+const xc60PowerHistory=plan.xc60PowerRestoredHistory;
+if(xc60PowerHistory){
+ assert.equal(xc60PowerHistory.publicationAllowed,false);
+ assert.equal(xc60PowerHistory.reviewTransitions.length,xc60History.review.length);
+ for(const old of xc60History.review){
+  const transition=xc60PowerHistory.reviewTransitions.find(t=>t.sourceRequirementId===old.sourceRequirementId&&t.targetId===old.targetId&&sha(t.branch)===sha(old.branch));assert.ok(transition);
+  assert.deepEqual(transition.beforeReasons,old.reasons);
+  assert.deepEqual(transition.removedReasons,old.reasons.filter(r=>r==='SOURCE_ANCHOR_POWER_CONFLICT'));
+  assert.deepEqual(transition.remainingReasons,old.reasons.filter(r=>r!=='SOURCE_ANCHOR_POWER_CONFLICT'));
+  if(transition.remainingReasons.length){
+   const current=xc60PowerHistory.review.find(t=>t.sourceRequirementId===old.sourceRequirementId&&t.targetId===old.targetId&&sha(t.branch)===sha(old.branch));assert.ok(current);assert.deepEqual(current.reasons,transition.remainingReasons);
+  }else assert.ok(xc60PowerHistory.pending.some(p=>p.sourceRequirementId===old.sourceRequirementId&&p.vehicleVariantKey===old.targetId));
+ }
+}
+for(const history of [xc60History,xc60PowerHistory].filter(Boolean))for(const entry of history.pending){
+ const original=originalById.get(entry.sourceRequirementId);assert.ok(original);assert.equal(sha(original),entry.originalSourceHash);assert.equal(entry.publicationAllowed,false);
+ const candidates=plan.newRevisions.filter(r=>r.sourceRequirementId===entry.sourceRequirementId&&r.vehicleVariantKey===entry.vehicleVariantKey);
+ assert.ok(candidates.length);assert.ok(candidates.every(r=>history.newRevisionIds.includes(r.id)));
+ const list=obligations.get(original.id)??[];
+ list.push({...entry,reason:'XC60_SOURCE_SCOPE_RECONCILIATION',originalReason:entry.reason,candidateRevisionIds:candidates.map(r=>r.id),draftHash:history.draftHash});obligations.set(original.id,list);
+}
+const currentXc60Review=xc60PowerHistory??xc60History;
+for(const entry of currentXc60Review?.review??[]){
+ assert.ok(sourceIds.has(entry.sourceRequirementId));assert.ok(entry.reasons.length);assert.equal(entry.publicationAllowed,false);
+ const list=obligations.get(entry.sourceRequirementId)??[];
+ list.push({...entry,reason:'XC60_SOURCE_BRANCH_PAIR_REVIEW',draftHash:currentXc60Review.draftHash});obligations.set(entry.sourceRequirementId,list);
+}
+// A recovered exact engine can invalidate an older engine-unspecified match.
+// Record this as unresolved evidence, without deleting the retained revision.
+const replayRaw=await readFile(resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14/mercedes-import-matcher-replay-v1.json'),'utf8');
+const replay=JSON.parse(replayRaw);
+assert.equal(replay.sourceHash,sha(sourceRaw));
+assert.equal(replay.parserHash,sha(await readFile(resolve(root,'src/lib/fluid-catalog.ts'),'utf8')));
+for(const finding of replay.findings.filter(f=>f.removedValidatedTargets.length)){
+ assert.ok(sourceIds.has(finding.sourceRequirementId));
+ assert.equal(finding.publicationAllowed,false);
+ const candidates=plan.newRevisions.filter(r=>r.sourceRequirementId===finding.sourceRequirementId&&finding.removedValidatedTargets.includes(r.vehicleVariantKey));
+ if(!candidates.length)continue;
+ const list=obligations.get(finding.sourceRequirementId)??[];
+ list.push({reason:'EXACT_ENGINE_REMATCH_LOST_PRIOR_TARGET',candidateRevisionIds:candidates.map(r=>r.id),vehicleVariantKeys:finding.removedValidatedTargets,sourceEngineCodes:finding.afterEngineCodes,replayHash:sha(replayRaw),publicationAllowed:false});
+ obligations.set(finding.sourceRequirementId,list);
+}
+const mercedesHistory=plan.mercedesGainedScopedHistory;
+for(const entry of mercedesHistory?.pending??[]){
+ const original=originalById.get(entry.sourceRequirementId);assert.ok(original);
+ assert.equal(sha(original),entry.originalSourceHash);assert.equal(entry.publicationAllowed,false);
+ const candidates=plan.newRevisions.filter(r=>r.sourceRequirementId===entry.sourceRequirementId&&r.vehicleVariantKey===entry.vehicleVariantKey);
+ assert.ok(candidates.length);assert.ok(candidates.every(r=>mercedesHistory.newRevisionIds.includes(r.id)));
+ const list=obligations.get(original.id)??[];
+ list.push({...entry,reason:'MERCEDES_GAINED_SOURCE_SCOPE_RECONCILIATION',originalReason:entry.reason,candidateRevisionIds:candidates.map(r=>r.id),draftHash:mercedesHistory.draftHash});
+ obligations.set(original.id,list);
+}
+for(const entry of mercedesHistory?.review??[]){
+ assert.ok(sourceIds.has(entry.sourceRequirementId));assert.ok(entry.reasons.length);
+ const list=obligations.get(entry.sourceRequirementId)??[];
+ list.push({reason:'MERCEDES_GAINED_PAIR_REVIEW',vehicleVariantKey:entry.vehicleVariantKey,reasons:entry.reasons,draftHash:mercedesHistory.draftHash,publicationAllowed:false});
+ obligations.set(entry.sourceRequirementId,list);
+}
 // A retained revision may be explicitly withheld; existence is not preview coverage.
 const heldRevisionIds=new Set();
 for(const revision of plan.newRevisions){

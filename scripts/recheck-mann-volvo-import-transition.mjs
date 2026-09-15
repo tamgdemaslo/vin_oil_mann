@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+import {sha,parseCopy} from './lib/mann-offline-scope.mjs';
+import {loadIdentityOverlay} from './lib/mann-source-identity-overlay.mjs';
+import {applyAuditedTablePower} from './lib/mann-table-power-overlay.mjs';
+import {volvoComponentEngineList} from './lib/mann-volvo-component-engine-list.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+const read=(p)=>readFile(resolve(dir,p),'utf8');
+const transitionRaw=await read('volvo-import-parser-transition-v1.json');assert.equal(sha(transitionRaw),'508215709dc8bef70b0fa9440efe7de821cb90d8029abb9c4b9e6e872720a28a');const transition=JSON.parse(transitionRaw);
+const baselineRaw=await read('volvo-import-parser-baseline-v1.json');assert.equal(sha(baselineRaw),transition.baselineHash);const baseline=new Map(JSON.parse(baselineRaw).requirements.map(r=>[r.id,r]));
+const planRaw=await read('plan.json');assert.equal(sha(planRaw),'6b436120dd91f8b1ca909fe1fc51556cdb1906b946c2cccc895e9cc03a18e032');const plan=JSON.parse(planRaw);
+const sql=await readFile('/tmp/vehicle_fluid_requirements.sql','utf8');assert.equal(sha(sql),'e802cacc05c23f8c21bc4d84bbf6796b15d9bb5be86e41964a028276fa4f92a0');
+const mannRaw=await readFile('/tmp/mann_filter_applications.sql','utf8');assert.equal(sha(mannRaw),'5e34efadc60014077b55655e0c62cdcbb8b1f44d3a8aace2399e941b45003fda');
+const raw=await readFile(resolve(root,'../vin-oil-mann/outputs/podbormasla-20260723/podbormasla_rows.ndjson'),'utf8');assert.equal(sha(raw),transition.rawHash);
+const rows=new Map(raw.trim().split('\n').map(JSON.parse).map(r=>[r.row_id,r]));
+const overlay=await loadIdentityOverlay(root,sql,resolve(root,'outputs/mann-identity-scoped-2026-09-14/source-identity-corrections.json'),'fbbe7b991ba80e19d62b42aaece22cb739860443256a8d935160f69ab9f90d34');
+const power=await applyAuditedTablePower(root,overlay.requirements,raw);
+const j=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),{prepareFluidCatalog}=await j.import('../src/lib/fluid-catalog.ts'),{matchFluidRequirementToMann:match}=await j.import('../src/lib/mann-fluid-matcher-v2.ts'),{mannMakeFormsForTest}=await j.import('../src/lib/mann-vehicle-resolver.ts'),{normalizeMannText}=await j.import('../src/lib/mann-catalog.ts'),{normalizeEngineCode:norm}=await j.import('../src/lib/vehicle-normalization.ts');
+assert.equal(sha(await readFile(resolve(root,'src/lib/fluid-catalog.ts'),'utf8')),transition.afterParserHash);
+const fresh=new Map(prepareFluidCatalog({rowsNdjson:raw,mannFiltersCsv:''}).requirements.map(r=>[r.id,r]));
+const forms=new Set(mannMakeFormsForTest('VOLVO')),catalog=parseCopy(mannRaw,'mann_filter_applications').filter(r=>forms.has(normalizeMannText(r.makeNormalized||r.make)));assert.equal(catalog.length,1362);
+const sources=power.requirements.filter(s=>rows.get(s.sourceRowId)?.brand_slug==='volvo');assert.equal(sources.length,787);
+const changedIds=new Set(transition.differences.map(d=>d.id)),findings=[];
+for(const source of sources){
+ const old=baseline.get(source.id),next=fresh.get(source.id),list=volvoComponentEngineList(rows.get(source.sourceRowId).application);
+ const before={...source,engineCodeNormalized:old.engineCodeNormalized,engineCodesJson:old.engineCodesJson},after={...source,engineCodeNormalized:next.engineCodeNormalized,engineCodesJson:next.engineCodesJson};
+ const oldDecision=match(before,catalog),newDecision=match(after,catalog);
+ if(!changedIds.has(source.id))assert.deepEqual(newDecision,oldDecision);
+ const valid=d=>d.targets.filter(t=>t.independentlyValidated).map(t=>t.vehicleVariantKey),oldValid=valid(oldDecision),newValid=valid(newDecision);
+ const canonical=plan.newRevisions.filter(r=>r.sourceRequirementId===source.id).map(r=>{
+  const scope=r.applicabilityJson.matchedEngineScope??[];
+  const unsupported=list.status==='EXPLICIT'?scope.filter(c=>!list.branches.some(b=>norm(b.engineCode)===norm(c))):[];
+  assert.deepEqual(unsupported,[]);
+  return {revisionId:r.id,vehicleVariantKey:r.vehicleVariantKey,engineScope:scope,explicitListChecked:list.status==='EXPLICIT',unsupported,oldValidated:oldValid.includes(r.vehicleVariantKey),newValidated:newValid.includes(r.vehicleVariantKey)};
+ });
+ findings.push({sourceRequirementId:source.id,systemCode:source.systemCode,engineFieldsChanged:changedIds.has(source.id),parseStatus:list.status,beforeEngines:before.engineCodesJson,afterEngines:after.engineCodesJson,oldDecision,newDecision,addedValidatedTargets:newValid.filter(k=>!oldValid.includes(k)),removedValidatedTargets:oldValid.filter(k=>!newValid.includes(k)),canonical,publicationAllowed:false});
+ if(findings.length%100===0)console.log(JSON.stringify({checked:findings.length,total:sources.length}));
+}
+const summary={sources:findings.length,catalogRows:catalog.length,engineFieldsChanged:findings.filter(f=>f.engineFieldsChanged).length,decisionsChanged:findings.filter(f=>sha(f.oldDecision)!==sha(f.newDecision)).length,statuses:Object.fromEntries([...Map.groupBy(findings,f=>`${f.oldDecision.status} -> ${f.newDecision.status}`)].map(([k,v])=>[k,v.length])),addedValidatedTargets:findings.reduce((n,f)=>n+f.addedValidatedTargets.length,0),removedValidatedTargets:findings.reduce((n,f)=>n+f.removedValidatedTargets.length,0),canonicalRevisions:findings.reduce((n,f)=>n+f.canonical.length,0),explicitListCanonicalChecked:findings.reduce((n,f)=>n+f.canonical.filter(c=>c.explicitListChecked).length,0),canonicalValidatedLost:findings.flatMap(f=>f.canonical.filter(c=>c.oldValidated&&!c.newValidated)).length};
+await writeFile(resolve(dir,'volvo-import-matcher-replay-v1.json'),JSON.stringify({kind:'ALL_VOLVO_PAIRED_ENGINE_IMPORT_MATCHER_REPLAY',planHash:sha(planRaw),sourceHash:sha(sql),mannHash:sha(mannRaw),transitionHash:sha(transitionRaw),powerProofHash:power.proofHash,identityOverlay:overlay.metadata,parserHash:transition.afterParserHash,matcherHash:sha(await readFile(resolve(root,'src/lib/mann-fluid-matcher-v2.ts'),'utf8')),summary,findings,productionApplyAllowed:false,limitations:['Whole-source replay retains source dates and other fields with audited identity/power correction; narrower canonical branch repairs are not applied.','Only recognized explicit component lists prove engine exclusions. Unparsed restrictions remain review.','Matcher validation does not establish installed gearbox, OEM fluid approval or publication permission.']},null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(summary));
