@@ -2471,15 +2471,16 @@ function ShopCard({ oil, idx }) {
         padding: '20px 20px 22px', display: 'flex', flexDirection: 'column', gap: 16,
         position: 'relative', height: '100%', cursor: 'pointer',
         transition: 'border-color 160ms',
-        contentVisibility: 'auto', containIntrinsicSize: '425px',
+        contentVisibility: 'auto', containIntrinsicSize: '405px',
       }} onMouseEnter={e => e.currentTarget.style.borderColor = '#C2410C'} onMouseLeave={e => e.currentTarget.style.borderColor = '#D9D3C5'}>
-        <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.16em', color: '#6B6B6B', textTransform: 'uppercase'}}>
-          {(idx+1).toString().padStart(3,'0')} · {oil.brand.toUpperCase()}
-        </div>
-
-        <div className="shop-card__included-service">
-          <span aria-hidden="true">✓</span>
-          <span>Замена масла включена</span>
+        <div className="shop-card__meta">
+          <span className="shop-card__index">
+            {(idx+1).toString().padStart(3,'0')} · {oil.brand.toUpperCase()}
+          </span>
+          <span className="shop-card__included-service">
+            <span className="shop-card__included-service-dot" aria-hidden="true" />
+            <span>Замена включена</span>
+          </span>
         </div>
 
         <div style={{height: 150, position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}>

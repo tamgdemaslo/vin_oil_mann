@@ -437,27 +437,50 @@ button:disabled {
   display: block;
 }
 
-.shop-card__included-service {
+.shop-card__meta {
   display: flex;
-  min-height: 30px;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 6px 10px;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.shop-card__index {
+  min-width: 0;
+  overflow: hidden;
+  color: #6b6b6b;
+  font-family: var(--f-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.shop-card__included-service {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 24px;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
   background: var(--rust);
   color: var(--paper);
   font-family: var(--f-sans);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.055em;
-  line-height: 1.2;
-  text-align: center;
+  letter-spacing: 0.04em;
+  line-height: 1;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.shop-card__included-service > span:first-child {
-  font-size: 13px;
-  line-height: 1;
+.shop-card__included-service-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 @media (min-width: 901px) and (max-width: 1320px) {
