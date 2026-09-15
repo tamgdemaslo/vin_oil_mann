@@ -15,6 +15,7 @@ try {
  const completeProfile={...profile,items:['ENGINE_OIL','ENGINE_COOLANT','BRAKE_FLUID'].map(systemCode=>({systemCode,specifications:['Existing'],capacities:[{nominalLiters:5}]}))};
  assert.equal((await run({...input,profile:completeProfile})).status,'complete');assert.equal(s.calls,0);
  const first=await run(input);assert.equal(first.status,'saved');assert.equal(s.request.model,'gpt-5.6-terra');assert.equal(s.request.tool_choice,'required');assert.equal(s.rows[0].status,'pending_review');assert.equal(s.rows[0].confidence,0);
+ assert.match(s.lock.sql,/SELECT pg_advisory_xact_lock/);assert.deepEqual(s.lock.values,['org1','VIN_FLUID_RESEARCH_V1']);
  assert.deepEqual((await run(input)).items,first.items);assert.equal(s.calls,1,'cached, no repeat cost');
  await run({...input,organizationId:'org2'});assert.equal(s.calls,2,'no tenant cache leak');
  s=reset();await run({...input,vehicleContext:{make:'FORD',model:'Mondeo V',year:2014}});

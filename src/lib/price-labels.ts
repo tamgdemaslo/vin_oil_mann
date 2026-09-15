@@ -21,6 +21,17 @@ export type PriceLabelRequest = {
   legalEntityId?: string;
 };
 
+export type ProductPriceLabelRequestItem = {
+  productId: string;
+  copies?: number;
+};
+
+export type ProductPriceLabelRequest = {
+  items: ProductPriceLabelRequestItem[];
+  mode: PriceLabelMode;
+  legalEntityId?: string;
+};
+
 export type PriceLabel = {
   productId: string;
   receiptItemIds: string[];
@@ -95,6 +106,29 @@ export function parsePriceLabelRequest(value: unknown): PriceLabelRequest | null
     if (!receiptItemId) return null;
     if (item.copies !== undefined && (!Number.isInteger(item.copies) || Number(item.copies) < 1)) return null;
     items.push({ receiptItemId, ...(item.copies === undefined ? {} : { copies: Number(item.copies) }) });
+  }
+
+  return {
+    items,
+    mode,
+    ...(cleanText(body.legalEntityId) ? { legalEntityId: cleanText(body.legalEntityId) } : {}),
+  };
+}
+
+export function parseProductPriceLabelRequest(value: unknown): ProductPriceLabelRequest | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  const mode = body.mode === "BY_QUANTITY" ? "BY_QUANTITY" : body.mode === "BY_PRODUCT" ? "BY_PRODUCT" : null;
+  if (!mode || !Array.isArray(body.items)) return null;
+
+  const items: ProductPriceLabelRequestItem[] = [];
+  for (const rawItem of body.items) {
+    if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) return null;
+    const item = rawItem as Record<string, unknown>;
+    const productId = cleanText(item.productId);
+    if (!productId) return null;
+    if (item.copies !== undefined && (!Number.isInteger(item.copies) || Number(item.copies) < 1)) return null;
+    items.push({ productId, ...(item.copies === undefined ? {} : { copies: Number(item.copies) }) });
   }
 
   return {
@@ -316,6 +350,130 @@ export async function preparePriceLabels(
   };
 }
 
+/** Builds price labels from explicitly selected catalog products. */
+export async function prepareProductPriceLabels(
+  context: BranchContext,
+  request: ProductPriceLabelRequest
+): Promise<PriceLabelPreview> {
+  const branchId = context.branchId;
+  const empty = (validationErrors: PriceLabelValidationError[], additions: Partial<PriceLabelPreview> = {}): PriceLabelPreview => ({
+    ok: false,
+    labels: [],
+    validationErrors,
+    warnings: [],
+    totalLabels: 0,
+    selectedProducts: 0,
+    selectedUnits: 0,
+    ...additions,
+  });
+  if (!branchId) return empty([error("missing_organization", "Для печати выберите конкретный филиал.")]);
+  if (!request.items.length) return empty([error("invalid_item", "Выберите товары, для которых нужно сформировать ценники.")]);
+  if (request.items.length > 500) return empty([error("invalid_item", "За один раз можно напечатать ценники не более чем для 500 товаров.")]);
+
+  const requestedById = new Map<string, ProductPriceLabelRequestItem>();
+  const duplicateIds = new Set<string>();
+  for (const item of request.items) {
+    if (requestedById.has(item.productId)) duplicateIds.add(item.productId);
+    requestedById.set(item.productId, item);
+  }
+  if (duplicateIds.size) return empty([error("invalid_item", "Один товар не должен повторяться в выборе несколько раз.")]);
+
+  const products = await prisma.localProduct.findMany({
+    where: { branchId, id: { in: [...requestedById.keys()] }, archived: false },
+    select: {
+      id: true,
+      name: true,
+      article: true,
+      code: true,
+      entityType: true,
+      salePriceCents: true,
+      stockBalances: { where: { branchId }, select: { quantity: true } },
+    },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+  });
+  const foundIds = new Set(products.map((product) => product.id));
+  const errors: PriceLabelValidationError[] = [];
+  for (const productId of requestedById.keys()) {
+    if (!foundIds.has(productId)) errors.push(error("invalid_item", "Товар недоступен в активном филиале.", { productId }));
+  }
+
+  const labels: PriceLabel[] = [];
+  const warnings: string[] = [];
+  let selectedUnits = 0;
+  for (const product of products) {
+    const article = cleanText(product.article) || cleanText(product.code);
+    if (!isProduct(product.entityType)) {
+      errors.push(error("not_product", "В ценники можно включать только товары.", {
+        productId: product.id,
+        productName: product.name,
+        article,
+      }));
+      continue;
+    }
+    const stockQuantity = product.stockBalances.reduce((sum, balance) => sum + numericQuantity(balance.quantity), 0);
+    selectedUnits += stockQuantity;
+    if (product.salePriceCents <= 0) {
+      errors.push(error("missing_price", "Не указана розничная цена", {
+        productId: product.id,
+        productName: product.name,
+        article,
+      }));
+      continue;
+    }
+    const override = requestedById.get(product.id)?.copies;
+    const automaticCopies = request.mode === "BY_PRODUCT"
+      ? 1
+      : Number.isInteger(stockQuantity) && stockQuantity > 0
+        ? stockQuantity
+        : 1;
+    const copies = override ?? automaticCopies;
+    if (!Number.isInteger(copies) || copies < 1 || copies > MAX_PRICE_LABELS) {
+      errors.push(error("invalid_copies", "Количество ценников должно быть целым числом не меньше 1.", {
+        productId: product.id,
+        productName: product.name,
+        article,
+      }));
+      continue;
+    }
+    if (request.mode === "BY_QUANTITY" && override === undefined && (!Number.isInteger(stockQuantity) || stockQuantity <= 0)) {
+      warnings.push(`Для «${product.name}» остаток ${stockQuantity.toLocaleString("ru-RU", { maximumFractionDigits: 3 })}; подготовлен один ценник.`);
+    }
+    labels.push({
+      productId: product.id,
+      receiptItemIds: [],
+      name: cleanText(product.name),
+      article,
+      priceCents: product.salePriceCents,
+      receivedQuantity: stockQuantity,
+      copies,
+      ...(product.name.length > 96 ? { warning: "Длинное название будет напечатано уменьшенным шрифтом." } : {}),
+    });
+  }
+
+  const organizationResult = await resolveLegalEntity({ context, receiptStoreOrganization: null, requestedId: request.legalEntityId });
+  if (organizationResult.validationError) errors.push(organizationResult.validationError);
+  const legalEntity = organizationResult.entity;
+  if (legalEntity && !legalEntity.inn) errors.push(error("missing_inn", "У связанной организации не указан ИНН."));
+
+  const totalLabels = labels.reduce((sum, label) => sum + label.copies, 0);
+  if (totalLabels > MAX_PRICE_LABELS) errors.push(error("too_many_labels", `Нельзя сформировать больше ${MAX_PRICE_LABELS.toLocaleString("ru-RU")} ценников за один раз.`));
+  warnings.push(...labels.flatMap((label) => label.warning ? [label.warning] : []));
+  return {
+    ok: errors.length === 0,
+    branch: { id: branchId, name: context.branch?.name ?? "Филиал" },
+    ...(legalEntity ? { legalEntity } : {}),
+    ...(organizationResult.options ? {
+      legalEntityOptions: organizationResult.options.map((option) => ({ id: option.id, name: option.name, inn: option.inn })),
+    } : {}),
+    labels,
+    validationErrors: errors,
+    warnings,
+    totalLabels,
+    selectedProducts: products.filter((product) => isProduct(product.entityType)).length,
+    selectedUnits,
+  };
+}
+
 export async function recordPriceLabelsGenerated(input: {
   receiptId: string;
   context: BranchContext;
@@ -343,6 +501,33 @@ export async function recordPriceLabelsGenerated(input: {
       },
       createdById: input.context.user.login,
       createdByName: input.context.user.name,
+    },
+  });
+}
+
+export async function recordProductPriceLabelsGenerated(input: {
+  context: BranchContext;
+  request: ProductPriceLabelRequest;
+  preview: PriceLabelPreview;
+}) {
+  await prisma.branchAuditLog.create({
+    data: {
+      businessGroupId: input.context.businessGroupId,
+      branchId: input.context.branchId,
+      userId: input.context.userId,
+      action: "PRODUCT_PRICE_LABELS_GENERATED",
+      entityType: "product_catalog",
+      metadata: {
+        mode: input.request.mode,
+        legalEntity: input.preview.legalEntity,
+        totalLabels: input.preview.totalLabels,
+        products: input.preview.labels.map((label) => ({
+          productId: label.productId,
+          copies: label.copies,
+          stockQuantity: label.receivedQuantity,
+          priceCents: label.priceCents,
+        })),
+      },
     },
   });
 }

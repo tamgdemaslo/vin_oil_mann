@@ -24,6 +24,7 @@ import {
   PanelLeftClose,
   Pencil,
   Plus,
+  Printer,
   RotateCcw,
   Save,
   Search,
@@ -41,6 +42,7 @@ import ProductOemBatchPanel from "@/components/products/ProductOemBatchPanel";
 import RosskoProductImportDialog from "@/components/products/RosskoProductImportDialog";
 import CreatableSearchCombobox from "@/components/products/CreatableSearchCombobox";
 import CreatableMultiCombobox from "@/components/products/CreatableMultiCombobox";
+import PriceLabelPrintDialog from "@/components/receipts/PriceLabelPrintDialog";
 import type { RosskoImportCreatedProduct } from "@/lib/rossko-product-import";
 import type { ProductOemBatchView } from "@/lib/product-oem-batches";
 import { mergeProductCrossReferences, splitProductCrossReferences } from "@/lib/product-cross-references";
@@ -1769,6 +1771,7 @@ export default function ProductsClient() {
   const [bulkActionsPosition, setBulkActionsPosition] = useState<ActionMenuPosition | null>(null);
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
   const [bulkArchiveSaving, setBulkArchiveSaving] = useState(false);
+  const [priceLabelProducts, setPriceLabelProducts] = useState<ProductRow[] | null>(null);
   const [publicationDialog, setPublicationDialog] = useState<StorefrontPublicationDialog | null>(null);
   const [storefrontStatus, setStorefrontStatus] = useState<StorefrontPublicationStatus | null>(null);
   const [storefrontStatusLoading, setStorefrontStatusLoading] = useState(false);
@@ -2956,6 +2959,31 @@ export default function ProductsClient() {
     setAllFilteredProductsSelected(false);
   }
 
+  function openPriceLabelsForProducts(products: ProductRow[]) {
+    const printable = products.filter((product) => product.entityType === "product" && !product.archived);
+    setActiveActionMenuId(null);
+    setBulkActionsOpen(false);
+    if (!printable.length) {
+      setToast({ message: "В выборе нет активных товарных позиций для печати ценников." });
+      return;
+    }
+    if (printable.length > 500) {
+      setToast({ message: "За один раз можно выбрать не более 500 товаров для печати ценников." });
+      return;
+    }
+    setPriceLabelProducts(printable);
+  }
+
+  function openPriceLabelsForSelection() {
+    if (allFilteredProductsSelected) {
+      setBulkActionsOpen(false);
+      setToast({ message: "Для печати ценников выберите конкретные строки, а не всю отфильтрованную выборку." });
+      return;
+    }
+    const selected = new Set(selectedProductIds);
+    openPriceLabelsForProducts(rows.filter((row) => selected.has(row.id)));
+  }
+
   function requestBulkArchive() {
     if (!selectedProductsCount) return;
     setBulkActionsOpen(false);
@@ -3696,6 +3724,12 @@ export default function ProductsClient() {
           <Copy aria-hidden className="eco-icon" />
           <span>Создать похожий</span>
         </button>
+        {!activeActionRow.archived && activeActionRow.entityType === "product" ? (
+          <button type="button" role="menuitem" onClick={() => openPriceLabelsForProducts([activeActionRow])}>
+            <Printer aria-hidden className="eco-icon" />
+            <span>Печать ценника</span>
+          </button>
+        ) : null}
         {canCopyProducts ? (
           <button
             type="button"
@@ -3801,6 +3835,10 @@ export default function ProductsClient() {
         <button type="button" role="menuitem" onClick={exportSelectedProducts}>
           <FileSpreadsheet aria-hidden className="eco-icon" />
           <span><b>Экспортировать</b><small>Скачать выбранные карточки в Excel</small></span>
+        </button>
+        <button type="button" role="menuitem" onClick={openPriceLabelsForSelection}>
+          <Printer aria-hidden className="eco-icon" />
+          <span><b>Печать ценников</b><small>По наименованиям или по текущему остатку</small></span>
         </button>
         <div className="eco-product-actions-separator" role="separator" />
         <button type="button" role="menuitem" className="is-destructive" onClick={requestBulkArchive}>
@@ -6009,6 +6047,22 @@ export default function ProductsClient() {
 
       {renderRosskoPreviewModal()}
 
+      {priceLabelProducts ? (
+        <PriceLabelPrintDialog
+          source="products"
+          positions={priceLabelProducts.map((product) => ({
+            id: product.id,
+            productId: product.id,
+            entityType: product.entityType,
+            name: product.name,
+            article: product.article,
+            code: product.code,
+            quantity: product.totalQuantity,
+          }))}
+          onClose={() => setPriceLabelProducts(null)}
+        />
+      ) : null}
+
       {renderImportWizard()}
 
       <RosskoProductImportDialog
@@ -6358,6 +6412,10 @@ export default function ProductsClient() {
                       Выбрать все {productCountText(meta?.total ?? 0)}
                     </button>
                   ) : null}
+                  <button type="button" className="eco-btn" onClick={openPriceLabelsForSelection}>
+                    <Printer aria-hidden className="eco-icon" />
+                    Печать ценников
+                  </button>
                   <button
                     ref={bulkActionsButtonRef}
                     type="button"

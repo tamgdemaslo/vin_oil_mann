@@ -16,8 +16,9 @@ type ReceiptPosition = {
 };
 
 type Props = {
-  receiptId: string;
-  receiptNumber: string;
+  source?: "receipt" | "products";
+  receiptId?: string;
+  receiptNumber?: string;
   positions: ReceiptPosition[];
   onClose: () => void;
 };
@@ -38,7 +39,8 @@ function firstLabelPage(labels: PriceLabel[]) {
   return labels.flatMap((label) => Array.from({ length: label.copies }, () => label));
 }
 
-export default function PriceLabelPrintDialog({ receiptId, receiptNumber, positions, onClose }: Props) {
+export default function PriceLabelPrintDialog({ source = "receipt", receiptId = "", receiptNumber = "", positions, onClose }: Props) {
+  const isProductCatalog = source === "products";
   const printablePositions = useMemo(
     () => positions.filter((position) => Boolean(position.productId) && position.entityType === "product"),
     [positions]
@@ -55,20 +57,20 @@ export default function PriceLabelPrintDialog({ receiptId, receiptNumber, positi
 
   const requestBody = useMemo(() => {
     const byId = new Map(printablePositions.map((position) => [position.id, position]));
-    const items = selectedIds
-      .map((receiptItemId) => byId.get(receiptItemId))
+    const items: Array<{ receiptItemId?: string; productId?: string; copies?: number }> = selectedIds
+      .map((positionId) => byId.get(positionId))
       .filter((position): position is ReceiptPosition => Boolean(position))
-      .map((position) => ({ receiptItemId: position.id }));
+      .map((position) => isProductCatalog ? { productId: position.productId! } : { receiptItemId: position.id });
 
     for (const [productId, copies] of Object.entries(copiesByProduct)) {
       const source = printablePositions.find((position) => position.productId === productId && selectedIds.includes(position.id));
       if (source) {
-        const target = items.find((item) => item.receiptItemId === source.id);
+        const target = items.find((item) => isProductCatalog ? item.productId === source.productId : item.receiptItemId === source.id);
         if (target) Object.assign(target, { copies });
       }
     }
     return { items, mode, ...(legalEntityId ? { legalEntityId } : {}) };
-  }, [copiesByProduct, legalEntityId, mode, printablePositions, selectedIds]);
+  }, [copiesByProduct, isProductCatalog, legalEntityId, mode, printablePositions, selectedIds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +78,10 @@ export default function PriceLabelPrintDialog({ receiptId, receiptNumber, positi
       setPreviewLoading(true);
       setRequestError(null);
       try {
-        const response = await fetch(`/api/warehouse/receipts/${encodeURIComponent(receiptId)}/price-labels/preview`, {
+        const previewUrl = isProductCatalog
+          ? "/api/products/price-labels/preview"
+          : `/api/warehouse/receipts/${encodeURIComponent(receiptId)}/price-labels/preview`;
+        const response = await fetch(previewUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestBody),
@@ -100,7 +105,7 @@ export default function PriceLabelPrintDialog({ receiptId, receiptNumber, positi
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [receiptId, requestBody]);
+  }, [isProductCatalog, receiptId, requestBody]);
 
   const pages = useMemo(() => firstLabelPage(preview?.labels ?? []), [preview?.labels]);
   const activePage = pages[pageIndex] ?? pages[0] ?? null;
@@ -130,7 +135,10 @@ export default function PriceLabelPrintDialog({ receiptId, receiptNumber, positi
     setPdfBusy(true);
     setRequestError(null);
     try {
-      const response = await fetch(`/api/warehouse/receipts/${encodeURIComponent(receiptId)}/price-labels/pdf`, {
+      const pdfUrl = isProductCatalog
+        ? "/api/products/price-labels/pdf"
+        : `/api/warehouse/receipts/${encodeURIComponent(receiptId)}/price-labels/pdf`;
+      const response = await fetch(pdfUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -143,7 +151,7 @@ export default function PriceLabelPrintDialog({ receiptId, receiptNumber, positi
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `price-labels-${receiptNumber || "receipt"}.pdf`;
+      link.download = `price-labels-${isProductCatalog ? "products" : receiptNumber || "receipt"}.pdf`;
       link.target = "_blank";
       document.body.appendChild(link);
       link.click();
@@ -162,7 +170,7 @@ export default function PriceLabelPrintDialog({ receiptId, receiptNumber, positi
       <section className="eco-price-label-dialog">
         <header className="eco-price-label-dialog__header">
           <div>
-            <span>{receiptNumber}</span>
+            <span>{isProductCatalog ? "Товары" : receiptNumber}</span>
             <h2 id="price-label-dialog-title">Печать ценников</h2>
             <p>PDF: один ценник на страницу 50 × 30 мм. Печатайте в масштабе 100%.</p>
           </div>
@@ -194,17 +202,17 @@ export default function PriceLabelPrintDialog({ receiptId, receiptNumber, positi
             </label>
             <label className={mode === "BY_QUANTITY" ? "is-active" : ""}>
               <input type="radio" name="price-label-mode" checked={mode === "BY_QUANTITY"} onChange={() => { setMode("BY_QUANTITY"); setCopiesByProduct({}); }} />
-              <span><b>По количеству товара</b><small>Количество ценников соответствует принятым единицам.</small></span>
+              <span><b>По количеству товара</b><small>Количество ценников соответствует {isProductCatalog ? "текущему остатку" : "принятым единицам"}.</small></span>
             </label>
           </section>
 
           <section className="eco-price-label-selection">
             <div className="eco-price-label-section-head">
-              <strong>Позиции приёмки</strong>
+              <strong>{isProductCatalog ? "Выбранные товары" : "Позиции приёмки"}</strong>
               <button type="button" onClick={setAllSelected}>{allSelected ? "Снять выделение" : "Выбрать всё"}</button>
             </div>
             <div className="eco-price-label-selection-list">
-              {printablePositions.length === 0 ? <div className="eco-price-label-selection-empty">В этой приёмке нет товарных позиций для печати.</div> : printablePositions.map((position) => {
+              {printablePositions.length === 0 ? <div className="eco-price-label-selection-empty">{isProductCatalog ? "В выборе нет товаров для печати." : "В этой приёмке нет товарных позиций для печати."}</div> : printablePositions.map((position) => {
                 const selected = selectedIds.includes(position.id);
                 return (
                   <label key={position.id} className={selected ? "is-selected" : ""}>
@@ -220,7 +228,7 @@ export default function PriceLabelPrintDialog({ receiptId, receiptNumber, positi
           {preview?.labels.length ? (
             <section className="eco-price-label-table-wrap">
               <table className="eco-price-label-table">
-                <thead><tr><th>Товар</th><th>Артикул</th><th>Цена</th><th>Принято</th><th>Ценников</th></tr></thead>
+                <thead><tr><th>Товар</th><th>Артикул</th><th>Цена</th><th>{isProductCatalog ? "Остаток" : "Принято"}</th><th>Ценников</th></tr></thead>
                 <tbody>{preview.labels.map((label) => (
                   <tr key={label.productId}>
                     <td>{label.name}</td><td>{label.article || "—"}</td><td>{formatPrice(label.priceCents)}</td><td>{formatQuantity(label.receivedQuantity)}</td>

@@ -66,7 +66,8 @@ export async function researchMissingMannFluids(input: { organizationId: string;
   const now = new Date();
   // A DB-backed claim survives parallel requests and multiple application replicas.
   const claim = await prisma.$transaction(async tx => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${input.organizationId}), hashtext(${FACT}))`;
+    // The lock returns PostgreSQL void, which $queryRaw cannot deserialize.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.organizationId}), hashtext(${FACT}))`;
     const previous = await tx.aIAgentTechnicalEvidence.findFirst({ where: { organizationId: input.organizationId, vehicleKey, aggregate, factType: FACT, invalidatedAt: null, validUntil: { gt: now } }, orderBy: { createdAt: "desc" } });
     if (previous) return { previous };
     const count = await tx.aIAgentTechnicalEvidence.count({ where: { organizationId: input.organizationId, factType: FACT, createdAt: { gte: new Date(now.getTime() - 3600_000) } } });

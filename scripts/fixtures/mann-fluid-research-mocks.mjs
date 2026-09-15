@@ -3,7 +3,11 @@ export const prisma = {
     findMany: async ({where}) => globalThis.fluidResearchTest.applications.filter(row => where.vehicleVariantKey.in.includes(row.vehicleVariantKey)),
   },
   $transaction: async fn => fn(prisma),
-  $queryRaw: async () => [],
+  $queryRaw: async () => { throw new Error("Failed to deserialize column of type 'void'"); },
+  $executeRaw: async (sql, ...values) => {
+    globalThis.fluidResearchTest.lock = {sql: sql.join('?'), values};
+    return 1;
+  },
   aIAgentTechnicalEvidence: {
     findFirst: async ({where}) => globalThis.fluidResearchTest.rows.find(r=>r.organizationId===where.organizationId&&r.vehicleKey===where.vehicleKey&&r.aggregate===where.aggregate&&r.validUntil>where.validUntil.gt),
     count: async () => globalThis.fluidResearchTest.limit ? 20 : 0,
