@@ -8,7 +8,8 @@ import {sha} from './lib/mann-offline-scope.mjs';
 import {localStagingLifecycle} from './lib/mann-local-staging-lifecycle.mjs';
 import {localSupersession} from './lib/mann-local-supersession.mjs';
 import {auditCombinedProfiles} from './lib/mann-combined-profile-audit.mjs';
-const rearAir=process.argv[2]==='--route-read-v9';
+const drive=process.argv[2]==='--route-read-v10';
+const rearAir=process.argv[2]==='--route-read-v9'||drive;
 const complete=process.argv[2]==='--route-read-v8'||rearAir;
 const expanded=process.argv[2]==='--route-read-v7'||complete;
 const routeRead=process.argv[2]==='--route-read'||expanded;
@@ -20,10 +21,10 @@ const combined=process.argv[2]==='--combined-profile'||precedence;
 const withSupersession=process.argv[2]==='--supersession'||combined;
 assert.ok(process.argv.length===2||(process.argv.length===3&&withSupersession));
 const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14'),snapshot=resolve(root,'outputs/mann-live-audit-1789415211923');
-const payloadRaw=await readFile(resolve(dir,rearAir?'current-staging-payload-v9.json':complete?'current-staging-payload-v8.json':expanded?'current-staging-payload-v7.json':'current-staging-payload-v6.json'),'utf8'),payload=JSON.parse(payloadRaw);
-assert.equal(sha(payloadRaw),rearAir?'632591070521adeaa0c3a93818fe787bda52a551ca96042c27326f25ee5d6452':complete?'8b718f46a200c20e38c2196ca07d3423a549c4a5601a39ab399640b78a70e710':expanded?'fdc807b615f6992ed77c0975f129f7f33c716b5848d5b55acb19c867bc74514e':'5e03354b16c41c324bb636b26a5ec7663be1bfa5ca64a5f8454592b481a64c77');
-const parents=JSON.parse(await readFile(resolve(snapshot,rearAir?'canonical-parent-drafts-v6.json':complete?'canonical-parent-drafts-v5.json':expanded?'canonical-parent-drafts-v4.json':'canonical-parent-drafts-v3.json'),'utf8'));assert.equal(parents.payloadHash,sha(payloadRaw));
-const lifecycle=localStagingLifecycle(payload,parents);assert.deepEqual(lifecycle.counts,[217,11,rearAir?2018:complete?2007:expanded?1992:1971]);
+const payloadRaw=await readFile(resolve(dir,drive?'current-staging-payload-v10.json':rearAir?'current-staging-payload-v9.json':complete?'current-staging-payload-v8.json':expanded?'current-staging-payload-v7.json':'current-staging-payload-v6.json'),'utf8'),payload=JSON.parse(payloadRaw);
+assert.equal(sha(payloadRaw),drive?'4358ce77050af9b2644b7ad12fb6905ac3c6f50a0cd909c095ec0a2de9aa15fd':rearAir?'632591070521adeaa0c3a93818fe787bda52a551ca96042c27326f25ee5d6452':complete?'8b718f46a200c20e38c2196ca07d3423a549c4a5601a39ab399640b78a70e710':expanded?'fdc807b615f6992ed77c0975f129f7f33c716b5848d5b55acb19c867bc74514e':'5e03354b16c41c324bb636b26a5ec7663be1bfa5ca64a5f8454592b481a64c77');
+const parents=JSON.parse(await readFile(resolve(snapshot,drive?'canonical-parent-drafts-v7.json':rearAir?'canonical-parent-drafts-v6.json':complete?'canonical-parent-drafts-v5.json':expanded?'canonical-parent-drafts-v4.json':'canonical-parent-drafts-v3.json'),'utf8'));assert.equal(parents.payloadHash,sha(payloadRaw));
+const lifecycle=localStagingLifecycle(payload,parents);assert.deepEqual(lifecycle.counts,[drive?218:217,11,drive?2025:rearAir?2018:complete?2007:expanded?1992:1971]);
 const temp=await mkdtemp(resolve(tmpdir(),'mann-lifecycle-pg-'));
 if(runtimeRead){
  assert.equal(globalThis.prisma,undefined,'No pre-existing database client allowed in fixture');
@@ -66,7 +67,7 @@ try{
    combinedProof=await auditCombinedProfiles(root,persisted,payload,runtimeRead,routeRead,complete);
    combinedProof.profileRuntimeHash=sha(await readFile(resolve(root,'src/lib/mann-unified-technical-profile.ts'),'utf8'));
    if(sourceDate){assert.equal(combinedProof.contextsWithDifferences,0);combinedProof.sourceDateHelperHash=sha(await readFile(resolve(root,'src/lib/mann-source-date-exclusions.ts'),'utf8'));}
-await writeFile(resolve(dir,rearAir?'current-persisted-route-read-v9.json':complete?'current-persisted-route-read-v8.json':expanded?'current-persisted-route-read-v7.json':routeRead?'current-persisted-route-read-v1.json':runtimeRead?'current-persisted-runtime-read-v1.json':sourceDate?'current-persisted-combined-profile-v4.json':transmissionPrecedence?'current-persisted-combined-profile-v3.json':precedence?'current-persisted-combined-profile-v2.json':'current-persisted-combined-profile-v1.json'),JSON.stringify(combinedProof,null,2)+'\n',{flag:'wx'});
+await writeFile(resolve(dir,drive?'current-persisted-route-read-v10.json':rearAir?'current-persisted-route-read-v9.json':complete?'current-persisted-route-read-v8.json':expanded?'current-persisted-route-read-v7.json':routeRead?'current-persisted-route-read-v1.json':runtimeRead?'current-persisted-runtime-read-v1.json':sourceDate?'current-persisted-combined-profile-v4.json':transmissionPrecedence?'current-persisted-combined-profile-v3.json':precedence?'current-persisted-combined-profile-v2.json':'current-persisted-combined-profile-v1.json'),JSON.stringify(combinedProof,null,2)+'\n',{flag:'wx'});
   }
   const one=payload.existingActions.find(a=>a.action==='REPLACE_WITH_PREVIEW').successorId;
   pg(`UPDATE mann_technical_association_revisions SET provenance_json=provenance_json||'{"supersessionTamper":true}'::jsonb WHERE id=${q(one)}#>>'{}';`);
@@ -77,7 +78,7 @@ await writeFile(resolve(dir,rearAir?'current-persisted-route-read-v9.json':compl
   supersessionProof={replacements:replacement.count,journaledBeforeAfterRows:614,repeatRejected:true,changedSuccessorRollbackRejected:true,fullSnapshotRestored:true};
  }
  const rows=JSON.parse(pg(`SELECT jsonb_agg(to_jsonb(r)||jsonb_build_object('run',to_jsonb(m))) FROM mann_technical_association_revisions r JOIN mann_technical_materialization_runs m ON r.run_id=m.id WHERE r.id IN (SELECT jsonb_array_elements_text(${q(payload.revisions.map(r=>r.originalRevision.id))}));`)).map(r=>({...Object.fromEntries(Object.entries(r).filter(([k])=>k!=='run').map(([k,v])=>[camel(k),v])),run:Object.fromEntries(Object.entries(r.run).map(([k,v])=>[camel(k),v])),reviewConfirmed:false}));
- assert.equal(rows.length,rearAir?2018:complete?2007:expanded?1992:1971);
+ assert.equal(rows.length,drive?2025:rearAir?2018:complete?2007:expanded?1992:1971);
  // Match Prisma's Date representation after reading JSON from psql.
  for(const row of rows){row.createdAt=new Date(row.createdAt);assert.ok(Number.isFinite(row.createdAt.getTime()));}
  const j=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),{buildMannUnifiedTechnicalProfile:profile}=await j.import('../src/lib/mann-unified-technical-profile.ts');
@@ -104,10 +105,10 @@ await writeFile(resolve(dir,rearAir?'current-persisted-route-read-v9.json':compl
  pg(`UPDATE mann_technical_association_revisions r SET provenance_json=j.row_image->'provenance_json' FROM mann_local_import_journal j WHERE j.table_name='mann_technical_association_revisions' AND r.id=j.row_key;`);
  assert.deepEqual(state(),after);
  pg(lifecycle.rollback);assert.deepEqual(state(),before);
- const report={kind:'LOCAL_CURRENT_STAGING_COMMIT_PROFILE_ROLLBACK',payloadHash:sha(payloadRaw),counts:lifecycle.counts,profileVariants:rearAir?542:expanded?541:529,visibleWithoutVehicleContext:visibleProfiles,itemsWithoutVehicleContext:items,contextCases,visibleContextCases,contextVisibleVariants:contextVisibleVariants.size,duplicateImportRejected:true,changedRowRollbackRejected:true,fullSnapshotRestored:true,productionApplyAllowed:false,limitations:['Local fixture only; completed import runs are not technical signoff.','Contexts are synthetic applicability probes, not decoded real VINs; equipment confirmation cases are not exhaustive.','Scoped items still need exact vehicle/equipment context.','Existing replacement actions not executed; no production or VIN HTTP proof.']};
+ const report={kind:'LOCAL_CURRENT_STAGING_COMMIT_PROFILE_ROLLBACK',payloadHash:sha(payloadRaw),counts:lifecycle.counts,profileVariants:drive?543:rearAir?542:expanded?541:529,visibleWithoutVehicleContext:visibleProfiles,itemsWithoutVehicleContext:items,contextCases,visibleContextCases,contextVisibleVariants:contextVisibleVariants.size,duplicateImportRejected:true,changedRowRollbackRejected:true,fullSnapshotRestored:true,productionApplyAllowed:false,limitations:['Local fixture only; completed import runs are not technical signoff.','Contexts are synthetic applicability probes, not decoded real VINs; equipment confirmation cases are not exhaustive.','Scoped items still need exact vehicle/equipment context.','Existing replacement actions not executed; no production or VIN HTTP proof.']};
  if(supersessionProof){report.supersessionProof=supersessionProof;report.limitations[3]='307 explicit replacement actions tested and rolled back locally; remaining review/protected actions unchanged; no production or VIN HTTP proof.';}
  if(combinedProof)report.combinedProfile={uniqueContexts:combinedProof.uniqueContexts,visibleLegacyRevisions:combinedProof.visibleLegacyRevisions,contextsWithDifferences:combinedProof.contextsWithDifferences};
  if(runtimeRead)report.actualDatabaseProfilesChecked=combinedProof.actualDatabaseProfilesChecked;
  if(routeRead)report.actualRouteProfilesChecked=combinedProof.actualRouteProfilesChecked;
- await writeFile(resolve(dir,rearAir?'current-staging-lifecycle-route-read-v9.json':complete?'current-staging-lifecycle-route-read-v8.json':expanded?'current-staging-lifecycle-route-read-v7.json':routeRead?'current-staging-lifecycle-route-read-v1.json':runtimeRead?'current-staging-lifecycle-runtime-read-v1.json':sourceDate?'current-staging-lifecycle-combined-v4.json':transmissionPrecedence?'current-staging-lifecycle-combined-v3.json':precedence?'current-staging-lifecycle-combined-v2.json':combined?'current-staging-lifecycle-combined-v1.json':withSupersession?'current-staging-lifecycle-supersession-v1.json':'current-staging-lifecycle-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(report));
+ await writeFile(resolve(dir,drive?'current-staging-lifecycle-route-read-v10.json':rearAir?'current-staging-lifecycle-route-read-v9.json':complete?'current-staging-lifecycle-route-read-v8.json':expanded?'current-staging-lifecycle-route-read-v7.json':routeRead?'current-staging-lifecycle-route-read-v1.json':runtimeRead?'current-staging-lifecycle-runtime-read-v1.json':sourceDate?'current-staging-lifecycle-combined-v4.json':transmissionPrecedence?'current-staging-lifecycle-combined-v3.json':precedence?'current-staging-lifecycle-combined-v2.json':combined?'current-staging-lifecycle-combined-v1.json':withSupersession?'current-staging-lifecycle-supersession-v1.json':'current-staging-lifecycle-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(report));
 }finally{try{if(runtimeRead&&globalThis.prisma)await globalThis.prisma.$disconnect();}finally{if(started)execFileSync('/opt/homebrew/bin/pg_ctl',['-D',resolve(temp,'data'),'-m','fast','-w','stop'],{stdio:'pipe'});}}

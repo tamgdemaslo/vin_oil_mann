@@ -3,6 +3,8 @@ import { mannEquipmentScopeMatches, type MannEquipmentConfirmation } from "@/lib
 import { isVehicleDestinationMarket, type VehicleDestinationMarket } from "@/lib/vehicle-market";
 
 export type MannTechnicalVehicleContext = {
+  /** Explicit whole-vehicle drive confirmation, not inferred component metadata. */
+  confirmedDrive?: "2WD" | "4WD";
   /** Explicit equipment confirmation; absence of an answer is not false. */
   rearAirConditioning?: boolean;
   make?: string;
@@ -39,6 +41,10 @@ function month(value: unknown): number | undefined {
 /** New scoped associations require actual vehicle context, not just a MANN key. */
 export function mannTechnicalScopeMatches(value: unknown, context?: MannTechnicalVehicleContext): boolean {
   const data = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  if ("requiredVehicleDrive" in data) {
+    if (data.requiredVehicleDrive !== "2WD" && data.requiredVehicleDrive !== "4WD") return false;
+    if (context?.confirmedDrive !== data.requiredVehicleDrive) return false;
+  }
   // Match exact supported destination markets; never infer country/region membership.
   // Unknown or malformed requirements must not become unrestricted records.
   if ("requiredMarket" in data) {

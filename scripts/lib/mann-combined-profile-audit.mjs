@@ -32,13 +32,19 @@ export async function auditCombinedProfiles(root,persisted,payload,runtimeRead=f
   const rearAirConditioning=condition.kind==='rearAirConditioning'?condition.value==='present':undefined;
   probes.push({originalRevision:{...r,applicabilityJson:{...r.applicabilityJson,...branch.applicabilityJson,...(engine?{matchedEngineScope:[engine]}:{}),...(transmissionType?{transmissionType}:{}),...(rearAirConditioning!==undefined?{rearAirConditioning}:{})}}});
  }
- for(const {originalRevision:r} of probes){
+ for(const {originalRevision:r} of payload.revisions)if(r.applicabilityJson.requiredVehicleDrive){
+  probes.push({originalRevision:r,driveProbe:undefined},{originalRevision:r,driveProbe:r.applicabilityJson.requiredVehicleDrive==='2WD'?'4WD':'2WD'});
+ }
+ for(const probe of probes){
+  const r=probe.originalRevision;
   const a=r.applicabilityJson;
   const context={...a.sourceVehicleScope,engineCode:a.matchedEngineScope?.[0],productionMonth:a.window?.intersection?.from,confirmedMarket:a.requiredMarket,transmissionGearCount:a.transmissionGearCount??a.requiredTransmission?.gearCount,transmissionModel:a.componentModel,rearAirConditioning:a.rearAirConditioning};
+  context.confirmedDrive=Object.hasOwn(probe,'driveProbe')?probe.driveProbe:a.requiredVehicleDrive;
   const type=a.requiredTransmission?.type??a.transmissionType,key=sha({variant:r.vehicleVariantKey,context,type});
   if(seen.has(key))continue;seen.add(key);cases++;
   const rows=byVariant.get(r.vehicleVariantKey)??[];
   const all=profile(rows,type,context),newOnly=profile(rows.filter(x=>currentIds.has(x.id)),type,context);
+  if(a.requiredVehicleDrive)assert.equal(all.items.some(i=>i.revisionId===r.id),context.confirmedDrive===a.requiredVehicleDrive,'Persisted drive scope must reject missing/wrong confirmation');
   if(r.technicalDataJson.capacityBranches?.some(b=>b.condition.kind==='rearAirConditioning')){
    const item=all.items.find(i=>i.revisionId===r.id);assert.ok(item,'Persisted rear-AC scoped record missing');
    assert.equal(all.rearAirConditioningRequired,true);

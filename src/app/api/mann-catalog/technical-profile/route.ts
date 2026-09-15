@@ -10,6 +10,7 @@ const bodySchema = z.object({
   transmissionType: z.enum(MANN_TRANSMISSION_TYPES).optional(),
   vehicleContext: z.object({
     rearAirConditioning: z.boolean().optional(),
+    confirmedDrive: z.enum(["2WD", "4WD"]).optional(),
     make: z.string().trim().min(1).max(80).optional(),
     model: z.string().trim().min(1).max(160).optional(),
     generation: z.string().trim().min(1).max(80).optional(),

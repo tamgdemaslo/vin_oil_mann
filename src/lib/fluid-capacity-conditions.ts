@@ -38,6 +38,7 @@ export function parseConditionalFluidCapacities(value: unknown, systemCode?: str
     const transmission = qualifier.match(/^(?:(?:для\s+моделей\s+)?[сc]|для)\s+(АКПП|МКПП|CVT)$/iu);
     const drive = qualifier.match(/^для\s+(2WD|4WD|AWD|FWD|RWD)$/iu);
     const engine = qualifier.match(/^для\s+([A-Z0-9][A-Z0-9-]{2,20})$/iu);
+    const labeledEngine = qualifier.match(/^для ([0-9]\.[0-9] [DT][2-6]) \(([BD][0-9]{3,4}[TS][0-9]*)\)$/u);
     const compound = qualifier.match(/^для\s+([A-Z0-9][A-Z0-9-]{2,20})\s+с\s+(МКПП|АКПП|РКПП|CVT)$/iu);
     const rearAir = qualifier.match(/^для моделей (без заднего кондиционера|с задним кондиционером)$/u);
     if (rearAir) condition = {kind:"rearAirConditioning",value:rearAir[1].startsWith("без")?"absent":"present"};
@@ -48,7 +49,12 @@ export function parseConditionalFluidCapacities(value: unknown, systemCode?: str
       condition = {kind:"engineTransmission",value:`${engineCode}:${transmissionType}`,engineCode,transmissionType};
     } else if (transmission) condition = { kind: "transmission", value: transmission[1].toUpperCase() === "АКПП" ? "automatic" : transmission[1].toUpperCase() === "CVT" ? "cvt" : "manual" };
     else if (drive) condition = { kind: "drive", value: drive[1].toUpperCase() as "2WD" | "4WD" | "AWD" | "FWD" | "RWD" };
-    else if (engine && /\d/.test(engine[1]) && allowedEngines.has(normalizeEngineCode(engine[1]))) {
+    else if (labeledEngine && allowedEngines.has(normalizeEngineCode(labeledEngine[2]))) {
+      // Complete source label and explicit code are required; never accept a
+      // prefix while dropping gearbox, date, hybrid or other suffix clauses.
+      if (labeledEngine[1].includes(" D") !== labeledEngine[2].startsWith("D")) return review("CONFLICTING_ENGINE_LABEL");
+      condition = { kind: "engine", value: normalizeEngineCode(labeledEngine[2])! };
+    } else if (engine && /\d/.test(engine[1]) && allowedEngines.has(normalizeEngineCode(engine[1]))) {
       const code = normalizeEngineCode(engine[1])!;
       if (/^(?:2WD|4WD|AWD|FWD|RWD|4X4|4X2)$/.test(code)) return review("DRIVE_LABEL_IS_NOT_ENGINE");
       condition = { kind: "engine", value: code };

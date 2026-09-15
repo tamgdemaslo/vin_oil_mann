@@ -3,7 +3,7 @@ import type { MannTechnicalVehicleContext } from "@/lib/mann-technical-applicabi
 import { mergeVehicleMarketEvidence } from "@/lib/vehicle-market";
 import { consistentVehicleProductionMonth } from "@/lib/vehicle-production-month";
 
-type Details = Pick<MannTechnicalVehicleContext, "transmissionModel" | "transmissionGearCount" | "productionMonth" | "confirmedEquipment" | "rearAirConditioning">;
+type Details = Pick<MannTechnicalVehicleContext, "transmissionModel" | "transmissionGearCount" | "productionMonth" | "confirmedEquipment" | "rearAirConditioning" | "confirmedDrive">;
 
 /** Build each request afresh from its selected vehicle; never reuse market state. */
 export function mannTechnicalContextFromVehicle(vehicle: NormalizedVehicleIdentity, details: Details = {}): MannTechnicalVehicleContext {
@@ -18,6 +18,7 @@ export function mannTechnicalContextFromVehicle(vehicle: NormalizedVehicleIdenti
     productionMonth: details.productionMonth ?? consistentVehicleProductionMonth([vehicle.productionMonth], vehicle.year),
     confirmedEquipment: details.confirmedEquipment,
     rearAirConditioning: details.rearAirConditioning,
+    confirmedDrive: details.confirmedDrive,
     // Old cached/manual identities without complete market evidence stay unknown.
     // Recompute from labels; do not trust the cached derived confirmation flag.
     confirmedMarket: vehicle.marketEvidence?.values?.length

@@ -128,6 +128,7 @@ try {
     return route.fulfill({ json: {
       status: 'catalog_preview', selectedTransmissionType: body.transmissionType,
       rearAirConditioningRequired: true,
+      vehicleDriveRequired: true,
       transmissionOptions: [{ type: 'automatic', label: 'АКПП' }, { type: 'manual', label: 'МКПП' }],
       transmissionComponentOptions: body.transmissionType === 'automatic' ? ['09G', 'DQ200'] : [],
       transmissionConditionsToReview: body.transmissionType === 'automatic' ? ['Для особых условий нужна проверка'] : [],
@@ -140,6 +141,12 @@ try {
   await ready();
   assert.deepEqual(requests.at(-1).vehicleContext, {make:'Volkswagen',model:'Golf',generation:'VI', engineCode: 'CAXA', year: 2013 });
   const rearAir = page.getByLabel('Есть ли задний кондиционер?');
+  const vehicleDrive = page.getByLabel('Какие колёса ведущие?');
+  assert.equal(await vehicleDrive.inputValue(),'');
+  await vehicleDrive.selectOption('2WD');await ready();assert.equal(requests.at(-1).vehicleContext.confirmedDrive,'2WD');
+  await vehicleDrive.selectOption('4WD');await ready();assert.equal(requests.at(-1).vehicleContext.confirmedDrive,'4WD');
+  await vehicleDrive.selectOption('');await ready();assert.equal(requests.at(-1).vehicleContext.confirmedDrive,undefined);
+  await vehicleDrive.selectOption('2WD');await ready();
   assert.equal(await rearAir.inputValue(),'');
   await rearAir.selectOption('yes');await ready();assert.equal(requests.at(-1).vehicleContext.rearAirConditioning,true);
   await rearAir.selectOption('no');await ready();assert.equal(requests.at(-1).vehicleContext.rearAirConditioning,false);
@@ -169,6 +176,7 @@ try {
   await model.selectOption('09G'); await ready();
   assert.equal(requests.at(-1).vehicleContext.productionMonth, '2013-05');
   await rearAir.selectOption('no');await ready();
+  assert.equal(requests.at(-1).vehicleContext.confirmedDrive,'2WD','Other refinements preserve drive');
   assert.equal(requests.at(-1).vehicleContext.transmissionModel,'09G');
   assert.equal(requests.at(-1).vehicleContext.productionMonth,'2013-05');
   const out = path.resolve(root, process.env.MANN_UI_TEST_OUTPUT || 'outputs/mann-profile-ui-test'); mkdirSync(out, { recursive: true });
@@ -294,6 +302,7 @@ try {
     assert.equal(requests.at(-1).vehicleContext.transmissionGearCount,undefined,'Vehicle change resets gear');
     assert.equal(requests.at(-1).vehicleContext.confirmedEquipment,undefined,'Vehicle change resets equipment');
     assert.equal(requests.at(-1).vehicleContext.rearAirConditioning,undefined,'Vehicle change resets rear air conditioning');
+    assert.equal(requests.at(-1).vehicleContext.confirmedDrive,undefined,'Vehicle change resets drive');
     assert.equal(requests.at(-1).vehicleContext.generation,generation);
     for(const fixture of identityFixtures)assert.equal(await page.getByText(fixture.id,{exact:false}).count(),fixture.id===expected?1:0,`${modelName} ${generation}: ${fixture.id}`);
     if(index===0)await page.screenshot({path:path.join(out,'identity-mobile.png'),fullPage:true});
