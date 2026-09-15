@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {sha} from './lib/mann-offline-scope.mjs';
+const dir=resolve(import.meta.dirname,'../outputs/mann-gentra-evidence-review-2026-09-14');
+const raw=await readFile(resolve(dir,'remaining-priority-action-queue-v1.json'),'utf8'),queue=JSON.parse(raw);
+const findings=queue.unparsedAnchors.map(a=>{
+ const text=a.application,reasons=[];
+ if(!/\d+\s*л\.с\./u.test(text))reasons.push('SOURCE_POWER_NOT_STATED');
+ if(/ВАЗ-\d+/u.test(text))reasons.push('CYRILLIC_VAZ_ENGINE_AND_VALVE_QUALIFIER');
+ if(/\b[A-Z0-9]+\s*\([A-Z0-9]{3}\)/u.test(text))reasons.push('LITERAL_PARENTHETICAL_ENGINE_IDENTIFIER');
+ if(text.split('\n')[0]!=='МАСЛО в ДВИГАТЕЛЬ')reasons.push('SYSTEM_HEADING_HAS_VEHICLE_OR_TRANSMISSION_SCOPE');
+ if(/Китай/u.test(text))reasons.push('MARKET_NOT_REPRESENTABLE_IN_CURRENT_CONTEXT');
+ if(/\d+\s*[-–]\s*\d+\s*л\.с\./u.test(text))reasons.push('EXPLICIT_POWER_RANGE');
+ if(/\(\d+ клапанов\)/u.test(text))reasons.push('VALVE_SCOPED_ENGINE_LIST');
+ if(/\(-\)/u.test(text))reasons.push('ONE_BRANCH_IDENTIFIER_EXPLICITLY_ABSENT');
+ assert.ok(reasons.length,a.rowId);
+ return {...a,reasons,automaticAcceptanceAllowed:false};
+});
+assert.equal(findings.length,22);
+const groups=Object.fromEntries([...Map.groupBy(findings.flatMap(f=>f.reasons.map(reason=>({reason,rowId:f.rowId}))),f=>f.reason)].map(([reason,items])=>[reason,items.map(i=>i.rowId)]));
+const summary={reviewedHeaders:findings.length,reasonHeaderCounts:Object.fromEntries(Object.entries(groups).map(([reason,ids])=>[reason,ids.length])),newlyAcceptedLinks:0};
+await writeFile(resolve(dir,'priority-header-review-v1.json'),JSON.stringify({kind:'ALL22_PRIORITY_HEADER_SEMANTIC_REVIEW',queueHash:sha(raw),summary,groups,findings,nextActions:['Parenthetical engine identifiers require exact-code alias handling and retained heading restrictions; MT must never be stripped.','Cyrillic VAZ normalization must retain valve-count applicability; do not silently drop that clause.','Missing power is a source evidence gap, not a formatting error; no power inferred from target MANN record.','China branch requires supported market context or must remain unavailable; never default to RU.'],productionApplyAllowed:false},null,2)+'\n',{flag:'wx'});
+console.log(JSON.stringify(summary));

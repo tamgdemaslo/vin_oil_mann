@@ -429,6 +429,9 @@ for (const qualifier of [
   "Automatikgetriebe/Automaticgearbox(2).Getriebe-Code/Gearboxcode(1010)",
   "Aktivkohlefilter/ActivatedCarbonFilter(60)",
   "BiofunktionalerInnenraumfilter/Biofunctionalcabinairfilter(298)",
+  "Fahrzeugproduktionsland/Countryofvehiclemanufacture(100)SüdKorea/SouthKorea,",
+  "Country of vehicle manufacture (100) Hungary",
+  "Serie/Series(63) Syncro/4motion",
 ]) {
   assert.ok(evaluateMannCandidate(bmwX5, row({
     make: "BMW",

@@ -488,6 +488,13 @@ export function rowBodyCodes(row: MannRow): string[] {
     && [row.vehicleText, row.effectiveVehicleText].some(value => /^1\.[46]\s*\(RB\)$/i.test(text(value)))) {
     alphabeticPlatformCodes.push("RB");
   }
+  // Kodiaq prints its NS platform in the engine application, not the heading.
+  // Require the complete archived application form; arbitrary gearbox/trim
+  // parentheses must not become vehicle identity evidence.
+  if (normalizeVehicleMake(row.make) === "SKODA" && /^Kodiaq$/i.test(row.model.trim())
+    && [row.vehicleText, row.effectiveVehicleText].some(value => /^(?:1\.[45]TSI|2\.0(?:RS)?TDI|2\.0TSI)\(NS\)$/i.test(text(value)))) {
+    alphabeticPlatformCodes.push("NS");
+  }
   const headingCodes = unique([
     ...bodyCodesFromText(row.model), ...alphabeticPlatformCodes,
     ...(/^Passat\s+(?:B[5-8]|CCB6)\b/i.test(row.model)

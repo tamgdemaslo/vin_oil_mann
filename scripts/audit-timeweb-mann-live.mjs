@@ -78,5 +78,6 @@ const report={kind:'TIMEWEB_READ_ONLY_CONTENT_AND_PROFILE_AUDIT',generatedAt:new
   liveDataChanged:false};
 await writeFile(resolve(output,'report.json'),JSON.stringify(report,null,2)+'\n');
 await writeFile(resolve(output,'revisions.json'),JSON.stringify(revisions,null,2)+'\n');
+for(const [table,rows]of live)await writeFile(resolve(output,`${table}.json`),JSON.stringify([...rows.values()])+'\n',{flag:'wx'});
 for(const [name,rows]of Object.entries(integration))await writeFile(resolve(output,`${name}.json`),JSON.stringify(rows,null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify({...report,sourceTables:Object.fromEntries(Object.entries(reports).map(([k,v])=>[k,{...v,missing:v.missing.length,added:v.added.length,changed:v.changed.length}])),output},null,2));

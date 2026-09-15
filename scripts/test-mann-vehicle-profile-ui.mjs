@@ -113,14 +113,24 @@ try {
   let failNext = false;
   let realProfileMode = false;
   let gearProfileMode = false;
+  let marketProfileMode = false;
+  let selectionFixture;
   let vehicle = { makeRaw: 'Volkswagen', modelRaw: 'Golf', generationRaw:'VI', year: 2013, engineCode: 'CAXA', sourceMethods: ['manual'] };
   await page.route('**/api/**', async route => {
     const body = route.request().postDataJSON();
     const url = route.request().url();
     if (url.endsWith('/vin')) return route.fulfill({ json: { status: 'found', vehicle, candidates: [] } });
-    if (url.endsWith('/resolve-decoded-vehicle')) return route.fulfill({ json: { status: 'resolved', selectedApplication: { variantIds: ['test-variant'] } } });
+    if (url.endsWith('/resolve-decoded-vehicle')) return route.fulfill({ json: selectionFixture
+      ? {status:'candidates',candidates:[selectionFixture]}
+      : { status: 'resolved', selectedApplication: { variantIds: ['test-variant'] } } });
     assert.ok(url.endsWith('/technical-profile'), `Unexpected API: ${url}`);
     requests.push(body);
+    if(marketProfileMode){
+      const oil={...identityFixtures[0],id:'TEST-MARKET-RU',sourceRequirementId:'TEST-MARKET-RU',
+        applicabilityJson:{sourceVehicleScope:{make:'Kia',model:'Rio',generation:'III'},matchedEngineScope:['G4FA'],requiredMarket:'RU',window:{intersection:{from:'2012-01',to:'2015-12'}}},
+        technicalDataJson:{capacities:[],specifications:[{type:'TEST',value:'TEST-MARKET-RU'}],viscosityGrades:[]}};
+      return route.fulfill({json:buildMannUnifiedTechnicalProfile([oil,...gearFixtures.map(r=>({...r,applicabilityJson:{...r.applicabilityJson,requiredMarket:'RU'}}))],body.transmissionType,body.vehicleContext)});
+    }
     if(gearProfileMode)return route.fulfill({json:buildMannUnifiedTechnicalProfile([...gearFixtures,...equipmentFixtures],body.transmissionType,body.vehicleContext)});
     if(realProfileMode)return route.fulfill({json:buildMannUnifiedTechnicalProfile(identityFixtures,body.transmissionType,body.vehicleContext)});
     if (failNext) { failNext = false; return route.fulfill({ status: 503, json: { error: 'Тест: профиль недоступен' } }); }
@@ -307,6 +317,167 @@ try {
     for(const fixture of identityFixtures)assert.equal(await page.getByText(fixture.id,{exact:false}).count(),fixture.id===expected?1:0,`${modelName} ${generation}: ${fixture.id}`);
     if(index===0)await page.screenshot({path:path.join(out,'identity-mobile.png'),fullPage:true});
   }
+  // Missing decoder identity is filled only after a concrete selection, persists
+  // through refinements, and never leaks to a new vehicle. Raw decoder stays raw.
+  await page.getByLabel('Другие действия с автомобилем').click();
+  await page.getByRole('button',{name:'Выбрать другой автомобиль'}).click();
+  vehicle={makeRaw:'Toyota',modelRaw:'Allion',year:2013,sourceMethods:['manual']};
+  selectionFixture={applicationId:'chosen-allion',variantIds:['test-variant'],model:'Allion II',make:'Toyota',
+    engineCode:'2ZR-FAE',effectiveVehicleText:'Allion II 1.8',warnings:[],mismatchedFields:[],
+    technicalIdentity:{engineCode:'2ZR-FAE',generation:'II'}};
+  const beforeSelection=requests.length;
+  await page.getByLabel('VIN или номер кузова').fill('WVWZZZ1KZDW000011');
+  await page.getByRole('button',{name:/Выбрать MANN-модификацию:/}).click();await ready();
+  assert.equal(requests.length,beforeSelection+1,'Only explicit selection triggers fluid request');
+  assert.equal(requests.at(-1).vehicleContext.engineCode,'2ZR-FAE');
+  assert.equal(requests.at(-1).vehicleContext.generation,'II');
+  assert.equal(await page.getByText('TEST-ALLION',{exact:false}).count(),1);
+  assert.equal(vehicle.engineCode,undefined);assert.equal(vehicle.generationRaw,undefined);
+  await page.getByText('Уточнить месяц выпуска',{exact:true}).click();
+  await month.fill('2013-06');await page.getByRole('button',{name:'Применить дату'}).click();await ready();
+  assert.equal(requests.at(-1).vehicleContext.engineCode,'2ZR-FAE');
+  assert.equal(requests.at(-1).vehicleContext.generation,'II');
+  await page.screenshot({path:path.join(out,'confirmed-selection-mobile.png'),fullPage:true});
+  await page.getByLabel('Другие действия с автомобилем').click();
+  await page.getByRole('button',{name:'Выбрать другой автомобиль'}).click();
+  selectionFixture=undefined;
+  vehicle={makeRaw:'Opel',modelRaw:'Zafira',year:2013,sourceMethods:['manual']};
+  await page.getByLabel('VIN или номер кузова').fill('WVWZZZ1KZDW000012');await ready();
+  assert.equal(requests.at(-1).vehicleContext.engineCode,undefined);
+  assert.equal(requests.at(-1).vehicleContext.generation,undefined);
+  assert.equal(await page.getByText('TEST-ALLION',{exact:false}).count(),0);
+  await page.getByLabel('Другие действия с автомобилем').click();
+  await page.getByRole('button',{name:'Выбрать другой автомобиль'}).click();
+  gearProfileMode=true;
+  vehicle={makeRaw:'Kia',modelRaw:'Rio',year:2013,sourceMethods:['manual']};
+  selectionFixture={applicationId:'chosen-rio',variantIds:['test-variant'],model:'Rio III',make:'Kia',
+    engineCode:'G4FA, G4FC',effectiveVehicleText:'Rio III',warnings:[],mismatchedFields:[],
+    technicalIdentity:{engineOptions:['G4FA','G4FC'],generation:'III'}};
+  await page.getByLabel('VIN или номер кузова').fill('WVWZZZ1KZDW000013');
+  await page.getByRole('button',{name:/Выбрать MANN-модификацию:/}).click();await ready();
+  const engine=page.getByLabel('Код двигателя',{exact:true});
+  assert.equal(await engine.inputValue(),'');
+  assert.equal(requests.at(-1).vehicleContext.engineCode,undefined);
+  await engine.selectOption('G4FA');await ready();
+  await page.getByRole('button',{name:'АКПП',exact:true}).click();await ready();
+  await gears.selectOption('4');await ready();
+  assert.equal(requests.at(-1).vehicleContext.engineCode,'G4FA');
+  assert.equal(await page.getByText('TEST-GEAR-4',{exact:false}).count(),1);
+  await page.getByText('Уточнить месяц выпуска',{exact:true}).click();
+  await month.fill('2013-06');await page.getByRole('button',{name:'Применить дату'}).click();await ready();
+  assert.equal(requests.at(-1).vehicleContext.engineCode,'G4FA');
+  await page.screenshot({path:path.join(out,'engine-choice-mobile.png'),fullPage:true});
+  await page.setViewportSize({width:1100,height:1000});
+  await page.screenshot({path:path.join(out,'engine-choice-desktop.png'),fullPage:true});
+  await engine.selectOption('G4FC');await ready();
+  assert.equal(requests.at(-1).transmissionType,undefined);
+  assert.equal(requests.at(-1).vehicleContext.transmissionGearCount,undefined);
+  assert.equal(requests.at(-1).vehicleContext.confirmedEquipment,undefined);
+  assert.equal(await page.getByText('TEST-GEAR-4',{exact:false}).count(),0);
+  await engine.selectOption('');await ready();
+  assert.equal(requests.at(-1).vehicleContext.engineCode,undefined);
+  await engine.selectOption('G4FA');await ready();
+  await page.getByLabel('Другие действия с автомобилем').click();
+  await page.getByRole('button',{name:'Выбрать другой автомобиль'}).click();
+  selectionFixture=undefined;gearProfileMode=false;
+  vehicle={makeRaw:'Opel',modelRaw:'Zafira',year:2013,sourceMethods:['manual']};
+  await page.getByLabel('VIN или номер кузова').fill('WVWZZZ1KZDW000014');await ready();
+  assert.equal(requests.at(-1).vehicleContext.engineCode,undefined);
+  assert.equal(await engine.count(),0);
+  // Destination-market clarification is explicit and scoped to this vehicle.
+  await page.getByLabel('Другие действия с автомобилем').click();
+  await page.getByRole('button',{name:'Выбрать другой автомобиль'}).click();
+  marketProfileMode=true;
+  vehicle={makeRaw:'Kia',modelRaw:'Rio',year:2013,sourceMethods:['manual']};
+  selectionFixture={applicationId:'market-rio',variantIds:['test-variant'],model:'Rio III',make:'Kia',
+    engineCode:'G4FA, G4FC',effectiveVehicleText:'Rio III',warnings:[],mismatchedFields:[],
+    technicalIdentity:{engineOptions:['G4FA','G4FC'],generation:'III'}};
+  await page.getByLabel('VIN или номер кузова').fill('WVWZZZ1KZDW000015');
+  await page.getByRole('button',{name:/Выбрать MANN-модификацию:/}).click();await ready();
+  await engine.selectOption('G4FA');await ready();
+  assert.equal(await page.getByText('TEST-MARKET-RU',{exact:false}).count(),0);
+  await page.getByText('Уточнить рынок автомобиля',{exact:true}).click();
+  const market=page.getByLabel('Рынок автомобиля',{exact:true});
+  assert.equal(await market.inputValue(),'');
+  assert.equal(requests.at(-1).vehicleContext.confirmedMarket,undefined);
+  await market.selectOption('RU');await ready();
+  assert.equal(requests.at(-1).vehicleContext.engineCode,'G4FA');
+  assert.equal(await page.getByText('TEST-MARKET-RU',{exact:false}).count(),1);
+  await page.getByRole('button',{name:'АКПП',exact:true}).click();await ready();
+  await gears.selectOption('4');await ready();
+  assert.equal(requests.at(-1).vehicleContext.confirmedMarket,'RU');
+  assert.equal(await page.getByText('TEST-GEAR-4',{exact:false}).count(),1);
+  await page.getByText('Уточнить месяц выпуска',{exact:true}).click();
+  await month.fill('2013-06');await page.getByRole('button',{name:'Применить дату'}).click();await ready();
+  assert.equal(requests.at(-1).vehicleContext.confirmedMarket,'RU');
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:path.join(out,'market-choice-mobile.png'),fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);
+  await page.setViewportSize({width:1100,height:1000});
+  await page.screenshot({path:path.join(out,'market-choice-desktop.png'),fullPage:true});
+  await market.selectOption('JP');await ready();
+  assert.equal(requests.at(-1).transmissionType,undefined);
+  assert.equal(requests.at(-1).vehicleContext.transmissionGearCount,undefined);
+  assert.equal(requests.at(-1).vehicleContext.confirmedEquipment,undefined);
+  assert.equal(requests.at(-1).vehicleContext.productionMonth,'2013-06');
+  assert.equal(await page.getByText('TEST-MARKET-RU',{exact:false}).count(),0);
+  await market.selectOption('');await ready();
+  assert.equal(requests.at(-1).vehicleContext.confirmedMarket,undefined);
+  await market.selectOption('RU');await ready();
+  await engine.selectOption('G4FC');await ready();
+  assert.equal(requests.at(-1).vehicleContext.confirmedMarket,'RU');
+  assert.equal(await page.getByText('TEST-MARKET-RU',{exact:false}).count(),0);
+  assert.equal(vehicle.marketEvidence,undefined);assert.equal(vehicle.market,undefined);
+  for(const [index,marketEvidence] of [undefined,{values:['RU'],confirmedMarket:'RU'},{values:['RU','JP']}].entries()){
+    await page.getByLabel('Другие действия с автомобилем').click();
+    await page.getByRole('button',{name:'Выбрать другой автомобиль'}).click();
+    vehicle={makeRaw:'Kia',modelRaw:'Rio',year:2013,engineCode:'G4FA',generationRaw:'III',sourceMethods:['manual'],marketEvidence};
+    selectionFixture=undefined;
+    await page.getByLabel('VIN или номер кузова').fill(`WVWZZZ1KZDW00002${index}`);await ready();
+    assert.equal(requests.at(-1).vehicleContext.confirmedMarket,index===1?'RU':undefined);
+    assert.equal(await market.count(),index===0?1:0);
+  }
+  // Unsupported provider market plus absent build date: each confirmation is
+  // explicit, neither substitutes for the other, and neither leaks vehicles.
+  await page.getByLabel('Другие действия с автомобилем').click();
+  await page.getByRole('button',{name:'Выбрать другой автомобиль'}).click();
+  vehicle={makeRaw:'Kia',modelRaw:'Rio',engineCode:'G4FA',generationRaw:'III',sourceMethods:['manual'],market:'ex.NA',marketEvidence:{values:['ex.NA']}};
+  await page.getByLabel('VIN или номер кузова').fill('WVWZZZ1KZDW000030');await ready();
+  await page.getByText('Проверить рынок из ответа VIN',{exact:true}).click();
+  const correction=page.getByLabel('Подтверждённый рынок',{exact:true});
+  const evidence=page.getByLabel('По каким данным проверен рынок?',{exact:true});
+  const confirm=page.getByRole('button',{name:'Подтверждаю рынок по указанным данным',exact:true});
+  assert.equal(await correction.inputValue(),'');assert.equal(await confirm.isDisabled(),true);
+  const beforeDraft=requests.length;
+  await correction.selectOption('RU');assert.equal(await confirm.isDisabled(),true);
+  await evidence.fill('Синтетический документ для теста формы');
+  assert.ok((await evidence.boundingBox()).height>=36,'Evidence field matches normal form-control height');
+  assert.equal(requests.length,beforeDraft,'Editing evidence does not submit market');
+  await confirm.click();await ready();assert.equal(requests.at(-1).vehicleContext.confirmedMarket,'RU');
+  assert.equal(await page.getByText('TEST-MARKET-RU',{exact:false}).count(),0,'Missing date still blocks');
+  await page.getByText('Уточнить месяц выпуска',{exact:true}).click();
+  await month.fill('2013-06');await page.getByRole('button',{name:'Применить дату'}).click();await ready();
+  assert.equal(requests.at(-1).vehicleContext.confirmedMarket,'RU','Date preserves explicit market proof');
+  assert.equal(await page.getByText('TEST-MARKET-RU',{exact:false}).count(),1);
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:path.join(out,'market-proof-date-mobile.png'),fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.setViewportSize({width:1100,height:1000});
+  await page.screenshot({path:path.join(out,'market-proof-date-desktop.png'),fullPage:true});
+  await page.getByRole('button',{name:'Снять подтверждение рынка',exact:true}).click();await ready();
+  assert.equal(requests.at(-1).vehicleContext.confirmedMarket,undefined);
+  assert.equal(requests.at(-1).vehicleContext.productionMonth,'2013-06');
+  assert.equal(await page.getByText('TEST-MARKET-RU',{exact:false}).count(),0);
+  await confirm.click();await ready();
+  assert.equal(vehicle.market,'ex.NA');assert.deepEqual(vehicle.marketEvidence,{values:['ex.NA']});
+  await page.getByLabel('Другие действия с автомобилем').click();
+  await page.getByRole('button',{name:'Выбрать другой автомобиль'}).click();
+  vehicle={...vehicle,market:'NA',marketEvidence:{values:['NA']}};
+  await page.getByLabel('VIN или номер кузова').fill('WVWZZZ1KZDW000031');await ready();
+  assert.equal(requests.at(-1).vehicleContext.confirmedMarket,undefined);
+  assert.equal(requests.at(-1).vehicleContext.productionMonth,undefined);
+  await page.getByText('Проверить рынок из ответа VIN',{exact:true}).click();
+  assert.equal(await correction.inputValue(),'');assert.equal(await evidence.inputValue(),'');
   assert.deepEqual(errors, []);
   console.log('PASS: real component and profile builder; gear count and named model gates; gear/model/date/type/vehicle resets; no automatic single-option choice; identity isolation; errors; desktop/mobile. Synthetic data and mock HTTP, no DB.');
 } finally {

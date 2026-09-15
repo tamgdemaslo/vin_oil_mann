@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+import {sha,parseCopy,applicabilityWindow} from './lib/mann-offline-scope.mjs';
+import {loadIdentityOverlay} from './lib/mann-source-identity-overlay.mjs';
+import {applyAuditedTablePower} from './lib/mann-table-power-overlay.mjs';
+import {applyAuditedSourceFuel} from './lib/mann-source-fuel-overlay.mjs';
+import {splitSpecificationSections,specificationCautionSignals} from './lib/mann-specification-sections-v2.mjs';
+import {parseLiteralEngineApplication} from './lib/mann-literal-engine-application.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+const classificationRaw=await readFile(resolve(dir,'candidate-level-source-gap-classification-v1.json'),'utf8'),classification=JSON.parse(classificationRaw),planRaw=await readFile(resolve(dir,'plan.json'),'utf8');assert.equal(sha(planRaw),classification.planHash);
+const sql=await readFile('/tmp/vehicle_fluid_requirements.sql','utf8'),mannRaw=await readFile('/tmp/mann_filter_applications.sql','utf8'),raw=await readFile(resolve(root,'../vin-oil-mann/outputs/podbormasla-20260723/podbormasla_rows.ndjson'),'utf8');
+const manifest=JSON.parse(await readFile(resolve(root,'outputs/mann-current-full-rematch-2026-09-14-v2/manifest.json'),'utf8'));assert.equal(sha(sql),manifest.sourceHash);assert.equal(sha(mannRaw),manifest.mannHash);assert.equal(sha(raw),manifest.rawHash);
+const identity=await loadIdentityOverlay(root,sql,resolve(root,'outputs/mann-identity-scoped-2026-09-14/source-identity-corrections.json'),'fbbe7b991ba80e19d62b42aaece22cb739860443256a8d935160f69ab9f90d34');
+const power=await applyAuditedTablePower(root,identity.requirements,raw),fuel=await applyAuditedSourceFuel(root,power.requirements,raw),corrected=fuel.requirements.map(s=>({...s,engineCodeNormalized:fuel.fresh.get(s.id).engineCodeNormalized,engineCodesJson:fuel.fresh.get(s.id).engineCodesJson}));assert.equal(sha(corrected),manifest.correctedSourcesHash);
+const sources=new Map(corrected.map(s=>[s.id,s])),originals=new Map(parseCopy(sql,'vehicle_fluid_requirements').map(s=>[s.id,s])),catalog=parseCopy(mannRaw,'mann_filter_applications'),rawRows=raw.trim().split('\n').map(JSON.parse);
+const liveRaw=await readFile(resolve(root,'outputs/mann-live-audit-1789415211923/revisions.json'),'utf8'),live=JSON.parse(liveRaw);
+const j=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),{matchFluidRequirementToMann:match}=await j.import('../src/lib/mann-fluid-matcher-v2.ts'),{parseFluidCapacities:parse}=await j.import('../src/lib/fluid-capacity-parser.ts');
+const findings=[];
+for(const link of classification.prioritizedSourceTargets.filter(l=>l.independentlyValidated)){
+ const source=sources.get(link.sourceRequirementId),original=originals.get(source.id),own=rawRows.find(r=>r.row_id===source.sourceRowId),rows=catalog.filter(r=>r.vehicleVariantKey===link.vehicleVariantKey);assert.ok(own&&rows.length);
+ const engines=[...new Set(rows.map(r=>r.engineCode))];assert.equal(engines.length,1);assert.ok(source.engineCodesJson.includes(engines[0]));
+ const window=applicabilityWindow(source,rows[0]);assert.ok(window?.intersection.from&&window.intersection.to);
+ const narrowed={...source,engineCodesJson:[engines[0]],engineCodeNormalized:engines[0],yearFrom:Number(window.intersection.from.slice(0,4)),yearTo:Number(window.intersection.to.slice(0,4))};
+ const decision=match(narrowed,catalog.filter(r=>r.make===rows[0].make)),target=decision.targets.find(t=>t.vehicleVariantKey===link.vehicleVariantKey&&t.independentlyValidated);
+ const anchors=rawRows.filter(r=>r.source_url===own.source_url&&r.table_index===own.table_index&&r.system_name.startsWith('МАСЛО в ДВИГАТЕЛЬ'));
+ assert.equal(anchors.length,1);const parsedAnchor=parseLiteralEngineApplication(anchors[0].application);assert.ok(parsedAnchor);const branches=parsedAnchor.branches.filter(b=>b.engineCode===engines[0]);assert.equal(branches.length,1);const branch=branches[0];assert.equal(branch.powerHp.length,1);
+ assert.ok(source.powerHp==null||source.powerHp===branch.powerHp[0]);
+ const branchDecision=match({...narrowed,powerHp:branch.powerHp[0]},catalog.filter(r=>r.make===rows[0].make));
+ const branchTarget=branchDecision.targets.find(t=>t.vehicleVariantKey===link.vehicleVariantKey&&t.independentlyValidated);
+ findings.push({sourceRequirementId:source.id,vehicleVariantKey:link.vehicleVariantKey,systemCode:source.systemCode,originalSourceHash:sha(original),effectiveSourceHash:sha(source),rawRowHash:sha(own),ownApplication:own.application,anchorApplications:anchors.map(r=>({rowId:r.row_id,application:r.application,power:r.power,hash:sha(r)})),engineScope:engines,window,sourcePowerRetained:source.powerHp,originalSpecification:source.specificationText,sections:splitSpecificationSections(source.specificationText,source.analogText),cautions:specificationCautionSignals(source.specificationText),capacity:parse(source.fillVolumeText,source.systemCode),predecessors:live.filter(r=>r.sourceRequirementId===source.id&&r.vehicleVariantKey===link.vehicleVariantKey).map(r=>({id:r.id,state:r.state,hash:sha(r)})),initialEngineOnlyDecision:decision,literalBranch:branch,decision:branchDecision,target:branchTarget??null,targetValidated:!!branchTarget});
+}
+for(let i=0;i<findings.length;i++)assert.ok(findings[i].anchorApplications.length===1);
+assert.equal(findings.length,9);const summary={pairs:9,validated:findings.filter(f=>f.targetValidated).length,statuses:Object.fromEntries([...Map.groupBy(findings,f=>f.decision.status)].map(([k,v])=>[k,v.length]))};
+const files=['src/lib/mann-fluid-matcher-v2.ts','src/lib/mann-catalog.ts','src/lib/mann-vehicle-resolver.ts','src/lib/fluid-capacity-parser.ts','scripts/lib/mann-specification-sections-v2.mjs'];
+await writeFile(resolve(dir,'recovered-positive-source-rematch-v2.json'),JSON.stringify({kind:'NINE_RECOVERED_POSITIVE_SOURCE_TARGETS_CURRENT_REMATCH',planHash:sha(planRaw),classificationHash:sha(classificationRaw),sourceHash:sha(sql),correctedSourcesHash:sha(corrected),mannHash:sha(mannRaw),liveHash:sha(liveRaw),runtimeHashes:Object.fromEntries(await Promise.all(files.map(async f=>[f,sha(await readFile(resolve(root,f),'utf8'))]))),summary,findings,productionApplyAllowed:false,limitations:['One explicit source-listed engine selected; no power/model/fuel overwritten.','Full-make current matcher, but own-fluid conditions and technical interpretation not automatically approved.','Historical positive links can fail current date/identity validation.']},null,2)+'\n',{flag:'wx'});console.log(JSON.stringify({...summary,findings:findings.map(f=>({system:f.systemCode,key:f.vehicleVariantKey,validated:f.targetValidated,reasons:f.decision.reviewReasons,capacityReview:f.capacity.needsReview,cautions:f.cautions,predecessors:f.predecessors.length}))}));

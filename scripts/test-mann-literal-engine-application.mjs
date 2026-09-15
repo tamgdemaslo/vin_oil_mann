@@ -8,6 +8,7 @@ const parsed=parse(example);assert.equal(parsed.branches.length,2);assert.deepEq
 const month=example.replace('2021-2022 г.','04.2021 - 06.2022');assert.deepEqual(parse(month).branches[0].effectiveDates,{from:'2021-04',to:'2022-06'});
 for(const bad of [example+'\nunknown',example.replace('Россия','Россия неизвестно'),example.replace('199 л.с.','199 л.с. / неизвестно'),example.replace('2021-2022 г.','2022-2021 г.'),example.replace('2021-2022 г.','13.2021 - 06.2022'),example.replace('199 л.с.','199 л.с. / 200 л.с.'),example.replace('199 л.с.','0 л.с.'),example.replace('D4HE Diesel','D4HE Hybrid'),example.replace('Тип топлива: Дизель','Тип топлива: Бензин'),example.replace('2021-2022 г.','2010-2011 г.'),example.replace('199 л.с.','199, 199 л.с.')])assert.equal(parse(bad),null);
 const multi=parse(example.replace('199 л.с.','199, 200 л.с.'));assert.deepEqual(multi.branches[0].powerHp,[199,200]);
+if(process.argv[2]==='--check-only'){console.log('PASS: existing literal engine grammar and 11 negative conditions');process.exit(0);}
 const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-current-full-rematch-2026-09-14-v2');
 const preRaw=await readFile(resolve(dir,'unplanned-matches-preflight-v2.json'),'utf8'),pre=JSON.parse(preRaw);
 const anchors=[...new Map(pre.findings.flatMap(f=>f.anchorEvidence.map(a=>[a.rowId,a]))).values()];

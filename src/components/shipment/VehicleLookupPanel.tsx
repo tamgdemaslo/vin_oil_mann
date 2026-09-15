@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import type { MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
+import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
 import { mannCapacityLabel as capacityLabel } from "@/lib/mann-capacity-label";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
 import { canConfirmVehicleDestinationMarket, unsupportedVehicleMarketLabels, mannTechnicalContextFromVehicle, type MannTechnicalContextDetails } from "@/lib/mann-technical-request-context";
@@ -315,6 +316,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   const [appliedVehicle, setAppliedVehicle] = useState<NormalizedVehicleIdentity | null>(null);
   const [appliedFromCache, setAppliedFromCache] = useState(false);
   const [technicalProfile, setTechnicalProfile] = useState<MannUnifiedTechnicalProfile | null>(null);
+  const [fluidResearch, setFluidResearch] = useState<MannFluidResearchResult | null>(null);
   const [technicalProfileVariantKeys, setTechnicalProfileVariantKeys] = useState<string[]>([]);
   const [selectedTransmissionType, setSelectedTransmissionType] = useState<MannTransmissionType | undefined>();
   const [selectedTransmissionModel, setSelectedTransmissionModel] = useState("");
@@ -376,6 +378,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setProductionMonthDraft("");
     setTechnicalProfileLoading(false);
     setTechnicalProfileError("");
+    setFluidResearch(null);
   };
 
   const loadTechnicalProfile = async (variantKeys: string[], vehicle: NormalizedVehicleIdentity, transmissionType?: MannTransmissionType, details: MannTechnicalContextDetails = {}) => {
@@ -406,6 +409,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     }
     setTechnicalProfileError("");
     setTechnicalProfileLoading(true);
+    setFluidResearch(null);
     try {
       const response = await fetch("/api/mann-catalog/technical-profile", {
         method: "POST",
@@ -423,6 +427,19 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
         return;
       }
       setTechnicalProfile(data);
+      setTechnicalProfileLoading(false);
+      setFluidResearch({ status: "searching", items: [], message: "ИИ проверяет недостающие жидкости и ищет источники…" });
+      try {
+        const researchResponse = await fetch("/api/mann-catalog/technical-profile", {
+          method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+          body: JSON.stringify({ researchMissing: true, variantKeys, transmissionType, vehicleContext: mannTechnicalContextFromVehicle(vehicle, details,
+            confirmedTechnicalCandidateRef.current?.variantIds.length === variantKeys.length && variantKeys.every(key => confirmedTechnicalCandidateRef.current?.variantIds.includes(key)) ? confirmedTechnicalCandidateRef.current : undefined) }),
+        });
+        const research = await responseJson<MannFluidResearchResult>(researchResponse);
+        if (requestId === technicalProfileRequestIdRef.current) setFluidResearch(researchResponse.ok && research ? research : { status: "unavailable", items: [], message: "ИИ-поиск временно недоступен. Данные каталога доступны." });
+      } catch {
+        if (!controller.signal.aborted && requestId === technicalProfileRequestIdRef.current) setFluidResearch({ status: "unavailable", items: [], message: "ИИ-поиск временно недоступен. Данные каталога доступны." });
+      }
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return;
       if (requestId !== technicalProfileRequestIdRef.current) return;
@@ -534,6 +551,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setAppliedVehicle(null);
     setAppliedFromCache(false);
     setTechnicalProfile(null);
+    setFluidResearch(null);
     setTechnicalProfileVariantKeys([]);
     setSelectedTransmissionType(undefined);
     setSelectedTransmissionModel("");
@@ -640,6 +658,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     resolutionControllerRef.current?.abort();
     technicalProfileControllerRef.current?.abort();
     setTab(next);
+    setFluidResearch(null);
     setLookup(null);
     setResolution(null);
     setFeedback(null);
@@ -840,6 +859,15 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             <p id="rear-air-conditioning-help">От этого зависит объём антифриза. Если комплектация неизвестна, оставьте «Не уточнено» — объём не будет выбран автоматически.</p>
           </fieldset>
         ) : null}
+        {fluidResearch && fluidResearch.status !== "complete" ? <section aria-label="Поиск жидкостей ИИ" aria-busy={fluidResearch.status === "searching"}>
+          <p role="status">{fluidResearch.message}</p>
+          {fluidResearch.items.length ? <><p><strong>Черновик ИИ — не использовать без проверки применяемости.</strong></p>
+            <ul>{fluidResearch.items.map((item, index) => <li key={`${item.systemCode}-${index}`}>
+              <strong>{({ ENGINE_OIL: "Моторное масло", ENGINE_COOLANT: "Антифриз", BRAKE_FLUID: "Тормозная жидкость", AUTOMATIC_TRANSMISSION: "АКПП", MANUAL_TRANSMISSION: "МКПП", CVT_TRANSMISSION: "Вариатор", ROBOT_TRANSMISSION: "Робот", POWER_STEERING: "ГУР", TRANSFER_CASE: "Раздатка", FRONT_DIFFERENTIAL: "Передний редуктор", REAR_DIFFERENTIAL: "Задний редуктор", AWD_COUPLING: "Муфта полного привода" })[item.systemCode]}</strong>
+              {item.specification ? <p>Допуск: {item.specification}</p> : null}{item.volumeText ? <p>Объём: {item.volumeText}</p> : null}
+              <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer">{item.sourceTitle}</a>
+            </li>)}</ul></> : null}
+        </section> : null}
         <TechnicalProfile
           profile={technicalProfile}
           loading={technicalProfileLoading}

@@ -61,7 +61,7 @@ function requirement(overrides = {}) {
   };
 }
 
-assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v10");
+assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v11");
 
 const exactBesideFamily=matchFluidRequirementToMann(requirement(),[
   row({vehicleVariantKey:'exact-fe'}),

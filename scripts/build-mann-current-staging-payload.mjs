@@ -11,6 +11,12 @@ expectedHashes.v7='2c95b0adc2f9584c4bfedc18d1d6ad59661afc3f9d39b4801e3b3da1a590c
 expectedHashes.v8='48c9b898379db5afb9f2368b2929d8722bc46c3c4c66ca81fdb21ebe4d7aeaf1';
 expectedHashes.v9='37ffc2703cec30045bf8d524a584ff9b2dbd842e34e6ffed9d81e44da51e1221';
 expectedHashes.v10='8429d8f48e0c59d049ca04f69b2ee8156ceee4aff03b7b21ef94b6395af9e778';
+expectedHashes.v11='0b26388def0c8a88ec23bada5ff32bb8b012f548abdebf34a16a12e653888096';
+expectedHashes.v12='00c29d1d9f1f77436216938a8ab6484f3756830515a0f68b37f32ac193dd2bba';
+expectedHashes.v13='244d1c661d1ac5d6943c1c9b97b41e4c4072847ca002ef6740b682d34cee3936';
+expectedHashes.v14='3a7f0db58e9603f4b0a60fa2ae5181fd85cae6a72fc5ef880842f51343af47c0';
+expectedHashes.v15='813977a2654f21eac4510323cd8491eb8be59a5bf8b25c38e15aaea9fad4c444';
+expectedHashes.v16='8055983eb6f96501a987a0742f83ac4e50135664398509f15542e07584a1d1eb';
 assert.ok(expectedHashes[version]);assert.equal(planHash,expectedHashes[version]);
 const plan=JSON.parse(raw);assert.equal(plan.productionApplyAllowed,false);assert.equal(plan.writeMode,'DRY_RUN_ONLY');
 const mannRaw=await readFile('/tmp/mann_filter_applications.sql','utf8');assert.equal(sha(mannRaw),'5e34efadc60014077b55655e0c62cdcbb8b1f44d3a8aace2399e941b45003fda');
@@ -30,7 +36,7 @@ const variants=[...new Set(plan.newRevisions.map(r=>r.vehicleVariantKey))].map(k
  const identities=[...new Map(rows.map(r=>{const identity={make:r.make,model:r.model,modelYears:r.modelYears,vehicleText:r.vehicleText,effectiveVehicleText:r.effectiveVehicleText,engineCode:r.engineCode,vehicleYears:r.vehicleYears,vehicleYearFrom:r.vehicleYearFrom,vehicleYearTo:r.vehicleYearTo,condition:r.condition,kw:r.kw,hp:r.hp};return [sha(identity),identity];})).values()];
  return {vehicleVariantKey:key,mannRows:rows.length,identities,identityStatus:identities.length===1?'SINGLE_ARCHIVED_IDENTITY':'RECONCILE_ARCHIVED_IDENTITIES',persistenceStatus:'REQUIRES_FRESH_CANONICAL_VEHICLE_SNAPSHOT'};
 });
-assert.equal(new Set(revisions.map(r=>r.originalRevision.id)).size,version==='v10'?2025:version==='v9'?2018:version==='v8'?2007:version==='v7'?1992:version==='v6'?1971:['v4','v5'].includes(version)?1958:1932);
+assert.equal(new Set(revisions.map(r=>r.originalRevision.id)).size,version==='v16'?2049:version==='v15'?2043:version==='v14'?2034:version==='v13'?2031:version==='v12'?2030:['v10','v11'].includes(version)?2025:version==='v9'?2018:version==='v8'?2007:version==='v7'?1992:version==='v6'?1971:['v4','v5'].includes(version)?1958:1932);
 assert.deepEqual(revisions.map(r=>r.originalRevision),plan.newRevisions);
 const summary={revisions:revisions.length,sourceRequirements:new Set(revisions.map(r=>r.originalRevision.sourceRequirementId)).size,variantKeys:variants.length,runGateGroups:runs.size,ambiguousArchivedVehicleKeys:variants.filter(v=>v.identities.length!==1).length,explicitPowerHolds:revisions.filter(r=>r.originalRevision.provenanceJson.sourcePowerReviewHold).length};
 const payload={kind:'CURRENT_SCOPED_STAGING_PAYLOAD_DRAFT',planHash,mannHash:sha(mannRaw),sourceHash:sha(sourceRaw),summary,runs:[...runs.values()],revisions,variants,existingActions:plan.existingActions,requiredGates:plan.requiredGates,productionApplyAllowed:false,writeMode:'DRY_RUN_ONLY',limitations:['Run states remain PLANNED: no invented approval, completed run or timestamps.','Full original revisions retained including holds and non-persisted audit fields; no activation or normalization.','Run grouping preserves exact policy gates; cannot combine heterogeneous rules into one run.','Archived MANN identities are evidence, not a fresh canonical-vehicle DB snapshot or authority to overwrite one.','Existing actions retained unexecuted, not automatically converted to supersession/deletion.','No SQL importer or committed rollback journal yet.']};

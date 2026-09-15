@@ -1,0 +1,11 @@
+{
+  "kind": "RECORDED_SX4_MISSING_CONTEXT_DIAGNOSIS",
+  "sampleRef": "f37032e5a900dadb",
+  "vehicleVariantKey": "e9e3954baeb4d3934dbd0d97eb2041467f5928380634d1a8dd6a345b1ec4fbd3",
+  "observedProviderFields": {"StartYear":"2006","FinishYear":"curr","Market":"ex.NA"},
+  "sourcePath": "providerTrace.attempts.1.data.decode.Reports.0.Data",
+  "decision": "These start/end range fields do not establish this vehicle's production year or month. Retain missing production date; do not substitute StartYear=2006 or interpret curr as a build date.",
+  "requiredVehicleEvidence": ["Actual production year/month, especially at source/catalogue date boundaries","Destination market confirmation for the RU-scoped source"],
+  "limitations": ["Saved provider response, no new live or paid request.","ex.NA has not been verified as RU.","Manufacturer name or assembly country is not destination-market evidence.","No personal identifiers or full provider payload included."],
+  "productionApplyAllowed": false
+}

@@ -5,7 +5,7 @@ import {parseLiteralEngineApplication} from './mann-literal-engine-application.m
 export function parseVolvoLiteralEngineApplication(application,make){
  if(String(make).toUpperCase()!=='VOLVO'||typeof application!=='string')return null;
  const lines=application.split(/\r?\n/u).map(l=>l.trim()).filter(Boolean);
- const label='(?:[0-9]\\.[0-9](?:i|D| (?:D[2-5]|T[2-6]))?|[DT][2-6])';
+ const label='(?:[0-9]\\.[0-9](?:i|D| (?:D[2-5]|T[2-6]|B[3-6]))?|[BDT][2-6])';
  const header=lines.shift();
  if(!new RegExp('^МАСЛО в ДВИГАТЕЛЬ(?: '+label+')?$','u').test(header??''))return null;
  if(lines[0]==='Модель:')lines.shift();
@@ -13,7 +13,8 @@ export function parseVolvoLiteralEngineApplication(application,make){
  if(footer<1)return null;
  const sourceLines=lines.slice(0,footer),labels=[];
  const normalized=[];
- for(const line of sourceLines){
+ for(const original of sourceLines){
+  const line=(original.startsWith('- ')?original:'- '+original).replace(/ \/ 2WD, 4WD(?= \/ |$)/u,' / 2WD');
   const labeled=new RegExp('^- ('+label+') \\(([BD][0-9]{3,4}[TS][0-9]*)\\)( / .+)$','u').exec(line);
   const plain=/^- ([BD][0-9]{3,4}[TS][0-9]*)( \/ .+)$/u.exec(line);
   if(!labeled&&!plain)return null;
@@ -24,5 +25,5 @@ export function parseVolvoLiteralEngineApplication(application,make){
  if(!result)return null;
  // Do not silently repair a contradictory original fuel footer.
  if(result.branches.some(b=>b.engineCode.startsWith('D')&&result.rawFuel!=='Тип топлива: Дизель'||b.engineCode.startsWith('B')&&result.rawFuel!=='Тип топлива: Бензин'))return null;
- return {...result,rawApplication:application,sourceHeader:header,adapterPolicy:'VOLVO_COMPLETE_LITERAL_TABLE_V1',branches:result.branches.map((b,i)=>({...b,raw:sourceLines[i],sourceEngineLabel:labels[i]}))};
+ return {...result,rawApplication:application,sourceHeader:header,adapterPolicy:'VOLVO_COMPLETE_LITERAL_TABLE_V1',branches:result.branches.map((b,i)=>({...b,raw:sourceLines[i],sourceEngineLabel:labels[i],driveCondition:/ \/ 2WD, 4WD(?: \/ |$)/u.test(sourceLines[i])?'2WD, 4WD':b.driveCondition}))};
 }

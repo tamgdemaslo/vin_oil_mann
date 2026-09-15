@@ -8,7 +8,13 @@ import {sha} from './lib/mann-offline-scope.mjs';
 import {localStagingLifecycle} from './lib/mann-local-staging-lifecycle.mjs';
 import {localSupersession} from './lib/mann-local-supersession.mjs';
 import {auditCombinedProfiles} from './lib/mann-combined-profile-audit.mjs';
-const drive=process.argv[2]==='--route-read-v10';
+const recovered=process.argv[2]==='--route-read-v15';
+const logan=process.argv[2]==='--route-read-v14'||recovered;
+const tepee=process.argv[2]==='--route-read-v13'||logan;
+const replacementCount=recovered?319:logan?310:307;
+const priority=process.argv[2]==='--route-read-v12'||tepee;
+const repaired=process.argv[2]==='--route-read-v11'||priority;
+const drive=process.argv[2]==='--route-read-v10'||repaired;
 const rearAir=process.argv[2]==='--route-read-v9'||drive;
 const complete=process.argv[2]==='--route-read-v8'||rearAir;
 const expanded=process.argv[2]==='--route-read-v7'||complete;
@@ -21,10 +27,10 @@ const combined=process.argv[2]==='--combined-profile'||precedence;
 const withSupersession=process.argv[2]==='--supersession'||combined;
 assert.ok(process.argv.length===2||(process.argv.length===3&&withSupersession));
 const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14'),snapshot=resolve(root,'outputs/mann-live-audit-1789415211923');
-const payloadRaw=await readFile(resolve(dir,drive?'current-staging-payload-v10.json':rearAir?'current-staging-payload-v9.json':complete?'current-staging-payload-v8.json':expanded?'current-staging-payload-v7.json':'current-staging-payload-v6.json'),'utf8'),payload=JSON.parse(payloadRaw);
-assert.equal(sha(payloadRaw),drive?'4358ce77050af9b2644b7ad12fb6905ac3c6f50a0cd909c095ec0a2de9aa15fd':rearAir?'632591070521adeaa0c3a93818fe787bda52a551ca96042c27326f25ee5d6452':complete?'8b718f46a200c20e38c2196ca07d3423a549c4a5601a39ab399640b78a70e710':expanded?'fdc807b615f6992ed77c0975f129f7f33c716b5848d5b55acb19c867bc74514e':'5e03354b16c41c324bb636b26a5ec7663be1bfa5ca64a5f8454592b481a64c77');
-const parents=JSON.parse(await readFile(resolve(snapshot,drive?'canonical-parent-drafts-v7.json':rearAir?'canonical-parent-drafts-v6.json':complete?'canonical-parent-drafts-v5.json':expanded?'canonical-parent-drafts-v4.json':'canonical-parent-drafts-v3.json'),'utf8'));assert.equal(parents.payloadHash,sha(payloadRaw));
-const lifecycle=localStagingLifecycle(payload,parents);assert.deepEqual(lifecycle.counts,[drive?218:217,11,drive?2025:rearAir?2018:complete?2007:expanded?1992:1971]);
+const payloadRaw=await readFile(resolve(dir,recovered?'current-staging-payload-v15.json':logan?'current-staging-payload-v14.json':tepee?'current-staging-payload-v13.json':priority?'current-staging-payload-v12.json':repaired?'current-staging-payload-v11.json':drive?'current-staging-payload-v10.json':rearAir?'current-staging-payload-v9.json':complete?'current-staging-payload-v8.json':expanded?'current-staging-payload-v7.json':'current-staging-payload-v6.json'),'utf8'),payload=JSON.parse(payloadRaw);
+assert.equal(sha(payloadRaw),recovered?'1171a26e02a307d248949be0aa5ab3a3ccf0135fe91fd3ea42d6428f53a944ee':logan?'269fe016a72ee8759fab7e92d23faab826d0fd56b840dccfba013de9a39b2105':tepee?'be60eb68ff76b3e311ec438f4db8d3bd916637cacb47678deb575b34215d82a6':priority?'7549905d8bad68de4e7bee3bb493841be2a891fdbfb702314eebd4add1b678d1':repaired?'ddc5e189dbfb0c1fffa3cc5794e7fcad12451b585f05307c939ca50c1bfb6e7a':drive?'4358ce77050af9b2644b7ad12fb6905ac3c6f50a0cd909c095ec0a2de9aa15fd':rearAir?'632591070521adeaa0c3a93818fe787bda52a551ca96042c27326f25ee5d6452':complete?'8b718f46a200c20e38c2196ca07d3423a549c4a5601a39ab399640b78a70e710':expanded?'fdc807b615f6992ed77c0975f129f7f33c716b5848d5b55acb19c867bc74514e':'5e03354b16c41c324bb636b26a5ec7663be1bfa5ca64a5f8454592b481a64c77');
+const parents=JSON.parse(await readFile(resolve(snapshot,recovered?'canonical-parent-drafts-v12.json':logan?'canonical-parent-drafts-v11.json':tepee?'canonical-parent-drafts-v10.json':priority?'canonical-parent-drafts-v9.json':repaired?'canonical-parent-drafts-v8.json':drive?'canonical-parent-drafts-v7.json':rearAir?'canonical-parent-drafts-v6.json':complete?'canonical-parent-drafts-v5.json':expanded?'canonical-parent-drafts-v4.json':'canonical-parent-drafts-v3.json'),'utf8'));assert.equal(parents.payloadHash,sha(payloadRaw));
+const lifecycle=localStagingLifecycle(payload,parents);assert.deepEqual(lifecycle.counts,[tepee?220:priority?219:drive?218:217,11,recovered?2043:logan?2034:tepee?2031:priority?2030:drive?2025:rearAir?2018:complete?2007:expanded?1992:1971]);
 const temp=await mkdtemp(resolve(tmpdir(),'mann-lifecycle-pg-'));
 if(runtimeRead){
  assert.equal(globalThis.prisma,undefined,'No pre-existing database client allowed in fixture');
@@ -57,17 +63,17 @@ try{
  pg(lifecycle.apply,false);assert.deepEqual(state(),after);
  let supersessionProof=null,combinedProof=null;
  if(withSupersession){
-  const replacement=localSupersession(payload);
+  const replacement=localSupersession(payload,replacementCount);
   pg(replacement.apply);
-  assert.equal(pg("SELECT count(*) FROM mann_local_supersession_journal;"),'614');
-  assert.equal(pg("SELECT count(*) FROM mann_technical_association_revisions r JOIN mann_local_supersession_journal j ON r.id=j.id WHERE r.state='SUPERSEDED';"),'307');
+  assert.equal(pg("SELECT count(*) FROM mann_local_supersession_journal;"),String(replacementCount*2));
+  assert.equal(pg("SELECT count(*) FROM mann_technical_association_revisions r JOIN mann_local_supersession_journal j ON r.id=j.id WHERE r.state='SUPERSEDED';"),String(replacementCount));
   const replaced=state();pg(replacement.apply,false);assert.deepEqual(state(),replaced);
   if(combined){
    const persisted=JSON.parse(pg("SELECT jsonb_agg(to_jsonb(r)||jsonb_build_object('run',to_jsonb(m),'reviewConfirmed',EXISTS(SELECT 1 FROM mann_technical_review_decisions d WHERE d.revision_id=r.id AND d.decision='CONFIRM'))) FROM mann_technical_association_revisions r JOIN mann_technical_materialization_runs m ON r.run_id=m.id WHERE r.state IN ('ACTIVE','STAGED','REVIEW');")).map(r=>({...Object.fromEntries(Object.entries(r).filter(([k])=>k!=='run').map(([k,v])=>[camel(k),v])),run:Object.fromEntries(Object.entries(r.run).map(([k,v])=>[camel(k),v])),createdAt:new Date(r.created_at)}));
    combinedProof=await auditCombinedProfiles(root,persisted,payload,runtimeRead,routeRead,complete);
    combinedProof.profileRuntimeHash=sha(await readFile(resolve(root,'src/lib/mann-unified-technical-profile.ts'),'utf8'));
    if(sourceDate){assert.equal(combinedProof.contextsWithDifferences,0);combinedProof.sourceDateHelperHash=sha(await readFile(resolve(root,'src/lib/mann-source-date-exclusions.ts'),'utf8'));}
-await writeFile(resolve(dir,drive?'current-persisted-route-read-v10.json':rearAir?'current-persisted-route-read-v9.json':complete?'current-persisted-route-read-v8.json':expanded?'current-persisted-route-read-v7.json':routeRead?'current-persisted-route-read-v1.json':runtimeRead?'current-persisted-runtime-read-v1.json':sourceDate?'current-persisted-combined-profile-v4.json':transmissionPrecedence?'current-persisted-combined-profile-v3.json':precedence?'current-persisted-combined-profile-v2.json':'current-persisted-combined-profile-v1.json'),JSON.stringify(combinedProof,null,2)+'\n',{flag:'wx'});
+await writeFile(resolve(dir,recovered?'current-persisted-route-read-v15.json':logan?'current-persisted-route-read-v14.json':tepee?'current-persisted-route-read-v13.json':priority?'current-persisted-route-read-v12.json':repaired?'current-persisted-route-read-v11.json':drive?'current-persisted-route-read-v10.json':rearAir?'current-persisted-route-read-v9.json':complete?'current-persisted-route-read-v8.json':expanded?'current-persisted-route-read-v7.json':routeRead?'current-persisted-route-read-v1.json':runtimeRead?'current-persisted-runtime-read-v1.json':sourceDate?'current-persisted-combined-profile-v4.json':transmissionPrecedence?'current-persisted-combined-profile-v3.json':precedence?'current-persisted-combined-profile-v2.json':'current-persisted-combined-profile-v1.json'),JSON.stringify(combinedProof,null,2)+'\n',{flag:'wx'});
   }
   const one=payload.existingActions.find(a=>a.action==='REPLACE_WITH_PREVIEW').successorId;
   pg(`UPDATE mann_technical_association_revisions SET provenance_json=provenance_json||'{"supersessionTamper":true}'::jsonb WHERE id=${q(one)}#>>'{}';`);
@@ -75,10 +81,10 @@ await writeFile(resolve(dir,drive?'current-persisted-route-read-v10.json':rearAi
   pg("UPDATE mann_technical_association_revisions r SET provenance_json=j.after_image->'provenance_json' FROM mann_local_supersession_journal j WHERE r.id=j.id;");
   assert.deepEqual(state(),replaced);
   pg(replacement.rollback);assert.deepEqual(state(),after);
-  supersessionProof={replacements:replacement.count,journaledBeforeAfterRows:614,repeatRejected:true,changedSuccessorRollbackRejected:true,fullSnapshotRestored:true};
+  supersessionProof={replacements:replacement.count,journaledBeforeAfterRows:replacementCount*2,repeatRejected:true,changedSuccessorRollbackRejected:true,fullSnapshotRestored:true};
  }
  const rows=JSON.parse(pg(`SELECT jsonb_agg(to_jsonb(r)||jsonb_build_object('run',to_jsonb(m))) FROM mann_technical_association_revisions r JOIN mann_technical_materialization_runs m ON r.run_id=m.id WHERE r.id IN (SELECT jsonb_array_elements_text(${q(payload.revisions.map(r=>r.originalRevision.id))}));`)).map(r=>({...Object.fromEntries(Object.entries(r).filter(([k])=>k!=='run').map(([k,v])=>[camel(k),v])),run:Object.fromEntries(Object.entries(r.run).map(([k,v])=>[camel(k),v])),reviewConfirmed:false}));
- assert.equal(rows.length,drive?2025:rearAir?2018:complete?2007:expanded?1992:1971);
+ assert.equal(rows.length,recovered?2043:logan?2034:tepee?2031:priority?2030:drive?2025:rearAir?2018:complete?2007:expanded?1992:1971);
  // Match Prisma's Date representation after reading JSON from psql.
  for(const row of rows){row.createdAt=new Date(row.createdAt);assert.ok(Number.isFinite(row.createdAt.getTime()));}
  const j=createJiti(import.meta.url,{alias:{'@':resolve(root,'src')}}),{buildMannUnifiedTechnicalProfile:profile}=await j.import('../src/lib/mann-unified-technical-profile.ts');
@@ -105,10 +111,10 @@ await writeFile(resolve(dir,drive?'current-persisted-route-read-v10.json':rearAi
  pg(`UPDATE mann_technical_association_revisions r SET provenance_json=j.row_image->'provenance_json' FROM mann_local_import_journal j WHERE j.table_name='mann_technical_association_revisions' AND r.id=j.row_key;`);
  assert.deepEqual(state(),after);
  pg(lifecycle.rollback);assert.deepEqual(state(),before);
- const report={kind:'LOCAL_CURRENT_STAGING_COMMIT_PROFILE_ROLLBACK',payloadHash:sha(payloadRaw),counts:lifecycle.counts,profileVariants:drive?543:rearAir?542:expanded?541:529,visibleWithoutVehicleContext:visibleProfiles,itemsWithoutVehicleContext:items,contextCases,visibleContextCases,contextVisibleVariants:contextVisibleVariants.size,duplicateImportRejected:true,changedRowRollbackRejected:true,fullSnapshotRestored:true,productionApplyAllowed:false,limitations:['Local fixture only; completed import runs are not technical signoff.','Contexts are synthetic applicability probes, not decoded real VINs; equipment confirmation cases are not exhaustive.','Scoped items still need exact vehicle/equipment context.','Existing replacement actions not executed; no production or VIN HTTP proof.']};
- if(supersessionProof){report.supersessionProof=supersessionProof;report.limitations[3]='307 explicit replacement actions tested and rolled back locally; remaining review/protected actions unchanged; no production or VIN HTTP proof.';}
+ const report={kind:'LOCAL_CURRENT_STAGING_COMMIT_PROFILE_ROLLBACK',payloadHash:sha(payloadRaw),counts:lifecycle.counts,profileVariants:recovered?550:logan?547:tepee?546:priority?545:drive?543:rearAir?542:expanded?541:529,visibleWithoutVehicleContext:visibleProfiles,itemsWithoutVehicleContext:items,contextCases,visibleContextCases,contextVisibleVariants:contextVisibleVariants.size,duplicateImportRejected:true,changedRowRollbackRejected:true,fullSnapshotRestored:true,productionApplyAllowed:false,limitations:['Local fixture only; completed import runs are not technical signoff.','Contexts are synthetic applicability probes, not decoded real VINs; equipment confirmation cases are not exhaustive.','Scoped items still need exact vehicle/equipment context.','Existing replacement actions not executed; no production or VIN HTTP proof.']};
+ if(supersessionProof){report.supersessionProof=supersessionProof;report.limitations[3]=replacementCount+' explicit replacement actions tested and rolled back locally; remaining review/protected actions unchanged; no production or VIN HTTP proof.';}
  if(combinedProof)report.combinedProfile={uniqueContexts:combinedProof.uniqueContexts,visibleLegacyRevisions:combinedProof.visibleLegacyRevisions,contextsWithDifferences:combinedProof.contextsWithDifferences};
  if(runtimeRead)report.actualDatabaseProfilesChecked=combinedProof.actualDatabaseProfilesChecked;
  if(routeRead)report.actualRouteProfilesChecked=combinedProof.actualRouteProfilesChecked;
- await writeFile(resolve(dir,drive?'current-staging-lifecycle-route-read-v10.json':rearAir?'current-staging-lifecycle-route-read-v9.json':complete?'current-staging-lifecycle-route-read-v8.json':expanded?'current-staging-lifecycle-route-read-v7.json':routeRead?'current-staging-lifecycle-route-read-v1.json':runtimeRead?'current-staging-lifecycle-runtime-read-v1.json':sourceDate?'current-staging-lifecycle-combined-v4.json':transmissionPrecedence?'current-staging-lifecycle-combined-v3.json':precedence?'current-staging-lifecycle-combined-v2.json':combined?'current-staging-lifecycle-combined-v1.json':withSupersession?'current-staging-lifecycle-supersession-v1.json':'current-staging-lifecycle-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(report));
+ await writeFile(resolve(dir,recovered?'current-staging-lifecycle-route-read-v15.json':logan?'current-staging-lifecycle-route-read-v14.json':tepee?'current-staging-lifecycle-route-read-v13.json':priority?'current-staging-lifecycle-route-read-v12.json':repaired?'current-staging-lifecycle-route-read-v11.json':drive?'current-staging-lifecycle-route-read-v10.json':rearAir?'current-staging-lifecycle-route-read-v9.json':complete?'current-staging-lifecycle-route-read-v8.json':expanded?'current-staging-lifecycle-route-read-v7.json':routeRead?'current-staging-lifecycle-route-read-v1.json':runtimeRead?'current-staging-lifecycle-runtime-read-v1.json':sourceDate?'current-staging-lifecycle-combined-v4.json':transmissionPrecedence?'current-staging-lifecycle-combined-v3.json':precedence?'current-staging-lifecycle-combined-v2.json':combined?'current-staging-lifecycle-combined-v1.json':withSupersession?'current-staging-lifecycle-supersession-v1.json':'current-staging-lifecycle-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(report));
 }finally{try{if(runtimeRead&&globalThis.prisma)await globalThis.prisma.$disconnect();}finally{if(started)execFileSync('/opt/homebrew/bin/pg_ctl',['-D',resolve(temp,'data'),'-m','fast','-w','stop'],{stdio:'pipe'});}}

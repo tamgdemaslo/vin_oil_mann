@@ -437,6 +437,16 @@ button:disabled {
   display: block;
 }
 
+@media (min-width: 901px) {
+  .shop-filters {
+    max-height: calc(100vh - 144px);
+    max-height: calc(100dvh - 144px);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+}
+
 .shop-card__meta {
   display: flex;
   align-items: center;

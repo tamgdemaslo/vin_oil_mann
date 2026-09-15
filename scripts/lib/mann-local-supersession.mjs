@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 const q=v=>`'${JSON.stringify(v).replaceAll("'","''")}'::jsonb`;
 const guard=`DO $$ BEGIN IF current_database()<>'mann_fixture' OR inet_server_addr() IS NOT NULL THEN RAISE EXCEPTION 'LOCAL FIXTURE ONLY'; END IF; END $$;`;
-export function localSupersession(payload){
+export function localSupersession(payload,expectedCount=307){
  const actions=payload.existingActions.filter(a=>a.action==='REPLACE_WITH_PREVIEW');
- assert.equal(actions.length,307);assert.equal(new Set(actions.map(a=>a.successorId)).size,actions.length);
+ assert.ok(Number.isInteger(expectedCount)&&expectedCount>0);assert.equal(actions.length,expectedCount);assert.equal(new Set(actions.map(a=>a.successorId)).size,actions.length);
+ assert.equal(new Set(actions.map(a=>a.revisionId)).size,actions.length);
+ assert.ok(actions.every(a=>a.revisionId!==a.successorId));
  for(const a of actions)assert.ok(payload.revisions.some(r=>r.originalRevision.id===a.successorId));
  const apply=`BEGIN;
  ${guard}

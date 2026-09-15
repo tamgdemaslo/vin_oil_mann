@@ -36,6 +36,10 @@ const base = {
 };
 
 const staged = buildMannUnifiedTechnicalProfile([base]);
+const fullReplacementFixture=buildMannUnifiedTechnicalProfile([{...base,
+  technicalDataJson:{capacity:{nominalLiters:6.9,serviceContext:'FULL_REPLACEMENT'}}}]);
+assert.equal(fullReplacementFixture.items[0].capacity.serviceContextLabel,'полная замена');
+assert.equal(fullReplacementFixture.items[0].capacity.nominalLiters,6.9);
 const marketLimitedOil={...base,applicabilityJson:{requiredMarket:'RU',matchedEngineScope:['RF']}};
 assert.equal(buildMannUnifiedTechnicalProfile([marketLimitedOil],undefined,{engineCode:'RF'}).items.length,0);
 assert.equal(buildMannUnifiedTechnicalProfile([marketLimitedOil],undefined,{engineCode:'RF',confirmedMarket:'RU'}).items.length,1);

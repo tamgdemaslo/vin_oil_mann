@@ -44,6 +44,7 @@ export async function auditCombinedProfiles(root,persisted,payload,runtimeRead=f
   if(seen.has(key))continue;seen.add(key);cases++;
   const rows=byVariant.get(r.vehicleVariantKey)??[];
   const all=profile(rows,type,context),newOnly=profile(rows.filter(x=>currentIds.has(x.id)),type,context);
+  if(r.provenanceJson.sourcePowerReviewHold)assert.equal(all.items.some(i=>i.revisionId===r.id),false,'Power-held revision must remain hidden after persistence');
   if(a.requiredVehicleDrive)assert.equal(all.items.some(i=>i.revisionId===r.id),context.confirmedDrive===a.requiredVehicleDrive,'Persisted drive scope must reject missing/wrong confirmation');
   if(r.technicalDataJson.capacityBranches?.some(b=>b.condition.kind==='rearAirConditioning')){
    const item=all.items.find(i=>i.revisionId===r.id);assert.ok(item,'Persisted rear-AC scoped record missing');

@@ -56,4 +56,11 @@ assert.equal(select(cvt.branches,{transmissionType:'cvt'}).capacity.nominalLiter
 assert.equal(select(cvt.branches,{transmissionType:'manual'}).capacity.nominalLiters,5.6);
 for(const transmissionType of [undefined,'automatic','robot','CVT'])assert.equal(select(cvt.branches,{transmissionType}),null);
 for(const text of ['5.8 л. с CVT кроме 2019 года 5.6 л. с МКПП','5.8 л. с CVT/АКПП 5.6 л. с МКПП','5.8 л. с DCT 5.6 л. с МКПП'])assert.equal(parse(text,'ENGINE_COOLANT').status,'review');
-console.log('PASS conditional capacity branches, exact selection, missing/wrong selector, shared-condition rejection, source preservation');
+// A branch parser must not discard a new missing-unit warning and publish the
+// remaining total or unrelated explicit alternatives as a complete result.
+for(const text of ['6.0-6.5 частичный 8.3 л. полный','4.0 частичная замена 8.5 л. общий объём 12.0 л. для аппаратной замены','4.0 частичная 5 л. для АКПП 6 л. для МКПП']) {
+ const result=parse(text,'AUTOMATIC_TRANSMISSION');
+ assert.equal(result.status,'review');assert.equal(result.publicationAllowed,false);
+ assert.deepEqual(result.branches,[]);assert.equal(result.sourceText,text);
+}
+console.log('PASS conditional capacity branches, exact selection, missing/wrong selector, shared-condition rejection, source preservation, missing-unit warning propagation');

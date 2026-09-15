@@ -1,8 +1,9 @@
-export const FLUID_CAPACITY_PARSER_VERSION = "capacity-parser-v5" as const;
+export const FLUID_CAPACITY_PARSER_VERSION = "capacity-parser-v7" as const;
 
 export type FluidCapacityKind =
   | "SERVICE"
   | "TOTAL"
+  | "FULL_REPLACEMENT"
   | "PARTIAL"
   | "WITH_FILTER"
   | "WITHOUT_FILTER"
@@ -23,7 +24,7 @@ export type ParsedFluidCapacity = {
   confidence: FluidCapacityConfidence;
   raw: string;
   qualifier: FluidCapacityQualifier;
-  serviceContext: "SERVICE" | "TOTAL" | "PARTIAL" | "DRY_FILL" | "REFILL" | "UNKNOWN";
+  serviceContext: "SERVICE" | "TOTAL" | "FULL_REPLACEMENT" | "PARTIAL" | "DRY_FILL" | "REFILL" | "UNKNOWN";
   filterContext: "WITH_FILTER" | "WITHOUT_FILTER" | "UNKNOWN";
   start: number;
   end: number;
@@ -36,6 +37,7 @@ export type CapacityParserDiagnostic = {
     | "OUTSIDE_SYSTEM_PLAUSIBILITY"
     | "REVERSED_RANGE"
     | "TOLERANCE_EXCEEDS_NOMINAL"
+    | "MISSING_SERVICE_VOLUME_UNIT"
     | "UNRESOLVED_CONDITIONAL_CAPACITY";
   message: string;
   raw: string;
@@ -90,6 +92,7 @@ const STANDALONE_NUMBER_PATTERN = new RegExp(
 const CONDITIONAL_MARKER_PATTERN = /(?:ДЛЯ|\bFOR\b|БЕНЗИН|ДИЗЕЛ|АКПП|МКПП|\bCVT\b|\bDCT\b|\b2WD\b|\b4WD\b|КУЗОВ)/iu;
 
 const KIND_MARKERS: Array<{ kind: FluidCapacityKind; pattern: RegExp; priority: number }> = [
+  { kind: "FULL_REPLACEMENT", pattern: /полн[а-яё]*\s+замен[а-яё]*/giu, priority: 20 },
   { kind: "WITHOUT_FILTER", pattern: /без\s+(?:маслян(?:ого|ый)\s+)?фильтр[а-я]*/giu, priority: 10 },
   { kind: "WITH_FILTER", pattern: /(?:(?<![a-zа-яё])(?:с|c)|вместе\s+с)\s+(?:маслян(?:ым|ый)\s+)?фильтр[а-я]*/giu, priority: 10 },
   { kind: "PARTIAL", pattern: /(?:частичн[а-я]*|слив[а-я]*)/giu, priority: 8 },
@@ -189,6 +192,9 @@ function nearestKind(
   for (const marker of KIND_MARKERS) {
     marker.pattern.lastIndex = 0;
     for (const match of context.matchAll(marker.pattern)) {
+      // A replacement quantity is not the total capacity of the assembly.
+      if (marker.kind === "TOTAL" && /^полн/iu.test(match[0])
+        && /^\s+(?:аппаратн[а-яё]*\s+)?замен[а-яё]*/iu.test(context.slice((match.index ?? 0) + match[0].length))) continue;
       const markerStart = absoluteStart + (match.index ?? 0);
       const markerEnd = markerStart + match[0].length;
       const markerCenter = markerStart + match[0].length / 2;
@@ -206,7 +212,7 @@ function nearestKind(
 }
 
 function serviceContext(kind: FluidCapacityKind): ParsedFluidCapacity["serviceContext"] {
-  return ["SERVICE", "TOTAL", "PARTIAL", "DRY_FILL", "REFILL"].includes(kind)
+  return ["SERVICE", "TOTAL", "FULL_REPLACEMENT", "PARTIAL", "DRY_FILL", "REFILL"].includes(kind)
     ? (kind as ParsedFluidCapacity["serviceContext"])
     : "UNKNOWN";
 }
@@ -398,6 +404,16 @@ export function parseFluidCapacities(value: unknown, systemCode?: string | null)
         end: text.length,
       });
     }
+  }
+
+  // A service-labelled amount without a unit must not disappear silently next
+  // to a parseable total. Preserve the source clause for review; do not infer
+  // litres or copy the total's unit into the partial amount.
+  const unitlessServiceAmount = /(?<![\p{L}\p{N}.,])\d{1,4}(?:[.,]\d{1,3})?(?:\s*[-–—]\s*\d{1,4}(?:[.,]\d{1,3})?)?\s+(?:частичн[а-я]*|полн[а-я]*)(?![\p{L}\p{N}])/giu;
+  for (const match of text.matchAll(unitlessServiceAmount)) {
+    const start = match.index ?? 0, end = start + match[0].length;
+    if (capacities.some(capacity => capacity.start <= start && end <= capacity.end)) continue;
+    suspicious.push({code: "MISSING_SERVICE_VOLUME_UNIT", message: "Объём частичной или полной замены указан без единицы измерения; исходное значение сохранено для проверки.", raw: match[0], start, end});
   }
 
   return {

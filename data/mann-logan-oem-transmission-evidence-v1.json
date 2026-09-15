@@ -1,0 +1,46 @@
+{
+  "kind": "PRIMARY_SOURCE_COMPONENT_SCOPE_EVIDENCE",
+  "observedOn": "2026-09-15",
+  "publisher": "Renault Russia",
+  "sources": [
+    {
+      "url": "https://cdn.group.renault.com/ren/ru/logan/20_LOGAN_v2.pdf.asset.pdf/a656b19cff.pdf",
+      "documentScope": "Russian-market Logan, cars produced in 2020; not every production year or destination",
+      "relevantPagesOneBased": [1, 2, 4],
+      "observations": [
+        {"engineLiters": 1.6, "powerHp": 82, "transmissionType": "manual", "gears": 5},
+        {"engineLiters": 1.6, "powerHp": 102, "transmissionType": "automatic", "gears": 4},
+        {"engineLiters": 1.6, "powerHp": 113, "transmissionType": "manual", "gears": 5}
+      ],
+      "equipmentObservation": "Hydraulic power steering listed as standard for all four presented trim levels.",
+      "evidenceMethod": "Extracted technical table cross-checked against separate engine/transmission offer rows on page 1. Screenshot requested but no model-visible image returned; visual verification not claimed."
+    },
+    {
+      "url": "https://cdn.group.renault.com/ren/ru/logan-stepway/main/Brochure_Stepway_R%26GO_022_2019.12.02.pdf.asset.pdf/d24a077cce.pdf",
+      "documentScope": "Russian Stepway/Stepway City brochure; printed November 2019",
+      "observations": [
+        "Logan Stepway/City table separates 82 hp five-speed, 113 hp five-speed, 102 hp four-speed and 113 hp CVT columns.",
+        "Steering assistance differs by engine column; do not copy equipment across all family variants."
+      ],
+      "evidenceMethod": "Text extraction only; column-layout screenshot not verified. Supporting lead, not standalone machine-applicable evidence."
+    }
+  ],
+  "decision": "Do not interpret all transmission rows in the secondary Logan II table as applicable to every listed engine. Prioritize exact engine/transmission pairing evidence before creating conditional rows.",
+  "heldSourceLinks": {
+    "vehicleVariantKey": "8edddc03d3a2997c6f9257dc8da33b1264a7bbd15e992901673cbc30c0697321",
+    "catalogEngine": "K7M",
+    "sourceRequirementIds": [
+      "3b105d3cb6f9397b423196aa5189cf3af5d4212bbc375706be4a8f18967b3c00",
+      "13c7dc7ecd48162eacae42ecaa3393625ef3abbf8f1ad0110d00279a58204650"
+    ],
+    "reason": "Shared-family source header does not establish K7M plus DP2 or K7M plus CVT. Brochure distinguishes power/transmission combinations but does not explicitly map engine codes."
+  },
+  "limitations": [
+    "No engine-code, gearbox-model, fluid-approval or service-volume mapping is inferred from these brochures.",
+    "Do not equate archived MANN 83 hp with brochure 82 hp without separate evidence.",
+    "Do not extend this Russian 2019/2020 evidence to the entire 2013-2022 source interval or other markets.",
+    "No current VIN destination, installed gearbox or steering equipment confirmed.",
+    "Existing catalogue and draft records are unchanged."
+  ],
+  "productionApplyAllowed": false
+}

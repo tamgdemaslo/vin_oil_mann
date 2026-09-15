@@ -20,6 +20,13 @@ function request(overrides={}){
 const verified=value=>runWithRequestTenant(tenant,()=>verifiedLocalTechnicalInput(value,'org-a'));
 const lookup=(args,context=ctx)=>runWithRequestTenant(tenant,()=>executeAssistantTool('lookup_technical_data',args,context));
 
+await test('full replacement is not promoted to total capacity or an assumed machine procedure',async()=>{
+  setup([{nominalLiters:6.9,serviceContext:'FULL_REPLACEMENT'}]);
+  const v=await verified(request());
+  assert.equal(v.input.service.totalTechnicalQuantityLiters==null,true);
+  assert.equal(v.facts.some(f=>f.field==='capacity'),false);
+});
+
 await test('mixed active profile cannot promote staged or legacy items to verified facts',async()=>{
   for(const eligibility of [false,undefined]){
     const f=setup();f.profile.items[0].automaticSelectionEligible=eligibility;

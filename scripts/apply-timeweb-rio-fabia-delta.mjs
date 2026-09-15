@@ -1,0 +1,68 @@
+// Owner-confirmed fixed 10-revision / 2-parent insert-only package. No schema changes.
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {lookup} from 'node:dns/promises';
+import {X509Certificate} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
+import {parseCopy,sha} from './lib/mann-offline-scope.mjs';
+import {insertOnlyMannDelta} from './lib/mann-insert-only-delta.mjs';
+import {importSnapshotGuard} from './lib/mann-import-snapshot-guard.mjs';
+assert.ok(process.argv.length===2||(process.argv.length===3&&process.argv[2]==='--apply'));
+const apply=process.argv[2]==='--apply',directory='outputs/mann-live-audit-1789469257907';
+const read=p=>JSON.parse(readFileSync(`${directory}/${p}`,'utf8'));
+const pinned=(file,hash)=>{const raw=readFileSync(`${directory}/${file}`,'utf8');assert.equal(sha(raw),hash,file);return JSON.parse(raw);};
+const rioHash='17bfd17c606cc154e773af6fd0d395cf86686bcba36adffc6e323be5e78d0343',fabiaHash='de64dd59b725a3d3a53a210bfeec3ade050a09ee1db965ce0681fff9ae5c17fd',extraHash='cc807995ce8bc670f141e45ef1223d4ef53941d0522f0c6f3db1b06c17e1c3ff';
+const rio=pinned('rio-transmission-drafts-v2.json',rioHash),fabia=pinned('fabia-scoped-drafts.json',fabiaHash),extra=pinned('fabia-02t-draft.json',extraHash);
+assert.equal(extra.baseDraftHash,fabiaHash);
+const liveHash=sha(readFileSync(`${directory}/revisions.json`,'utf8'));
+for(const d of[rio,fabia,extra]){assert.equal(d.liveHash,liveHash);assert.equal(d.productionApplyAllowed,false);}
+const parents=read('fabia-canonical-parent-drafts.json');assert.equal(parents.draftHash,fabiaHash);assert.equal(parents.liveParentsHash,sha(readFileSync(`${directory}/canonicalVehicles.json`,'utf8')));
+const proof=read('fabia-02t-durable-route-proof.json');assert.equal(proof.baseDraftHash,fabiaHash);assert.equal(proof.extraDraftHash,extraHash);assert.equal(proof.durableDelta.atomicFailureVerified,true);assert.equal(proof.durableDelta.insertedRevisions,6);assert.equal(proof.durableDelta.insertedVehicles,2);
+const rioProof=read('rio-durable-route-proof.json');assert.equal(rioProof.draftHash,rioHash);assert.equal(rioProof.durableDelta.atomicFailureVerified,true);
+const snake=k=>k.replace(/[A-Z]/g,c=>'_'+c.toLowerCase());
+const typed=rows=>rows.map(({run,reviewConfirmed,replacesRevisionIds,...r})=>Object.fromEntries(Object.entries(r).map(([k,v])=>[snake(k),v])));
+const tableFiles={canonicalVehicles:'mann_vehicle_variants',runs:'mann_technical_materialization_runs',revisions:'mann_technical_association_revisions',reviewDecisions:'mann_technical_review_decisions'};
+const snapshot={databaseName:'vin_oil',capturedAt:read('report.json').generatedAt,tables:Object.fromEntries(Object.entries(tableFiles).map(([file,table])=>[table,typed(read(file+'.json'))]))};
+const vehicles=parents.parents.map(p=>({...p.data,canonicalPayloadHash:p.canonicalPayloadHash}));assert.equal(vehicles.length,2);
+const drafts=[...rio.newRevisions,...fabia.newRevisions,...extra.newRevisions];assert.equal(drafts.length,10);
+const batchId='mann_rio_fabia_delta_20260915',runId='mtmr_rio_fabia_delta_20260915';
+const authorizationRef='Owner confirmed 2026-09-15 in task 01a091c2-2b80-7f01-a8bb-bebe0a236e74: 10 Rio/Fabia fluid revisions and 2 parents; preserve existing records and manual decisions.';
+const planHash=sha(JSON.stringify({rioHash,fabiaHash,extraHash,vehicles,batchId,runId,authorizationRef}));
+const timestamp='2026-09-15T00:00:00.000Z',commit='797a17eaf5ae7087f1144067b3c6542b12ea454d';
+const run={id:runId,status:'COMPLETED',mode:'STAGING',matcherVersion:'mann-fluid-matcher-v11',capacityParserVersion:'source-preserving-scoped-delta',gitCommit:commit,sourceSnapshotJson:{rioHash,fabiaHash,extraHash,liveHash},sourceCountsJson:{revisions:10,parents:2},gatesJson:{catalogPreviewPolicy:'MANN_ENGINE_DATE_SCOPED_PREVIEW_V1',conditionalTransmissionPolicy:'USER_CONFIRMED_TRANSMISSION_V1',automaticProductSelection:false},approvalJson:{authorizationRef,scope:'INSERT_ONLY_CATALOG_PREVIEWS'},independentHumanSignoff:false,productionApplyAuthorized:false,startedAt:timestamp,completedAt:timestamp,createdAt:timestamp,updatedAt:timestamp};
+const revisions=drafts.map(r=>({...r,runId,createdAt:timestamp}));
+const sr=readFileSync('/tmp/vehicle_fluid_requirements.sql','utf8'),mr=readFileSync('/tmp/mann_filter_applications.sql','utf8');
+assert.equal(sha(sr),'e802cacc05c23f8c21bc4d84bbf6796b15d9bb5be86e41964a028276fa4f92a0');assert.equal(sha(mr),'5e34efadc60014077b55655e0c62cdcbb8b1f44d3a8aace2399e941b45003fda');
+const ids=[...new Set(revisions.map(r=>r.sourceRequirementId))],keys=[...new Set(revisions.map(r=>r.vehicleVariantKey))];assert.equal(ids.length,7);assert.equal(keys.length,5);
+const source=typed(parseCopy(sr,'vehicle_fluid_requirements').filter(r=>ids.includes(r.id))),mann=typed(parseCopy(mr,'mann_filter_applications').filter(r=>keys.includes(r.vehicleVariantKey)));assert.equal(source.length,7);assert.ok(keys.every(k=>mann.some(r=>r.vehicle_variant_key===k)));
+const q=v=>`'${JSON.stringify(v).replaceAll("'","''")}'::jsonb`;
+const config=readFileSync('.env.local','utf8'),get=k=>config.match(new RegExp(`^${k}\\s*=\\s*(.*)$`,'m'))?.[1]?.trim().replace(/^(["'])(.*)\1$/,'$2');
+const raw=get('TIMEWEB_MIGRATION_DATABASE_URL'),token=get('TIMEWEB_CLOUD_TOKEN');assert.ok(raw&&token);const u=new URL(raw);assert.equal(u.pathname,'/vin_oil');
+assert.equal(new X509Certificate(readFileSync('/tmp/mann-timeweb-ca-20260913.crt')).fingerprint256.replaceAll(':','').toLowerCase(),'17179badb992feb038426ff31ba66ab7fa711f092ca22705bd7251f3011a124d');
+const api=async path=>{const r=await fetch(`https://api.timeweb.cloud/api/v1${path}`,{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'},signal:AbortSignal.timeout(20000)});assert.ok(r.ok,`Timeweb HTTP ${r.status}`);return r.json();};
+const {db}=await api('/dbs/4195453');assert.ok((await lookup(u.hostname,{all:true})).some(r=>r.address===db.ip));assert.equal(String(db.port),String(u.port||5432));
+const {backup}=await api('/dbs/4195453/backups/103647271');assert.equal(backup.status,'done');assert.ok(backup.size>0);
+const {app}=await api('/apps/235547');assert.equal(app.status,'active');assert.equal(app.commit_sha,commit);
+const {deploys}=await api('/apps/235547/deploys');assert.equal(deploys[0].status,'success');assert.equal(deploys[0].commit_sha,commit);
+const health=async()=>{for(const endpoint of ['/api/health/live','/api/health/ready'])assert.equal((await fetch(`https://tamgdemaslocrm.ru${endpoint}`,{redirect:'error',signal:AbortSignal.timeout(20000)})).status,200);};await health();
+const guard=[['vehicle_fluid_requirements','id',ids,source],['mann_filter_applications','vehicle_variant_key',keys,mann]].map(([table,key,selected,rows])=>`DO $source$ BEGIN IF (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM ${table} r WHERE ${key} IN(SELECT jsonb_array_elements_text(${q(selected)}))) IS DISTINCT FROM (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM jsonb_populate_recordset(NULL::${table},${q(rows)}) r) THEN RAISE EXCEPTION 'source drift: ${table}'; END IF; END $source$;`).join('\n');
+const migrationGuard=`DO $migration$ BEGIN IF NOT EXISTS(SELECT 1 FROM _prisma_migrations WHERE migration_name='20260915130000_mann_technical_import_receipts' AND checksum='0f8113fffd7ccc75e1ed7b058337141e2e2c792ace6506e9a1d4ba8d0ad7bc56' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) THEN RAISE EXCEPTION 'receipt migration missing'; END IF; END $migration$;`;
+const built=insertOnlyMannDelta({snapshot,revisions,run,vehicles,planHash,batchId,authorizationRef});
+let sql=built.sql.replace('BEGIN;',()=>`BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='60s'; LOCK TABLE vehicle_fluid_requirements,mann_filter_applications IN SHARE ROW EXCLUSIVE MODE; ${guard} ${migrationGuard}`);
+assert.ok(sql.includes(guard));if(!apply)sql=sql.slice(0,-7)+'ROLLBACK;';
+const env={...Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.startsWith('PG'))),PGHOST:u.hostname,PGPORT:u.port||'5432',PGUSER:decodeURIComponent(u.username),PGPASSWORD:decodeURIComponent(u.password),PGDATABASE:'vin_oil',PGCONNECT_TIMEOUT:'8',PGSSLMODE:'verify-full',PGSSLROOTCERT:'/tmp/mann-timeweb-ca-20260913.crt',PGSERVICEFILE:'/dev/null',PGPASSFILE:'/dev/null'};
+const pg=sql=>{const result=spawnSync('/opt/homebrew/bin/psql',['-X','-q','-At','-v','ON_ERROR_STOP=1'],{env,input:sql,encoding:'utf8',timeout:90000,maxBuffer:32*1024*1024});if(result.status!==0){let message=result.stderr||'Database operation failed; inspect durable receipt before retry';for(const secret of[raw,u.hostname,u.username,u.password,decodeURIComponent(u.username),decodeURIComponent(u.password)])if(secret)message=message.split(secret).join('[redacted]');throw Error(message);}return result.stdout.trim();};
+// A fresh connection can reconcile a timeout without re-running the insertion.
+const receiptQuery=`SELECT coalesce((SELECT to_jsonb(r) FROM mann_technical_import_receipts r WHERE batch_id='${batchId}'),'null'::jsonb);`;
+const prior=JSON.parse(pg(receiptQuery));
+let receipt=prior;
+if(!prior){pg(sql);receipt=JSON.parse(pg(receiptQuery));}else{assert.ok(apply,'Batch already applied');assert.equal(prior.plan_sha256,planHash);assert.equal(prior.authorization_ref,authorizationRef);}
+if(apply){
+ assert.ok(receipt,'Committed receipt not found');assert.equal(receipt.plan_sha256,planHash);assert.equal(receipt.database_name,'vin_oil');
+ const journal=receipt.journal_json;assert.equal(journal.vehicles.length,2);assert.equal(journal.runs.length,1);assert.equal(journal.revisions.length,10);
+ const expected=structuredClone(snapshot);expected.tables.mann_vehicle_variants.push(...journal.vehicles);expected.tables.mann_technical_materialization_runs.push(...journal.runs);expected.tables.mann_technical_association_revisions.push(...journal.revisions);
+ pg(`BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='60s'; ${importSnapshotGuard(expected)} ${guard} ROLLBACK;`);
+}else assert.equal(receipt,null);
+await health();
+const report={kind:'TIMEWEB_RIO_FABIA_INSERT_ONLY_DELTA',applied:apply,reconciledExistingReceipt:!!prior,checkedAt:new Date().toISOString(),batchId,planHash,sqlHash:sha(sql),counts:built.counts,sourceRows:source.length,mannRows:mann.length,backupId:backup.id,runtimeCommit:commit,oldRowsUnchanged:true,healthLiveReady200:true,receipt};
+const output=`${directory}/rio-fabia-${apply?'applied':'rollback-check'}-${Date.now()}.json`;writeFileSync(output,JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify({...report,receipt:receipt?{batchId,revisionCount:receipt.journal_json.revisions.length}:null,output}));

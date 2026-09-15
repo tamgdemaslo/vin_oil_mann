@@ -84,7 +84,7 @@ export type FluidSystemCode =
   | "OTHER";
 
 type Capacity = Pick<ParsedFluidCapacity, "minLiters" | "maxLiters" | "nominalLiters" | "toleranceLiters" | "context" | "confidence" | "raw" | "qualifier"> & {
-  kind: "service" | "total" | "partial" | "with_filter" | "without_filter" | "unspecified";
+  kind: "service" | "total" | "full_replacement" | "partial" | "with_filter" | "without_filter" | "unspecified";
 };
 
 type Specification = { type: string; value: string };
@@ -633,6 +633,7 @@ export function parseCapacities(value: unknown): Capacity[] {
   const kindMap: Record<ParsedFluidCapacity["kind"], Capacity["kind"]> = {
     SERVICE: "service",
     TOTAL: "total",
+    FULL_REPLACEMENT: "full_replacement",
     PARTIAL: "partial",
     WITH_FILTER: "with_filter",
     WITHOUT_FILTER: "without_filter",

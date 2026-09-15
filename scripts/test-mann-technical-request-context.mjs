@@ -20,9 +20,21 @@ for(const input of [{Market:'RU',market:'DE'},{Market:'Europe / Russia'},{Countr
 assert.equal(context({...vehicle,marketEvidence:undefined}).confirmedMarket,undefined);
 assert.equal(context({...vehicle,marketEvidence:{values:[],confirmedMarket:'RU'}}).confirmedMarket,undefined);
 assert.equal(context({...vehicle,marketEvidence:{values:['DE'],confirmedMarket:'RU'}}).confirmedMarket,undefined);
-assert.equal(context({}, {...details,confirmedMarket:'RU',engineCode:'RF'}).confirmedMarket,undefined);
+assert.equal(context({}, {...details,confirmedMarket:'RU',engineCode:'RF'}).confirmedMarket,'RU');
 assert.equal(context({}, {...details,confirmedMarket:'RU',engineCode:'RF'}).engineCode,undefined);
 assert.equal(context(vehicle).productionMonth,undefined);
+// Explicit destination fills absent evidence only and never changes the decoder.
+const unknown=toVehicle({Brand:'Honda',Model:'CR-V',Year:2010,CountryOfOrigin:'Japan'},'tronk_vindecode');
+const original=JSON.stringify(unknown);
+for(const market of ['RU','JP','US','KR','AE','EU','SOUTHEAST_ASIA']){
+  assert.equal(context(unknown,{confirmedMarket:market}).confirmedMarket,market);
+  assert.equal(context(vehicle,{confirmedMarket:market}).confirmedMarket,'RU');
+  for(const conflicting of [{market:'UNKNOWN'},{market:'RU'},{marketEvidence:{values:['RU','JP']}},{marketEvidence:{values:['UNKNOWN'],confirmedMarket:'RU'}}])
+    assert.equal(context({...unknown,...conflicting},{confirmedMarket:market}).confirmedMarket,undefined);
+}
+for(const market of ['',undefined,'DE','ru','RU,JP',123])assert.equal(context(unknown,{confirmedMarket:market}).confirmedMarket,undefined);
+assert.equal(context(unknown).confirmedMarket,undefined);
+assert.equal(JSON.stringify(unknown),original);
 for(const [market,label] of Object.entries({RU:'Russia',JP:'Japan',US:'USA',KR:'South Korea',AE:'UAE',EU:'Europe',SOUTHEAST_ASIA:'Ю-В Азия'})){
  const decoded=toVehicle({Brand:'Toyota',Model:'Test',EngineCode:'RF',Market:label},'tronk_vindecode');
  const serialized=JSON.parse(JSON.stringify(context(decoded,details)));
@@ -34,5 +46,6 @@ for(const [market,label] of Object.entries({RU:'Russia',JP:'Japan',US:'USA',KR:'
  const next=toVehicle({},'tronk_vindecode');assert.equal(context(next).confirmedMarket,undefined);
 }
 const component=await readFile(new URL('../src/components/shipment/VehicleLookupPanel.tsx',import.meta.url),'utf8');
-assert.match(component,/vehicleContext: mannTechnicalContextFromVehicle\(vehicle, details\)/);
+assert.match(component,/vehicleContext: mannTechnicalContextFromVehicle\(vehicle, details,/);
+assert.match(component,/variantKeys\.every\(key => confirmedTechnicalCandidateRef\.current\?\.variantIds\.includes\(key\)\)/);
 console.log('VIN provider → per-vehicle request serialization → market/engine scope tests passed');

@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {sha} from './lib/mann-offline-scope.mjs';
+import {localStagingLifecycle} from './lib/mann-local-staging-lifecycle.mjs';
+import {localSupersession} from './lib/mann-local-supersession.mjs';
+const root=resolve(import.meta.dirname,'..'),dir=resolve(root,'outputs/mann-gentra-evidence-review-2026-09-14');
+const payloadRaw=await readFile(resolve(dir,'current-staging-payload-v14.json'),'utf8'),payload=JSON.parse(payloadRaw);assert.equal(sha(payloadRaw),'269fe016a72ee8759fab7e92d23faab826d0fd56b840dccfba013de9a39b2105');
+const parentRaw=await readFile(resolve(root,'outputs/mann-live-audit-1789415211923/canonical-parent-drafts-v11.json'),'utf8'),parents=JSON.parse(parentRaw);assert.equal(parents.payloadHash,sha(payloadRaw));
+const lifecycle=localStagingLifecycle(payload,parents),replacement=localSupersession(payload,310);assert.deepEqual(lifecycle.counts,[220,11,2034]);assert.equal(replacement.count,310);
+assert.throws(()=>localSupersession(payload));assert.throws(()=>localSupersession(payload,309));assert.throws(()=>localSupersession(payload,311));
+const duplicate=structuredClone(payload),actions=duplicate.existingActions.filter(a=>a.action==='REPLACE_WITH_PREVIEW');actions[1].revisionId=actions[0].revisionId;assert.throws(()=>localSupersession(duplicate,310));
+const self=structuredClone(payload),action=self.existingActions.find(a=>a.action==='REPLACE_WITH_PREVIEW');action.revisionId=action.successorId;assert.throws(()=>localSupersession(self,310));
+const legacy=JSON.parse(await readFile(resolve(dir,'current-staging-payload-v13.json'),'utf8'));assert.equal(localSupersession(legacy).count,307);
+const allParents=new Set([...parents.drafts,...parents.existing].map(v=>v.vehicleVariantKey));assert.equal(allParents.size,547);for(const r of payload.revisions)assert.ok(allParents.has(r.originalRevision.vehicleVariantKey));
+assert.ok(!parents.drafts.some(v=>v.vehicleVariantKey==='8edddc03d3a2997c6f9257dc8da33b1264a7bbd15e992901673cbc30c0697321'));
+const report={kind:'CURRENT_V14_PACKAGE_CONSTRUCTION_ONLY',payloadHash:sha(payloadRaw),parentHash:sha(parentRaw),counts:lifecycle.counts,replacements:310,expectedJournalRows:620,variantKeys:547,negativeCountAndIdentityChecks:5,legacyV13Compatible:true,sqlConstructed:true,databaseExecuted:false,productionApplyAllowed:false,limitations:['SQL construction and source structure only; this is not a committed database/route/rollback test.','Next local lifecycle run must explicitly request310replacements and620journal rows.']};
+await writeFile(resolve(dir,'current-v14-package-construction-v1.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(report));

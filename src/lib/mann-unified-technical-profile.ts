@@ -62,6 +62,7 @@ const SYSTEM_LABELS: Record<string, string> = {
 const CAPACITY_CONTEXT_LABELS: Record<string, string> = {
   SERVICE: "сервисная замена",
   TOTAL: "полная ёмкость",
+  FULL_REPLACEMENT: "полная замена",
   PARTIAL: "частичная замена",
   WITH_FILTER: "с фильтром",
   WITHOUT_FILTER: "без фильтра",

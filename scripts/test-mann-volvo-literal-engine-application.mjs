@@ -7,4 +7,7 @@ assert.equal(parse(text,'FORD'),null);
 const bare='МАСЛО в ДВИГАТЕЛЬ T4\nМодель:\n- B4204T31 / 190 л.с.\n- B4204T44 / 190 л.с.\nТип топлива: Бензин\nОбъём двигателя: 2.0 л.\nГоды выпуска: 2017-2022';assert.equal(parse(bare,'volvo').branches.length,2);
 assert.equal(parse(text.replace('Модель:\n',''),'VOLVO').branches.length,2);
 assert.equal(parse(text.replace('163 л.с. / 2010-2015','163 л.с. / 2010-2015 / 2WD'),'VOLVO').branches[0].driveCondition,'2WD');
-console.log('PASS complete Volvo tables, source labels/dates/power/drive preservation, unknown qualifiers and fuel conflict rejection');
+const both=text.replace(/^- /gm,'').replace('163 л.с. / 2010-2015','163 л.с. / 2WD, 4WD / 2010-2015');assert.equal(parse(both,'VOLVO').branches[0].driveCondition,'2WD, 4WD');
+assert.equal(parse(text.replace('163 л.с.','163 л.с. / 2WD, unknown'),'VOLVO'),null);
+const b4=bare.replace('ДВИГАТЕЛЬ T4','ДВИГАТЕЛЬ B4').replaceAll('B4204T31','D420T8').replace('- B4204T44 / 190 л.с.\n','').replace('Бензин','Дизель');assert.ok(parse(b4,'VOLVO'));
+console.log('PASS complete Volvo tables, preserved dual drive/B labels/unbulleted rows, unknown clauses and fuel conflict rejection');

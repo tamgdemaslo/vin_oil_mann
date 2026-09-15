@@ -302,8 +302,8 @@ const CASES = [
     ],
   },
   {
-    id: 'skoda-kodiaq-dq250-haldex5',
-    title: 'Skoda Kodiaq — DSG DQ250, Haldex 5 и редукторы',
+    id: 'volkswagen-tiguan-dq250-haldex5',
+    title: 'Volkswagen Tiguan — DSG DQ250, Haldex 5 и редукторы',
     year: '2.0 TSI',
     mileage: '110 000 км',
     fluid: '4 агрегата',
@@ -311,9 +311,9 @@ const CASES = [
     cost: null,
     costLabel: 'Стоимость',
     summary: 'Обслужили всю трансмиссию: заменили масло и фильтр в DSG DQ250, очистили сетку насоса Haldex 5 и обновили масло в заднем редукторе и раздатке.',
-    hero: 'skoda',
-    heroImage: '/cases/skoda-kodiaq-dq250/hero.jpg',
-    heroAlt: 'Skoda Kodiaq 2.0 TSI в цехе перед обслуживанием DSG DQ250 и Haldex 5',
+    hero: 'volkswagen',
+    heroImage: '/cases/volkswagen-tiguan-dq250/hero.jpg',
+    heroAlt: 'Volkswagen Tiguan 2.0 TSI в цехе перед обслуживанием DSG DQ250 и Haldex 5',
     heroEyebrow: 'DQ250 · HALDEX 5 · 110 000 КМ',
     palette: ['#111111', '#343434', '#C2410C'],
     stats: [
@@ -338,15 +338,15 @@ const CASES = [
     quote: 'У Haldex 5 нет сменного фильтра, поэтому состояние сетки насоса — отдельный пункт обслуживания полного привода.',
     quoteAuthor: 'Практика обслуживания Haldex 5',
     gallery: [
-      {src: '/cases/skoda-kodiaq-dq250/dsg-access.jpg', alt: 'Доступ к фильтру DSG DQ250 после снятия аккумулятора', caption: 'Доступ к фильтру DSG'},
-      {src: '/cases/skoda-kodiaq-dq250/haldex-pump.jpg', alt: 'Насос Haldex 5 на Skoda Kodiaq', caption: 'Снятие насоса Haldex'},
-      {src: '/cases/skoda-kodiaq-dq250/haldex-pump-detail.jpg', alt: 'Демонтированный насос Haldex 5', caption: 'Насос и уплотнения'},
-      {src: '/cases/skoda-kodiaq-dq250/haldex-mesh-before.jpg', alt: 'Загрязнённая сетка насоса Haldex 5', caption: 'Сетка до очистки'},
-      {src: '/cases/skoda-kodiaq-dq250/haldex-mesh-after.jpg', alt: 'Сетка насоса Haldex 5 после очистки', caption: 'Сетка после очистки'},
-      {src: '/cases/skoda-kodiaq-dq250/materials.jpg', alt: 'Масла и фильтр для DSG, Haldex и редукторов Skoda Kodiaq', caption: 'Материалы для всех агрегатов'},
+      {src: '/cases/volkswagen-tiguan-dq250/dsg-access.jpg', alt: 'Доступ к фильтру DSG DQ250 после снятия аккумулятора', caption: 'Доступ к фильтру DSG'},
+      {src: '/cases/volkswagen-tiguan-dq250/haldex-pump.jpg', alt: 'Насос Haldex 5 на Volkswagen Tiguan', caption: 'Снятие насоса Haldex'},
+      {src: '/cases/volkswagen-tiguan-dq250/haldex-pump-detail.jpg', alt: 'Демонтированный насос Haldex 5', caption: 'Насос и уплотнения'},
+      {src: '/cases/volkswagen-tiguan-dq250/haldex-mesh-before.jpg', alt: 'Загрязнённая сетка насоса Haldex 5', caption: 'Сетка до очистки'},
+      {src: '/cases/volkswagen-tiguan-dq250/haldex-mesh-after.jpg', alt: 'Сетка насоса Haldex 5 после очистки', caption: 'Сетка после очистки'},
+      {src: '/cases/volkswagen-tiguan-dq250/materials.jpg', alt: 'Масла и фильтр для DSG, Haldex и редукторов Volkswagen Tiguan', caption: 'Материалы для всех агрегатов'},
     ],
     spec: [
-      {k: 'Машина', v: 'Skoda Kodiaq 2.0 TSI'},
+      {k: 'Машина', v: 'Volkswagen Tiguan 2.0 TSI'},
       {k: 'Пробег', v: '110 000 км'},
       {k: 'Коробка', v: 'DSG6 DQ250 · мокрая'},
       {k: 'DSG', v: '4,9 л · Eurol DCF 1404'},
@@ -2391,7 +2391,7 @@ function ShopPage() {
 
         <div className="responsive-grid shop-layout" style={{display: 'grid', gridTemplateColumns: '260px minmax(0, 1fr)', gap: 40, alignItems: 'start'}}>
           {/* Filters */}
-          <aside className="responsive-sticky" style={{position: 'sticky', top: 120}}>
+          <aside className="responsive-sticky shop-filters" style={{position: 'sticky', top: 120}}>
             <FilterGroup title="Бренд" items={allBrands} active={brands} onToggle={v => toggle(brands, setBrands, v)} />
             <FilterGroup title="Вязкость" items={allViscs} active={viscs} onToggle={v => toggle(viscs, setViscs, v)} />
             <FilterGroup title="Тип ДВС" items={allTypes} active={types} onToggle={v => toggle(types, setTypes, v)} />

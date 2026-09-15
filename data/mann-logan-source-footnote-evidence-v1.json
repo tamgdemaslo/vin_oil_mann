@@ -1,0 +1,22 @@
+{
+  "kind": "SECONDARY_SOURCE_LOGAN_OIL_FOOTNOTE_OBSERVATION",
+  "observedAt": "2026-09-15",
+  "url": "https://podbormasla.ru/renault/logan/logan_2/",
+  "publisher": "podbormasla.ru",
+  "sourceRequirementId": "2442e29a722953ffd57ad14f11d9f217dce109d5ff4a155b6008e8a23867a4bf",
+  "sourceRowId": "44ed5d5414af2ddabf8f2f35f3c0d7867959dba7ff2cee4d5f78f79991590317",
+  "observations": [
+    "The engine-oil row explicitly assigns 3.3 liters to K7M and 4.9 liters to K4M; these are not interchangeable capacities.",
+    "The asterisk after the 5000–7000 km interval points to the site's own shorter-interval recommendation for described operating conditions.",
+    "The site attributes a 15000 km interval to Renault, but no primary Renault maintenance document was verified here.",
+    "The page tells readers to check the vehicle operating instructions before applying its lubricant information."
+  ],
+  "requiredHandling": {
+    "capacitySelection": "Use only the explicitly named installed-engine branch; preserve unknown filter/service-volume context.",
+    "replacementInterval": "Retain 5000–7000 km only as an attributed secondary-source recommendation, not an OEM verified service interval.",
+    "manufacturerInterval": "Do not populate a verified Renault interval from this secondary attribution alone.",
+    "specification": "Keep source-listed specifications separate from the interval and recommendation text."
+  },
+  "oemVerified": false,
+  "publicationAllowed": false
+}

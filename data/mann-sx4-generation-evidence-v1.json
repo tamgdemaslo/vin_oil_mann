@@ -1,0 +1,14 @@
+{
+  "kind": "REVIEWED_EXACT_CATALOGUE_GENERATION_IDENTITY",
+  "observedOn": "2026-09-15",
+  "vehicleVariantKey": "e9e3954baeb4d3934dbd0d97eb2041467f5928380634d1a8dd6a345b1ec4fbd3",
+  "identity": {"make":"SUZUKI","model":"SX4","engineCode":"M16A","kw":"82","hp":"112","vehicleYears":"06/06-12/15","generation":"I"},
+  "sources": [
+    {"url":"https://www.mann-filter.com/de-de/katalog/suchergebnisse/produkt.html/c2964_mann-filter.html","observation":"SX4 application: 1.6 VVT, M16A, 1586 cc, 82 kW, 112 hp, June 2006 through December 2015. Matches the archived application."},
+    {"url":"https://www.globalsuzuki.com/globalnews/2016/0929a.html","observation":"Manufacturer distinguishes the SX4 introduced in 2006 from its SX4 S-CROSS successor introduced in 2013."},
+    {"url":"https://www.globalsuzuki.com/globalnews/2006/0228b.html","observation":"Original 2006 SX4 launch includes a 1.6-litre VVT petrol engine. This launch description does not independently specify the M16A code or 112 hp."}
+  ],
+  "inference": "The exact MANN application beginning in 2006 belongs to the original SX4 model line, represented as generation I in the fluid source. This is a corroborated identity interpretation, not a literal generation numeral printed in MANN.",
+  "limitations": ["No blanket SX4-to-I mapping.","No extension to other powers, engine codes or catalogue periods.","No gearbox, drive, destination market, fluid approval or service capacity inferred.","Original catalogue rows and user VIN data remain unchanged."],
+  "productionApplyAllowed": false
+}

@@ -12,12 +12,19 @@ export function insertedBatchRollback(journal) {
   parts.push({table,id,rows,ids:rows.map(r=>quote(r[id])).join(',')||'NULL'});
  }
  const rev=parts[0];
+ const expectedCount=parts.reduce((total,p)=>total+p.rows.length,0);
+ const presentCount=parts.map(p=>`(SELECT count(*) FROM ${p.table} WHERE ${p.id} IN (${p.ids}))`).join(' + ');
  return `BEGIN;
 SET LOCAL lock_timeout='5s';
 SET LOCAL statement_timeout='30s';
 LOCK TABLE mann_vehicle_variants, mann_technical_materialization_runs, mann_technical_association_revisions, mann_technical_review_decisions IN SHARE ROW EXCLUSIVE MODE;
 DO $rollback$
 BEGIN
+-- A fully absent batch is an idempotent repeat. A partially missing batch is
+-- drift, not evidence of an earlier successful rollback: preserve survivors.
+IF (${presentCount}) NOT IN (0, ${expectedCount}) THEN
+ RAISE EXCEPTION 'batch rollback refused: inserted batch is partially missing';
+END IF;
 IF EXISTS(SELECT 1 FROM mann_technical_review_decisions WHERE revision_id IN (${rev.ids})) THEN
  RAISE EXCEPTION 'batch rollback refused: review decisions exist';
 END IF;
