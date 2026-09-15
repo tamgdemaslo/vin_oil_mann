@@ -6412,10 +6412,6 @@ export default function ProductsClient() {
                       Выбрать все {productCountText(meta?.total ?? 0)}
                     </button>
                   ) : null}
-                  <button type="button" className="eco-btn" onClick={openPriceLabelsForSelection}>
-                    <Printer aria-hidden className="eco-icon" />
-                    Печать ценников
-                  </button>
                   <button
                     ref={bulkActionsButtonRef}
                     type="button"

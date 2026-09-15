@@ -5904,7 +5904,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   <span className="eco-product-loading-spinner" aria-hidden />
                   <div>
                     <strong>Загружаем MANN-подбор...</strong>
-                    <span>Берём применяемость из SQL и сверяем с локальным каталогом.</span>
+                    <span>Проверяем совместимость и наличие товаров.</span>
                   </div>
                 </div>
               </div>
@@ -5921,7 +5921,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               <div className="eco-shipment-mann-filter-list">
                 <div className="eco-shipment-mann-results-head">
                   <div>
-                    <strong>Подходит для выбранного автомобиля</strong>
+                    <strong>Фильтры для автомобиля</strong>
                     <span>{mannVehicleModificationLabel || "Товары из локального каталога и склада"}</span>
                   </div>
                   <span>{formatMannCategoryCount(mannSortedFilters.length)}</span>
@@ -5963,13 +5963,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                             : local.orderable ? "Под заказ" : "Недоступно";
                           const stockLabel = isAvailable && local.reserve
                             ? `Остаток ${formatQuantityInput(local.stock)} · резерв ${formatQuantityInput(local.reserve)}`
-                            : isAvailable ? `Остаток ${formatQuantityInput(local.stock)}` : "";
+                            : "";
                           return (
                             <div key={local.id} className={`eco-shipment-mann-choice-option ${isRecommended ? "is-recommended" : ""}`}>
                               <div className="eco-shipment-mann-sku-copy">
                                 <div className="eco-shipment-mann-sku-title">
                                   <strong title={local.name}>{local.name}</strong>
-                                  {isRecommended ? <span>Рекомендуем</span> : null}
+                                  {isRecommended && isAvailable ? <span>В наличии</span> : null}
                                 </div>
                                 {localMeta ? <small>{localMeta}</small> : null}
                               </div>
@@ -5977,7 +5977,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                                 <strong>{availabilityLabel}</strong>
                                 {stockLabel ? <span>{stockLabel}</span> : null}
                               </div>
-                              <span className="eco-shipment-mann-sku-cell">{local.cell || "—"}</span>
+                              <span className="eco-shipment-mann-sku-cell" aria-label={`Ячейка: ${local.cell || "не указана"}`}><span className="eco-shipment-mann-mobile-label">Ячейка </span>{local.cell || "—"}</span>
                               <strong className="eco-shipment-mann-sku-price">{formatShipmentMoney(local.price)}</strong>
                               {addedPosition ? (
                                 <div className="eco-shipment-mann-added" role="status" aria-label={`${local.name} добавлен в отгрузку`}>
@@ -6029,7 +6029,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                           </div>
                         </div>
                         <div className="eco-shipment-mann-local">
-                          <b>✓ Подходит</b>
+                          <b>По каталогу MANN</b>
                           <span>{categoryAvailability}</span>
                         </div>
                         <div className="eco-shipment-mann-actions">
@@ -6069,6 +6069,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                         </div>
                       </article>
                       <div className="eco-shipment-mann-choice-panel" role="region" aria-label={`Подходящие товары для MANN ${filter.mannArticle}`}>
+                        {compatibleProducts.length ? <div className="eco-shipment-mann-columns" aria-hidden="true"><span>Товар</span><span>Наличие</span><span>Ячейка</span><span>Цена</span><span /></div> : null}
                         {renderProductGroup("В наличии", availableProducts)}
                         {renderProductGroup("Под заказ", orderableProducts)}
                         {renderProductGroup("Нет на складе", unavailableProducts)}

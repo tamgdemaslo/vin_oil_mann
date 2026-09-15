@@ -70962,3 +70962,132 @@ select[size="1"]::-ms-expand {
     -webkit-overflow-scrolling: touch;
   }
 }
+
+/* Shipment step 2: readable fluid data and a continuous selection flow. */
+.eco-shipment-new-page .eco-vehicle-lookup {
+  --lookup-ink: #292923;
+  --lookup-muted: #646157;
+  --lookup-line: #e3ddd3;
+  --lookup-surface: #faf9f6;
+  --lookup-warning: #79531c;
+  font-family: inherit;
+  color: var(--lookup-ink);
+}
+.eco-shipment-new-page .eco-vehicle-lookup__selected { padding: 20px 24px; }
+.eco-shipment-new-page .eco-vehicle-lookup__identity > strong { font-size: 18px; font-weight: 650; }
+.eco-shipment-new-page .eco-vehicle-lookup__identity > span { font-size: 14px; color: var(--lookup-muted); }
+.eco-shipment-new-page .eco-vehicle-lookup__status { font-size: 12px; letter-spacing: 0; text-transform: none; }
+.eco-shipment-new-page .eco-vehicle-refinements { padding: 0 24px 16px; font-size: 13px; color: var(--lookup-muted); }
+.eco-shipment-new-page .eco-vehicle-refinements > summary { cursor: pointer; padding: 8px 0; }
+.eco-shipment-new-page .eco-vehicle-refinements .eco-vehicle-lookup__production-date { margin: 8px 0; }
+.eco-shipment-new-page .eco-vehicle-lookup > .eco-vehicle-lookup__transmission-choice { margin: 12px 24px; }
+.eco-shipment-new-page .eco-vehicle-lookup__profile,
+.eco-shipment-new-page .eco-fluid-research { padding: 20px 24px; border-top: 1px solid var(--lookup-line); background: var(--lookup-surface); }
+.eco-shipment-new-page .eco-vehicle-lookup__profile.is-research-active { padding-block: 0; border-top: 0; }
+.eco-shipment-new-page .eco-vehicle-lookup__profile.is-research-active > .eco-vehicle-lookup__profile-head { display: none; }
+.eco-shipment-new-page .eco-vehicle-lookup__profile.is-research-active:has(> fieldset, > details) { padding-block: 16px; border-top: 1px solid var(--lookup-line); }
+.eco-shipment-new-page .eco-vehicle-lookup__profile-head > strong,
+.eco-shipment-new-page .eco-fluid-research h3 { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.4; color: var(--lookup-ink); }
+.eco-shipment-new-page .eco-fluid-research__head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.eco-shipment-new-page .eco-fluid-research__head p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--lookup-muted); }
+.eco-shipment-new-page .eco-fluid-research__caption { margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: var(--lookup-muted); }
+.eco-shipment-new-page .eco-fluid-research__spinner { width: 20px; height: 20px; flex: 0 0 20px; border: 2px solid var(--lookup-line); border-top-color: #a94421; border-radius: 50%; animation: eco-fluid-spin 900ms linear infinite; }
+.eco-shipment-new-page .eco-fluid-research__skeleton { display: grid; gap: 8px; }
+.eco-shipment-new-page .eco-fluid-research__skeleton i { display: block; height: 40px; border-radius: 4px; background: #e7e3db; animation: eco-fluid-pulse 1600ms ease-in-out infinite alternate; }
+.eco-shipment-new-page .eco-fluid-research__skeleton i:nth-child(2) { animation-delay: 180ms; }
+.eco-shipment-new-page .eco-fluid-research__skeleton i:nth-child(3) { animation-delay: 360ms; }
+.eco-shipment-new-page .eco-fluid-table-wrap { min-width: 0; }
+.eco-shipment-new-page .eco-fluid-table { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: left; font-size: 14px; line-height: 1.55; color: var(--lookup-ink); }
+.eco-shipment-new-page .eco-fluid-table th,
+.eco-shipment-new-page .eco-fluid-table td { padding: 16px 12px; vertical-align: top; border-bottom: 1px solid var(--lookup-line); overflow-wrap: anywhere; }
+.eco-shipment-new-page .eco-fluid-table th:first-child,
+.eco-shipment-new-page .eco-fluid-table td:first-child { padding-left: 0; }
+.eco-shipment-new-page .eco-fluid-table th:last-child,
+.eco-shipment-new-page .eco-fluid-table td:last-child { padding-right: 0; }
+.eco-shipment-new-page .eco-fluid-table thead th { padding-top: 0; padding-bottom: 8px; color: var(--lookup-muted); font-size: 12px; font-weight: 500; }
+.eco-shipment-new-page .eco-fluid-table thead th:nth-child(1) { width: 20%; }
+.eco-shipment-new-page .eco-fluid-table thead th:nth-child(2) { width: 32%; }
+.eco-shipment-new-page .eco-fluid-table thead th:nth-child(3) { width: 28%; }
+.eco-shipment-new-page .eco-fluid-table thead th:nth-child(4) { width: 20%; }
+.eco-shipment-new-page .eco-fluid-table tbody th { font-weight: 600; }
+.eco-shipment-new-page .eco-fluid-table tbody tr:last-child > * { border-bottom: 0; }
+.eco-shipment-new-page .eco-fluid-table small,
+.eco-shipment-new-page .eco-fluid-capacity { display: block; margin-top: 4px; font-size: inherit; font-weight: 400; }
+.eco-shipment-new-page .eco-fluid-table small { color: var(--lookup-muted); }
+.eco-shipment-new-page .eco-fluid-table details { margin-top: 8px; font-size: 12px; color: var(--lookup-muted); }
+.eco-shipment-new-page .eco-fluid-table summary { cursor: pointer; padding: 4px 0; }
+.eco-shipment-new-page .eco-fluid-table details p { margin: 8px 0; }
+.eco-shipment-new-page .eco-fluid-table details a { display: block; padding: 8px 0; color: #8b3b21; text-decoration: underline; text-underline-offset: 3px; }
+.eco-shipment-new-page .eco-fluid-status { display: inline-block; font-size: 12px; font-weight: 500; color: var(--lookup-warning); }
+.eco-shipment-new-page .eco-fluid-status.is-confirmed { color: #24653e; }
+.eco-shipment-new-page .eco-vehicle-lookup summary:focus-visible { outline: 2px solid #a94421; outline-offset: 3px; }
+@keyframes eco-fluid-spin { to { transform: rotate(360deg); } }
+@keyframes eco-fluid-pulse { from { opacity: .45; } to { opacity: .9; } }
+/* Keep results together before the shipment summary. */
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-manual,
+.eco-shipment-new-page #shipment-positions-add .eco-vin-alert,
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-panel-body > .eco-product-results-state,
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-variant-summary { order: 2; }
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-filter-list,
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-vin-empty { order: 3; }
+.eco-shipment-new-page #shipment-positions-add > .eco-shipment-fast-search { order: 4; }
+.eco-shipment-new-page #shipment-positions-add > .eco-product-results { order: 5; }
+.eco-shipment-new-page #shipment-position-list { order: 6; }
+.eco-shipment-new-page .eco-shipment-mann-columns { display: grid; grid-template-columns: minmax(240px, 1fr) 132px 72px 104px 136px; gap: 12px; padding: 8px 0; color: #646157; font-size: 12px; border-bottom: 1px solid #e3ddd3; }
+.eco-shipment-new-page .eco-shipment-mann-columns > span:not(:first-child) { text-align: right; }
+.eco-shipment-new-page .eco-shipment-mann-mobile-label { display: none; }
+.eco-shipment-new-page .eco-shipment-mann-results-head { padding: 16px 20px !important; }
+.eco-shipment-new-page .eco-shipment-mann-results-head strong { font-size: 16px !important; font-weight: 650; }
+.eco-shipment-new-page .eco-shipment-mann-filter { padding: 12px 20px !important; }
+.eco-shipment-new-page .eco-shipment-mann-filter-main strong { font-size: 14px !important; font-weight: 600; }
+.eco-shipment-new-page .eco-shipment-mann-choice-panel { padding: 0 20px 12px 52px !important; }
+.eco-shipment-new-page .eco-shipment-mann-sku-title strong { font-size: 14px !important; font-weight: 500 !important; line-height: 1.5; }
+.eco-shipment-new-page .eco-shipment-mann-choice-option { padding-block: 12px !important; }
+.eco-shipment-new-page .eco-shipment-mann-sku-price { font-variant-numeric: tabular-nums; }
+@media (max-width: 960px) {
+  .eco-shipment-new-page .eco-shipment-mann-columns { grid-template-columns: minmax(200px, 1fr) 118px 62px 92px 124px; gap: 8px; }
+}
+@media (max-width: 760px) {
+  .eco-shipment-new-page .eco-vehicle-lookup__selected,
+  .eco-shipment-new-page .eco-vehicle-lookup__profile,
+  .eco-shipment-new-page .eco-fluid-research { padding: 16px; }
+  .eco-shipment-new-page .eco-vehicle-refinements { padding-inline: 16px; }
+  .eco-shipment-new-page .eco-fluid-table,
+  .eco-shipment-new-page .eco-fluid-table tbody { display: block; }
+  .eco-shipment-new-page .eco-fluid-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .eco-shipment-new-page .eco-fluid-table tr { display: block; padding: 12px 0; border-bottom: 1px solid var(--lookup-line); }
+  .eco-shipment-new-page .eco-fluid-table tr:last-child { border-bottom: 0; }
+  .eco-shipment-new-page .eco-fluid-table tbody th,
+  .eco-shipment-new-page .eco-fluid-table td { display: block; padding: 6px 0; border: 0; }
+  .eco-shipment-new-page .eco-fluid-table td::before { content: attr(data-label); display: block; color: var(--lookup-muted); font-size: 12px; margin-bottom: 2px; }
+  .eco-shipment-new-page .eco-fluid-table summary { padding-block: 10px; }
+  .eco-shipment-new-page .eco-shipment-mann-columns { display: none; }
+  .eco-shipment-new-page .eco-shipment-mann-mobile-label { display: inline; }
+  .eco-shipment-new-page .eco-shipment-mann-choice-panel { padding-inline: 16px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eco-shipment-new-page .eco-fluid-research__spinner,
+  .eco-shipment-new-page .eco-fluid-research__skeleton i { animation: none; }
+}
+
+.eco-shipment-new-page .eco-vehicle-selected-conditions { padding: 0 24px; }
+.eco-shipment-new-page .eco-vehicle-mismatch { margin: 8px 0; color: #79531c; font-size: 13px; line-height: 1.5; }
+.eco-shipment-new-page .eco-vehicle-candidate-conditions { font-size: 13px; color: #646157; }
+.eco-shipment-new-page .eco-vehicle-candidate-conditions summary { cursor: pointer; padding: 8px 0; }
+.eco-shipment-new-page .eco-vehicle-candidate-conditions p { margin: 0 0 8px; }
+.eco-shipment-new-page .eco-vehicle-candidate-facts { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 12px 0 0; }
+.eco-shipment-new-page .eco-vehicle-candidate-facts dt { font-size: 12px; color: #646157; font-weight: 400; }
+.eco-shipment-new-page .eco-vehicle-candidate-facts dd { margin: 4px 0 0; font-size: 14px; color: #292923; }
+.eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > div:not(.eco-vehicle-lookup__mann-candidates-head) { padding-block: 16px; }
+.eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > div > div > b { font-size: 15px; font-weight: 600; }
+.eco-shipment-new-page .eco-shipment-mann-local > b { color: #646157; font-weight: 500; }
+@media (min-width: 721px) and (max-width: 760px) {
+  .eco-shipment-new-page .eco-shipment-mann-columns { display: grid; }
+  .eco-shipment-new-page .eco-shipment-mann-mobile-label { display: none; }
+}
+@media (max-width: 720px) {
+  .eco-shipment-new-page .eco-shipment-mann-filter { grid-template-columns: 24px minmax(0, 1fr) 32px !important; }
+  .eco-shipment-new-page .eco-shipment-mann-local { grid-column: 2; grid-row: 2; text-align: left; }
+  .eco-shipment-new-page .eco-shipment-mann-actions { grid-column: 3; grid-row: 1; }
+  .eco-shipment-new-page .eco-vehicle-selected-conditions { padding-inline: 16px; }
+}

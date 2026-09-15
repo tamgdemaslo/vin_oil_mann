@@ -3,7 +3,8 @@ import {resolve} from 'node:path';
 import {createJiti} from 'jiti';
 const mock=resolve('scripts/fixtures/mann-fluid-research-mocks.mjs');
 const j=createJiti(import.meta.url,{alias:{'@':resolve('src'),'@/lib/db':mock,'@/lib/openai-client':mock}});
-const {researchMissingMannFluids:run,citedResearchItems,missingMannFluids}=await j.import('../src/lib/mann-fluid-research.ts');
+const {researchMissingMannFluids:run,citedResearchItems,missingMannFluids,researchSystemStates}=await j.import('../src/lib/mann-fluid-research.ts');
+const {MANN_FLUID_SYSTEMS}=await j.import('../src/lib/mann-fluid-systems.ts');
 const profile={items:[],status:'none',transmissionOptions:[],containsCatalogPreview:false};
 const input={organizationId:'org1',variantKeys:['key'],vehicleContext:{make:'Test',model:'Car',engineCode:'ABC',year:2020},profile};
 const item={systemCode:'ENGINE_OIL',specification:'TEST',volumeText:'5 л. с фильтром',sourceUrl:'https://example.com/manual',sourceTitle:'Manual',excerpt:'Test excerpt'};
@@ -12,10 +13,19 @@ const reset=()=>globalThis.fluidResearchTest={applications:[application,{...appl
 const previous=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY='test-only-not-a-real-key';
 try {
  let s=reset();assert.equal((await run({...input,variantKeys:['a','b']})).status,'needs_context');assert.equal(s.calls,0);
- const completeProfile={...profile,items:['ENGINE_OIL','ENGINE_COOLANT','BRAKE_FLUID'].map(systemCode=>({systemCode,specifications:['Existing'],capacities:[{nominalLiters:5}]}))};
+ assert.equal(missingMannFluids(profile).length,MANN_FLUID_SYSTEMS.length,'all aggregates researched, including missing ones');
+ const completeProfile={...profile,items:MANN_FLUID_SYSTEMS.map(systemCode=>({systemCode,specifications:['Existing'],capacities:[{nominalLiters:5}]}))};
  assert.equal((await run({...input,profile:completeProfile})).status,'complete');assert.equal(s.calls,0);
  const first=await run(input);assert.equal(first.status,'saved');assert.equal(s.request.model,'gpt-5.6-terra');assert.equal(s.request.tool_choice,'required');assert.equal(s.rows[0].status,'pending_review');assert.equal(s.rows[0].confidence,0);
  assert.match(s.lock.sql,/SELECT pg_advisory_xact_lock/);assert.deepEqual(s.lock.values,['org1','VIN_FLUID_RESEARCH_V1']);
+ assert.equal(s.rows[0].facts.systems.length,MANN_FLUID_SYSTEMS.length,'full inventory persisted');
+ assert.equal(JSON.parse(s.request.input).allSystems.length,MANN_FLUID_SYSTEMS.length);
+ assert.ok(s.rows[0].validUntil-Date.now()<7*3600_000,'partial results not cached for 30 days');
+ const absence={systemCode:'TRANSFER_CASE',applicability:'absent',reason:'Not fitted',sourceUrl:item.sourceUrl,sourceTitle:'Manual'};
+ const payload={items:[],unresolved:['Volume missing'],systems:[absence]};
+ assert.equal(researchSystemStates(payload,new Set(),[],profile).find(row=>row.systemCode==='TRANSFER_CASE').applicability,'unknown','uncited absence not accepted');
+ assert.equal(researchSystemStates(payload,new Set([item.sourceUrl]),[],profile).find(row=>row.systemCode==='TRANSFER_CASE').applicability,'absent');
+ assert.equal(researchSystemStates(payload,new Set([item.sourceUrl]),[{...item,systemCode:'TRANSFER_CASE'}],profile).find(row=>row.systemCode==='TRANSFER_CASE').applicability,'present','positive evidence wins');
  assert.deepEqual((await run(input)).items,first.items);assert.equal(s.calls,1,'cached, no repeat cost');
  await run({...input,organizationId:'org2'});assert.equal(s.calls,2,'no tenant cache leak');
  s=reset();await run({...input,vehicleContext:{make:'FORD',model:'Mondeo V',year:2014}});
@@ -34,5 +44,6 @@ try {
  s=reset();s.fail=true;assert.equal((await run(input)).status,'unavailable');assert.equal(s.rows[0].status,'failed');assert.equal((await run(input)).status,'unavailable');assert.equal(s.calls,1);
  s=reset();s.limit=true;assert.equal((await run(input)).status,'unavailable');assert.equal(s.calls,0);
  s=reset();s.payload={items:[{...item,sourceUrl:'https://unvisited.example/manual'}],unresolved:[]};assert.equal((await run(input)).status,'unavailable');assert.equal(s.rows[0].status,'not_found');
+ s=reset();s.payload=payload;const savedAbsence=await run(input);assert.equal(savedAbsence.status,'saved');assert.deepEqual(savedAbsence.unresolved,payload.unresolved);assert.deepEqual((await run(input)).systems,savedAbsence.systems);assert.equal(s.calls,1);
  console.log('PASS Terra model, required web search, cited-source filtering, missing fields only, tenant cache, failure backoff, rate limit, pending-review persistence');
 }finally{if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;}

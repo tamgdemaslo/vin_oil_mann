@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import type { MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
+import { MANN_FLUID_SYSTEMS, MANN_FLUID_LABELS } from "@/lib/mann-fluid-systems";
 import { mannCapacityLabel as capacityLabel } from "@/lib/mann-capacity-label";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
 import { canConfirmVehicleDestinationMarket, unsupportedVehicleMarketLabels, mannTechnicalContextFromVehicle, type MannTechnicalContextDetails } from "@/lib/mann-technical-request-context";
@@ -125,8 +126,71 @@ function candidateLabel(candidate: MannVehicleCandidate): string {
   return details.length ? `${title} · ${details.join(" · ")}` : title;
 }
 
-function TechnicalProfile({
+function CandidateConditions({ candidate }: { candidate: MannVehicleCandidate }) {
+  const warnings = candidate.warnings.filter(warning => !warning.includes("не повышает score"));
+  return <>
+    {candidate.mismatchedFields.length ? <p className="eco-vehicle-mismatch">Есть расхождения: {candidate.mismatchedFields.join(", ")}. Проверьте модификацию перед подбором.</p> : null}
+    {warnings.length ? <p className="eco-vehicle-mismatch">{warnings.join(" ")}</p> : null}
+    {candidate.condition ? <details className="eco-vehicle-candidate-conditions"><summary>Условия совместимости — проверьте</summary><p>{candidate.condition}</p></details> : null}
+  </>;
+}
+
+const RESEARCH_COPY = [
+  "Заглядываем в руководство — даже в мелкий шрифт",
+  "Допуски любят точность. Мы тоже",
+  "Собираем полезное, убираем лишнее",
+  "У похожих машин бывают разные требования",
+];
+
+export function FluidResearchResults({ result, onRetry, profile }: { result: MannFluidResearchResult; onRetry?: () => void; profile?: MannUnifiedTechnicalProfile | null }) {
+  const [tick, setTick] = useState(0);
+  const searching = result.status === "searching";
+  useEffect(() => {
+    if (!searching) return;
+    const timer = window.setInterval(() => setTick(value => value + 1), 5000);
+    return () => window.clearInterval(timer);
+  }, [searching]);
+  return <section className="eco-fluid-research" aria-label="Поиск жидкостей" aria-busy={searching}>
+    <div className="eco-fluid-research__head">
+      <div><h3>Жидкости для автомобиля</h3>
+        <p role="status">{searching ? "Проверяем все агрегаты, ищем допуски и объёмы" : result.status === "complete" ? "Данные технического профиля" : result.status === "needs_context" ? "Выберите модификацию MANN" : result.status === "unavailable" ? result.message : "Предварительные данные · проверьте применимость перед использованием"}</p>
+      </div>
+      {searching ? <span className="eco-fluid-research__spinner" aria-hidden="true" /> : null}
+      {result.status === "unavailable" && onRetry ? <button type="button" className="eco-btn" onClick={onRetry}>Повторить поиск</button> : null}
+    </div>
+    {searching ? <>
+      <p className="eco-fluid-research__caption">{tick >= 6 ? "Поиск занимает больше обычного. Фильтры уже можно добавлять." : RESEARCH_COPY[tick % RESEARCH_COPY.length]}</p>
+      <div className="eco-fluid-research__skeleton" aria-hidden="true"><i /><i /><i /></div>
+    </> : <div className="eco-fluid-table-wrap"><table className="eco-fluid-table">
+      <caption className="eco-sr-only">Предварительные результаты поиска жидкостей</caption>
+      <thead><tr><th scope="col">Жидкость / узел</th><th scope="col">Допуск / вязкость</th><th scope="col">Объём и условия</th><th scope="col">Проверка</th></tr></thead>
+      <tbody>{MANN_FLUID_SYSTEMS.map(systemCode => {
+        const items = result.items.filter(item => item.systemCode === systemCode);
+        const catalog = profile?.items.filter(item => item.systemCode === systemCode) ?? [];
+        const state = result.systems?.find(row => row.systemCode === systemCode);
+        const absent = state?.applicability === "absent" && !items.length && !catalog.length;
+        const specifications = [...new Set([...catalog.flatMap(item => [...item.specifications, ...item.viscosityGrades]), ...items.flatMap(item => item.specification ? item.specification.split(/;\s*/) : [])])];
+        const volumes = [...new Set([...catalog.filter(item => !item.requiresReview).flatMap(item => item.capacities.map(capacityLabel)), ...items.map(item => item.volumeText).filter(Boolean)])];
+        const sources = items.length ? items : state?.sourceUrl ? [state] : [];
+        return <tr key={systemCode}>
+          <th scope="row">{MANN_FLUID_LABELS[systemCode]}</th>
+          <td data-label="Допуск / вязкость">{!absent && specifications.length ? specifications.map((value, index) => <span className="eco-fluid-capacity" key={index}>{value}</span>) : "—"}</td>
+          <td data-label="Объём и условия">{!absent && volumes.length ? volumes.map((value, index) => <span className="eco-fluid-capacity" key={index}>{value}</span>) : "—"}</td>
+          <td data-label="Проверка"><span className="eco-fluid-status">{absent ? "Не предусмотрен · по данным ИИ" : items.length ? "Требует проверки" : catalog.length ? "См. технический профиль" : state?.applicability === "present" ? "Агрегат есть, данные не найдены" : "Не подтверждено"}</span>
+            {state?.reason ? <p>{state.reason}</p> : null}
+            {sources.length ? <details><summary>Источник</summary>{sources.map((source, index) => <a key={index} href={source.sourceUrl} target="_blank" rel="noopener noreferrer">{source.sourceTitle}</a>)}</details> : null}
+          </td>
+        </tr>;
+      })}</tbody>
+    </table><p className="eco-fluid-research__caption">Прочерк — значение не заполнено. «Не предусмотрен» и «Не подтверждено» — разные состояния. Данные ИИ требуют проверки.</p>
+      {result.unresolved?.length ? <details><summary>Что осталось уточнить</summary><ul>{result.unresolved.map((reason, index) => <li key={index}>{reason}</li>)}</ul></details> : null}
+    </div>}
+  </section>;
+}
+
+export function TechnicalProfile({
   profile,
+  researchPendingOrFound = false,
   loading,
   error,
   onSelectTransmission,
@@ -138,6 +202,7 @@ function TechnicalProfile({
   onSelectEquipment,
 }: {
   profile: MannUnifiedTechnicalProfile | null;
+  researchPendingOrFound?: boolean;
   loading: boolean;
   error: string;
   onSelectTransmission: (transmissionType: MannTransmissionType) => void;
@@ -149,12 +214,10 @@ function TechnicalProfile({
   onSelectEquipment: (circuit: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>['circuit'], option?: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>) => void;
 }) {
   return (
-    <div className="eco-vehicle-lookup__profile" aria-live="polite" aria-busy={loading}>
+    <div className={`eco-vehicle-lookup__profile ${researchPendingOrFound && !profile?.items.length ? "is-research-active" : ""}`} aria-live="polite" aria-busy={loading}>
       <div className="eco-vehicle-lookup__profile-head">
         <strong>Технические жидкости</strong>
-        {profile?.status === "active" ? <span className="is-active">Активные данные</span> : null}
-        {profile?.status === "staged_preview" ? <span className="is-preview">Проверено · тест</span> : null}
-        {profile?.status === "catalog_preview" ? <span className="is-catalog">Каталог · предварительно</span> : null}
+        {profile?.items.length ? <span className={profile.status === "active" ? "is-active" : "is-preview"}>{profile.status === "active" ? "По проверенным источникам" : "Предварительные данные"}</span> : null}
       </div>
       {profile?.transmissionOptions.length ? (
         <fieldset className="eco-vehicle-lookup__transmission-choice">
@@ -237,7 +300,7 @@ function TechnicalProfile({
       ) : null}
       {loading ? (
         <div className="eco-vehicle-lookup__profile-loading" role="status">
-          <span className="eco-sr-only">Загружаем технический профиль…</span>
+          <span role="status">Проверяем жидкости по каталогу…</span>
           <i />
           <i />
         </div>
@@ -245,59 +308,32 @@ function TechnicalProfile({
         <div className="eco-vehicle-lookup__profile-state is-warning">{error}</div>
       ) : profile?.items.length ? (
         <>
-          <div className="eco-vehicle-lookup__profile-items">
-            {profile.items.map((item) => (
-              <div className="eco-vehicle-lookup__profile-item" key={item.revisionId}>
-                <div className="eco-vehicle-lookup__profile-main">
-                  <div>
-                    <strong>{item.systemLabel}</strong>
-                    {item.componentModel ? <span>{item.componentModel}</span> : null}
-                  </div>
-                  {item.capacities.length ? (
-                    <div className="eco-vehicle-lookup__profile-capacities">
-                      {item.capacities.map((capacity, index) => <b key={`${capacityLabel(capacity)}-${index}`}>{capacityLabel(capacity)}</b>)}
-                    </div>
-                  ) : null}
-                </div>
-                {item.userConfirmedTransmission ? <span className="is-confirmed">Тип коробки подтверждён вручную.</span> : null}
-                {item.userConfirmedTransmissionModel ? <span className="is-confirmed">Модель коробки указана вручную. Данные остаются предварительными.</span> : null}
-                {item.userConfirmedEquipment ? <span className="is-confirmed">Наличие узла указано вручную. Данные остаются предварительными.</span> : null}
-                {item.userConfirmedEquipment && !item.capacities.length ? <span className="is-muted">Объём в источнике не указан.</span> : null}
-                {item.specifications.length ? (
-                  <span><em>Допуски / классы</em>{item.specifications.join(" · ")}</span>
-                ) : null}
-                {item.viscosityGrades.length ? (
-                  <span><em>Вязкость</em>{item.viscosityGrades.join(" · ")}</span>
-                ) : null}
-                {!item.specifications.length && !item.viscosityGrades.length ? (
-                  <span className="is-muted">
-                    {item.sourceStatus === "catalog_preview"
-                      ? "Допуски и вязкость для этой записи в исходном каталоге не указаны."
-                      : "Допуски и вязкость для этой записи пока не подтверждены."}
-                  </span>
-                ) : null}
-                {item.requiresReview ? <span className="is-review">Числовой объём скрыт: строка требует проверки разбора.</span> : null}
-                {item.recommendation ? <span><em>Рекомендация</em>{item.recommendation}</span> : null}
-                {item.replacementInterval ? <span><em>Интервал</em>{item.replacementInterval}</span> : null}
-                {item.evidence.length ? (
-                  <details className="eco-vehicle-lookup__profile-source">
-                    <summary>Источник: {item.evidence[0]?.publisher ?? item.evidence[0]?.title ?? "технический каталог"}</summary>
-                    <div>
-                      {item.evidence.map((source, index) => {
-                        const label = [source.title ?? source.publisher ?? "Документ", source.printedPage != null ? `стр. ${source.printedPage}` : null].filter(Boolean).join(" · ");
-                        return source.url ? (
-                          <a href={source.url} target="_blank" rel="noreferrer" key={`${source.url}-${index}`}>{label}</a>
-                        ) : <span key={`${label}-${index}`}>{label}</span>;
-                      })}
-                    </div>
-                  </details>
-                ) : null}
-              </div>
-            ))}
-          </div>
-          {profile.notice ? <p className="eco-vehicle-lookup__profile-notice">{profile.notice}</p> : null}
+          <div className="eco-fluid-table-wrap"><table className="eco-fluid-table">
+            <caption className="eco-sr-only">Жидкости из технического каталога</caption>
+            <thead><tr><th scope="col">Жидкость / узел</th><th scope="col">Допуск / вязкость</th><th scope="col">Объём и условия</th><th scope="col">Проверка</th></tr></thead>
+            <tbody>{profile.items.map(item => <tr key={item.revisionId}>
+              <th scope="row">{item.systemLabel}{item.componentModel ? <small>{item.componentModel}</small> : null}</th>
+              <td data-label="Допуск / вязкость">{item.specifications.length ? item.specifications.join(" · ") : "Допуск не указан"}{item.viscosityGrades.length ? <small>{item.viscosityGrades.join(" · ")}</small> : null}</td>
+              <td data-label="Объём и условия">{item.requiresReview ? "Объём требует проверки" : item.capacities.length ? item.capacities.map((capacity, index) => <span className="eco-fluid-capacity" key={index}>{capacityLabel(capacity)}</span>) : "Не указан"}</td>
+              <td data-label="Проверка">
+                <span className={`eco-fluid-status ${item.sourceStatus === "primary_source" && !item.requiresReview && !item.userConfirmedTransmissionModel && !item.userConfirmedEquipment ? "is-confirmed" : ""}`}>{item.sourceStatus === "primary_source" && !item.requiresReview && !item.userConfirmedTransmissionModel && !item.userConfirmedEquipment ? "По источнику" : "Требует проверки"}</span>
+                <details><summary>Источники и условия</summary>
+                  {item.userConfirmedTransmission ? <p>Тип коробки указан вручную.</p> : null}
+                  {item.userConfirmedTransmissionModel ? <p>Модель коробки указана вручную. Данные предварительные.</p> : null}
+                  {item.userConfirmedEquipment ? <p>Установленный узел указан вручную. Данные предварительные.</p> : null}
+                  {item.recommendation ? <p>{item.recommendation}</p> : null}
+                  {item.replacementInterval ? <p>Интервал: {item.replacementInterval}</p> : null}
+                  {item.evidence.length ? item.evidence.map((source, index) => {
+                    const label = [source.title ?? source.publisher ?? "Документ", source.printedPage != null ? `стр. ${source.printedPage}` : null].filter(Boolean).join(" · ");
+                    return source.url ? <a href={source.url} target="_blank" rel="noreferrer" key={index}>{label}</a> : <p key={index}>{label}</p>;
+                  }) : <p>Источник не указан.</p>}
+                </details>
+              </td>
+            </tr>)}</tbody>
+          </table></div>
+          {profile.notice ? <details className="eco-vehicle-lookup__profile-source"><summary>Подробнее о данных каталога</summary><p>{profile.notice}</p></details> : null}
         </>
-      ) : (
+      ) : researchPendingOrFound ? null : (
         <div className="eco-vehicle-lookup__profile-state">{profile?.transmissionGearCountOptions?.length && selectedTransmissionGearCount == null ? "Для показа жидкости укажите число передач установленной коробки." : profile?.transmissionComponentOptions?.length ? "Для показа жидкости укажите модель установленной коробки." : profile?.equipmentOptions?.length ? "Для показа жидкости подтвердите установленное оборудование." : "Нет данных с подтверждённой применяемостью. При необходимости уточните месяц выпуска или условия агрегата."}</div>
       )}
     </div>
@@ -639,6 +675,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
 
   const confirmMannCandidate = (vehicle: NormalizedVehicleIdentity, candidate: MannVehicleCandidate) => {
     confirmedTechnicalCandidateRef.current = candidate;
+    setResolution(current => current ? { ...current, selectedApplication: candidate } : current);
     setAppliedVehicle(vehicle);
     setAppliedFromCache(Boolean(lookup?.fromCache));
     setFeedback(null);
@@ -702,11 +739,11 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
         <div className="eco-vehicle-lookup__selected">
           <div className="eco-vehicle-lookup__identity">
             <div className="eco-vehicle-lookup__identity-head">
-              <span className="eco-vehicle-lookup__status is-ready">Автомобиль и MANN подобраны</span>
+              <span className="eco-vehicle-lookup__status is-ready">Автомобиль найден</span>
               {appliedFromCache ? <em>Из карточки</em> : null}
             </div>
             <strong>{vehicleTitle(appliedVehicle)}</strong>
-            <span>{vehicleDetails(appliedVehicle) || "Автомобиль определён. Фильтры MANN готовы ниже."}</span>
+            <span>{vehicleDetails(appliedVehicle) || "Подбор фильтров — ниже."}</span>
           </div>
           <div className="eco-vehicle-lookup__actions">
             <button type="button" onClick={() => openManualMode({ reason: "manual", vehicle: appliedVehicle })}>
@@ -744,6 +781,8 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             <p id="vehicle-engine-help">В этой модификации несколько двигателей. Уточните код по данным автомобиля — жидкости для разных двигателей могут отличаться.</p>
           </fieldset>
         ) : null}
+        {resolution?.selectedApplication ? <div className="eco-vehicle-selected-conditions"><CandidateConditions candidate={resolution.selectedApplication} /></div> : null}
+        <details className="eco-vehicle-refinements"><summary>Уточнить данные автомобиля</summary>
         {canConfirmVehicleDestinationMarket(appliedVehicle) ? (
           <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date">
             <summary>Уточнить рынок автомобиля{confirmedMarket ? ` · ${confirmedMarket}` : ""}</summary>
@@ -816,6 +855,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             }}>Применить дату</button>
           </fieldset>
         </details>
+        </details>
         {technicalProfile?.vehicleDriveRequired ? (
           <fieldset className="eco-vehicle-lookup__transmission-choice">
             <legend>Привод автомобиля</legend>
@@ -859,17 +899,17 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             <p id="rear-air-conditioning-help">От этого зависит объём антифриза. Если комплектация неизвестна, оставьте «Не уточнено» — объём не будет выбран автоматически.</p>
           </fieldset>
         ) : null}
-        {fluidResearch && fluidResearch.status !== "complete" ? <section aria-label="Поиск жидкостей ИИ" aria-busy={fluidResearch.status === "searching"}>
-          <p role="status">{fluidResearch.message}</p>
-          {fluidResearch.items.length ? <><p><strong>Черновик ИИ — не использовать без проверки применяемости.</strong></p>
-            <ul>{fluidResearch.items.map((item, index) => <li key={`${item.systemCode}-${index}`}>
-              <strong>{({ ENGINE_OIL: "Моторное масло", ENGINE_COOLANT: "Антифриз", BRAKE_FLUID: "Тормозная жидкость", AUTOMATIC_TRANSMISSION: "АКПП", MANUAL_TRANSMISSION: "МКПП", CVT_TRANSMISSION: "Вариатор", ROBOT_TRANSMISSION: "Робот", POWER_STEERING: "ГУР", TRANSFER_CASE: "Раздатка", FRONT_DIFFERENTIAL: "Передний редуктор", REAR_DIFFERENTIAL: "Задний редуктор", AWD_COUPLING: "Муфта полного привода" })[item.systemCode]}</strong>
-              {item.specification ? <p>Допуск: {item.specification}</p> : null}{item.volumeText ? <p>Объём: {item.volumeText}</p> : null}
-              <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer">{item.sourceTitle}</a>
-            </li>)}</ul></> : null}
-        </section> : null}
+        {fluidResearch ? <FluidResearchResults key={fluidResearch.status} result={fluidResearch} profile={technicalProfile} onRetry={() => {
+          if (!technicalProfileVariantKeys.length) return;
+          void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, {
+            transmissionModel: selectedTransmissionModel || undefined, transmissionGearCount: selectedTransmissionGearCount,
+            confirmedEngineCode, confirmedMarket, marketClarification, confirmedDrive, rearAirConditioning,
+            productionMonth: productionMonth || undefined, confirmedEquipment,
+          });
+        }} /> : null}
         <TechnicalProfile
           profile={technicalProfile}
+          researchPendingOrFound={fluidResearch?.status === "searching" || Boolean(fluidResearch?.items.length)}
           loading={technicalProfileLoading}
           error={technicalProfileError}
           selectedTransmissionModel={selectedTransmissionModel}
@@ -1051,20 +1091,25 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
           {(resolving || (resolution && resolution.status !== "candidates")) ? (
             <div className={`eco-vehicle-lookup__mann is-${resolution?.status ?? "loading"}`}>
               {mannStatusCopy(resolution, resolving)}
-              {resolution?.selectedApplication?.warnings.length ? <span>{resolution.selectedApplication.warnings.join(" ")}</span> : null}
+              {resolution?.selectedApplication ? <CandidateConditions candidate={resolution.selectedApplication} /> : null}
             </div>
           ) : null}
           {resolution?.status === "candidates" ? (
             <div className="eco-vehicle-lookup__mann-candidates">
               <div className="eco-vehicle-lookup__mann-candidates-head">
-                <strong>Выберите модификацию MANN</strong>
+                <strong>Уточните модификацию автомобиля</strong>
                 <span>Это нужно для точного подбора фильтров.</span>
               </div>
               {resolution.candidates.map((candidate) => (
                 <div key={candidate.applicationId}>
                   <div>
-                    <b>{candidateLabel(candidate)}</b>
-                    {candidate.warnings.length ? <span>{candidate.warnings.join(" ")}</span> : null}
+                    <b>{candidate.effectiveVehicleText ?? candidate.vehicleText ?? "Модификация"}</b>
+                    <dl className="eco-vehicle-candidate-facts">
+                      <div><dt>Двигатель</dt><dd>{candidate.engineCode || "Не указан"}</dd></div>
+                      <div><dt>Мощность</dt><dd>{candidate.hp ? `${candidate.hp} л.с.` : candidate.kw ? `${candidate.kw} кВт` : "Не указана"}</dd></div>
+                      <div><dt>Выпуск</dt><dd>{candidate.vehicleYears || "Не указан"}</dd></div>
+                    </dl>
+                    <CandidateConditions candidate={candidate} />
                   </div>
                   <button
                     type="button"
