@@ -5,9 +5,12 @@ import { getMannUnifiedTechnicalProfile, MANN_TRANSMISSION_TYPES } from "@/lib/m
 import { VEHICLE_DESTINATION_MARKETS } from "@/lib/vehicle-market";
 import { mannExactEquipmentModel } from "@/lib/mann-equipment-scope";
 import { researchMissingMannFluids } from "@/lib/mann-fluid-research";
+import { MANN_FLUID_GROUP_IDS } from "@/lib/mann-fluid-systems";
 
 const bodySchema = z.object({
   researchMissing: z.boolean().optional(),
+  researchGroup: z.enum(MANN_FLUID_GROUP_IDS).optional(),
+  retryFailed: z.boolean().optional(),
   variantKeys: z.array(z.string().trim().min(1).max(160)).min(1).max(20),
   transmissionType: z.enum(MANN_TRANSMISSION_TYPES).optional(),
   vehicleContext: z.object({
@@ -49,6 +52,7 @@ export async function POST(request: NextRequest) {
       if (!organizationId) return NextResponse.json({ error: "Выберите организацию" }, { status: 403 });
       const research = await runWithBranchApiContext(branch.context, () => researchMissingMannFluids({
         organizationId, variantKeys: parsed.data.variantKeys,
+        group: parsed.data.researchGroup, retryFailed: parsed.data.retryFailed,
         transmissionType: parsed.data.transmissionType, vehicleContext: parsed.data.vehicleContext, profile,
       }));
       return NextResponse.json(research);

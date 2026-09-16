@@ -9,7 +9,7 @@ export const prisma = {
     return 1;
   },
   aIAgentTechnicalEvidence: {
-    findFirst: async ({where}) => globalThis.fluidResearchTest.rows.find(r=>r.organizationId===where.organizationId&&r.vehicleKey===where.vehicleKey&&r.aggregate===where.aggregate&&r.validUntil>where.validUntil.gt),
+    findFirst: async ({where}) => [...globalThis.fluidResearchTest.rows].reverse().find(r=>r.organizationId===where.organizationId&&r.vehicleKey===where.vehicleKey&&r.aggregate===where.aggregate&&r.validUntil>where.validUntil.gt),
     count: async () => globalThis.fluidResearchTest.limit ? 20 : 0,
     create: async ({data}) => {const row={...data,id:String(globalThis.fluidResearchTest.rows.length+1)};globalThis.fluidResearchTest.rows.push(row);return row;},
     update: async ({where,data}) => Object.assign(globalThis.fluidResearchTest.rows.find(r=>r.id===where.id),data),

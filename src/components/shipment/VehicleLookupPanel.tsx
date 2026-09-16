@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import type { MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
-import { MANN_FLUID_SYSTEMS, MANN_FLUID_LABELS } from "@/lib/mann-fluid-systems";
+import { MANN_FLUID_SYSTEMS, MANN_FLUID_LABELS, MANN_FLUID_GROUP_IDS, MANN_FLUID_GROUPS } from "@/lib/mann-fluid-systems";
+import { runFluidResearchGroups } from "@/lib/mann-fluid-research-progress";
 import { mannCapacityLabel as capacityLabel } from "@/lib/mann-capacity-label";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
 import { canConfirmVehicleDestinationMarket, unsupportedVehicleMarketLabels, mannTechnicalContextFromVehicle, type MannTechnicalContextDetails } from "@/lib/mann-technical-request-context";
@@ -153,12 +154,12 @@ export function FluidResearchResults({ result, onRetry, profile }: { result: Man
   return <section className="eco-fluid-research" aria-label="Поиск жидкостей" aria-busy={searching}>
     <div className="eco-fluid-research__head">
       <div><h3>Жидкости для автомобиля</h3>
-        <p role="status">{searching ? "Проверяем все агрегаты, ищем допуски и объёмы" : result.status === "complete" ? "Данные технического профиля" : result.status === "needs_context" ? "Выберите модификацию MANN" : result.status === "unavailable" ? result.message : "Предварительные данные · проверьте применимость перед использованием"}</p>
+        <p role="status">{result.groups ? result.message : searching ? "Проверяем все агрегаты, ищем допуски и объёмы" : result.status === "complete" ? "Данные технического профиля" : result.status === "needs_context" ? "Выберите модификацию MANN" : result.status === "unavailable" ? result.message : "Предварительные данные · проверьте применимость перед использованием"}</p>
       </div>
       {searching ? <span className="eco-fluid-research__spinner" aria-hidden="true" /> : null}
-      {result.status === "unavailable" && onRetry ? <button type="button" className="eco-btn" onClick={onRetry}>Повторить поиск</button> : null}
+      {!searching && (result.status === "unavailable" || Object.values(result.groups ?? {}).some(g => g.status === "failed")) && onRetry ? <button type="button" className="eco-btn" onClick={onRetry}>{result.groups ? "Повторить незавершённые" : "Повторить поиск"}</button> : null}
     </div>
-    {searching ? <>
+    {searching && !result.items.length && !Object.values(result.groups ?? {}).some(g => g.status === "done") ? <>
       <p className="eco-fluid-research__caption">{tick >= 6 ? "Поиск занимает больше обычного. Фильтры уже можно добавлять." : RESEARCH_COPY[tick % RESEARCH_COPY.length]}</p>
       <div className="eco-fluid-research__skeleton" aria-hidden="true"><i /><i /><i /></div>
     </> : <div className="eco-fluid-table-wrap"><table className="eco-fluid-table">
@@ -168,6 +169,8 @@ export function FluidResearchResults({ result, onRetry, profile }: { result: Man
         const items = result.items.filter(item => item.systemCode === systemCode);
         const catalog = profile?.items.filter(item => item.systemCode === systemCode) ?? [];
         const state = result.systems?.find(row => row.systemCode === systemCode);
+        const groupId = MANN_FLUID_GROUP_IDS.find(id => MANN_FLUID_GROUPS[id].systems.includes(systemCode));
+        const groupState = groupId ? result.groups?.[groupId] : undefined;
         const absent = state?.applicability === "absent" && !items.length && !catalog.length;
         const specifications = [...new Set([...catalog.flatMap(item => [...item.specifications, ...item.viscosityGrades]), ...items.flatMap(item => item.specification ? item.specification.split(/;\s*/) : [])])];
         const volumes = [...new Set([...catalog.filter(item => !item.requiresReview).flatMap(item => item.capacities.map(capacityLabel)), ...items.map(item => item.volumeText).filter(Boolean)])];
@@ -176,7 +179,8 @@ export function FluidResearchResults({ result, onRetry, profile }: { result: Man
           <th scope="row">{MANN_FLUID_LABELS[systemCode]}</th>
           <td data-label="Допуск / вязкость">{!absent && specifications.length ? specifications.map((value, index) => <span className="eco-fluid-capacity" key={index}>{value}</span>) : "—"}</td>
           <td data-label="Объём и условия">{!absent && volumes.length ? volumes.map((value, index) => <span className="eco-fluid-capacity" key={index}>{value}</span>) : "—"}</td>
-          <td data-label="Проверка"><span className="eco-fluid-status">{absent ? "Не предусмотрен · по данным ИИ" : items.length ? "Требует проверки" : catalog.length ? "См. технический профиль" : state?.applicability === "present" ? "Агрегат есть, данные не найдены" : "Не подтверждено"}</span>
+          <td data-label="Проверка"><span className="eco-fluid-status">{absent ? "Не предусмотрен · по данным ИИ" : items.length ? "Требует проверки" : catalog.length ? "См. технический профиль" : groupState?.status === "failed" ? "Поиск не завершён" : groupState?.status === "searching" ? "Идёт поиск" : groupState?.status === "queued" ? "Ожидает поиска" : state?.applicability === "present" ? "Агрегат есть, данные не найдены" : "Не подтверждено"}</span>
+            {groupState?.status === "failed" ? <p>{groupState.message}</p> : null}
             {state?.reason ? <p>{state.reason}</p> : null}
             {sources.length ? <details><summary>Источник</summary>{sources.map((source, index) => <a key={index} href={source.sourceUrl} target="_blank" rel="noopener noreferrer">{source.sourceTitle}</a>)}</details> : null}
           </td>
@@ -417,7 +421,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setFluidResearch(null);
   };
 
-  const loadTechnicalProfile = async (variantKeys: string[], vehicle: NormalizedVehicleIdentity, transmissionType?: MannTransmissionType, details: MannTechnicalContextDetails = {}) => {
+  const loadTechnicalProfile = async (variantKeys: string[], vehicle: NormalizedVehicleIdentity, transmissionType?: MannTransmissionType, details: MannTechnicalContextDetails = {}, retryFailed = false) => {
     // Retain explicit clarification only for the same selected vehicle and market.
     const retainedClarification = details.marketClarification ?? (vehicle === appliedVehicle && details.confirmedMarket === confirmedMarket ? marketClarification : undefined);
     details = { ...details, marketClarification: retainedClarification };
@@ -445,7 +449,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     }
     setTechnicalProfileError("");
     setTechnicalProfileLoading(true);
-    setFluidResearch(null);
+    if (!retryFailed) setFluidResearch(null);
     try {
       const response = await fetch("/api/mann-catalog/technical-profile", {
         method: "POST",
@@ -464,18 +468,19 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
       }
       setTechnicalProfile(data);
       setTechnicalProfileLoading(false);
-      setFluidResearch({ status: "searching", items: [], message: "ИИ проверяет недостающие жидкости и ищет источники…" });
-      try {
-        const researchResponse = await fetch("/api/mann-catalog/technical-profile", {
+      await runFluidResearchGroups({
+        signal: controller.signal, initial: retryFailed ? fluidResearch ?? undefined : undefined,
+        onProgress: result => { if (requestId === technicalProfileRequestIdRef.current) setFluidResearch(result); },
+        request: async researchGroup => {
+          const researchResponse = await fetch("/api/mann-catalog/technical-profile", {
           method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
-          body: JSON.stringify({ researchMissing: true, variantKeys, transmissionType, vehicleContext: mannTechnicalContextFromVehicle(vehicle, details,
+          body: JSON.stringify({ researchMissing: true, researchGroup, retryFailed, variantKeys, transmissionType, vehicleContext: mannTechnicalContextFromVehicle(vehicle, details,
             confirmedTechnicalCandidateRef.current?.variantIds.length === variantKeys.length && variantKeys.every(key => confirmedTechnicalCandidateRef.current?.variantIds.includes(key)) ? confirmedTechnicalCandidateRef.current : undefined) }),
         });
         const research = await responseJson<MannFluidResearchResult>(researchResponse);
-        if (requestId === technicalProfileRequestIdRef.current) setFluidResearch(researchResponse.ok && research ? research : { status: "unavailable", items: [], message: "ИИ-поиск временно недоступен. Данные каталога доступны." });
-      } catch {
-        if (!controller.signal.aborted && requestId === technicalProfileRequestIdRef.current) setFluidResearch({ status: "unavailable", items: [], message: "ИИ-поиск временно недоступен. Данные каталога доступны." });
-      }
+          return researchResponse.ok && research ? research : { status: "unavailable", items: [], message: "Запрос группы не выполнен. Остальные результаты сохранены." };
+        },
+      });
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return;
       if (requestId !== technicalProfileRequestIdRef.current) return;
@@ -905,7 +910,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             transmissionModel: selectedTransmissionModel || undefined, transmissionGearCount: selectedTransmissionGearCount,
             confirmedEngineCode, confirmedMarket, marketClarification, confirmedDrive, rearAirConditioning,
             productionMonth: productionMonth || undefined, confirmedEquipment,
-          });
+          }, true);
         }} /> : null}
         <TechnicalProfile
           profile={technicalProfile}

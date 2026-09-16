@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+const j=createJiti(import.meta.url,{alias:{'@':resolve('src')}});
+const {runFluidResearchGroups:run}=await j.import('../src/lib/mann-fluid-research-progress.ts');
+const item={systemCode:'ENGINE_OIL',specification:'TEST',volumeText:'5 L'};
+const calls=[],events=[];
+let active=0,peak=0;
+await run({signal:new AbortController().signal,onProgress:r=>events.push(r),request:async group=>{
+ calls.push(group);active++;peak=Math.max(peak,active);
+ await new Promise(r=>setTimeout(r,group==='transmission'?30:5));active--;
+ if(group==='transmission')throw Error('network');
+ return {status:'saved',items:group==='basic'?[item]:[],message:'saved'};
+}});
+assert.equal(peak,2);assert.equal(calls.length,4);
+assert.ok(events.some(r=>r.status==='searching'&&r.items.length===1),'results visible before all groups finish');
+const final=events.at(-1);assert.equal(final.groups.transmission.status,'failed');assert.equal(final.groups.basic.status,'done');assert.deepEqual(final.items,[item]);
+const retried=[],retryEvents=[];
+await run({initial:final,signal:new AbortController().signal,onProgress:r=>retryEvents.push(r),request:async group=>{retried.push(group);return {status:'saved',items:[],message:'ok'}}});
+assert.deepEqual(retried,['transmission']);assert.ok(retryEvents.every(r=>r.items.length===1),'successful results stay visible during retry');
+const controller=new AbortController();const cancelled=[];
+await run({signal:controller.signal,onProgress:r=>cancelled.push(r),request:async()=>{controller.abort();return {status:'saved',items:[item],message:'old vehicle'}}});
+assert.ok(cancelled.every(r=>r.items.length===0),'stale response not published');
+console.log('PASS progressive results, two-request limit, isolated failure, selective retry, cancellation');
