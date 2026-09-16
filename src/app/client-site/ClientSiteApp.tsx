@@ -57,6 +57,18 @@ const MASTERS = [
     photoPosition: '50% 18%',
     helmet: 'arrow',
   },
+  {
+    id: 'sergey-kankov',
+    name: 'Каньков Сергей',
+    role: 'Мастер-приемщик',
+    since: 2025,
+    swaps: 1240,
+    swapsLabel: 'клиентов',
+    quote: '«Принимаю машину так, чтобы клиент сразу понимал, что будем делать и сколько это займёт.»',
+    city: 'Калининград',
+    photo: '/team/sergey-kankov.png',
+    photoPosition: '50% 18%',
+  },
 ];
 
 
@@ -1412,7 +1424,7 @@ function ProductsPreview() {
     <section style={{background: '#F5F2ED', color: '#0a0a0a', padding: '90px 0 110px', position: 'relative'}}>
       <div className="container">
         <SectionHead paper eyebrow="Что заливают" title="На что записываются чаще всего." num="04 / 09" right={<Link to="/shop" className="btn ghost dark sm">Весь каталог →</Link>} />
-        <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
+        <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 22}}>
           {picks.map((o, idx) => <OilCardPaper key={o.id} oil={o} idx={idx} />)}
         </div>
       </div>
@@ -1494,7 +1506,9 @@ function TeamPreview() {
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, lineHeight: 1.1, textTransform: 'uppercase', color: '#F5F2ED', marginBottom: 6}}>{m.name}</div>
                   <div style={{fontSize: 12.5, color: '#9A9A9A', marginBottom: 10}}>{m.role}</div>
                   <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.06em'}}>
-                    с {m.since} · {fmtNum(m.swaps)} {m.swapsLabel || 'замен'}
+                    {m.since && Number.isFinite(m.swaps)
+                      ? `с ${m.since} · ${fmtNum(m.swaps)} ${m.swapsLabel || 'замен'}`
+                      : `${m.city} · команда TGM`}
                   </div>
                 </div>
               </div>
@@ -2953,7 +2967,7 @@ function TeamPage() {
           <div className="decorative-number" aria-hidden="true" style={{position: 'absolute', top: -40, right: -20, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 280, color: 'rgba(10,10,10,0.12)', lineHeight: 0.8, pointerEvents: 'none'}}>+1</div>
           <div style={{position: 'relative'}}>
             <div className="t-eyebrow" style={{color: '#F5F2ED', marginBottom: 14, opacity: 0.85}}>Растём</div>
-            <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 48, lineHeight: 0.95, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>Ищем 5-го мастера<span style={{color: '#0a0a0a'}}>.</span></div>
+            <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 48, lineHeight: 0.95, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>Ищем ещё одного мастера<span style={{color: '#0a0a0a'}}>.</span></div>
             <div style={{marginTop: 18, fontSize: 15, lineHeight: 1.5, maxWidth: 480}}>
               Калининград. Моторный цех. Опыт от 3 лет. Чёрная униформа. Кофе бесплатно. Зарплата выше рынка — потому что мы не демпингуем.
             </div>
@@ -2981,26 +2995,33 @@ function MasterCard({ m, idx }) {
         <div>
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
             <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em'}}>N°0{idx+1} · {m.city.toUpperCase()}</div>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.1em'}}>С {m.since}</div>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.1em'}}>{m.since ? `С ${m.since}` : 'В КОМАНДЕ'}</div>
           </div>
           <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 30, lineHeight: 1.05, color: '#F5F2ED', textTransform: 'uppercase', marginTop: 10, letterSpacing: '-0.01em'}}>{m.name}<span style={{color: '#C2410C'}}>.</span></div>
           <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 400, fontSize: 16, color: '#9A9A9A', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 4}}>{m.role}</div>
         </div>
         <div style={{paddingTop: 14, borderTop: '1px dashed var(--line)', fontFamily: 'Inter', fontSize: 14.5, color: '#F5F2ED', lineHeight: 1.55, fontStyle: 'normal'}}>
-          {m.quote}
+          {m.quote || m.bio}
         </div>
-        <div style={{marginTop: 'auto', display: 'flex', gap: 14, paddingTop: 14, borderTop: '1px solid var(--line)'}}>
-          <div className="numpanel" style={{flex: 1, padding: '12px 14px'}}>
-            <span className="k">Замен / клиентов</span>
-            <span className="v" style={{fontSize: 28}}>{fmtNum(m.swaps)}</span>
-            <span className="u">{m.swapsLabel || 'замен'}</span>
+        {m.since && Number.isFinite(m.swaps) ? (
+          <div style={{marginTop: 'auto', display: 'flex', gap: 14, paddingTop: 14, borderTop: '1px solid var(--line)'}}>
+            <div className="numpanel" style={{flex: 1, padding: '12px 14px'}}>
+              <span className="k">Замен / клиентов</span>
+              <span className="v" style={{fontSize: 28}}>{fmtNum(m.swaps)}</span>
+              <span className="u">{m.swapsLabel || 'замен'}</span>
+            </div>
+            <div className="numpanel" style={{flex: 1, padding: '12px 14px'}}>
+              <span className="k">Стаж в TGM</span>
+              <span className="v" style={{fontSize: 28}}>{2026 - m.since}</span>
+              <span className="u">{2026 - m.since === 1 ? 'год' : 'лет'}</span>
+            </div>
           </div>
-          <div className="numpanel" style={{flex: 1, padding: '12px 14px'}}>
-            <span className="k">Стаж в TGM</span>
-            <span className="v" style={{fontSize: 28}}>{2026 - m.since}</span>
-            <span className="u">{2026 - m.since === 1 ? 'год' : 'лет'}</span>
+        ) : (
+          <div style={{marginTop: 'auto', paddingTop: 14, borderTop: '1px solid var(--line)'}}>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8}}>Зона ответственности</div>
+            <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 600, fontSize: 20, color: '#F5F2ED', textTransform: 'uppercase', lineHeight: 1.2}}>{m.focus}</div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
