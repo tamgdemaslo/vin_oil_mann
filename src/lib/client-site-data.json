@@ -44,6 +44,30 @@
   ],
   "DEMO_OILS": [
     {
+      "id": "bardahl-xts-5w40-bulk", "brand": "Bardahl", "line": "XTS", "visc": "5W-40",
+      "spec": "API SN / ACEA A3/B4", "type": "Бензин · Дизель · На розлив", "volume": "1 л",
+      "base": "Синтетика", "price": 1790, "workPrice": 0, "badge": "На розлив",
+      "note": "Наливаем ровно нужный объём — без лишней канистры.", "color": "#D08A2C", "stock": 134
+    },
+    {
+      "id": "eurol-fortence-5w30", "brand": "Eurol", "line": "Fortence", "visc": "5W-30",
+      "spec": "Ford WSS-M2C913-D", "type": "Бензин · Дизель", "volume": "5 л",
+      "base": "Синтетика", "price": 6490, "workPrice": 0,
+      "note": "Масло с допуском Ford 913-D.", "color": "#0E4FA0", "stock": 2
+    },
+    {
+      "id": "lukoil-genesis-armortech-euro-5w40", "brand": "Lukoil", "line": "Genesis Armortech Euro", "visc": "5W-40",
+      "spec": "API SN / ACEA A3/B4", "type": "Бензин · Дизель", "volume": "4 л",
+      "base": "Синтетика", "price": 3790, "workPrice": 0,
+      "note": "Практичный вариант с европейскими допусками.", "color": "#CC0000", "stock": 1
+    },
+    {
+      "id": "bardahl-xts-5w30", "brand": "Bardahl", "line": "XTS", "visc": "5W-30",
+      "spec": "API SN / ACEA C3", "type": "Бензин · Дизель", "volume": "4 л",
+      "base": "Синтетика", "price": 7490, "workPrice": 0,
+      "note": "Для современных бензиновых и дизельных двигателей.", "color": "#D08A2C", "stock": 2
+    },
+    {
       "id": "shell-helix-ultra-5w40",
       "brand": "Shell",
       "line": "Helix Ultra",

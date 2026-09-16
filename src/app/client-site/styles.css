@@ -498,6 +498,81 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
+.client-yandex-map,
+.contacts-branch__map {
+  background: #161616;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.client-yandex-map { aspect-ratio: 16 / 9; }
+.client-yandex-map iframe,
+.contacts-branch__map iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+.client-footer__branch-list,
+.client-footer__phones { display: grid; gap: 10px; }
+
+.client-footer__branch {
+  display: grid;
+  gap: 5px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  transition: border-color 160ms ease-out, background 160ms ease-out;
+}
+.client-footer__branch:hover { border-color: var(--rust); background: var(--ink-2); }
+.client-footer__branch strong { font: 700 20px/1.1 var(--f-display); text-transform: uppercase; }
+.client-footer__branch span { color: var(--paper); font-size: 14px; }
+.client-footer__branch small { color: var(--gray-2); font-size: 12px; line-height: 1.45; }
+
+.client-footer__phones { margin-bottom: 22px; }
+.client-footer__phones a { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px dashed var(--line); }
+.client-footer__phones small { color: var(--gray-2); font-size: 12px; }
+.client-footer__phones strong { color: var(--paper); font: 700 clamp(21px, 2vw, 27px)/1 var(--f-display); white-space: nowrap; }
+
+.services-page,
+.contacts-page--branches { min-height: 100vh; padding: 64px 0 100px; background: var(--ink); color: var(--paper); }
+.services-page__hero,
+.contacts-branches__hero { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr); gap: 48px; align-items: end; padding-bottom: 44px; border-bottom: 1px solid var(--line); }
+.services-page__hero .t-eyebrow,
+.contacts-branches__hero .t-eyebrow { margin-bottom: 16px; }
+.services-page__hero h1,
+.contacts-branches__hero h1 { margin: 0; font: 700 clamp(48px, 7vw, 96px)/.92 var(--f-display); letter-spacing: -.02em; text-transform: uppercase; text-wrap: balance; }
+.services-page__hero h1 span,
+.contacts-branches__hero h1 span { color: var(--rust); }
+.services-page__hero > p,
+.contacts-branches__hero > p { max-width: 42ch; margin: 0; color: var(--gray-2); font-size: 17px; line-height: 1.6; text-wrap: pretty; }
+
+.services-price-groups { margin-top: 54px; }
+.services-price-group { display: grid; grid-template-columns: minmax(220px, .38fr) minmax(0, 1fr); gap: 44px; padding: 36px 0; border-bottom: 1px solid var(--line); }
+.services-price-group__head { display: flex; gap: 18px; align-items: baseline; }
+.services-price-group__head span { color: var(--rust); font: 11px/1 var(--f-mono); letter-spacing: .14em; }
+.services-price-group__head h2 { margin: 0; font: 700 28px/1.05 var(--f-display); text-transform: uppercase; }
+.services-price-list { display: grid; }
+.services-price-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: baseline; padding: 15px 0; border-bottom: 1px dashed var(--line); }
+.services-price-row:first-child { padding-top: 0; }
+.services-price-row span { font-size: 16px; line-height: 1.45; }
+.services-price-row strong { color: var(--paper); font: 700 21px/1 var(--f-display); white-space: nowrap; }
+.services-page__note { display: flex; justify-content: space-between; align-items: center; gap: 40px; margin-top: 56px; padding: 34px 38px; background: var(--paper); color: var(--ink); }
+.services-page__note h2 { margin: 0 0 10px; font: 700 30px/1 var(--f-display); text-transform: uppercase; }
+.services-page__note p { max-width: 70ch; margin: 0; color: var(--steel); font-size: 15px; line-height: 1.55; }
+
+.contacts-branches { display: grid; gap: 28px; margin-top: 52px; }
+.contacts-branch { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); min-height: 460px; border: 1px solid var(--line); }
+.contacts-branch__body { display: flex; flex-direction: column; padding: clamp(26px, 4vw, 48px); }
+.contacts-branch__number { color: var(--rust); font: 11px/1 var(--f-mono); letter-spacing: .14em; text-transform: uppercase; }
+.contacts-branch h2 { margin: 18px 0 8px; font: 700 clamp(36px, 4.5vw, 64px)/.96 var(--f-display); text-transform: uppercase; letter-spacing: -.02em; }
+.contacts-branch__body > p { margin: 0; color: var(--gray-2); font-size: 15px; }
+.contacts-branch dl { display: grid; gap: 0; margin: 30px 0 0; }
+.contacts-branch dl > div { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 18px; padding: 16px 0; border-top: 1px dashed var(--line); }
+.contacts-branch dt { color: var(--gray-2); font: 11px/1.4 var(--f-mono); letter-spacing: .1em; text-transform: uppercase; }
+.contacts-branch dd { margin: 0; font-size: 15px; line-height: 1.45; }
+.contacts-branch dd small { display: block; margin-top: 5px; color: var(--gray-2); }
+.contacts-branch dd a { font: 700 24px/1 var(--f-display); white-space: nowrap; }
+.contacts-branch__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; padding-top: 26px; }
+.contacts-shared { display: grid; grid-template-columns: 1fr 1fr auto; gap: 28px; align-items: center; margin-top: 28px; padding: 26px 28px; border: 1px solid var(--line); }
+.contacts-shared > div { display: grid; gap: 4px; }
+.contacts-shared span { color: var(--gray-2); font-size: 12px; }
+.contacts-shared a:not(.btn) { font-size: 16px; overflow-wrap: anywhere; }
 
 /* ========== Case study ========== */
 .case-page a:focus-visible {
@@ -736,6 +811,16 @@ button:disabled {
   .client-footer__grid {
     grid-template-columns: minmax(0, 1fr) !important;
   }
+
+  .services-page__hero,
+  .contacts-branches__hero,
+  .services-price-group,
+  .contacts-branch,
+  .contacts-shared { grid-template-columns: minmax(0, 1fr); }
+
+  .contacts-branch__map { min-height: 360px; }
+  .services-page__note { align-items: stretch; flex-direction: column; }
+  .services-page__note .btn { width: 100%; }
 
   .responsive-sticky,
   .case-spec {
@@ -1066,6 +1151,29 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
+  .services-page,
+  .contacts-page--branches { padding-top: 40px; padding-bottom: 72px; }
+
+  .services-page__hero,
+  .contacts-branches__hero { gap: 24px; padding-bottom: 30px; }
+
+  .services-price-groups,
+  .contacts-branches { margin-top: 32px; }
+
+  .services-price-group { gap: 24px; padding: 30px 0; }
+  .services-price-row { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  .services-price-row strong { font-size: 22px; }
+  .services-page__note { margin-top: 38px; padding: 28px 24px; }
+
+  .contacts-branch { min-height: 0; }
+  .contacts-branch__map { min-height: 300px; }
+  .contacts-branch__body { padding: 26px 22px; }
+  .contacts-branch dl > div { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  .contacts-branch__actions { flex-direction: column; }
+  .contacts-branch__actions .btn,
+  .contacts-shared .btn { width: 100%; }
+  .contacts-shared { gap: 20px; padding: 24px 22px; }
+
   .client-topbar__primary > a:first-child img {
     height: 20px !important;
   }

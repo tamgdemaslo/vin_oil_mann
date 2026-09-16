@@ -60,6 +60,7 @@ const MASTERS = [
 ];
 
 
+
 // Public catalog starts empty and is populated only by the allowlisted backend.
 var OILS = [];
 
@@ -371,6 +372,87 @@ const SERVICES = [
   { k: '05', title: 'Замена фильтров', t: 'Воздушный, салонный, топливный. Только оригинал или Mann/Mahle.', time: '10–20 мин' },
   { k: '06', title: 'Диагностика 14 пунктов', t: 'Подвеска, тормоза, утечки, ремни, аккумулятор. Письменный отчёт.', time: '40 мин' },
 ];
+
+const BRANCHES = [
+  {
+    id: 'dachnaya',
+    label: 'Дачная, 6В',
+    address: 'Калининград, ул. Дачная, 6В',
+    phone: '+7 (995) 054-58-59',
+    phoneHref: 'tel:+79950545859',
+    hours: 'Вт–пт 09:00–19:00 · сб 10:00–17:00',
+    daysOff: 'Пн и вс — выходные',
+    mapUrl: 'https://yandex.ru/maps/org/tam_gde_maslo/120778290333/',
+    mapEmbed: 'https://yandex.ru/map-widget/v1/?ll=20.547534%2C54.711374&mode=search&oid=120778290333&ol=biz&z=16',
+  },
+  {
+    id: 'gagarina',
+    label: 'Юрия Гагарина, 116',
+    address: 'Калининград, ул. Юрия Гагарина, 116',
+    phone: '+7 (965) 054-58-58',
+    phoneHref: 'tel:+79650545858',
+    hours: 'Пн, чт–вс 09:00–19:00',
+    daysOff: 'Вт и ср — выходные',
+    mapUrl: 'https://yandex.ru/maps/org/tam_gde_maslo/76115472266/',
+    mapEmbed: 'https://yandex.ru/map-widget/v1/?ll=20.573936%2C54.736088&mode=search&oid=76115472266&ol=biz&z=16',
+  },
+];
+
+const SERVICE_PRICE_GROUPS = [
+  {
+    title: 'Двигатель и фильтры',
+    items: [
+      ['Замена моторного масла при покупке масла у нас', 'Бесплатно'],
+      ['Замена моторного масла с маслом клиента', '1 490 ₽'],
+      ['Замена воздушного фильтра', '500 ₽'],
+      ['Замена салонного фильтра', '500 ₽'],
+      ['Замена топливного фильтра', '1 490 ₽'],
+      ['Замена свечей зажигания', '590 ₽'],
+    ],
+  },
+  {
+    title: 'Трансмиссия',
+    items: [
+      ['Частичная замена масла в АКПП', 'от 2 990 ₽'],
+      ['Полная аппаратная замена масла в АКПП', 'от 4 990 ₽'],
+      ['Замена масла в МКПП', '1 090 ₽'],
+      ['Замена масла в редукторе', '1 490 ₽'],
+      ['Замена масла в раздаточной коробке', '1 490 ₽'],
+      ['Замена масла в муфте Haldex', '1 690 ₽'],
+      ['Выставление уровня масла в АКПП', '1 990 ₽'],
+    ],
+  },
+  {
+    title: 'Жидкости и диагностика',
+    items: [
+      ['Аппаратная замена тормозной жидкости', '2 990 ₽'],
+      ['Замена масла в ГУР', '590 ₽'],
+      ['Компьютерная диагностика', '290 ₽'],
+      ['Сброс сервисного интервала', '290 ₽'],
+      ['Диагностика АКПП', '990 ₽'],
+      ['Проверка состояния ГРМ', '1 000 ₽'],
+      ['Проверка рабочих жидкостей', 'от 300 ₽'],
+    ],
+  },
+];
+
+// VIN demo lookup
+const VIN_DEMO = {
+  vin: 'WBABA91070AL55203',
+  brand: 'BMW',
+  model: 'X5 xDrive40i',
+  generation: 'G05',
+  year: 2021,
+  engine: 'B58B30M1 (3.0 бензин, 333 л.с.)',
+  oilCapacity: '6.5 л',
+  oilSpec: 'BMW Longlife-01 / 5W-30',
+  filter: 'BMW 11428583898',
+  airFilter: 'MANN C 29 005',
+  cabinFilter: 'MANN FP 32 001',
+  drainPlug: 'M14×1.5, шайба 11137548021',
+  recommended: 'bardahl-xtc-c60-5w40',
+  alternatives: ['eurol-fluence-5w30', 'mobil-1-esp-5w30', 'shell-helix-ultra-5w40', 'zic-x9-ls-5w30'],
+};
 
 // History data for "personal account"
 const ACCOUNT = {
@@ -976,6 +1058,7 @@ function TopBar() {
   const nav = [
     {to: '/', label: 'Главная'},
     {to: '/shop', label: 'Магазин'},
+    {to: '/services', label: 'Услуги'},
     {to: '/cases', label: 'Кейсы'},
     {to: '/contacts', label: 'Контакты'},
   ];
@@ -1010,73 +1093,45 @@ function Footer() {
     <footer style={{background: '#0a0a0a', color: '#F5F2ED', borderTop: '1px solid var(--line)'}}>
       {/* Map + hours block */}
       <div className="container client-footer__grid" style={{padding: '64px 24px 32px', display: 'grid', gridTemplateColumns: '1.2fr 1fr 0.9fr', gap: 48}}>
-        {/* Map placeholder */}
+        {/* Real Yandex map */}
         <div className="client-footer__map">
           <div className="t-eyebrow" style={{marginBottom: 14}}>Как найти</div>
-          <h3 className="t-headline" style={{fontSize: 28, margin: '0 0 18px'}}>Калининград,<br />Московский пр. 244<br />Дачная 6В<br />Юрия Гагарина 116</h3>
-          <div style={{position: 'relative', aspectRatio: '16 / 9', background: '#161616', border: '1px solid var(--line)', overflow: 'hidden'}}>
-            <svg viewBox="0 0 600 340" preserveAspectRatio="xMidYMid slice" style={{position: 'absolute', inset: 0, width: '100%', height: '100%'}}>
-              {/* schematic Kaliningrad-ish street grid */}
-              <rect width="600" height="340" fill="#0e0e0e" />
-              <g stroke="#1f1f1f" strokeWidth="1" fill="none">
-                {Array.from({length: 14}).map((_, i) => <line key={'h'+i} x1="0" y1={i*26} x2="600" y2={i*26} />)}
-                {Array.from({length: 24}).map((_, i) => <line key={'v'+i} x1={i*26} y1="0" x2={i*26} y2="340" />)}
-              </g>
-              {/* big avenues */}
-              <line x1="0" y1="180" x2="600" y2="155" stroke="#3D3D3D" strokeWidth="6" />
-              <line x1="320" y1="0" x2="280" y2="340" stroke="#3D3D3D" strokeWidth="5" />
-              <line x1="0" y1="80" x2="600" y2="90" stroke="#2A2A2A" strokeWidth="4" />
-              <line x1="100" y1="0" x2="80" y2="340" stroke="#2A2A2A" strokeWidth="3" />
-              {/* river */}
-              <path d="M -10 240 Q 150 220 280 250 T 620 240" stroke="#1f3a4a" strokeWidth="14" fill="none" />
-              {/* pin */}
-              <g transform="translate(310 170)">
-                <circle r="40" fill="#C2410C" opacity="0.15" />
-                <circle r="22" fill="#C2410C" opacity="0.3" />
-                <circle r="8" fill="#C2410C" />
-                <circle r="3" fill="#F5F2ED" />
-              </g>
-              <text x="354" y="170" fontFamily="JetBrains Mono, monospace" fontSize="10" fill="#F5F2ED" letterSpacing="2">TGM · ТОЧКА 01</text>
-            </svg>
+          <h3 className="t-headline" style={{fontSize: 28, margin: '0 0 18px'}}>Два филиала.<br />Один уровень сервиса.</h3>
+          <div className="client-yandex-map">
+            <iframe
+              title="Филиалы Там где масло на Яндекс Картах"
+              src="https://yandex.ru/map-widget/v1/?mode=search&text=%D0%A2%D0%B0%D0%BC%20%D0%B3%D0%B4%D0%B5%20%D0%BC%D0%B0%D1%81%D0%BB%D0%BE%20%D0%9A%D0%B0%D0%BB%D0%B8%D0%BD%D0%B8%D0%BD%D0%B3%D1%80%D0%B0%D0%B4&z=12"
+              allowFullScreen
+              loading="lazy"
+            />
           </div>
         </div>
 
         {/* Hours */}
         <div className="client-footer__hours">
-          <div className="t-eyebrow" style={{marginBottom: 14}}>Часы работы</div>
-          <table style={{width: '100%', borderCollapse: 'collapse'}}>
-            <tbody>
-              {[
-                ['Пн', 'Выходной'],
-                ['Вт', '09:00 — 19:00'],
-                ['Ср', '09:00 — 19:00'],
-                ['Чт', '09:00 — 19:00'],
-                ['Пт', '09:00 — 19:00'],
-                ['Сб', '10:00 — 17:00'],
-                ['Вс', '10:00 — 17:00'],
-              ].map(([d, h], i) => (
-                <tr key={i} style={{borderBottom: '1px dashed var(--line)'}}>
-                  <td style={{padding: '11px 0', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#9A9A9A', letterSpacing: '0.12em'}}>{d}</td>
-                  <td style={{padding: '11px 0', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: h === 'Выходной' ? '#858585' : '#F5F2ED', textAlign: 'right'}}>{h}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{marginTop: 18, padding: '14px 16px', border: '1px solid #C2410C', display: 'flex', alignItems: 'center', gap: 12}}>
-            <span style={{display: 'inline-block', width: 8, height: 8, background: '#C2410C', borderRadius: '50%'}} />
-            <div>
-              <div style={{fontSize: 12, color: '#F5F2ED', fontWeight: 600}}>Сейчас открыты</div>
-              <div style={{fontSize: 11, color: '#9A9A9A', fontFamily: 'JetBrains Mono, monospace', marginTop: 2}}>До закрытия 4 ч 12 мин</div>
-            </div>
+          <div className="t-eyebrow" style={{marginBottom: 14}}>Адреса и часы</div>
+          <div className="client-footer__branch-list">
+            {BRANCHES.map(branch => (
+              <a key={branch.id} href={branch.mapUrl} target="_blank" rel="noreferrer" className="client-footer__branch">
+                <strong>{branch.label}</strong>
+                <span>{branch.hours}</span>
+                <small>{branch.daysOff} · открыть в Яндекс Картах ↗</small>
+              </a>
+            ))}
           </div>
         </div>
 
         {/* Quick links + contact */}
         <div className="client-footer__contact">
           <div className="t-eyebrow" style={{marginBottom: 14}}>Прямой контакт</div>
-          <a href="tel:+79950545859" style={{display: 'block', fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, lineHeight: 1.05, marginBottom: 18, color: '#F5F2ED', textDecoration: 'none'}}>
-            +7 (995)<br />054-58-59
-          </a>
+          <div className="client-footer__phones">
+            {BRANCHES.map(branch => (
+              <a key={branch.id} href={branch.phoneHref}>
+                <small>{branch.label}</small>
+                <strong>{branch.phone}</strong>
+              </a>
+            ))}
+          </div>
           <div style={{display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 26}}>
             <a href="mailto:tam-gde-maslo@mail.ru" className="t-mono client-contact-link" style={{fontSize: 13, color: '#F5F2ED', display: 'inline-flex', alignItems: 'center', gap: 10}}>
               <span style={{display: 'inline-block', width: 4, height: 4, background: '#C2410C', borderRadius: '50%'}} /> tam-gde-maslo@mail.ru
@@ -1285,7 +1340,7 @@ function ServicesGrid() {
   return (
     <section style={{background: '#0a0a0a', padding: '90px 0'}}>
       <div className="container">
-        <SectionHead eyebrow="Что делаем" title="Сервис, дисциплина, тишина." num="02 / 09" right={<Link to="/contacts" className="btn ghost sm">Полный прайс →</Link>} />
+        <SectionHead eyebrow="Что делаем" title="Сервис, дисциплина, тишина." num="02 / 08" right={<Link to="/services" className="btn ghost sm">Полный прайс →</Link>} />
         <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
           {SERVICES.map(s => (
             <div key={s.k} style={{background: '#0a0a0a', padding: '32px 28px 28px', minHeight: 220, position: 'relative'}}>
@@ -1344,7 +1399,15 @@ function CasesPreview() {
 
 /* Products preview */
 function ProductsPreview() {
-  const picks = OILS.filter(o => o.offers?.some(offer => offer.availability === 'IN_STOCK')).slice(0, 4);
+  const inStock = OILS.filter(oil => oil.offers?.some(offer => offer.availability === 'IN_STOCK'));
+  const preferred = [
+    oil => /bardahl/i.test(`${oil.brand} ${oil.line}`) && /xts/i.test(oil.line || '') && oil.visc === '5W-40' && /(?:1\s*л|розлив)/i.test(`${oil.volume} ${oil.type}`),
+    oil => /eurol/i.test(`${oil.brand} ${oil.line}`) && /fort(?:ence|on)/i.test(oil.line || '') && oil.visc === '5W-30',
+    oil => /(?:lukoil|лукойл)/i.test(`${oil.brand} ${oil.line}`) && /genesis/i.test(oil.line || '') && /euro/i.test(oil.line || '') && oil.visc === '5W-40',
+    oil => /bardahl/i.test(`${oil.brand} ${oil.line}`) && /xts/i.test(oil.line || '') && oil.visc === '5W-30',
+  ];
+  const selected = preferred.map(match => inStock.find(match)).filter(Boolean);
+  const picks = [...selected, ...inStock.filter(oil => !selected.some(pick => pick.id === oil.id))].slice(0, 4);
   return (
     <section style={{background: '#F5F2ED', color: '#0a0a0a', padding: '90px 0 110px', position: 'relative'}}>
       <div className="container">
@@ -1443,38 +1506,6 @@ function TeamPreview() {
   );
 }
 
-/* What we don't do */
-function WhatWeDont() {
-  const items = [
-    {n: '01', t: 'Шиномонтаж', d: 'Это другой бизнес и другая аудитория. Уважаем коллег, но не лезем.'},
-    {n: '02', t: 'Скидочные акции «−30% на замену»', d: 'Если масло хорошее — оно стоит сколько стоит. Демпинг бьёт по качеству.'},
-    {n: '03', t: 'Красно-жёлтую вывесочную эстетику', d: 'Никаких баннеров «АКЦИЯ!», восклицательных знаков и мультяшных маслёнок.'},
-    {n: '04', t: 'Корпоративный канцелярит', d: 'Без «Уважаемый клиент, в связи с...». Пишем как разговариваем.'},
-    {n: '05', t: 'Маскотов и капель масла с глазами', d: 'Бренд — это не персонаж. Бренд — это мастерская и люди в ней.'},
-    {n: '06', t: 'Не возьмёмся за то, что не умеем', d: 'Если двигатель открывать — отправим к нашим коллегам по моторному цеху.'},
-  ];
-  return (
-    <section style={{background: '#0a0a0a', padding: '90px 0 110px', borderTop: '1px solid var(--line)'}}>
-      <div className="container">
-        <SectionHead eyebrow="Принципы дома" title="Что мы не делаем." num="06 / 09" right={<span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.14em', textTransform: 'uppercase'}}>На случай если кто-то сомневается</span>} />
-        <div className="what-we-dont__grid responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
-          {items.map(it => (
-            <div key={it.n} style={{background: '#0a0a0a', padding: '32px 28px'}}>
-              <div style={{display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 14}}>
-                <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: '#858585', letterSpacing: '0.12em', marginTop: 4}}>{it.n}</div>
-                <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, lineHeight: 1.1, textTransform: 'uppercase', color: '#F5F2ED'}}>
-                  <span style={{color: '#C2410C', marginRight: 8}}>—</span>{it.t}
-                </div>
-              </div>
-              <div style={{fontSize: 13.5, color: '#9A9A9A', lineHeight: 1.55, paddingLeft: 32}}>{it.d}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* Big closing CTA */
 function ClosingCTA() {
   const r = useRoute();
@@ -1483,12 +1514,12 @@ function ClosingCTA() {
       <div className="decorative-number" aria-hidden="true" style={{position: 'absolute', top: -60, right: -100, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 520, color: 'rgba(10,10,10,0.05)', lineHeight: 0.8, pointerEvents: 'none', letterSpacing: '-0.04em'}}>76</div>
       <div className="container closing-cta__grid" style={{position: 'relative', display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 56, alignItems: 'center'}}>
         <div className="closing-cta__copy">
-          <div className="t-eyebrow" style={{marginBottom: 18}}>07 / 09 · Финал</div>
+          <div className="t-eyebrow" style={{marginBottom: 18}}>Финал</div>
           <h2 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(48px, 7vw, 96px)', lineHeight: 0.92, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
             Заезжай.<br />Не разводим<span style={{color: '#C2410C'}}>.</span>
           </h2>
           <div style={{marginTop: 24, fontSize: 18, lineHeight: 1.5, maxWidth: 580, color: '#3D3D3D'}}>
-            Сервис уровня дилера. Атмосфера гаража. Свои пацаны на ресепшене. Без официоза, без скидочных акций, без «уважаемый клиент».
+            Сервис уровня дилера. Атмосфера гаража. Свои пацаны на ресепшене. Спокойно, точно и по делу.
           </div>
           <div style={{display: 'flex', gap: 16, marginTop: 36}}>
             <a href="/booking" className="btn rust lg">Записаться <span className="arr">→</span></a>
@@ -1520,7 +1551,6 @@ function HomePage() {
       <ProductsPreview />
       <CifryBlock />
       <TeamPreview />
-      <WhatWeDont />
       <ClosingCTA />
     </main>
   );
@@ -1998,7 +2028,7 @@ function VinPage() {
         {step === 4 && (
           <div className="responsive-grid vin-slot-layout" style={{display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 56}}>
             <div>
-              <div className="t-eyebrow muted" style={{marginBottom: 14}}>Свободные слоты в Калининграде · Московский пр. 244</div>
+              <div className="t-eyebrow muted" style={{marginBottom: 14}}>Свободные слоты в Калининграде · филиал уточним при подтверждении</div>
 
               {slotsLoading && (
                 <div style={{marginBottom: 18, padding: '14px 16px', border: '1px solid var(--line)', color: '#9A9A9A', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase'}}>
@@ -2125,7 +2155,7 @@ function VinPage() {
                 <div className="t-eyebrow" style={{color: '#F5F2ED', marginBottom: 14}}>Заявка №{appointment?.id || 'TGM'}</div>
                 <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 56, lineHeight: 1, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>Записал.<br />Ждём в {selectedSlot?.time}<span style={{color: '#0a0a0a'}}>.</span></div>
                 <div style={{marginTop: 24, fontSize: 16, lineHeight: 1.5}}>
-                  {selectedSlot?.weekday || selectedSlot?.d?.wd}, {selectedSlot?.date || selectedSlot?.d?.date} · Калининград, Московский пр. 244. Если планы меняются — звони +7 (995) 054-58-59, перенесём без вопросов.
+                  {selectedSlot?.weekday || selectedSlot?.d?.wd}, {selectedSlot?.date || selectedSlot?.d?.date} · Калининград. Филиал подтвердит администратор. Если планы меняются — звони +7 (995) 054-58-59, перенесём без вопросов.
                 </div>
               </div>
               <div style={{marginTop: 24, padding: '22px 24px', border: '1px solid var(--line)', background: '#0e0e0e', fontSize: 13.5, color: '#F5F2ED', lineHeight: 1.55}}>
@@ -2979,10 +3009,58 @@ function MasterCard({ m, idx }) {
 
 
 // ====================================================================
-//  pages/contacts.jsx — Контакты + карта точки
+//  pages/services.jsx — услуги и публичный прайс
 // ====================================================================
 
-function ContactsPage() {
+function ServicesPage() {
+  return (
+    <main className="services-page">
+      <div className="container">
+        <header className="services-page__hero">
+          <div>
+            <div className="t-eyebrow">Услуги</div>
+            <h1>Прайс без<br />мелкого шрифта<span>.</span></h1>
+          </div>
+          <p>Стоимость работы видна до записи. Масло, фильтры и расходники подбираем отдельно под автомобиль — по VIN и фактическому объёму.</p>
+        </header>
+
+        <div className="services-price-groups">
+          {SERVICE_PRICE_GROUPS.map((group, groupIndex) => (
+            <section key={group.title} className="services-price-group">
+              <div className="services-price-group__head">
+                <span>{String(groupIndex + 1).padStart(2, '0')}</span>
+                <h2>{group.title}</h2>
+              </div>
+              <div className="services-price-list">
+                {group.items.map(([name, price]) => (
+                  <div key={name} className="services-price-row">
+                    <span>{name}</span>
+                    <strong>{price}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <section className="services-page__note">
+          <div>
+            <h2>Сначала проверим применимость.</h2>
+            <p>Для сложных трансмиссий, снятия поддона и дополнительных работ итог подтверждаем после проверки VIN. Ничего не добавляем в заказ без согласования.</p>
+          </div>
+          <a href="/booking" className="btn rust lg">Записаться <span className="arr">→</span></a>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+
+// ====================================================================
+//  pages/contacts.jsx — Контакты + карта филиалов
+// ====================================================================
+
+function LegacyContactsPage() {
   return (
     <main className="contacts-page" style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
       <div className="container">
@@ -2991,7 +3069,7 @@ function ContactsPage() {
             <div className="t-eyebrow" style={{marginBottom: 14}}>Контакты · точка 01</div>
             <h1 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(44px, 6.5vw, 88px)', lineHeight: 0.92, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
               Калининград<span style={{color: '#C2410C'}}>.</span><br />
-              Московский пр. 244.
+              Дачная 6В.<br />Гагарина 116.
             </h1>
           </div>
           <div className="contacts-page__coordinates" style={{textAlign: 'right'}}>
@@ -3010,10 +3088,10 @@ function ContactsPage() {
                 {Array.from({length: 26}).map((_, i) => <line key={'h'+i} x1="0" y1={i*26} x2="900" y2={i*26} />)}
                 {Array.from({length: 36}).map((_, i) => <line key={'v'+i} x1={i*26} y1="0" x2={i*26} y2="620" />)}
               </g>
-              {/* main avenues — diagonal Moskovsky pr */}
+              {/* main street */}
               <line x1="-20" y1="320" x2="920" y2="270" stroke="#3D3D3D" strokeWidth="14" />
               <line x1="-20" y1="320" x2="920" y2="270" stroke="#1F1F1F" strokeWidth="11" />
-              <text x="50" y="295" fontFamily="JetBrains Mono, monospace" fontSize="10" fill="#6B6B6B" letterSpacing="2">МОСКОВСКИЙ ПРОСПЕКТ</text>
+              <text x="50" y="295" fontFamily="JetBrains Mono, monospace" fontSize="10" fill="#6B6B6B" letterSpacing="2">УЛИЦА ДАЧНАЯ</text>
               {/* Leninsky */}
               <line x1="380" y1="0" x2="320" y2="620" stroke="#3D3D3D" strokeWidth="10" />
               <line x1="380" y1="0" x2="320" y2="620" stroke="#1F1F1F" strokeWidth="7" />
@@ -3049,7 +3127,7 @@ function ContactsPage() {
               </g>
               <line x1="478" y1="295" x2="600" y2="295" stroke="#C2410C" strokeWidth="1" strokeDasharray="3 3" />
               <text x="608" y="290" fontFamily="JetBrains Mono, monospace" fontSize="11" fill="#F5F2ED" letterSpacing="2">TGM · ТОЧКА 01</text>
-              <text x="608" y="304" fontFamily="JetBrains Mono, monospace" fontSize="10" fill="#9A9A9A" letterSpacing="1">МОСКОВСКИЙ 244 · КГД</text>
+              <text x="608" y="304" fontFamily="JetBrains Mono, monospace" fontSize="10" fill="#9A9A9A" letterSpacing="1">ДАЧНАЯ 6В · КГД</text>
               {/* compass */}
               <g transform="translate(840 60)">
                 <circle r="22" fill="none" stroke="#3D3D3D" />
@@ -3076,7 +3154,7 @@ function ContactsPage() {
           {/* Info column */}
           <div style={{display: 'flex', flexDirection: 'column', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
             {[
-              {k: 'Адрес', v: 'Калининград,\nМосковский пр. 244\nДачная 6В\nЮрия Гагарина 116'},
+              {k: 'Адрес', v: 'Калининград,\nДачная 6В\nЮрия Гагарина 116'},
               {k: 'Телефон', v: '+7 (995) 054-58-59', big: true},
               {k: 'Telegram', v: '@tamgdemaslo', big: true},
               {k: 'Часы работы', v: 'пн - выходной\nвт-пт 09:00-19:00\nсб-вск 10:00-17:00'},
@@ -3182,6 +3260,50 @@ function ContactsPage() {
               Или по VIN <span className="arr">→</span>
             </Link>
           </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+
+function ContactsPage() {
+  return (
+    <main className="contacts-page contacts-page--branches">
+      <div className="container">
+        <header className="contacts-branches__hero">
+          <div className="t-eyebrow">Контакты</div>
+          <h1>Два филиала<br />в Калининграде<span>.</span></h1>
+          <p>Выберите удобную точку: у каждого филиала свой телефон, график и маршрут в Яндекс Картах.</p>
+        </header>
+
+        <div className="contacts-branches">
+          {BRANCHES.map((branch, index) => (
+            <article key={branch.id} className="contacts-branch">
+              <div className="contacts-branch__map">
+                <iframe title={`Яндекс Карта — ${branch.label}`} src={branch.mapEmbed} allowFullScreen loading="lazy" />
+              </div>
+              <div className="contacts-branch__body">
+                <span className="contacts-branch__number">Точка {String(index + 1).padStart(2, '0')}</span>
+                <h2>{branch.label}</h2>
+                <p>{branch.address}</p>
+                <dl>
+                  <div><dt>Часы</dt><dd>{branch.hours}<small>{branch.daysOff}</small></dd></div>
+                  <div><dt>Телефон</dt><dd><a href={branch.phoneHref}>{branch.phone}</a></dd></div>
+                </dl>
+                <div className="contacts-branch__actions">
+                  <a href={branch.mapUrl} target="_blank" rel="noreferrer" className="btn ghost">Открыть карту ↗</a>
+                  <a href={branch.phoneHref} className="btn rust">Позвонить</a>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <section className="contacts-shared">
+          <div><span>Общий Telegram</span><a href="https://t.me/tamgdemaslo" target="_blank" rel="noreferrer">@tamgdemaslo</a></div>
+          <div><span>Почта</span><a href="mailto:tam-gde-maslo@mail.ru">tam-gde-maslo@mail.ru</a></div>
+          <a href="/booking" className="btn rust lg">Записаться <span className="arr">→</span></a>
         </section>
       </div>
     </main>
@@ -3367,7 +3489,7 @@ const LEGAL_OWNER = 'ИП Елисеенко Илья Сергеевич';
 const LEGAL_INN = '392302838630';
 const LEGAL_PHONE = '+7 (995) 054-58-59';
 const LEGAL_EMAIL = 'tam-gde-maslo@mail.ru';
-const LEGAL_ADDRESS = 'Калининград, Московский пр. 244; Дачная 6В; Юрия Гагарина 116';
+const LEGAL_ADDRESS = 'Калининград, Дачная 6В; Юрия Гагарина 116';
 
 function LegalShell({ eyebrow, title, children }) {
   return (
@@ -3695,6 +3817,7 @@ function App({ initialPath = null }: { initialPath?: string | null }) {
   else if (seg[0] === 'cases') page = <CasesPage />;
   else if (seg[0] === 'case') page = <CasePage />;
   else if (seg[0] === 'team') page = <TeamPage />;
+  else if (seg[0] === 'services') page = <ServicesPage />;
   else if (seg[0] === 'contacts') page = <ContactsPage />;
   else if (catalogStatus === 'loading') page = <CatalogGate title="Загружаем каталог масел" />;
   else if (catalogStatus === 'error') page = <CatalogGate title="Каталог эко-платформы недоступен" text={catalogError} />;
