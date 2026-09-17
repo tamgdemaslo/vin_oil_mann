@@ -1,12 +1,9 @@
-import type { Metadata } from "next";
+import { pageMetadata, SITE_PAGES } from "@/lib/client-site-seo";
 import ClientSiteApp from "./ClientSiteApp";
 import "./styles.css";
 
-export const metadata: Metadata = {
-  title: "Там где масло. — Дачная 6В и Юрия Гагарина 116",
-  description: "Замена моторного и трансмиссионного масла в Калининграде: услуги, цены, запись и контакты двух филиалов.",
-};
+export const metadata = pageMetadata("", SITE_PAGES[""].title, SITE_PAGES[""].description);
 
 export default function ClientSitePage() {
-  return <ClientSiteApp initialPath={null} />;
+  return <ClientSiteApp initialPath="/" />;
 }

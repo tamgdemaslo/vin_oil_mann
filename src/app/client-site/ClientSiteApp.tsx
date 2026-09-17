@@ -2,6 +2,7 @@
 // @ts-nocheck
 "use client";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { ClientOil } from "@/lib/client-site-api";
 
 // ====================================================================
 //  data.jsx — все мок-данные сайта
@@ -73,8 +74,8 @@ const MASTERS = [
 
 
 
-// Public catalog starts empty and is populated only by the allowlisted backend.
-var OILS = [];
+// Each render owns its catalog: no mutable state shared across server requests.
+const CatalogCtx = createContext([]);
 
 const CASES = [
   {
@@ -1012,9 +1013,8 @@ function useRoute() { return useContext(RouterCtx); }
 const CLIENT_SITE_BASE_PATH = '/client-site';
 const clientSiteHref = (to) => to === '/' ? CLIENT_SITE_BASE_PATH : `${CLIENT_SITE_BASE_PATH}${to}`;
 function Link({ to, children, ...rest }) {
-  const r = useRoute();
   return (
-    <a href={clientSiteHref(to)} onClick={e => { e.preventDefault(); r.go(to); }} {...rest}>{children}</a>
+    <a href={clientSiteHref(to)} {...rest}>{children}</a>
   );
 }
 
@@ -1408,6 +1408,7 @@ function CasesPreview() {
 
 /* Products preview */
 function ProductsPreview() {
+  const OILS = useContext(CatalogCtx);
   const inStock = OILS.filter(oil => oil.offers?.some(offer => offer.availability === 'IN_STOCK'));
   const preferred = [
     oil => /bardahl/i.test(`${oil.brand} ${oil.line}`) && /xts/i.test(oil.line || '') && oil.visc === '5W-40' && /(?:1\s*л|розлив)/i.test(`${oil.volume} ${oil.type}`),
@@ -1574,10 +1575,21 @@ function HomePage() {
 // ====================================================================
 
 function VinPage() {
+  const OILS = useContext(CatalogCtx);
   const r = useRoute();
   const initial = (r.state && r.state.vin) || '';
   const [vin, setVin] = useState(initial);
   const [step, setStep] = useState(initial.length === 17 ? 2 : 1);
+  useEffect(() => {
+    try {
+      const transferredVin = sessionStorage.getItem('client-site-pending-vin');
+      sessionStorage.removeItem('client-site-pending-vin');
+      if (transferredVin) {
+        setVin(transferredVin);
+        setStep(transferredVin.length === 17 ? 2 : 1);
+      }
+    } catch { /* Storage can be disabled; manual VIN entry remains available. */ }
+  }, []);
   const [chosenOilId, setChosenOilId] = useState('');
   const [slotIdx, setSlotIdx] = useState(0);
   const [phone, setPhone] = useState('');
@@ -2373,6 +2385,7 @@ function vinToMinutes(time) {
 // ====================================================================
 
 function ShopPage() {
+  const OILS = useContext(CatalogCtx);
   const router = useRoute();
   const [brands, setBrands] = useState(new Set());
   const [viscs, setViscs] = useState(new Set());
@@ -2478,6 +2491,7 @@ function ShopPage() {
 }
 
 function FilterGroup({ title, items, active, onToggle }) {
+  const OILS = useContext(CatalogCtx);
   const router = useRoute();
   return (
     <div style={{marginBottom: 28}}>
@@ -2509,6 +2523,7 @@ function FilterGroup({ title, items, active, onToggle }) {
 }
 
 function OemFilterGroup({ items, active, onToggle }) {
+  const OILS = useContext(CatalogCtx);
   const router = useRoute();
   const [query, setQuery] = useState('');
   const normalizedQuery = query.trim().toLocaleLowerCase('ru');
@@ -2517,7 +2532,7 @@ function OemFilterGroup({ items, active, onToggle }) {
     : items;
 
   return (
-    <details className="oem-filter" defaultOpen={active.size > 0}>
+    <details className="oem-filter">
       <summary>
         <span>OEM-допуск{active.size ? ` · ${active.size}` : ''}</span>
         <span className="oem-filter__icon" aria-hidden="true">+</span>
@@ -2624,6 +2639,7 @@ function ShopCard({ oil, idx }) {
 // ====================================================================
 
 function ProductPage({catalogVersion}) {
+  const OILS = useContext(CatalogCtx);
   const r = useRoute();
   const id = (r.params && r.params.id) || (r.path.split('/')[2]);
   const listedOil = OILS.find(o => o.id === id) || null;
@@ -2699,7 +2715,7 @@ function ProductPage({catalogVersion}) {
 
             {oil.note ? <div style={{marginTop: 22, padding: '20px 22px', background: '#0a0a0a', color: '#F5F2ED'}}>
               <div className="t-eyebrow muted" style={{marginBottom: 8}}>Описание</div>
-              <div style={{fontSize: 15, lineHeight: 1.5}}>{oil.note}</div>
+              <div style={{fontSize: 15, lineHeight: 1.6}}>{oil.note.split(/\n\n+/).map((paragraph, index) => <p key={index} style={{margin: index ? '14px 0 0' : 0}}>{paragraph}</p>)}</div>
             </div> : null}
           </div>
 
@@ -2709,7 +2725,7 @@ function ProductPage({catalogVersion}) {
               {[oil.brand, oil.type].filter(Boolean).join(' · ')}
             </div>
             <h1 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(40px, 5.5vw, 72px)', lineHeight: 0.95, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
-              {oil.line}{oil.visc ? <><br /><span style={{color: '#C2410C'}}>{oil.visc}.</span></> : null}
+              {oil.name || `${oil.brand} ${oil.line} ${oil.visc} ${oil.volume}`}
             </h1>
             <div style={{fontFamily: 'Oswald, sans-serif', fontSize: 18, color: '#6B6B6B', textTransform: 'uppercase', marginTop: 8}}>
               {[oil.volume, oil.uom].filter(Boolean).join(' · ')}
@@ -3406,6 +3422,7 @@ function ContactsPage() {
 // ====================================================================
 
 function AccountPage() {
+  const OILS = useContext(CatalogCtx);
   const a = ACCOUNT;
   const kmToNext = a.nextChange.km - a.car.mileage;
   const pct = Math.max(0, Math.min(1, (15000 - kmToNext) / 15000));
@@ -3764,9 +3781,10 @@ function useClientRoute(initialPath) {
 
   const go = (to, st = {}) => {
     setState(st);
-    window.history.pushState({}, '', clientSiteHref(to));
-    setPath(to);
-    window.scrollTo({ top: 0, behavior: 'auto' });
+    if (to === '/vin' && st.vin) {
+      try { sessionStorage.setItem('client-site-pending-vin', st.vin); } catch {}
+    }
+    window.location.assign(clientSiteHref(to));
   };
 
   // Parse params
@@ -3778,12 +3796,14 @@ function useClientRoute(initialPath) {
   return { path, go, state, params };
 }
 
-function App({ initialPath = null }: { initialPath?: string | null }) {
+function App({ initialPath = '/', initialOils = [] }: { initialPath?: string; initialOils?: ClientOil[] }) {
   const router = useClientRoute(initialPath);
+  const [OILS, setOils] = useState(initialOils);
+  const oilsRef = useRef(initialOils);
   const [catalogVersion, setCatalogVersion] = useState(0);
-  const [catalogStatus, setCatalogStatus] = useState('loading');
+  const [catalogStatus, setCatalogStatus] = useState(initialOils.length ? 'ready' : 'loading');
   const [catalogError, setCatalogError] = useState('');
-  const [catalogTotal, setCatalogTotal] = useState(0);
+  const [catalogTotal, setCatalogTotal] = useState(initialOils.length);
   const [catalogLoadingMore, setCatalogLoadingMore] = useState(false);
 
   useEffect(() => {
@@ -3792,11 +3812,11 @@ function App({ initialPath = null }: { initialPath?: string | null }) {
     let generation = 0;
     let backgroundTimer = null;
     let idleHandle = null;
-    setCatalogStatus('loading');
     setCatalogError('');
 
     const publishCatalog = (items) => {
-      OILS = items;
+      oilsRef.current = items;
+      setOils(items);
       window.OILS = items;
       setCatalogVersion(version => version + 1);
     };
@@ -3859,7 +3879,7 @@ function App({ initialPath = null }: { initialPath?: string | null }) {
         const oils = Array.isArray(data?.items) ? data.items : [];
         if (cancelled || run !== generation) return;
         const total = Number.isFinite(data?.total) ? data.total : oils.length;
-        const publishProgress = OILS.length === 0;
+        const publishProgress = oilsRef.current.length === 0;
         if (publishProgress) publishCatalog(oils);
         setCatalogTotal(total);
         setCatalogStatus('ready');
@@ -3869,7 +3889,7 @@ function App({ initialPath = null }: { initialPath?: string | null }) {
         if (cancelled || run !== generation) return;
         console.warn('[catalog] Не удалось обновить масла:', error.message);
         setCatalogLoadingMore(false);
-        if (OILS.length) {
+        if (oilsRef.current.length) {
           setCatalogStatus('ready');
         } else {
           publishCatalog([]);
@@ -3917,11 +3937,11 @@ function App({ initialPath = null }: { initialPath?: string | null }) {
   else page = <HomePage />;
 
   return (
-    <RouterCtx.Provider value={{ ...router, catalogVersion, catalogTotal, catalogLoadingMore }}>
+    <CatalogCtx.Provider value={OILS}><RouterCtx.Provider value={{ ...router, catalogVersion, catalogTotal, catalogLoadingMore }}>
       <TopBar />
       {page}
       <Footer />
-    </RouterCtx.Provider>
+    </RouterCtx.Provider></CatalogCtx.Provider>
   );
 }
 

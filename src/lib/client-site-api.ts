@@ -8,8 +8,9 @@ import {
   normalizePublicVin,
 } from "@/lib/public-oil";
 import clientSiteData from "@/lib/client-site-data.json";
+import { buildClientProductContent } from "@/lib/client-product-content";
 
-type ClientOil = {
+export type ClientOil = {
   id: string;
   article?: string;
   brand: string;
@@ -24,6 +25,7 @@ type ClientOil = {
   workPrice?: number;
   badge?: string;
   note?: string;
+  name: string;
   color: string;
   stock: number;
   pricesDiffer: boolean;
@@ -133,6 +135,17 @@ export async function getClientOilPage(searchParams?: URLSearchParams) {
 export async function getClientOilById(id: string) {
   const oil = await getPublicOilById(id);
   return oil ? publicOilToClientOil(oil) : null;
+}
+
+export async function getClientCatalogForPage() {
+  const items: ClientOil[] = [];
+  let offset: number | null = 0;
+  while (offset !== null) {
+    const page = await loadClientOilPage(100, offset);
+    items.push(...page.items);
+    offset = page.nextOffset;
+  }
+  return uniqueById(items);
 }
 
 export async function getClientOilFilters() {
@@ -295,7 +308,8 @@ function filterClientOils(oils: ClientOil[], searchParams?: URLSearchParams) {
   return filtered;
 }
 
-function publicOilToClientOil(card: PublicOilCard, index = 0): ClientOil {
+export function publicOilToClientOil(card: PublicOilCard, index = 0): ClientOil {
+  const content = buildClientProductContent(card);
   const brand = normalizeOilBrand(card);
   const visc = extractSae(card.name) || clean(card.sae);
   const nameVolume = extractVolume(card.name);
@@ -306,6 +320,7 @@ function publicOilToClientOil(card: PublicOilCard, index = 0): ClientOil {
 
   return {
     id: card.id,
+    name: content.name,
     article: clean(card.article) || undefined,
     brand,
     line,
@@ -315,7 +330,7 @@ function publicOilToClientOil(card: PublicOilCard, index = 0): ClientOil {
     type: inferClientOilType(card),
     volume,
     price: card.pricesDiffer || card.price == null ? null : Number(card.price),
-    note: clean(card.description) || (card.article ? `Артикул ${card.article}.` : undefined),
+    note: content.description,
     color: BRAND_COLORS[brand.toLowerCase()] ?? paletteColor(index),
     stock,
     pricesDiffer: card.pricesDiffer,

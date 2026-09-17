@@ -5,6 +5,7 @@ import PlatformChrome from "@/components/platform/PlatformChrome";
 import { BROWSER_REQUEST_CONTEXT_SCRIPT } from "@/lib/browser-request-context";
 
 export const metadata: Metadata = {
+  robots: { index: false, follow: false },
   title: "Главная | ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ",
   description: "Личный кабинет ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ: отгрузки, касса, выплаты и организации",
 };
