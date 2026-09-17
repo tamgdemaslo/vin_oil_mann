@@ -1904,6 +1904,45 @@ export async function createLocalDemand(
   return { ok: true, id: demand.id, name: demand.name, href: `local://demand/${demand.id}` };
 }
 
+export async function createEmptyLocalDemandDraft(
+  options: { ecoUserName?: string; actor?: ShipmentActor | null; branchId?: string; organizationId?: string } = {}
+): Promise<{ ok: true; id: string; name: string; href: string } | { ok: false; error: string }> {
+  let scope: { branchId: string; organizationId: string };
+  try {
+    scope = await resolveDemandBranchScope(options.branchId, options.organizationId);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Не удалось определить филиал" };
+  }
+
+  const [organization, store] = await Promise.all([
+    prisma.localOrganization.findFirst({
+      where: { id: scope.organizationId, isActive: true },
+      select: { id: true },
+    }),
+    prisma.localStore.findFirst({
+      where: {
+        branchId: scope.branchId,
+        archived: false,
+        OR: [{ organizationId: scope.organizationId }, { organizationId: null }],
+      },
+      orderBy: [{ isMain: "desc" }, { name: "asc" }],
+      select: { id: true },
+    }),
+  ]);
+
+  if (!organization) return { ok: false, error: "Организация не найдена в локальной БД. Запустите импорт или seed." };
+  if (!store) return { ok: false, error: "Склад не найден в локальной БД. Запустите импорт складского зеркала." };
+
+  return createLocalDemand(
+    {
+      organization: { meta: localMeta("organization", organization.id) },
+      store: { meta: localMeta("store", store.id) },
+      applicable: false,
+    },
+    options,
+  );
+}
+
 export async function updateLocalDemand(
   id: string,
   body: UpdateDemandBody,

@@ -16,7 +16,7 @@ const MASTERS = [
     swaps: 1850,
     quote: '«Скажу прямо, что нашёл. Покажу. Объясню. Дальше — ваше решение.»',
     city: 'Калининград',
-    photo: '/team/ilya.png',
+    photo: '/team/ilya.webp',
     photoPosition: '50% 18%',
     helmet: 'split',
   },
@@ -29,7 +29,7 @@ const MASTERS = [
     swapsLabel: 'клиентов',
     quote: '«Здравствуйте, проходите в зону ожидания. Чай, кофе?»',
     city: 'Калининград',
-    photo: '/team/vadim.png',
+    photo: '/team/vadim.webp',
     photoPosition: '50% 18%',
     helmet: 'star',
   },
@@ -41,7 +41,7 @@ const MASTERS = [
     swaps: 4217,
     quote: '«Делаю то, для чего был рожден. Меняю масло.»',
     city: 'Калининград',
-    photo: '/team/maksim.png',
+    photo: '/team/maksim.webp',
     photoPosition: '50% 18%',
     helmet: 'stripes',
   },
@@ -53,7 +53,7 @@ const MASTERS = [
     swaps: 2040,
     quote: '«Аккуратность — это когда фильтр стоит ровно, прокладка целая, болт затянут.»',
     city: 'Калининград',
-    photo: '/team/denis.png',
+    photo: '/team/denis.webp',
     photoPosition: '50% 18%',
     helmet: 'arrow',
   },
@@ -66,7 +66,7 @@ const MASTERS = [
     swapsLabel: 'клиентов',
     quote: '«Принимаю машину так, чтобы клиент сразу понимал, что будем делать и сколько это займёт.»',
     city: 'Калининград',
-    photo: '/team/sergey-kankov.png',
+    photo: '/team/sergey-kankov.webp',
     photoPosition: '50% 18%',
   },
 ];
@@ -87,7 +87,7 @@ const CASES = [
     cost: 46190,
     summary: 'Комплексно обновили масла в АКПП ZF 8HP, раздатке xDrive и заднем редукторе. Для более полного слива из раздатки сняли траверсу и открыли второй контур через Launch.',
     hero: 'bmw',
-    heroImage: '/cases/bmw-g30/hero.jpg',
+    heroImage: '/cases/bmw-g30/hero.webp',
     heroAlt: 'BMW 530d xDrive G30 у сервиса «Там где масло»',
     heroEyebrow: 'АКПП · XDRIVE · РЕДУКТОР',
     palette: ['#1c1c1c', '#3d3d3d', '#C2410C'],
@@ -113,12 +113,12 @@ const CASES = [
     quote: 'Меньше старого масла остаётся внутри — чище каналы и стабильнее работа узла. Это профилактика, а не обещание чуда.',
     quoteAuthor: 'Итог комплексного обслуживания',
     gallery: [
-      {src: '/cases/bmw-g30/diagnostics.jpg', alt: 'Параметры коробки BMW G30 на диагностическом сканере Launch', caption: 'Диагностика до работ'},
-      {src: '/cases/bmw-g30/pan-inspection.jpg', alt: 'Снятый поддон ZF 8HP и магниты с фрикционной пылью без стружки', caption: 'Поддон и магниты'},
-      {src: '/cases/bmw-g30/torque-pan.jpg', alt: 'Установка поддона ZF 8HP динамометрическим ключом', caption: 'Затяжка 10 Н·м'},
-      {src: '/cases/bmw-g30/transfer-case-access.jpg', alt: 'Доступ к заливной пробке раздатки BMW G30 после снятия траверсы', caption: 'Доступ к раздатке'},
-      {src: '/cases/bmw-g30/drained-fluids.jpg', alt: 'Слитые масла из АКПП, раздатки и заднего редуктора BMW G30', caption: 'Состояние старых масел'},
-      {src: '/cases/bmw-g30/materials.jpg', alt: 'Оригинальные масла ZF LifeguardFluid 8 и BMW для раздатки и редуктора', caption: 'Оригинальные жидкости ZF и BMW'},
+      {src: '/cases/bmw-g30/diagnostics.webp', alt: 'Параметры коробки BMW G30 на диагностическом сканере Launch', caption: 'Диагностика до работ'},
+      {src: '/cases/bmw-g30/pan-inspection.webp', alt: 'Снятый поддон ZF 8HP и магниты с фрикционной пылью без стружки', caption: 'Поддон и магниты'},
+      {src: '/cases/bmw-g30/torque-pan.webp', alt: 'Установка поддона ZF 8HP динамометрическим ключом', caption: 'Затяжка 10 Н·м'},
+      {src: '/cases/bmw-g30/transfer-case-access.webp', alt: 'Доступ к заливной пробке раздатки BMW G30 после снятия траверсы', caption: 'Доступ к раздатке'},
+      {src: '/cases/bmw-g30/drained-fluids.webp', alt: 'Слитые масла из АКПП, раздатки и заднего редуктора BMW G30', caption: 'Состояние старых масел'},
+      {src: '/cases/bmw-g30/materials.webp', alt: 'Оригинальные масла ZF LifeguardFluid 8 и BMW для раздатки и редуктора', caption: 'Оригинальные жидкости ZF и BMW'},
     ],
     spec: [
       {k: 'Машина', v: 'BMW 530d xDrive (G30)'},
@@ -147,7 +147,7 @@ const CASES = [
     costLabel: 'Только работы',
     summary: 'Проверили электронику АКПП, оценили слитое масло и обновили жидкость аппаратным методом. Использовали 12 л ATF с допуском AW-2; уровень выставили при 35–45 °C.',
     hero: 'skoda',
-    heroImage: '/cases/skoda-karoq-aq300/hero.jpg',
+    heroImage: '/cases/skoda-karoq-aq300/hero.webp',
     heroAlt: 'Skoda Karoq 1.4 TSI в сервисе «Там где масло» перед заменой масла в АКПП',
     heroEyebrow: '09S · AISIN AQ300 · AW-2',
     palette: ['#101312', '#29302e', '#C2410C'],
@@ -173,14 +173,14 @@ const CASES = [
     quote: 'Для Aisin AQ300 важен именно допуск AW-2 (G 053 001), а уровень жидкости выставляется в температурном окне 35–45 °C.',
     quoteAuthor: 'Ключевые условия этой замены',
     gallery: [
-      {src: '/cases/skoda-karoq-aq300/fluid-aw2.jpg', alt: 'Ravenol ATF T-ULV Fluid с допуском G 053 001 для Aisin AQ300', caption: 'Жидкость с допуском AW-2'},
-      {src: '/cases/skoda-karoq-aq300/diagnostics.jpg', alt: 'Диагностика электронного блока коробки Skoda Karoq перед заменой масла', caption: 'Ошибок по АКПП не обнаружено'},
-      {src: '/cases/skoda-karoq-aq300/drain-old-atf.jpg', alt: 'Слив тёмного масла из Aisin AQ300 без стружки и эмульсии', caption: 'Оценка старого масла'},
-      {src: '/cases/skoda-karoq-aq300/heat-exchanger.jpg', alt: 'Снятый теплообменник Aisin AQ300 и его уплотнения', caption: 'Точка подключения адаптера'},
-      {src: '/cases/skoda-karoq-aq300/pre-fill.jpg', alt: 'Предварительная заливка трёх литров ATF в поддон коробки', caption: 'Предварительная заливка в поддон'},
-      {src: '/cases/skoda-karoq-aq300/machine-exchange.jpg', alt: 'Аппаратная замена масла в АКПП Skoda Karoq', caption: 'Аппарат с определением потока'},
-      {src: '/cases/skoda-karoq-aq300/torque-spec.jpg', alt: 'Динамометрический ключ и моменты затяжки пробок Aisin AQ300', caption: 'Контроль моментов затяжки'},
-      {src: '/cases/skoda-karoq-aq300/before-after.jpg', alt: 'Сравнение масла Aisin AQ300 до и после аппаратной замены', caption: 'Жидкость до и после замены'},
+      {src: '/cases/skoda-karoq-aq300/fluid-aw2.webp', alt: 'Ravenol ATF T-ULV Fluid с допуском G 053 001 для Aisin AQ300', caption: 'Жидкость с допуском AW-2'},
+      {src: '/cases/skoda-karoq-aq300/diagnostics.webp', alt: 'Диагностика электронного блока коробки Skoda Karoq перед заменой масла', caption: 'Ошибок по АКПП не обнаружено'},
+      {src: '/cases/skoda-karoq-aq300/drain-old-atf.webp', alt: 'Слив тёмного масла из Aisin AQ300 без стружки и эмульсии', caption: 'Оценка старого масла'},
+      {src: '/cases/skoda-karoq-aq300/heat-exchanger.webp', alt: 'Снятый теплообменник Aisin AQ300 и его уплотнения', caption: 'Точка подключения адаптера'},
+      {src: '/cases/skoda-karoq-aq300/pre-fill.webp', alt: 'Предварительная заливка трёх литров ATF в поддон коробки', caption: 'Предварительная заливка в поддон'},
+      {src: '/cases/skoda-karoq-aq300/machine-exchange.webp', alt: 'Аппаратная замена масла в АКПП Skoda Karoq', caption: 'Аппарат с определением потока'},
+      {src: '/cases/skoda-karoq-aq300/torque-spec.webp', alt: 'Динамометрический ключ и моменты затяжки пробок Aisin AQ300', caption: 'Контроль моментов затяжки'},
+      {src: '/cases/skoda-karoq-aq300/before-after.webp', alt: 'Сравнение масла Aisin AQ300 до и после аппаратной замены', caption: 'Жидкость до и после замены'},
     ],
     spec: [
       {k: 'Машина', v: 'Skoda Karoq 1.4 TSI'},
@@ -209,7 +209,7 @@ const CASES = [
     costLabel: 'Со своим маслом',
     summary: 'Входная диагностика не выявила ошибок и течей, но слитое масло оказалось тёмным и с запахом гари. Проверили поддон и обновили 12 л жидкости аппаратным методом.',
     hero: 'toyota',
-    heroImage: '/cases/toyota-camry-u760/hero.jpg',
+    heroImage: '/cases/toyota-camry-u760/hero.webp',
     heroAlt: 'Toyota Camry 70 2.5 на подъёмнике перед аппаратной заменой масла в АКПП',
     heroEyebrow: 'U760 · 6 СТУПЕНЕЙ · 12 Л ATF',
     palette: ['#111111', '#333333', '#C2410C'],
@@ -234,14 +234,14 @@ const CASES = [
     quote: 'Запах гари требует внимания, но состояние коробки оценивают по совокупности признаков: ошибкам, поддону, наличию стружки и поведению АКПП.',
     quoteAuthor: 'Результат входной диагностики',
     gallery: [
-      {src: '/cases/toyota-camry-u760/diagnostics.jpg', alt: 'Диагностика Toyota Camry 70 перед заменой масла в АКПП', caption: 'Проверка до начала работ'},
-      {src: '/cases/toyota-camry-u760/drained-atf.jpg', alt: 'Слитое масло из АКПП U760 Toyota Camry', caption: 'Состояние старого масла'},
-      {src: '/cases/toyota-camry-u760/pan-inspection.jpg', alt: 'Осмотр поддона АКПП Toyota Camry 70', caption: 'Осмотр поддона'},
-      {src: '/cases/toyota-camry-u760/heat-exchanger.jpg', alt: 'Теплообменник АКПП U760 перед подключением аппарата', caption: 'Доступ к теплообменнику'},
-      {src: '/cases/toyota-camry-u760/adapter.jpg', alt: 'Специальный адаптер для подключения аппарата к АКПП U760', caption: 'Подключение адаптера'},
-      {src: '/cases/toyota-camry-u760/prefill.jpg', alt: 'Предварительная заливка масла в поддон АКПП Toyota Camry', caption: 'Предварительная заливка'},
-      {src: '/cases/toyota-camry-u760/machine.jpg', alt: 'Теплообменник Toyota Camry во время обслуживания АКПП', caption: 'Контроль уплотнений'},
-      {src: '/cases/toyota-camry-u760/level.jpg', alt: 'Финальная проверка уровня масла в АКПП Toyota Camry', caption: 'Выставление уровня'},
+      {src: '/cases/toyota-camry-u760/diagnostics.webp', alt: 'Диагностика Toyota Camry 70 перед заменой масла в АКПП', caption: 'Проверка до начала работ'},
+      {src: '/cases/toyota-camry-u760/drained-atf.webp', alt: 'Слитое масло из АКПП U760 Toyota Camry', caption: 'Состояние старого масла'},
+      {src: '/cases/toyota-camry-u760/pan-inspection.webp', alt: 'Осмотр поддона АКПП Toyota Camry 70', caption: 'Осмотр поддона'},
+      {src: '/cases/toyota-camry-u760/heat-exchanger.webp', alt: 'Теплообменник АКПП U760 перед подключением аппарата', caption: 'Доступ к теплообменнику'},
+      {src: '/cases/toyota-camry-u760/adapter.webp', alt: 'Специальный адаптер для подключения аппарата к АКПП U760', caption: 'Подключение адаптера'},
+      {src: '/cases/toyota-camry-u760/prefill.webp', alt: 'Предварительная заливка масла в поддон АКПП Toyota Camry', caption: 'Предварительная заливка'},
+      {src: '/cases/toyota-camry-u760/machine.webp', alt: 'Теплообменник Toyota Camry во время обслуживания АКПП', caption: 'Контроль уплотнений'},
+      {src: '/cases/toyota-camry-u760/level.webp', alt: 'Финальная проверка уровня масла в АКПП Toyota Camry', caption: 'Выставление уровня'},
     ],
     spec: [
       {k: 'Машина', v: 'Toyota Camry 70 2.5'},
@@ -266,7 +266,7 @@ const CASES = [
     costLabel: 'Стоимость',
     summary: 'Несмотря на недавнюю частичную замену, слилось около 5 л загрязнённого масла с алюминиевой пылью. Показали результат владельцу, согласовали риски и продолжили аппаратную замену.',
     hero: 'audi',
-    heroImage: '/cases/audi-a8-zf09l/hero.jpg',
+    heroImage: '/cases/audi-a8-zf09l/hero.webp',
     heroAlt: 'Audi A8 в сервисе перед аппаратной заменой масла в АКПП ZF 09L',
     heroEyebrow: 'ZF 09L · 6HP19A · G 060 162 A2',
     palette: ['#101010', '#2f2f2f', '#C2410C'],
@@ -292,14 +292,14 @@ const CASES = [
     quote: 'Если состояние масла вызывает вопросы, владелец должен увидеть картину и принять решение после понятного объяснения рисков.',
     quoteAuthor: 'Согласование перед заменой',
     gallery: [
-      {src: '/cases/audi-a8-zf09l/diagnostics.jpg', alt: 'Диагностика АКПП Audi A8 перед заменой масла', caption: 'Входная диагностика'},
-      {src: '/cases/audi-a8-zf09l/pan.jpg', alt: 'Нижняя часть коробки ZF 09L Audi A8', caption: 'Доступ к коробке'},
-      {src: '/cases/audi-a8-zf09l/access.jpg', alt: 'Подготовка Audi A8 к сливу масла из АКПП', caption: 'Подготовка к замене'},
-      {src: '/cases/audi-a8-zf09l/drained-atf.jpg', alt: 'Загрязнённое масло, слитое из АКПП Audi A8', caption: 'Около 5 л старого масла'},
-      {src: '/cases/audi-a8-zf09l/fluid-inspection.jpg', alt: 'Проверка масла Audi A8 на алюминиевую пыль', caption: 'Проверка на просвет'},
-      {src: '/cases/audi-a8-zf09l/connection.jpg', alt: 'Подключение аппарата к теплообменнику АКПП Audi A8', caption: 'Точка подключения'},
-      {src: '/cases/audi-a8-zf09l/prefill.jpg', alt: 'Заливка масла через контрольное отверстие АКПП Audi A8', caption: 'Предварительная заливка'},
-      {src: '/cases/audi-a8-zf09l/machine.jpg', alt: 'Уплотнительное кольцо патрубков теплообменника Audi A8', caption: 'Новое уплотнение'},
+      {src: '/cases/audi-a8-zf09l/diagnostics.webp', alt: 'Диагностика АКПП Audi A8 перед заменой масла', caption: 'Входная диагностика'},
+      {src: '/cases/audi-a8-zf09l/pan.webp', alt: 'Нижняя часть коробки ZF 09L Audi A8', caption: 'Доступ к коробке'},
+      {src: '/cases/audi-a8-zf09l/access.webp', alt: 'Подготовка Audi A8 к сливу масла из АКПП', caption: 'Подготовка к замене'},
+      {src: '/cases/audi-a8-zf09l/drained-atf.webp', alt: 'Загрязнённое масло, слитое из АКПП Audi A8', caption: 'Около 5 л старого масла'},
+      {src: '/cases/audi-a8-zf09l/fluid-inspection.webp', alt: 'Проверка масла Audi A8 на алюминиевую пыль', caption: 'Проверка на просвет'},
+      {src: '/cases/audi-a8-zf09l/connection.webp', alt: 'Подключение аппарата к теплообменнику АКПП Audi A8', caption: 'Точка подключения'},
+      {src: '/cases/audi-a8-zf09l/prefill.webp', alt: 'Заливка масла через контрольное отверстие АКПП Audi A8', caption: 'Предварительная заливка'},
+      {src: '/cases/audi-a8-zf09l/machine.webp', alt: 'Уплотнительное кольцо патрубков теплообменника Audi A8', caption: 'Новое уплотнение'},
     ],
     spec: [
       {k: 'Машина', v: 'Audi A8'},
@@ -325,7 +325,7 @@ const CASES = [
     costLabel: 'Стоимость',
     summary: 'Обслужили всю трансмиссию: заменили масло и фильтр в DSG DQ250, очистили сетку насоса Haldex 5 и обновили масло в заднем редукторе и раздатке.',
     hero: 'volkswagen',
-    heroImage: '/cases/volkswagen-tiguan-dq250/hero.jpg',
+    heroImage: '/cases/volkswagen-tiguan-dq250/hero.webp',
     heroAlt: 'Volkswagen Tiguan 2.0 TSI в цехе перед обслуживанием DSG DQ250 и Haldex 5',
     heroEyebrow: 'DQ250 · HALDEX 5 · 110 000 КМ',
     palette: ['#111111', '#343434', '#C2410C'],
@@ -351,12 +351,12 @@ const CASES = [
     quote: 'У Haldex 5 нет сменного фильтра, поэтому состояние сетки насоса — отдельный пункт обслуживания полного привода.',
     quoteAuthor: 'Практика обслуживания Haldex 5',
     gallery: [
-      {src: '/cases/volkswagen-tiguan-dq250/dsg-access.jpg', alt: 'Доступ к фильтру DSG DQ250 после снятия аккумулятора', caption: 'Доступ к фильтру DSG'},
-      {src: '/cases/volkswagen-tiguan-dq250/haldex-pump.jpg', alt: 'Насос Haldex 5 на Volkswagen Tiguan', caption: 'Снятие насоса Haldex'},
-      {src: '/cases/volkswagen-tiguan-dq250/haldex-pump-detail.jpg', alt: 'Демонтированный насос Haldex 5', caption: 'Насос и уплотнения'},
-      {src: '/cases/volkswagen-tiguan-dq250/haldex-mesh-before.jpg', alt: 'Загрязнённая сетка насоса Haldex 5', caption: 'Сетка до очистки'},
-      {src: '/cases/volkswagen-tiguan-dq250/haldex-mesh-after.jpg', alt: 'Сетка насоса Haldex 5 после очистки', caption: 'Сетка после очистки'},
-      {src: '/cases/volkswagen-tiguan-dq250/materials.jpg', alt: 'Масла и фильтр для DSG, Haldex и редукторов Volkswagen Tiguan', caption: 'Материалы для всех агрегатов'},
+      {src: '/cases/volkswagen-tiguan-dq250/dsg-access.webp', alt: 'Доступ к фильтру DSG DQ250 после снятия аккумулятора', caption: 'Доступ к фильтру DSG'},
+      {src: '/cases/volkswagen-tiguan-dq250/haldex-pump.webp', alt: 'Насос Haldex 5 на Volkswagen Tiguan', caption: 'Снятие насоса Haldex'},
+      {src: '/cases/volkswagen-tiguan-dq250/haldex-pump-detail.webp', alt: 'Демонтированный насос Haldex 5', caption: 'Насос и уплотнения'},
+      {src: '/cases/volkswagen-tiguan-dq250/haldex-mesh-before.webp', alt: 'Загрязнённая сетка насоса Haldex 5', caption: 'Сетка до очистки'},
+      {src: '/cases/volkswagen-tiguan-dq250/haldex-mesh-after.webp', alt: 'Сетка насоса Haldex 5 после очистки', caption: 'Сетка после очистки'},
+      {src: '/cases/volkswagen-tiguan-dq250/materials.webp', alt: 'Масла и фильтр для DSG, Haldex и редукторов Volkswagen Tiguan', caption: 'Материалы для всех агрегатов'},
     ],
     spec: [
       {k: 'Машина', v: 'Volkswagen Tiguan 2.0 TSI'},
@@ -2378,6 +2378,7 @@ function ShopPage() {
   const [viscs, setViscs] = useState(new Set());
   const [types, setTypes] = useState(new Set());
   const [vols, setVols] = useState(new Set());
+  const [oems, setOems] = useState(new Set());
   const [sort, setSort] = useState('rec');
 
   const toggle = (set, setter, v) => {
@@ -2385,13 +2386,14 @@ function ShopPage() {
     n.has(v) ? n.delete(v) : n.add(v);
     setter(n);
   };
-  const reset = () => { setBrands(new Set()); setViscs(new Set()); setTypes(new Set()); setVols(new Set()); };
+  const reset = () => { setBrands(new Set()); setViscs(new Set()); setTypes(new Set()); setVols(new Set()); setOems(new Set()); };
 
   const filtered = OILS.filter(o => {
     if (brands.size && !brands.has(o.brand)) return false;
     if (viscs.size && !viscs.has(o.visc)) return false;
     if (vols.size && !vols.has(o.volume)) return false;
     if (types.size && ![...types].some(t => o.type.includes(t))) return false;
+    if (oems.size && ![...oems].some(oem => (o.oem || []).includes(oem))) return false;
     return true;
   });
   if (sort === 'cheap') filtered.sort((a, b) => a.price - b.price);
@@ -2400,6 +2402,7 @@ function ShopPage() {
   const allBrands = [...new Set(OILS.map(o => o.brand))];
   const allViscs = [...new Set(OILS.map(o => o.visc))];
   const allVols = [...new Set(OILS.map(o => o.volume))];
+  const allOems = [...new Set(OILS.flatMap(o => o.oem || []))].sort((a, b) => a.localeCompare(b, 'ru', {numeric: true}));
   const allTypes = ['Бензин', 'Дизель', 'Гибрид', 'DPF'];
   const catalogTotal = Math.max(router.catalogTotal || 0, OILS.length);
 
@@ -2436,6 +2439,7 @@ function ShopPage() {
             <FilterGroup title="Бренд" items={allBrands} active={brands} onToggle={v => toggle(brands, setBrands, v)} />
             <FilterGroup title="Вязкость" items={allViscs} active={viscs} onToggle={v => toggle(viscs, setViscs, v)} />
             <FilterGroup title="Тип ДВС" items={allTypes} active={types} onToggle={v => toggle(types, setTypes, v)} />
+            {allOems.length > 0 ? <OemFilterGroup items={allOems} active={oems} onToggle={v => toggle(oems, setOems, v)} /> : null}
             <FilterGroup title="Объём" items={allVols} active={vols} onToggle={v => toggle(vols, setVols, v)} />
             <button
               onClick={reset}
@@ -2500,6 +2504,70 @@ function FilterGroup({ title, items, active, onToggle }) {
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+function OemFilterGroup({ items, active, onToggle }) {
+  const router = useRoute();
+  const [query, setQuery] = useState('');
+  const normalizedQuery = query.trim().toLocaleLowerCase('ru');
+  const visibleItems = normalizedQuery
+    ? items.filter(item => item.toLocaleLowerCase('ru').includes(normalizedQuery))
+    : items;
+
+  return (
+    <details className="oem-filter" defaultOpen={active.size > 0}>
+      <summary>
+        <span>OEM-допуск{active.size ? ` · ${active.size}` : ''}</span>
+        <span className="oem-filter__icon" aria-hidden="true">+</span>
+      </summary>
+      <div className="oem-filter__body">
+        <label className="oem-filter__search">
+          <span className="sr-only">Найти OEM-допуск</span>
+          <input
+            type="search"
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="Например, BMW LL-04"
+            autoComplete="off"
+          />
+        </label>
+        <ul className="oem-filter__list">
+          {visibleItems.map(value => {
+            const on = active.has(value);
+            const count = OILS.filter(oil => (oil.oem || []).includes(value)).length;
+            return (
+              <li key={value}>
+                <label>
+                  <span className={`filter-checkbox${on ? ' is-active' : ''}`} aria-hidden="true">{on ? '✓' : ''}</span>
+                  <span>{value}</span>
+                  <span className="oem-filter__count">{router.catalogLoadingMore ? `${count}+` : count}</span>
+                  <input className="sr-only" type="checkbox" checked={on} onChange={() => onToggle(value)} />
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+        {visibleItems.length === 0 ? <div className="oem-filter__empty">Такого допуска в каталоге нет</div> : null}
+      </div>
+    </details>
+  );
+}
+
+function OemApprovals({ items }) {
+  if (!items?.length) return null;
+  const preview = items.slice(0, 3);
+  const remaining = items.slice(3);
+  return (
+    <div className="product-oem-list">
+      <span>{preview.join(' · ')}</span>
+      {remaining.length > 0 ? (
+        <details>
+          <summary>Ещё {remaining.length}</summary>
+          <div>{remaining.join(' · ')}</div>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -2594,6 +2662,7 @@ function ProductPage({catalogVersion}) {
     ['Линейка', oil.line],
     ['Вязкость SAE', oil.visc],
     ['Спецификация', oil.spec],
+    ['OEM-допуски', oil.oem?.length ? <OemApprovals items={oil.oem} /> : null],
     ['Тип ДВС', oil.type],
     ['Фасовка', oil.volume],
     ['Единица продажи', oil.uom],
@@ -2986,7 +3055,7 @@ function MasterCard({ m, idx }) {
   return (
     <div className="master-card" style={{display: 'grid', gridTemplateColumns: '260px 1fr', gap: 24, alignItems: 'stretch', border: '1px solid var(--line)', background: '#0e0e0e'}}>
       <div className="master-card__photo" style={{aspectRatio: '4/5', borderRight: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
-        <MasterPhoto master={m} label={idx+1} sublabel={m.role} priority />
+        <MasterPhoto master={m} label={idx+1} sublabel={m.role} priority={idx < 2} />
       </div>
       <div className="master-card__body" style={{padding: '22px 24px 22px 0', display: 'flex', flexDirection: 'column', gap: 14}}>
         <div>

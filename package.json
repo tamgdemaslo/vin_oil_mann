@@ -20,6 +20,7 @@
     "test:rossko-receipt": "node scripts/test-rossko-receipt.mjs",
     "test:rossko-incoming": "node scripts/test-rossko-incoming.mjs",
     "test:oil-search": "node scripts/test-oil-search.mjs",
+    "test:client-oil-metadata": "node scripts/test-client-oil-metadata.mjs",
     "test:storefront-publication": "node scripts/test-storefront-publication.mjs",
     "test:storefront-publication-db": "node scripts/test-storefront-publication-db.mjs",
     "preview:storefront-oil-matching": "node scripts/preview-storefront-oil-matching.mjs",

@@ -1,4 +1,5 @@
 import type { PublicOilCard, PublicOilOffer } from "@/lib/public-oil";
+import { getClientOilOemApprovals, inferClientOilType } from "@/lib/client-oil-metadata";
 import {
   getPublicOilById,
   getPublicOilFilters,
@@ -15,6 +16,7 @@ type ClientOil = {
   line: string;
   visc: string;
   spec: string;
+  oem: string[];
   type: string;
   volume: string;
   base?: string;
@@ -139,6 +141,7 @@ export async function getClientOilFilters() {
     brands: filters.brands,
     viscs: filters.sae,
     volumes: filters.packageVolumes,
+    oems: filters.oem,
     types: [],
   };
 }
@@ -269,6 +272,7 @@ function filterClientOils(oils: ClientOil[], searchParams?: URLSearchParams) {
   const viscs = searchParams.getAll("visc").flatMap(splitParam);
   const volumes = searchParams.getAll("volume").flatMap(splitParam);
   const types = searchParams.getAll("type").flatMap(splitParam);
+  const oems = searchParams.getAll("oem").flatMap(splitParam);
   const query = (searchParams.get("q") ?? "").trim().toLowerCase();
   const sort = searchParams.get("sort") ?? "rec";
 
@@ -277,8 +281,9 @@ function filterClientOils(oils: ClientOil[], searchParams?: URLSearchParams) {
     if (viscs.length && !viscs.includes(oil.visc)) return false;
     if (volumes.length && !volumes.includes(oil.volume)) return false;
     if (types.length && !types.some((type) => oil.type.includes(type))) return false;
+    if (oems.length && !oems.some((oem) => oil.oem.includes(oem))) return false;
     if (query) {
-      const haystack = `${oil.brand} ${oil.line} ${oil.visc} ${oil.spec} ${oil.type}`.toLowerCase();
+      const haystack = `${oil.brand} ${oil.line} ${oil.visc} ${oil.spec} ${oil.oem.join(" ")} ${oil.type}`.toLowerCase();
       if (!haystack.includes(query)) return false;
     }
     return true;
@@ -306,7 +311,8 @@ function publicOilToClientOil(card: PublicOilCard, index = 0): ClientOil {
     line,
     visc,
     spec: buildSpec(card),
-    type: inferOilType(card),
+    oem: getClientOilOemApprovals(card),
+    type: inferClientOilType(card),
     volume,
     price: card.pricesDiffer || card.price == null ? null : Number(card.price),
     note: clean(card.description) || (card.article ? `Артикул ${card.article}.` : undefined),
@@ -436,15 +442,6 @@ function buildSpec(card: PublicOilCard) {
   ]
     .filter(Boolean)
     .join(" / ");
-}
-
-function inferOilType(card: PublicOilCard) {
-  const text = `${card.name ?? ""} ${card.acea ?? ""} ${card.apiSpec ?? ""}`.toLowerCase();
-  const parts: string[] = [];
-  if (/\bapi\s+s[a-p]\b|бензин|gasoline|petrol/i.test(text)) parts.push("Бензин");
-  if (/diesel|диз|\bc\d\b|a3\/b4|\bb\d\b/.test(text)) parts.push("Дизель");
-  if (/dpf|c\d|low saps|mid saps/.test(text)) parts.push("DPF");
-  return [...new Set(parts)].join(" · ");
 }
 
 function deriveOilLine(name: string, brand: string, visc: string, volume: string) {

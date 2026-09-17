@@ -1476,6 +1476,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [existingDemandName, setExistingDemandName] = useState<string | null>(null);
   const [existingDemandLoading, setExistingDemandLoading] = useState(Boolean(demandId));
   const [saveState, setSaveState] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
+  const [autosaveError, setAutosaveError] = useState<string | null>(null);
   const [draftRevision, setDraftRevision] = useState(0);
   const [draftActivity, setDraftActivity] = useState(false);
   const [localDraftHydrated, setLocalDraftHydrated] = useState(false);
@@ -1494,6 +1495,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const markDraftDirty = useCallback(() => {
     setDraftActivity(true);
     setSaveState("dirty");
+    setAutosaveError(null);
     setDraftRevision((current) => {
       const next = current + 1;
       draftRevisionRef.current = next;
@@ -1751,7 +1753,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 
   useEffect(() => {
     if (!authChecked || !localDraftHydrated || isExistingDraft || demandIdLocal || draftActivity) return;
-    if (!selectedOrg || !selectedStore) return;
     markDraftDirty();
   }, [
     authChecked,
@@ -1760,8 +1761,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     isExistingDraft,
     localDraftHydrated,
     markDraftDirty,
-    selectedOrg,
-    selectedStore,
   ]);
 
   useEffect(() => {
@@ -1946,7 +1945,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 
   const performAutosave = useCallback(async () => {
     const snapshot = latestAutosaveSnapshotRef.current;
-    if (!snapshot?.organization || !snapshot.store) return;
+    if (!snapshot) return;
     if (autosaveInFlightRef.current) {
       autosavePendingRef.current = true;
       return;
@@ -1955,8 +1954,32 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     autosaveInFlightRef.current = true;
     autosavePendingRef.current = false;
     setSaveState("saving");
+    setAutosaveError(null);
     try {
-      const currentId = demandIdRef.current;
+      const createServerDraft = async () => {
+        const response = await fetch("/api/demands/draft", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+          keepalive: true,
+        });
+        const data = await safeJson<DemandCreateJson>(response, {});
+        if (!response.ok) throw new Error(demandSaveErrorMessage(response, data, "Не удалось создать черновик отгрузки"));
+        if (!data.id) throw new Error("Сервер не вернул ID созданного черновика");
+        demandIdRef.current = data.id;
+        setDemandIdLocal(data.id);
+        setExistingDemandName(data.name ?? null);
+        return data.id;
+      };
+
+      let currentId = demandIdRef.current;
+      if (!currentId) currentId = await createServerDraft();
+
+      if (!snapshot.organization || !snapshot.store) {
+        if (draftRevisionRef.current === snapshot.revision && !autosavePendingRef.current) setSaveState("saved");
+        return;
+      }
+
       const attributesForSave = snapshot.attributes.map((attribute) => {
         if (normalizeAttrName(attribute.name).includes("vin")) return { ...attribute, value: snapshot.vin };
         return attribute;
@@ -1969,18 +1992,21 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         applicable: false,
         moment: snapshot.moment || toServiceMomentString(),
         attributes: attributesForSave,
-        positions: currentId
-          ? snapshot.positions.map((position) => demandPositionPayload(position, { priceIsCents: true, includeId: true }))
-          : snapshot.positions.length > 0
-            ? snapshot.positions.map((position) => demandPositionPayload(position, { priceIsCents: false }))
-            : undefined,
+        positions: snapshot.positions.map((position) => demandPositionPayload(position, { priceIsCents: true, includeId: true })),
       };
-      const response = await fetch(currentId ? `/api/demands/${encodeURIComponent(currentId)}` : "/api/demands", {
-        method: currentId ? "PUT" : "POST",
+
+      const updateServerDraft = (id: string) => fetch(`/api/demands/${encodeURIComponent(id)}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
         keepalive: true,
       });
+
+      let response = await updateServerDraft(currentId);
+      if (response.status === 404) {
+        currentId = await createServerDraft();
+        response = await updateServerDraft(currentId);
+      }
       const data = await safeJson<DemandCreateJson>(response, {});
       if (!response.ok) throw new Error(demandSaveErrorMessage(response, data, "Не удалось автоматически сохранить отгрузку"));
       const savedId = data.id ?? currentId;
@@ -1989,7 +2015,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       setDemandIdLocal(savedId);
       if (data.name) setExistingDemandName(data.name);
       if (draftRevisionRef.current === snapshot.revision && !autosavePendingRef.current) setSaveState("saved");
-    } catch {
+    } catch (error) {
+      setAutosaveError(error instanceof Error ? error.message : "Не удалось сохранить черновик");
       setSaveState("error");
     } finally {
       autosaveInFlightRef.current = false;
@@ -2018,7 +2045,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       applicable,
       moment: momentStr,
     };
-    if (!selectedOrg || !selectedStore) return;
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = setTimeout(() => void performAutosave(), 500);
     return () => {
@@ -5007,7 +5033,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 ? "Сохраняем изменения…"
                 : "Создаём серверный черновик…"
               : saveState === "error"
-                ? "Не удалось сохранить автоматически — черновик остался в этом браузере"
+                ? autosaveError || "Не удалось сохранить автоматически — черновик остался в этом браузере"
                 : existingDemandName
                   ? `Черновик № ${existingDemandName} сохранён автоматически`
                   : "Черновик сохранён автоматически"}

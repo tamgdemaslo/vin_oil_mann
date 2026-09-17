@@ -233,7 +233,7 @@
       "cost": 46190,
       "summary": "Комплексно обновили масла в АКПП ZF 8HP, раздатке xDrive и заднем редукторе. Для более полного слива из раздатки сняли траверсу и открыли второй контур через Launch.",
       "hero": "bmw",
-      "heroImage": "/cases/bmw-g30/hero.jpg",
+      "heroImage": "/cases/bmw-g30/hero.webp",
       "heroAlt": "BMW 530d xDrive G30 у сервиса «Там где масло»",
       "heroEyebrow": "АКПП · XDRIVE · РЕДУКТОР",
       "palette": [
@@ -278,12 +278,12 @@
       "quote": "Меньше старого масла остаётся внутри — чище каналы и стабильнее работа узла. Это профилактика, а не обещание чуда.",
       "quoteAuthor": "Итог комплексного обслуживания",
       "gallery": [
-        {"src": "/cases/bmw-g30/diagnostics.jpg", "alt": "Параметры коробки BMW G30 на диагностическом сканере Launch", "caption": "Диагностика до работ"},
-        {"src": "/cases/bmw-g30/pan-inspection.jpg", "alt": "Снятый поддон ZF 8HP и магниты с фрикционной пылью без стружки", "caption": "Поддон и магниты"},
-        {"src": "/cases/bmw-g30/torque-pan.jpg", "alt": "Установка поддона ZF 8HP динамометрическим ключом", "caption": "Затяжка 10 Н·м"},
-        {"src": "/cases/bmw-g30/transfer-case-access.jpg", "alt": "Доступ к заливной пробке раздатки BMW G30 после снятия траверсы", "caption": "Доступ к раздатке"},
-        {"src": "/cases/bmw-g30/drained-fluids.jpg", "alt": "Слитые масла из АКПП, раздатки и заднего редуктора BMW G30", "caption": "Состояние старых масел"},
-        {"src": "/cases/bmw-g30/materials.jpg", "alt": "Оригинальные масла ZF LifeguardFluid 8 и BMW для раздатки и редуктора", "caption": "Оригинальные жидкости ZF и BMW"}
+        {"src": "/cases/bmw-g30/diagnostics.webp", "alt": "Параметры коробки BMW G30 на диагностическом сканере Launch", "caption": "Диагностика до работ"},
+        {"src": "/cases/bmw-g30/pan-inspection.webp", "alt": "Снятый поддон ZF 8HP и магниты с фрикционной пылью без стружки", "caption": "Поддон и магниты"},
+        {"src": "/cases/bmw-g30/torque-pan.webp", "alt": "Установка поддона ZF 8HP динамометрическим ключом", "caption": "Затяжка 10 Н·м"},
+        {"src": "/cases/bmw-g30/transfer-case-access.webp", "alt": "Доступ к заливной пробке раздатки BMW G30 после снятия траверсы", "caption": "Доступ к раздатке"},
+        {"src": "/cases/bmw-g30/drained-fluids.webp", "alt": "Слитые масла из АКПП, раздатки и заднего редуктора BMW G30", "caption": "Состояние старых масел"},
+        {"src": "/cases/bmw-g30/materials.webp", "alt": "Оригинальные масла ZF LifeguardFluid 8 и BMW для раздатки и редуктора", "caption": "Оригинальные жидкости ZF и BMW"}
       ],
       "spec": [
         {
@@ -351,7 +351,7 @@
       "costLabel": "Только работы",
       "summary": "Проверили электронику АКПП, оценили слитое масло и обновили жидкость аппаратным методом. Использовали 12 л ATF с допуском AW-2; уровень выставили при 35–45 °C.",
       "hero": "skoda",
-      "heroImage": "/cases/skoda-karoq-aq300/hero.jpg",
+      "heroImage": "/cases/skoda-karoq-aq300/hero.webp",
       "heroAlt": "Skoda Karoq 1.4 TSI в сервисе «Там где масло» перед заменой масла в АКПП",
       "heroEyebrow": "09S · AISIN AQ300 · AW-2",
       "palette": [
@@ -396,14 +396,14 @@
       "quote": "Для Aisin AQ300 важен именно допуск AW-2 (G 053 001), а уровень жидкости выставляется в температурном окне 35–45 °C.",
       "quoteAuthor": "Ключевые условия этой замены",
       "gallery": [
-        {"src": "/cases/skoda-karoq-aq300/fluid-aw2.jpg", "alt": "Ravenol ATF T-ULV Fluid с допуском G 053 001 для Aisin AQ300", "caption": "Жидкость с допуском AW-2"},
-        {"src": "/cases/skoda-karoq-aq300/diagnostics.jpg", "alt": "Диагностика электронного блока коробки Skoda Karoq перед заменой масла", "caption": "Ошибок по АКПП не обнаружено"},
-        {"src": "/cases/skoda-karoq-aq300/drain-old-atf.jpg", "alt": "Слив тёмного масла из Aisin AQ300 без стружки и эмульсии", "caption": "Оценка старого масла"},
-        {"src": "/cases/skoda-karoq-aq300/heat-exchanger.jpg", "alt": "Снятый теплообменник Aisin AQ300 и его уплотнения", "caption": "Точка подключения адаптера"},
-        {"src": "/cases/skoda-karoq-aq300/pre-fill.jpg", "alt": "Предварительная заливка трёх литров ATF в поддон коробки", "caption": "Предварительная заливка в поддон"},
-        {"src": "/cases/skoda-karoq-aq300/machine-exchange.jpg", "alt": "Аппаратная замена масла в АКПП Skoda Karoq", "caption": "Аппарат с определением потока"},
-        {"src": "/cases/skoda-karoq-aq300/torque-spec.jpg", "alt": "Динамометрический ключ и моменты затяжки пробок Aisin AQ300", "caption": "Контроль моментов затяжки"},
-        {"src": "/cases/skoda-karoq-aq300/before-after.jpg", "alt": "Сравнение масла Aisin AQ300 до и после аппаратной замены", "caption": "Жидкость до и после замены"}
+        {"src": "/cases/skoda-karoq-aq300/fluid-aw2.webp", "alt": "Ravenol ATF T-ULV Fluid с допуском G 053 001 для Aisin AQ300", "caption": "Жидкость с допуском AW-2"},
+        {"src": "/cases/skoda-karoq-aq300/diagnostics.webp", "alt": "Диагностика электронного блока коробки Skoda Karoq перед заменой масла", "caption": "Ошибок по АКПП не обнаружено"},
+        {"src": "/cases/skoda-karoq-aq300/drain-old-atf.webp", "alt": "Слив тёмного масла из Aisin AQ300 без стружки и эмульсии", "caption": "Оценка старого масла"},
+        {"src": "/cases/skoda-karoq-aq300/heat-exchanger.webp", "alt": "Снятый теплообменник Aisin AQ300 и его уплотнения", "caption": "Точка подключения адаптера"},
+        {"src": "/cases/skoda-karoq-aq300/pre-fill.webp", "alt": "Предварительная заливка трёх литров ATF в поддон коробки", "caption": "Предварительная заливка в поддон"},
+        {"src": "/cases/skoda-karoq-aq300/machine-exchange.webp", "alt": "Аппаратная замена масла в АКПП Skoda Karoq", "caption": "Аппарат с определением потока"},
+        {"src": "/cases/skoda-karoq-aq300/torque-spec.webp", "alt": "Динамометрический ключ и моменты затяжки пробок Aisin AQ300", "caption": "Контроль моментов затяжки"},
+        {"src": "/cases/skoda-karoq-aq300/before-after.webp", "alt": "Сравнение масла Aisin AQ300 до и после аппаратной замены", "caption": "Жидкость до и после замены"}
       ],
       "spec": [
         {"k": "Машина", "v": "Skoda Karoq 1.4 TSI"},
@@ -432,7 +432,7 @@
       "costLabel": "Со своим маслом",
       "summary": "Входная диагностика не выявила ошибок и течей, но слитое масло оказалось тёмным и с запахом гари. Проверили поддон и обновили 12 л жидкости аппаратным методом.",
       "hero": "toyota",
-      "heroImage": "/cases/toyota-camry-u760/hero.jpg",
+      "heroImage": "/cases/toyota-camry-u760/hero.webp",
       "heroAlt": "Toyota Camry 70 2.5 на подъёмнике перед аппаратной заменой масла в АКПП",
       "heroEyebrow": "U760 · 6 СТУПЕНЕЙ · 12 Л ATF",
       "palette": ["#111111", "#333333", "#C2410C"],
@@ -457,14 +457,14 @@
       "quote": "Запах гари требует внимания, но состояние коробки оценивают по совокупности признаков: ошибкам, поддону, наличию стружки и поведению АКПП.",
       "quoteAuthor": "Результат входной диагностики",
       "gallery": [
-        {"src": "/cases/toyota-camry-u760/diagnostics.jpg", "alt": "Диагностика Toyota Camry 70 перед заменой масла в АКПП", "caption": "Проверка до начала работ"},
-        {"src": "/cases/toyota-camry-u760/drained-atf.jpg", "alt": "Слитое масло из АКПП U760 Toyota Camry", "caption": "Состояние старого масла"},
-        {"src": "/cases/toyota-camry-u760/pan-inspection.jpg", "alt": "Осмотр поддона АКПП Toyota Camry 70", "caption": "Осмотр поддона"},
-        {"src": "/cases/toyota-camry-u760/heat-exchanger.jpg", "alt": "Теплообменник АКПП U760 перед подключением аппарата", "caption": "Доступ к теплообменнику"},
-        {"src": "/cases/toyota-camry-u760/adapter.jpg", "alt": "Специальный адаптер для подключения аппарата к АКПП U760", "caption": "Подключение адаптера"},
-        {"src": "/cases/toyota-camry-u760/prefill.jpg", "alt": "Предварительная заливка масла в поддон АКПП Toyota Camry", "caption": "Предварительная заливка"},
-        {"src": "/cases/toyota-camry-u760/machine.jpg", "alt": "Теплообменник Toyota Camry во время обслуживания АКПП", "caption": "Контроль уплотнений"},
-        {"src": "/cases/toyota-camry-u760/level.jpg", "alt": "Финальная проверка уровня масла в АКПП Toyota Camry", "caption": "Выставление уровня"}
+        {"src": "/cases/toyota-camry-u760/diagnostics.webp", "alt": "Диагностика Toyota Camry 70 перед заменой масла в АКПП", "caption": "Проверка до начала работ"},
+        {"src": "/cases/toyota-camry-u760/drained-atf.webp", "alt": "Слитое масло из АКПП U760 Toyota Camry", "caption": "Состояние старого масла"},
+        {"src": "/cases/toyota-camry-u760/pan-inspection.webp", "alt": "Осмотр поддона АКПП Toyota Camry 70", "caption": "Осмотр поддона"},
+        {"src": "/cases/toyota-camry-u760/heat-exchanger.webp", "alt": "Теплообменник АКПП U760 перед подключением аппарата", "caption": "Доступ к теплообменнику"},
+        {"src": "/cases/toyota-camry-u760/adapter.webp", "alt": "Специальный адаптер для подключения аппарата к АКПП U760", "caption": "Подключение адаптера"},
+        {"src": "/cases/toyota-camry-u760/prefill.webp", "alt": "Предварительная заливка масла в поддон АКПП Toyota Camry", "caption": "Предварительная заливка"},
+        {"src": "/cases/toyota-camry-u760/machine.webp", "alt": "Теплообменник Toyota Camry во время обслуживания АКПП", "caption": "Контроль уплотнений"},
+        {"src": "/cases/toyota-camry-u760/level.webp", "alt": "Финальная проверка уровня масла в АКПП Toyota Camry", "caption": "Выставление уровня"}
       ],
       "spec": [
         {"k": "Машина", "v": "Toyota Camry 70 2.5"},
@@ -489,7 +489,7 @@
       "costLabel": "Стоимость",
       "summary": "Несмотря на недавнюю частичную замену, слилось около 5 л загрязнённого масла с алюминиевой пылью. Показали результат владельцу, согласовали риски и продолжили аппаратную замену.",
       "hero": "audi",
-      "heroImage": "/cases/audi-a8-zf09l/hero.jpg",
+      "heroImage": "/cases/audi-a8-zf09l/hero.webp",
       "heroAlt": "Audi A8 в сервисе перед аппаратной заменой масла в АКПП ZF 09L",
       "heroEyebrow": "ZF 09L · 6HP19A · G 060 162 A2",
       "palette": ["#101010", "#2f2f2f", "#C2410C"],
@@ -515,14 +515,14 @@
       "quote": "Если состояние масла вызывает вопросы, владелец должен увидеть картину и принять решение после понятного объяснения рисков.",
       "quoteAuthor": "Согласование перед заменой",
       "gallery": [
-        {"src": "/cases/audi-a8-zf09l/diagnostics.jpg", "alt": "Диагностика АКПП Audi A8 перед заменой масла", "caption": "Входная диагностика"},
-        {"src": "/cases/audi-a8-zf09l/pan.jpg", "alt": "Нижняя часть коробки ZF 09L Audi A8", "caption": "Доступ к коробке"},
-        {"src": "/cases/audi-a8-zf09l/access.jpg", "alt": "Подготовка Audi A8 к сливу масла из АКПП", "caption": "Подготовка к замене"},
-        {"src": "/cases/audi-a8-zf09l/drained-atf.jpg", "alt": "Загрязнённое масло, слитое из АКПП Audi A8", "caption": "Около 5 л старого масла"},
-        {"src": "/cases/audi-a8-zf09l/fluid-inspection.jpg", "alt": "Проверка масла Audi A8 на алюминиевую пыль", "caption": "Проверка на просвет"},
-        {"src": "/cases/audi-a8-zf09l/connection.jpg", "alt": "Подключение аппарата к теплообменнику АКПП Audi A8", "caption": "Точка подключения"},
-        {"src": "/cases/audi-a8-zf09l/prefill.jpg", "alt": "Заливка масла через контрольное отверстие АКПП Audi A8", "caption": "Предварительная заливка"},
-        {"src": "/cases/audi-a8-zf09l/machine.jpg", "alt": "Уплотнительное кольцо патрубков теплообменника Audi A8", "caption": "Новое уплотнение"}
+        {"src": "/cases/audi-a8-zf09l/diagnostics.webp", "alt": "Диагностика АКПП Audi A8 перед заменой масла", "caption": "Входная диагностика"},
+        {"src": "/cases/audi-a8-zf09l/pan.webp", "alt": "Нижняя часть коробки ZF 09L Audi A8", "caption": "Доступ к коробке"},
+        {"src": "/cases/audi-a8-zf09l/access.webp", "alt": "Подготовка Audi A8 к сливу масла из АКПП", "caption": "Подготовка к замене"},
+        {"src": "/cases/audi-a8-zf09l/drained-atf.webp", "alt": "Загрязнённое масло, слитое из АКПП Audi A8", "caption": "Около 5 л старого масла"},
+        {"src": "/cases/audi-a8-zf09l/fluid-inspection.webp", "alt": "Проверка масла Audi A8 на алюминиевую пыль", "caption": "Проверка на просвет"},
+        {"src": "/cases/audi-a8-zf09l/connection.webp", "alt": "Подключение аппарата к теплообменнику АКПП Audi A8", "caption": "Точка подключения"},
+        {"src": "/cases/audi-a8-zf09l/prefill.webp", "alt": "Заливка масла через контрольное отверстие АКПП Audi A8", "caption": "Предварительная заливка"},
+        {"src": "/cases/audi-a8-zf09l/machine.webp", "alt": "Уплотнительное кольцо патрубков теплообменника Audi A8", "caption": "Новое уплотнение"}
       ],
       "spec": [
         {"k": "Машина", "v": "Audi A8"},
@@ -548,7 +548,7 @@
       "costLabel": "Стоимость",
       "summary": "Обслужили всю трансмиссию: заменили масло и фильтр в DSG DQ250, очистили сетку насоса Haldex 5 и обновили масло в заднем редукторе и раздатке.",
       "hero": "volkswagen",
-      "heroImage": "/cases/volkswagen-tiguan-dq250/hero.jpg",
+      "heroImage": "/cases/volkswagen-tiguan-dq250/hero.webp",
       "heroAlt": "Volkswagen Tiguan 2.0 TSI в цехе перед обслуживанием DSG DQ250 и Haldex 5",
       "heroEyebrow": "DQ250 · HALDEX 5 · 110 000 КМ",
       "palette": ["#111111", "#343434", "#C2410C"],
@@ -574,12 +574,12 @@
       "quote": "У Haldex 5 нет сменного фильтра, поэтому состояние сетки насоса — отдельный пункт обслуживания полного привода.",
       "quoteAuthor": "Практика обслуживания Haldex 5",
       "gallery": [
-        {"src": "/cases/volkswagen-tiguan-dq250/dsg-access.jpg", "alt": "Доступ к фильтру DSG DQ250 после снятия аккумулятора", "caption": "Доступ к фильтру DSG"},
-        {"src": "/cases/volkswagen-tiguan-dq250/haldex-pump.jpg", "alt": "Насос Haldex 5 на Volkswagen Tiguan", "caption": "Снятие насоса Haldex"},
-        {"src": "/cases/volkswagen-tiguan-dq250/haldex-pump-detail.jpg", "alt": "Демонтированный насос Haldex 5", "caption": "Насос и уплотнения"},
-        {"src": "/cases/volkswagen-tiguan-dq250/haldex-mesh-before.jpg", "alt": "Загрязнённая сетка насоса Haldex 5", "caption": "Сетка до очистки"},
-        {"src": "/cases/volkswagen-tiguan-dq250/haldex-mesh-after.jpg", "alt": "Сетка насоса Haldex 5 после очистки", "caption": "Сетка после очистки"},
-        {"src": "/cases/volkswagen-tiguan-dq250/materials.jpg", "alt": "Масла и фильтр для DSG, Haldex и редукторов Volkswagen Tiguan", "caption": "Материалы для всех агрегатов"}
+        {"src": "/cases/volkswagen-tiguan-dq250/dsg-access.webp", "alt": "Доступ к фильтру DSG DQ250 после снятия аккумулятора", "caption": "Доступ к фильтру DSG"},
+        {"src": "/cases/volkswagen-tiguan-dq250/haldex-pump.webp", "alt": "Насос Haldex 5 на Volkswagen Tiguan", "caption": "Снятие насоса Haldex"},
+        {"src": "/cases/volkswagen-tiguan-dq250/haldex-pump-detail.webp", "alt": "Демонтированный насос Haldex 5", "caption": "Насос и уплотнения"},
+        {"src": "/cases/volkswagen-tiguan-dq250/haldex-mesh-before.webp", "alt": "Загрязнённая сетка насоса Haldex 5", "caption": "Сетка до очистки"},
+        {"src": "/cases/volkswagen-tiguan-dq250/haldex-mesh-after.webp", "alt": "Сетка насоса Haldex 5 после очистки", "caption": "Сетка после очистки"},
+        {"src": "/cases/volkswagen-tiguan-dq250/materials.webp", "alt": "Масла и фильтр для DSG, Haldex и редукторов Volkswagen Tiguan", "caption": "Материалы для всех агрегатов"}
       ],
       "spec": [
         {"k": "Машина", "v": "Volkswagen Tiguan 2.0 TSI"},

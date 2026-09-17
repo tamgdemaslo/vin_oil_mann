@@ -345,13 +345,14 @@ export async function getPublicOilFilters() {
   const storefront = await resolvePublicStorefront();
   const rows = await prisma.storefrontProduct.findMany({
     where: { storefrontId: storefront.id, publicationState: "PUBLISHED" },
-    select: { contentSource: { select: { brand: true, sae: true, packageVolume: true } } },
+    select: { contentSource: { select: { brand: true, sae: true, packageVolume: true, oem: true } } },
   });
   const unique = (values: Array<string | undefined>) => [...new Set(values.map(compact).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
   return {
     brands: unique(rows.map((row) => row.contentSource.brand ?? undefined)),
     sae: unique(rows.map((row) => row.contentSource.sae ?? undefined)),
     packageVolumes: unique(rows.map((row) => row.contentSource.packageVolume ?? undefined)),
+    oem: unique(rows.flatMap((row) => normalizeOEM(row.contentSource.oem ?? ""))),
   };
 }
 
