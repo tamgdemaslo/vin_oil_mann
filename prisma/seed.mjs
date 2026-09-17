@@ -1,6 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
+const DEV_GROUP_ID = "group-main";
+const DEV_BRANCH_ID = "branch-main";
+const DEFAULT_AUTH_USERS =
+  "ilya:1111:Илья:owner,denis:2222:Денис:owner,vadim:3333:Вадим:admin,maksim:4444:Максим:master";
 
 const ATTRIBUTE_DEFINITIONS = [
   ["vin номер", 10, false, false],
@@ -13,25 +17,96 @@ const ATTRIBUTE_DEFINITIONS = [
   ["Эко пользователь", 1000, false, true],
 ];
 
-async function upsertAttributeDefinitions() {
+async function upsertAttributeDefinitions(branchId) {
   for (const [name, order, required, isSystem] of ATTRIBUTE_DEFINITIONS) {
     await prisma.demandAttributeDefinition.upsert({
-      where: { name },
+      where: { branchId_name: { branchId, name } },
       update: { type: "string", order, required, isSystem },
-      create: { name, type: "string", order, required, isSystem },
+      create: { branchId, name, type: "string", order, required, isSystem },
     });
   }
 }
 
-async function upsertByName(model, name, create, update = create) {
-  const existing = await model.findFirst({ where: { name } });
+async function upsertByName(model, branchId, name, create, update = create) {
+  const existing = await model.findFirst({ where: { branchId, name } });
   if (existing) return model.update({ where: { id: existing.id }, data: update });
-  return model.create({ data: create });
+  return model.create({ data: { ...create, branchId } });
+}
+
+function authUsers() {
+  return (process.env.AUTH_USERS?.trim() || DEFAULT_AUTH_USERS)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [login = "", , name = "", rawRole = "admin"] = entry.split(":");
+      const role = ["owner", "admin", "master"].includes(rawRole.trim().toLowerCase())
+        ? rawRole.trim().toLowerCase()
+        : "admin";
+      return { login: login.trim().toLowerCase(), name: name.trim() || login.trim(), role };
+    })
+    .filter((user) => user.login);
+}
+
+async function upsertDevAccess(organizationId) {
+  const group = await prisma.businessGroup.upsert({
+    where: { slug: "eco-platform-dev" },
+    update: { name: "Эко Платформа (dev)", status: "active" },
+    create: { id: DEV_GROUP_ID, name: "Эко Платформа (dev)", slug: "eco-platform-dev" },
+  });
+  const branch = await prisma.branch.upsert({
+    where: { id: DEV_BRANCH_ID },
+    update: {
+      businessGroupId: group.id,
+      name: "Основной филиал",
+      shortName: "Основной",
+      slug: "main",
+      status: "active",
+      legacyOrganizationId: organizationId,
+    },
+    create: {
+      id: DEV_BRANCH_ID,
+      businessGroupId: group.id,
+      name: "Основной филиал",
+      shortName: "Основной",
+      slug: "main",
+      legacyOrganizationId: organizationId,
+    },
+  });
+
+  for (const authUser of authUsers()) {
+    const user = await prisma.user.upsert({
+      where: { login: authUser.login },
+      update: { name: authUser.name, authRole: authUser.role, status: "active" },
+      create: { login: authUser.login, name: authUser.name, authRole: authUser.role },
+    });
+    await prisma.branchMembership.upsert({
+      where: { branchId_userId: { branchId: branch.id, userId: user.id } },
+      update: {
+        roleId: authUser.role === "owner" ? "branch_owner" : authUser.role === "admin" ? "administrator" : "master",
+        status: "active",
+        isDefaultBranch: true,
+      },
+      create: {
+        branchId: branch.id,
+        userId: user.id,
+        roleId: authUser.role === "owner" ? "branch_owner" : authUser.role === "admin" ? "administrator" : "master",
+        isDefaultBranch: true,
+      },
+    });
+    if (authUser.role === "owner") {
+      await prisma.businessGroupMembership.upsert({
+        where: { businessGroupId_userId: { businessGroupId: group.id, userId: user.id } },
+        update: { role: "group_owner", status: "active" },
+        create: { businessGroupId: group.id, userId: user.id, role: "group_owner" },
+      });
+    }
+  }
+
+  return branch;
 }
 
 async function main() {
-  await upsertAttributeDefinitions();
-
   const defaultOrganizationData = {
     name: "ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ",
     entityType: "ip",
@@ -56,7 +131,10 @@ async function main() {
       })
     : await prisma.localOrganization.create({ data: defaultOrganizationData });
 
-  const store = await upsertByName(prisma.localStore, "Основной склад", {
+  const branch = await upsertDevAccess(organization.id);
+  await upsertAttributeDefinitions(branch.id);
+
+  const store = await upsertByName(prisma.localStore, branch.id, "Основной склад", {
     name: "Основной склад",
     organizationId: organization.id,
     isMain: true,
@@ -73,7 +151,7 @@ async function main() {
     { name: "ООО Компания", phone: "+7 921 555-33-44", email: "office@example.test", companyType: "legal", legalTitle: "ООО Компания" },
   ];
   for (const cp of counterparties) {
-    await upsertByName(prisma.localCounterparty, cp.name, {
+    await upsertByName(prisma.localCounterparty, branch.id, cp.name, {
       ...cp,
       normalizedPhone: cp.phone.replace(/\D/g, ""),
       phonesRaw: [cp.phone],
@@ -149,7 +227,7 @@ async function main() {
   for (const item of products) {
     const { quantity, reserve, ...productData } = item;
     const searchText = Object.values(productData).filter((value) => typeof value === "string").join(" ").toLowerCase();
-    const product = await upsertByName(prisma.localProduct, item.name, {
+    const product = await upsertByName(prisma.localProduct, branch.id, item.name, {
       ...productData,
       entityType: "product",
       searchText,
@@ -169,6 +247,7 @@ async function main() {
         slotName: item.cell,
       },
       create: {
+        branchId: branch.id,
         productId: product.id,
         storeId: store.id,
         quantity,

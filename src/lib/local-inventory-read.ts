@@ -577,96 +577,6 @@ function jsonArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
 }
 
-function isPlateAttributeName(name: string | undefined): boolean {
-  const n = (name ?? "").toLowerCase();
-  return /гос|г\/н|госномер|г\.\s*н|номер\s*(тс|а\/м|авто)|state\s*reg|plate/i.test(n);
-}
-
-function demandPlateText(attributes: unknown): string {
-  const attrId = "";
-  const parts: string[] = [];
-  for (const attr of jsonArray(attributes)) {
-    const id = typeof attr.id === "string" ? attr.id : "";
-    const name = typeof attr.name === "string" ? attr.name : "";
-    if ((attrId && id === attrId) || isPlateAttributeName(name)) {
-      parts.push(String(attr.value ?? ""));
-    }
-  }
-  return normalizePlate(parts.join(" "));
-}
-
-function demandVinText(attributes: unknown): string {
-  return jsonArray(attributes)
-    .filter((attr) => /vin|вин/i.test(String(attr.name ?? "")))
-    .map((attr) => String(attr.value ?? ""))
-    .join(" ")
-    .replace(/\s/g, "")
-    .toUpperCase();
-}
-
-function demandCreatedByText(attributes: unknown): string {
-  return jsonArray(attributes)
-    .filter((attr) => String(attr.name ?? "").trim().toLowerCase() === "эко пользователь")
-    .map((attr) => String(attr.value ?? ""))
-    .join(" ")
-    .trim()
-    .toLowerCase();
-}
-
-function demandAttributesText(attributes: unknown): string {
-  return jsonArray(attributes)
-    .flatMap((attr) => [attr.name, attr.value])
-    .map((value) => attributeValueText(value))
-    .filter(Boolean)
-    .join(" ");
-}
-
-function demandSearchText(row: {
-  name: string;
-  description: string | null;
-  agentNameSnapshot?: string | null;
-  counterparty?: {
-    name?: string | null;
-    phone?: string | null;
-    normalizedPhone?: string | null;
-    phonesRaw?: unknown;
-    searchText?: string | null;
-  } | null;
-  attributes?: unknown;
-  positions?: Array<{ name?: string | null; raw?: unknown }>;
-}): string {
-  return [
-    row.name,
-    row.description ?? "",
-    row.agentNameSnapshot ?? "",
-    row.counterparty?.name ?? "",
-    row.counterparty?.phone ?? "",
-    row.counterparty?.normalizedPhone ?? "",
-    phonesRawArray(row.counterparty?.phonesRaw).join(" "),
-    row.counterparty?.searchText ?? "",
-    demandAttributesText(row.attributes),
-    ...(row.positions ?? []).flatMap((position) => [position.name ?? "", JSON.stringify(position.raw ?? {})]),
-  ].join(" ").toLowerCase();
-}
-
-function demandMatchesSearch(row: Parameters<typeof demandSearchText>[0], search: string): boolean {
-  const needle = search.trim().toLowerCase();
-  if (!needle) return true;
-  if (demandSearchText(row).includes(needle)) return true;
-  const normalizedNeedlePlate = normalizePlate(search);
-  if (normalizedNeedlePlate && demandPlateText(row.attributes).includes(normalizedNeedlePlate)) return true;
-  const digits = search.replace(/\D/g, "");
-  if (digits.length >= 4) {
-    const phoneValues = [
-      row.counterparty?.phone,
-      row.counterparty?.normalizedPhone,
-      ...phonesRawArray(row.counterparty?.phonesRaw),
-    ];
-    if (phoneValues.some((value) => rawTextMatchesPhone(value, search))) return true;
-  }
-  return false;
-}
-
 function phoneKeyVariants(phone: string): string[] {
   const digits = phone.replace(/\D/g, "");
   const variants = new Set<string>();
@@ -675,12 +585,6 @@ function phoneKeyVariants(phone: string): string[] {
   if (/^8\d{10}$/.test(digits)) variants.add(`7${digits.slice(1)}`);
   if (digits.length >= 10) variants.add(digits.slice(-10));
   return [...variants];
-}
-
-function rawTextMatchesPhone(value: unknown, phone: string): boolean {
-  const rawDigits = String(value ?? "").replace(/\D/g, "");
-  if (!rawDigits) return false;
-  return phoneKeyVariants(phone).some((variant) => rawDigits.includes(variant));
 }
 
 function phonesRawArray(value: unknown): string[] {
@@ -692,6 +596,158 @@ function normalizeDateFilter(value?: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
   const date = new Date(`${raw}T00:00:00.000Z`);
   return Number.isNaN(date.getTime()) ? "" : raw;
+}
+
+type DemandTextSearchParams = Pick<LocalDemandListParams, "search" | "counterparty" | "plate" | "phone" | "vin" | "createdBy">;
+
+async function findDemandTextCandidateIds(branchId: string, params: DemandTextSearchParams): Promise<string[] | null> {
+  const predicates: Prisma.Sql[] = [];
+  const counterparty = params.counterparty?.trim().toLowerCase() ?? "";
+  const search = params.search?.trim().toLowerCase() ?? "";
+  const plate = normalizePlate(params.plate ?? "");
+  const phone = params.phone?.trim() ?? "";
+  const vin = params.vin?.replace(/\s/g, "").toUpperCase() ?? "";
+  const createdBy = params.createdBy?.trim().toLowerCase() ?? "";
+
+  if (counterparty) {
+    const pattern = `%${counterparty}%`;
+    predicates.push(Prisma.sql`(
+      lower(COALESCE(c.search_text, '')) LIKE ${pattern}
+      OR lower(COALESCE(c.name, '')) LIKE ${pattern}
+      OR lower(COALESCE(c.display_name, '')) LIKE ${pattern}
+      OR lower(COALESCE(c.legal_title, '')) LIKE ${pattern}
+      OR lower(COALESCE(d.agent_name_snapshot, '')) LIKE ${pattern}
+    )`);
+  }
+
+  if (search) {
+    const pattern = `%${search}%`;
+    const normalizedSearchPlate = normalizePlate(search);
+    const searchParts: Prisma.Sql[] = [Prisma.sql`
+      lower(concat_ws(
+        ' ',
+        COALESCE(d.name, ''),
+        COALESCE(d.description, ''),
+        COALESCE(d.agent_name_snapshot, ''),
+        COALESCE(c.name, ''),
+        COALESCE(c.display_name, ''),
+        COALESCE(c.phone, ''),
+        COALESCE(c.normalized_phone, ''),
+        COALESCE(c.search_text, ''),
+        COALESCE(c.phones_raw::text, ''),
+        COALESCE(d.attributes::text, '')
+      )) LIKE ${pattern}
+      OR lower(COALESCE(d.name, '')) LIKE ${pattern}
+      OR lower(COALESCE(d.description, '')) LIKE ${pattern}
+      OR lower(COALESCE(d.agent_name_snapshot, '')) LIKE ${pattern}
+      OR lower(COALESCE(c.name, '')) LIKE ${pattern}
+      OR lower(COALESCE(c.display_name, '')) LIKE ${pattern}
+      OR lower(COALESCE(c.phone, '')) LIKE ${pattern}
+      OR lower(COALESCE(c.normalized_phone, '')) LIKE ${pattern}
+      OR lower(COALESCE(c.search_text, '')) LIKE ${pattern}
+      OR lower(COALESCE(c.phones_raw::text, '')) LIKE ${pattern}
+      OR lower(COALESCE(d.attributes::text, '')) LIKE ${pattern}
+      OR EXISTS (
+        SELECT 1
+        FROM local_demand_positions p
+        WHERE p.branch_id = d.branch_id
+          AND p.demand_id = d.id
+          AND (
+            lower(COALESCE(p.name, '')) LIKE ${pattern}
+            OR lower(COALESCE(p.raw::text, '')) LIKE ${pattern}
+          )
+      )
+    `];
+    if (normalizedSearchPlate) {
+      searchParts.push(Prisma.sql`
+        regexp_replace(
+          translate(upper(COALESCE(d.attributes::text, '')), 'АВЕКМНОРСТУХ', 'ABEKMHOPCTYX'),
+          '[^A-ZА-ЯЁ0-9]',
+          '',
+          'g'
+        ) LIKE ${`%${normalizedSearchPlate}%`}
+      `);
+    }
+    const searchPhoneVariants = phoneKeyVariants(search);
+    if (searchPhoneVariants.some((variant) => variant.length >= 4)) {
+      const phonePredicates = searchPhoneVariants
+        .filter((variant) => variant.length >= 4)
+        .map((variant) => Prisma.sql`
+          regexp_replace(
+            concat_ws(' ', COALESCE(c.phone, ''), COALESCE(c.normalized_phone, ''), COALESCE(c.phones_raw::text, '')),
+            '[^0-9]',
+            '',
+            'g'
+          ) LIKE ${`%${variant}%`}
+        `);
+      searchParts.push(Prisma.sql`(${Prisma.join(phonePredicates, " OR ")})`);
+    }
+    predicates.push(Prisma.sql`(${Prisma.join(searchParts, " OR ")})`);
+  }
+
+  if (plate) {
+    predicates.push(Prisma.sql`EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(
+        CASE WHEN jsonb_typeof(d.attributes) = 'array' THEN d.attributes ELSE '[]'::jsonb END
+      ) attr
+      WHERE COALESCE(attr->>'name', '') ~* '(гос|г/н|госномер|г\\.\\s*н|номер\\s*(тс|а/м|авто)|state\\s*reg|plate)'
+        AND regexp_replace(
+          translate(upper(COALESCE(attr->>'value', '')), 'АВЕКМНОРСТУХ', 'ABEKMHOPCTYX'),
+          '[^A-ZА-ЯЁ0-9]',
+          '',
+          'g'
+        ) LIKE ${`%${plate}%`}
+    )`);
+  }
+
+  if (vin) {
+    predicates.push(Prisma.sql`EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(
+        CASE WHEN jsonb_typeof(d.attributes) = 'array' THEN d.attributes ELSE '[]'::jsonb END
+      ) attr
+      WHERE COALESCE(attr->>'name', '') ~* '(vin|вин)'
+        AND regexp_replace(upper(COALESCE(attr->>'value', '')), '[^A-Z0-9]', '', 'g') LIKE ${`%${vin}%`}
+    )`);
+  }
+
+  if (createdBy) {
+    predicates.push(Prisma.sql`EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(
+        CASE WHEN jsonb_typeof(d.attributes) = 'array' THEN d.attributes ELSE '[]'::jsonb END
+      ) attr
+      WHERE lower(trim(COALESCE(attr->>'name', ''))) = 'эко пользователь'
+        AND lower(COALESCE(attr->>'value', '')) LIKE ${`%${createdBy}%`}
+    )`);
+  }
+
+  if (phone) {
+    const variants = phoneKeyVariants(phone).filter((variant) => variant.length >= 4);
+    if (variants.length === 0) return [];
+    const phonePredicates = variants.map((variant) => Prisma.sql`
+      regexp_replace(
+        concat_ws(' ', COALESCE(c.phone, ''), COALESCE(c.normalized_phone, ''), COALESCE(c.phones_raw::text, '')),
+        '[^0-9]',
+        '',
+        'g'
+      ) LIKE ${`%${variant}%`}
+    `);
+    predicates.push(Prisma.sql`(${Prisma.join(phonePredicates, " OR ")})`);
+  }
+
+  if (predicates.length === 0) return null;
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT d.id
+    FROM local_demands d
+    LEFT JOIN local_counterparties c
+      ON c.branch_id = d.branch_id
+      AND c.id = d.counterparty_id
+    WHERE d.branch_id = ${branchId}
+      AND (${Prisma.join(predicates, " AND ")})
+  `);
+  return rows.map((row) => row.id);
 }
 
 export async function hasLocalInventoryDemands(): Promise<boolean> {
@@ -713,16 +769,16 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
   const dateTo = normalizeDateFilter(params.dateTo);
   const offset = Math.max(0, params.offset ?? 0);
   const limit = Math.min(100, Math.max(1, params.limit ?? 50));
-  const needsPostFilter = Boolean(search || plate || phone || vin || createdBy || params.payment);
+  const textCandidateIds = await findDemandTextCandidateIds(params.branchId, {
+    search,
+    counterparty,
+    plate,
+    phone,
+    vin,
+    createdBy,
+  });
 
   const and = [];
-  if (counterparty) {
-    and.push({
-      counterparty: {
-        searchText: { contains: counterparty.toLowerCase(), mode: "insensitive" as const },
-      },
-    });
-  }
   if (store) {
     and.push({
       OR: [
@@ -750,58 +806,40 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
       },
     });
   }
-  const where = { branchId: params.branchId, ...(and.length > 0 ? { AND: and } : {}) };
+  if (textCandidateIds?.length === 0) return { meta: { size: 0, limit, offset }, rows: [] };
+  const baseWhere = {
+    branchId: params.branchId,
+    ...(and.length > 0 ? { AND: and } : {}),
+    ...(textCandidateIds ? { id: { in: textCandidateIds } } : {}),
+  };
 
-  if (!needsPostFilter) {
-    const [total, rows] = await Promise.all([
-      prisma.localDemand.count({ where }),
-      prisma.localDemand.findMany({
-        where,
-        include: { counterparty: true, store: true, _count: { select: { positions: true } } },
-        orderBy: [{ momentAt: "desc" }],
-        skip: offset,
-        take: limit,
-      }),
-    ]);
-    return {
-      meta: { size: total, limit, offset },
-      rows: rows.map((row) => localDemandToApiShape(row)),
-    };
+  let paymentCandidateIds: string[] | null = null;
+  if (params.payment) {
+    const paymentCandidates = await prisma.localDemand.findMany({
+      where: baseWhere,
+      select: { id: true, raw: true, applicable: true },
+    });
+    paymentCandidateIds = paymentCandidates
+      .filter((row) => demandPaymentStatusFromRaw(row.raw, row.applicable) === params.payment)
+      .map((row) => row.id);
+    if (paymentCandidateIds.length === 0) return { meta: { size: 0, limit, offset }, rows: [] };
   }
 
-  const rows = await prisma.localDemand.findMany({
-    where,
-    include: {
-      counterparty: true,
-      store: true,
-      positions: { select: { name: true, raw: true } },
-      _count: { select: { positions: true } },
-    },
-    orderBy: [{ momentAt: "desc" }],
-  });
-
-  const plateNorm = normalizePlate(plate);
-  const filtered = rows.filter((row) => {
-    if (search && !demandMatchesSearch(row, search)) return false;
-    if (plateNorm && !demandPlateText(row.attributes).includes(plateNorm)) return false;
-    if (vin && !demandVinText(row.attributes).includes(vin)) return false;
-    if (createdBy && !demandCreatedByText(row.attributes).includes(createdBy)) return false;
-    if (params.payment && demandPaymentStatusFromRaw(row.raw, row.applicable) !== params.payment) return false;
-    if (phone) {
-      const phoneValues = [
-        row.counterparty?.phone,
-        row.counterparty?.normalizedPhone,
-        row.counterparty?.searchText,
-        ...phonesRawArray(row.counterparty?.phonesRaw),
-      ];
-      if (!phoneValues.some((value) => rawTextMatchesPhone(value, phone))) return false;
-    }
-    return true;
-  });
+  const where = paymentCandidateIds ? { ...baseWhere, id: { in: paymentCandidateIds } } : baseWhere;
+  const [total, rows] = await Promise.all([
+    prisma.localDemand.count({ where }),
+    prisma.localDemand.findMany({
+      where,
+      include: { counterparty: true, store: true, _count: { select: { positions: true } } },
+      orderBy: [{ momentAt: "desc" }],
+      skip: offset,
+      take: limit,
+    }),
+  ]);
 
   return {
-    meta: { size: filtered.length, limit, offset },
-    rows: filtered.slice(offset, offset + limit).map((row) => localDemandToApiShape(row)),
+    meta: { size: total, limit, offset },
+    rows: rows.map((row) => localDemandToApiShape(row)),
   };
 }
 

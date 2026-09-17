@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CalendarDays, Filter, Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition, type FormEvent } from "react";
 
 export type ShipmentFilterValues = {
   search: string;
@@ -65,6 +65,7 @@ export function ShipmentListFilters({ values, years }: ShipmentListFiltersProps)
   const initialAdvancedCount = advancedKeys.filter((key) => Boolean(values[key])).length;
   const [filtersOpen, setFiltersOpen] = useState(initialAdvancedCount > 0);
   const [period, setPeriod] = useState(values.period || "all");
+  const [isPending, startTransition] = useTransition();
   const activeAdvanced = useMemo(
     () => advancedKeys.filter((key) => Boolean(values[key])),
     [values]
@@ -74,11 +75,24 @@ export function ShipmentListFilters({ values, years }: ShipmentListFiltersProps)
     const url = new URL(window.location.href);
     url.searchParams.delete(key);
     url.searchParams.delete("offset");
-    router.push(`${url.pathname}${url.search}`);
+    startTransition(() => router.push(`${url.pathname}${url.search}`));
+  }
+
+  function submitFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const params = new URLSearchParams();
+    for (const [key, rawValue] of data.entries()) {
+      const value = String(rawValue).trim();
+      if (!value || (key === "period" && value === "all")) continue;
+      params.set(key, value);
+    }
+    const query = params.toString();
+    startTransition(() => router.push(query ? `/shipment?${query}` : "/shipment"));
   }
 
   return (
-    <form action="/shipment" method="GET" className="eco-shipment-filters">
+    <form action="/shipment" method="GET" className={`eco-shipment-filters ${isPending ? "is-searching" : ""}`} onSubmit={submitFilters} aria-busy={isPending}>
       <div className="eco-shipment-filters__main">
         <label className="eco-search-wrap eco-shipment-filters__search">
           <Search aria-hidden className="eco-icon" />
@@ -116,10 +130,17 @@ export function ShipmentListFilters({ values, years }: ShipmentListFiltersProps)
           {initialAdvancedCount > 0 ? <span>{initialAdvancedCount}</span> : null}
         </button>
 
-        <button type="submit" className="eco-btn eco-btn--primary eco-btn--sm">Показать</button>
+        <button type="submit" className="eco-btn eco-btn--primary eco-btn--sm" disabled={isPending}>
+          {isPending ? <span className="eco-shipment-search-spinner" aria-hidden /> : null}
+          {isPending ? "Ищем…" : "Показать"}
+        </button>
         {(values.search || initialAdvancedCount > 0 || values.period !== "all") ? (
           <Link href="/shipment" className="eco-btn eco-btn--ghost eco-btn--sm">Сбросить</Link>
         ) : null}
+      </div>
+
+      <div className="eco-shipment-search-progress" role="status" aria-live="polite" aria-atomic="true">
+        {isPending ? "Ищем отгрузки по заданным условиям…" : ""}
       </div>
 
       <div className={`eco-shipment-custom-period ${period === "custom" ? "is-visible" : ""}`}>

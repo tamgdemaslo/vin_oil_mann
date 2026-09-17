@@ -54217,6 +54217,38 @@ html.tgm-print-active .tgm-client-report .qr {
   max-width: none;
 }
 
+.eco-shipment-search-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: eco-shipment-search-spin 700ms linear infinite;
+}
+
+.eco-shipment-search-progress {
+  min-height: 16px;
+  color: var(--eco-ink-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.eco-shipment-search-progress:empty {
+  display: none;
+}
+
+@keyframes eco-shipment-search-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eco-shipment-search-spinner {
+    animation: none;
+    border-color: currentColor;
+  }
+}
+
 .eco-shipment-period-control {
   display: flex;
   height: 36px;

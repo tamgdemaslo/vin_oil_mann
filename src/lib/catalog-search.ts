@@ -9,6 +9,7 @@ import {
   type ProductMarkingSettings,
 } from "@/lib/product-marking";
 import { splitProductCrossReferences } from "@/lib/product-cross-references";
+import { normalizePartNumberForCrossMatch, parseOemParts } from "@/lib/part-number-cross-reference";
 import { parseStoredAttributeValues } from "@/lib/product-attribute-values";
 import { resolveProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 import { storefrontPublicationReadiness } from "@/lib/storefront-product-identity";
@@ -255,6 +256,7 @@ export type CatalogSearchResult = {
   tokens: CatalogSearchToken[];
   matchedOutsideFilters: number;
   suggestions: string[];
+  searchMode: "text" | "identifier";
   meta: {
     total: number;
     hasMore: boolean;
@@ -348,6 +350,16 @@ function compactSearchText(value: unknown): string {
 
 function compactIdentifier(value: unknown): string {
   return normalizeSearchText(value).replace(/[^a-zа-я0-9]+/giu, "");
+}
+
+export function looksLikeCatalogPartNumber(value: unknown): boolean {
+  const raw = String(value ?? "").normalize("NFKC").trim().toLocaleUpperCase("ru-RU");
+  if (!raw || !/^[A-Z0-9АВЕКМНОРСТУХ.\s/\\\-]+$/u.test(raw)) return false;
+  const canonical = normalizePartNumberForCrossMatch(raw).canonical;
+  if (!canonical || !/\d/u.test(canonical)) return false;
+  if (/^[05]W\d{2}$/u.test(canonical)) return false;
+  if (/^\d+$/u.test(canonical)) return canonical.length >= 5;
+  return canonical.length >= 4 && /[A-ZАВЕКМНОРСТУХ]/u.test(canonical);
 }
 
 export function buildCatalogSearchText(input: {
@@ -765,6 +777,92 @@ function strictNameOemMatchedFields(product: CatalogProduct, value: unknown): Ca
   return matched;
 }
 
+const exactIdentifierFields = [
+  ["article", "Артикул"],
+  ["code", "Код"],
+  ["externalCode", "Внешний код"],
+  ["barcodeEan13", "EAN"],
+  ["barcodeEan8", "EAN"],
+  ["barcodeCode128", "Штрихкод"],
+  ["rosskoPartNumber", "Код поставщика"],
+] as const;
+
+async function findExactPartNumberCandidateIds(value: unknown): Promise<{ ids: string[]; complete: boolean }> {
+  const branchId = getScopedBranchId();
+  const normalized = normalizePartNumberForCrossMatch(value);
+  const term = normalized.canonical.toLocaleLowerCase("ru-RU");
+  const compactTerm = normalized.compactCandidate.toLocaleLowerCase("ru-RU");
+  if (!term) return { ids: [], complete: true };
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT id
+    FROM local_products
+    WHERE branch_id = ${branchId}
+      AND (
+        regexp_replace(lower(COALESCE(article, '')), '[^0-9a-zа-я/]', '', 'g') = ${term}
+        OR regexp_replace(lower(COALESCE(article, '')), '[^0-9a-zа-я]', '', 'g') = ${compactTerm}
+        OR regexp_replace(lower(COALESCE(code, '')), '[^0-9a-zа-я/]', '', 'g') = ${term}
+        OR regexp_replace(lower(COALESCE(code, '')), '[^0-9a-zа-я]', '', 'g') = ${compactTerm}
+        OR regexp_replace(lower(COALESCE(external_code, '')), '[^0-9a-zа-я/]', '', 'g') = ${term}
+        OR regexp_replace(lower(COALESCE(external_code, '')), '[^0-9a-zа-я]', '', 'g') = ${compactTerm}
+        OR regexp_replace(lower(COALESCE(barcode_ean13, '')), '[^0-9a-zа-я/]', '', 'g') = ${term}
+        OR regexp_replace(lower(COALESCE(barcode_ean8, '')), '[^0-9a-zа-я/]', '', 'g') = ${term}
+        OR regexp_replace(lower(COALESCE(barcode_code128, '')), '[^0-9a-zа-я/]', '', 'g') = ${term}
+        OR regexp_replace(lower(COALESCE(rossko_part_number, '')), '[^0-9a-zа-я/]', '', 'g') = ${term}
+        OR regexp_replace(lower(COALESCE(oem, '')), '[^0-9a-zа-я/]', '', 'g') LIKE ${`%${term}%`}
+        OR regexp_replace(lower(COALESCE(oem, '')), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${compactTerm}%`}
+        OR regexp_replace(lower(COALESCE(oem_atf, '')), '[^0-9a-zа-я/]', '', 'g') LIKE ${`%${term}%`}
+        OR regexp_replace(lower(COALESCE(oem_atf, '')), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${compactTerm}%`}
+        OR regexp_replace(lower(COALESCE(oem_parts, '')), '[^0-9a-zа-я/]', '', 'g') LIKE ${`%${term}%`}
+        OR regexp_replace(lower(COALESCE(oem_parts, '')), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${compactTerm}%`}
+      )
+    LIMIT 1001
+  `);
+  return { ids: rows.slice(0, 1000).map((row) => row.id), complete: rows.length <= 1000 };
+}
+
+function productPartNumberCanonicals(
+  product: Pick<CatalogProduct, typeof exactIdentifierFields[number][0] | "oem" | "oemAtf" | "oemParts">,
+): string[] {
+  return [
+    ...exactIdentifierFields.map(([field]) => normalizePartNumberForCrossMatch(product[field]).canonical),
+    ...([product.oem, product.oemAtf, product.oemParts] as const)
+      .flatMap((value) => parseOemParts(value).map((entry) => entry.canonical)),
+  ].filter(Boolean);
+}
+
+export function exactPartNumberMatchedFields(
+  product: Pick<CatalogProduct, typeof exactIdentifierFields[number][0] | "oem" | "oemAtf" | "oemParts">,
+  value: unknown,
+  options: { allowCompact?: boolean } = {},
+): CatalogMatchedField[] {
+  const expected = normalizePartNumberForCrossMatch(value);
+  if (!expected.canonical) return [];
+  const token = String(value ?? "");
+  const matched: CatalogMatchedField[] = [];
+  for (const [field, label] of exactIdentifierFields) {
+    const fieldValue = product[field] ?? "";
+    const actual = normalizePartNumberForCrossMatch(fieldValue);
+    if (actual.canonical === expected.canonical || (options.allowCompact && actual.compactCandidate === expected.compactCandidate)) {
+      matched.push({ field, label, value: fieldValue, token, match: actual.canonical === expected.canonical ? "exact" : "compact" });
+    }
+  }
+  for (const [field, label] of [
+    ["oem", "OEM"],
+    ["oemAtf", "OEM трансмиссии"],
+    ["oemParts", "OEM Parts / кросс-номера / аналоги"],
+  ] as const) {
+    const fieldValue = product[field] ?? "";
+    const exact = parseOemParts(fieldValue).find((entry) => entry.canonical === expected.canonical);
+    const compact = options.allowCompact
+      ? parseOemParts(fieldValue).find((entry) => entry.compactCandidate === expected.compactCandidate)
+      : undefined;
+    if (exact || compact) {
+      matched.push({ field, label, value: fieldValue, token, match: exact ? "exact" : "compact" });
+    }
+  }
+  return dedupeMatchedFields(matched);
+}
+
 function mergeSearchCandidateWhere(
   base: Prisma.LocalProductWhereInput,
   normalizedCandidateIds: string[]
@@ -1149,9 +1247,18 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
       : storageCell === "assigned"
         ? { storageAssignments: { some: storeId ? { storeId } : {} } }
         : { storageAssignments: { some: { ...(storeId ? { storeId } : {}), cellId: storageCell } } };
+  const strictPartNumber = context === "shipment"
+    && type !== "service"
+    && !params.oem?.trim()
+    && !params.mannName?.trim()
+    && !params.params?.trim()
+    && looksLikeCatalogPartNumber(params.q);
   const strictNameOem = params.strictNameOem === true && Boolean(params.q?.trim());
-  if (strictNameOem) {
-    const strictCandidateIds = await findStrictNameOemCandidateIds(params.q);
+  if (strictNameOem || strictPartNumber) {
+    const strictCandidateResult = strictPartNumber
+      ? await findExactPartNumberCandidateIds(params.q)
+      : { ids: await findStrictNameOemCandidateIds(params.q), complete: true };
+    const strictCandidateIds = strictCandidateResult.ids;
     const products = strictCandidateIds.length > 0
       ? await prisma.localProduct.findMany({
           where: {
@@ -1189,8 +1296,17 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
             : Math.min(1000, Math.max(limit * 30, 100)),
         })
       : [];
+    const expectedPartNumber = normalizePartNumberForCrossMatch(params.q);
+    const matchingCanonicals = new Set(
+      products
+        .flatMap(productPartNumberCanonicals)
+        .filter((canonical) => normalizePartNumberForCrossMatch(canonical).compactCandidate === expectedPartNumber.compactCandidate),
+    );
+    const allowCompact = strictCandidateResult.complete && matchingCanonicals.size === 1;
     const scored = products.flatMap((product) => {
-      const matchedFields = strictNameOemMatchedFields(product, params.q);
+      const matchedFields = strictPartNumber
+        ? exactPartNumberMatchedFields(product, params.q, { allowCompact })
+        : strictNameOemMatchedFields(product, params.q);
       if (matchedFields.length === 0) return [];
       const score = matchedFields.reduce((sum, field) => sum + (field.field === "oemParts" ? 100 : 90), 0);
       return [mapProduct(product, score, matchedFields)];
@@ -1206,7 +1322,12 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
       normalizedQuery,
       tokens,
       matchedOutsideFilters: Math.max(0, scored.length - filtered.length),
-      suggestions: !items.length && normalizedQuery ? [`Нет совпадений в названии или OEM Parts / кросс-номерах / аналогах: ${normalizedQuery}`] : [],
+      suggestions: !items.length && normalizedQuery
+        ? [strictPartNumber
+            ? `Точного совпадения по артикулу или OEM/кросс-номеру не найдено: ${normalizedQuery}`
+            : `Нет совпадений в названии или OEM Parts / кросс-номерах / аналогах: ${normalizedQuery}`]
+        : [],
+      searchMode: strictPartNumber ? "identifier" : "text",
       meta: {
         total: filtered.length,
         hasMore: offset + limit < filtered.length,
@@ -1289,6 +1410,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     tokens,
     matchedOutsideFilters,
     suggestions,
+    searchMode: "text",
     meta: {
       total: filtered.length,
       hasMore: offset + limit < filtered.length,

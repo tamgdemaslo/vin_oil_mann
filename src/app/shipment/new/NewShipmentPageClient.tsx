@@ -208,7 +208,7 @@ type StoresJson = { stores?: Store[]; error?: string };
 type StockJson = { stockByAssortment?: Record<string, { quantity: number; reserve?: number; available?: number; slotName?: string; cost?: number }> };
 type AttributesJson = { attributes?: ShipmentAttribute[]; anonymousRetailCounterparty?: Counterparty; error?: string };
 type CounterpartiesJson = { counterparties?: Counterparty[]; anonymousRetailCounterparty?: Counterparty; error?: string };
-type ProductsJson = { products?: Product[]; items?: Product[]; error?: string };
+type ProductsJson = { products?: Product[]; items?: Product[]; error?: string; searchMode?: "text" | "identifier" };
 type AgentCreateJson = { id?: string; name?: string; meta?: Meta; error?: string };
 type DemandCreateJson = { id?: string; name?: string; applicable?: boolean; description?: string; error?: string };
 type DiagnosticExistingJson = { diagnostic?: { id?: string }; error?: string };
@@ -336,7 +336,24 @@ type DemandDetailJson = {
   error?: string;
 };
 
+type ShipmentLocalDraft = {
+  version: 1;
+  updatedAt: string;
+  demandId: string | null;
+  demandName: string | null;
+  organization: Org | null;
+  store: Store | null;
+  agent: Counterparty | null;
+  attributes: ShipmentAttribute[];
+  positions: Position[];
+  vin: string;
+  description: string;
+  applicable: boolean;
+  moment: string;
+};
+
 const ORGANIZATION_STORAGE_KEY = "eco-current-organization-id";
+const SHIPMENT_DRAFT_STORAGE_KEY = "eco-shipment-new-draft-v1";
 const ORGANIZATION_EVENT = "eco-organization-changed";
 const VIN_FILTER_PICKER_ENABLED = process.env.NEXT_PUBLIC_VIN_FILTER_PICKER_ENABLED === "true";
 
@@ -859,6 +876,11 @@ function attributeValueToString(value: unknown): string {
 function getAttributeString(attributes: ShipmentAttribute[], matches: (name: string) => boolean): string {
   const attr = attributes.find((a) => matches((a.name ?? "").toLowerCase()));
   return attributeValueToString(attr?.value).trim();
+}
+
+function getAttributeInputString(attributes: ShipmentAttribute[], matches: (name: string) => boolean): string {
+  const attr = attributes.find((a) => matches((a.name ?? "").toLowerCase()));
+  return attributeValueToString(attr?.value);
 }
 
 
@@ -1390,6 +1412,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [productOptions, setProductOptions] = useState<Product[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [productSearchError, setProductSearchError] = useState<string | null>(null);
+  const [productSearchResultMode, setProductSearchResultMode] = useState<"text" | "identifier">("text");
   const [productResultsOpen, setProductResultsOpen] = useState(false);
   const [highlightedProductIndex, setHighlightedProductIndex] = useState(0);
   const [productAddNotice, setProductAddNotice] = useState("");
@@ -1452,16 +1475,75 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [demandIdLocal, setDemandIdLocal] = useState<string | null>(null);
   const [existingDemandName, setExistingDemandName] = useState<string | null>(null);
   const [existingDemandLoading, setExistingDemandLoading] = useState(Boolean(demandId));
-  const [saveState, setSaveState] = useState<"idle" | "dirty" | "saved" | "error">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
+  const [draftRevision, setDraftRevision] = useState(0);
+  const [draftActivity, setDraftActivity] = useState(false);
+  const [localDraftHydrated, setLocalDraftHydrated] = useState(false);
   const [copyNotice, setCopyNotice] = useState(copied);
   const [diagnosticModalOpen, setDiagnosticModalOpen] = useState(false);
   const [diagnosticRowId, setDiagnosticRowId] = useState<string | null>(null);
   const [summarySheetOpen, setSummarySheetOpen] = useState(false);
   const [documentParamsOpen, setDocumentParamsOpen] = useState(false);
+  const demandIdRef = useRef<string | null>(null);
+  const draftRevisionRef = useRef(0);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autosaveInFlightRef = useRef(false);
+  const autosavePendingRef = useRef(false);
+  const latestAutosaveSnapshotRef = useRef<(ShipmentLocalDraft & { revision: number }) | null>(null);
 
   const markDraftDirty = useCallback(() => {
-    if (isExistingDraft) setSaveState("dirty");
-  }, [isExistingDraft]);
+    setDraftActivity(true);
+    setSaveState("dirty");
+    setDraftRevision((current) => {
+      const next = current + 1;
+      draftRevisionRef.current = next;
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    demandIdRef.current = demandIdLocal;
+  }, [demandIdLocal]);
+
+  useEffect(() => {
+    if (isExistingDraft) {
+      try {
+        const stored = JSON.parse(window.localStorage.getItem(SHIPMENT_DRAFT_STORAGE_KEY) ?? "null") as Partial<ShipmentLocalDraft> | null;
+        if (stored?.demandId === demandId) window.localStorage.removeItem(SHIPMENT_DRAFT_STORAGE_KEY);
+      } catch {
+        window.localStorage.removeItem(SHIPMENT_DRAFT_STORAGE_KEY);
+      }
+      setLocalDraftHydrated(true);
+      return;
+    }
+    try {
+      const rawDraft = window.localStorage.getItem(SHIPMENT_DRAFT_STORAGE_KEY);
+      if (!rawDraft) return;
+      const draft = JSON.parse(rawDraft) as Partial<ShipmentLocalDraft>;
+      if (draft.version !== 1) return;
+      setDemandIdLocal(typeof draft.demandId === "string" && draft.demandId ? draft.demandId : null);
+      demandIdRef.current = typeof draft.demandId === "string" && draft.demandId ? draft.demandId : null;
+      setExistingDemandName(typeof draft.demandName === "string" ? draft.demandName : null);
+      setSelectedOrg(draft.organization ?? null);
+      setSelectedStore(draft.store ?? null);
+      setSelectedAgent(draft.agent ?? null);
+      if (draft.agent) setAgentSearch(counterpartyDisplayName(draft.agent));
+      setAttributes(Array.isArray(draft.attributes) ? draft.attributes : []);
+      setPositions(Array.isArray(draft.positions) ? draft.positions : []);
+      setVin(typeof draft.vin === "string" ? draft.vin : "");
+      setDescription(typeof draft.description === "string" ? draft.description : "");
+      setApplicable(Boolean(draft.applicable));
+      setMomentStr(typeof draft.moment === "string" && draft.moment ? draft.moment : toServiceMomentString());
+      setDraftActivity(true);
+      setDraftRevision(1);
+      draftRevisionRef.current = 1;
+      setSaveState("dirty");
+    } catch {
+      window.localStorage.removeItem(SHIPMENT_DRAFT_STORAGE_KEY);
+    } finally {
+      setLocalDraftHydrated(true);
+    }
+  }, [demandId, isExistingDraft]);
 
   useEffect(() => {
     if (prefillApplied) return;
@@ -1500,7 +1582,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   }, [agentOptions, prefillAgentQuery, prefillCounterparty, prefillPhone, selectedAgent]);
 
   useEffect(() => {
-    setMomentStr(toServiceMomentString());
+    setMomentStr((current) => current || toServiceMomentString());
   }, []);
 
   useEffect(() => {
@@ -1668,6 +1750,21 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   }, [authChecked, loadStores]);
 
   useEffect(() => {
+    if (!authChecked || !localDraftHydrated || isExistingDraft || demandIdLocal || draftActivity) return;
+    if (!selectedOrg || !selectedStore) return;
+    markDraftDirty();
+  }, [
+    authChecked,
+    demandIdLocal,
+    draftActivity,
+    isExistingDraft,
+    localDraftHydrated,
+    markDraftDirty,
+    selectedOrg,
+    selectedStore,
+  ]);
+
+  useEffect(() => {
     function handleOrganizationChanged(event: Event) {
       const id = (event as CustomEvent<{ organizationId?: string }>).detail?.organizationId;
       if (!id) return;
@@ -1807,6 +1904,156 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       cancelled = true;
     };
   }, [authChecked, demandId, router]);
+
+  useEffect(() => {
+    if (!localDraftHydrated || isExistingDraft || !draftActivity) return;
+    const draft: ShipmentLocalDraft = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      demandId: demandIdLocal,
+      demandName: existingDemandName,
+      organization: selectedOrg,
+      store: selectedStore,
+      agent: selectedAgent,
+      attributes,
+      positions,
+      vin,
+      description,
+      applicable,
+      moment: momentStr,
+    };
+    try {
+      window.localStorage.setItem(SHIPMENT_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    } catch {
+      // Серверное автосохранение остаётся основным механизмом, даже если хранилище браузера недоступно.
+    }
+  }, [
+    applicable,
+    attributes,
+    demandIdLocal,
+    description,
+    draftActivity,
+    existingDemandName,
+    isExistingDraft,
+    localDraftHydrated,
+    momentStr,
+    positions,
+    selectedAgent,
+    selectedOrg,
+    selectedStore,
+    vin,
+  ]);
+
+  const performAutosave = useCallback(async () => {
+    const snapshot = latestAutosaveSnapshotRef.current;
+    if (!snapshot?.organization || !snapshot.store) return;
+    if (autosaveInFlightRef.current) {
+      autosavePendingRef.current = true;
+      return;
+    }
+
+    autosaveInFlightRef.current = true;
+    autosavePendingRef.current = false;
+    setSaveState("saving");
+    try {
+      const currentId = demandIdRef.current;
+      const attributesForSave = snapshot.attributes.map((attribute) => {
+        if (normalizeAttrName(attribute.name).includes("vin")) return { ...attribute, value: snapshot.vin };
+        return attribute;
+      });
+      const body = {
+        organization: { meta: snapshot.organization.meta },
+        agent: snapshot.agent ? { meta: snapshot.agent.meta } : undefined,
+        store: { meta: snapshot.store.meta },
+        description: snapshot.description.trim() || undefined,
+        applicable: false,
+        moment: snapshot.moment || toServiceMomentString(),
+        attributes: attributesForSave,
+        positions: currentId
+          ? snapshot.positions.map((position) => demandPositionPayload(position, { priceIsCents: true, includeId: true }))
+          : snapshot.positions.length > 0
+            ? snapshot.positions.map((position) => demandPositionPayload(position, { priceIsCents: false }))
+            : undefined,
+      };
+      const response = await fetch(currentId ? `/api/demands/${encodeURIComponent(currentId)}` : "/api/demands", {
+        method: currentId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        keepalive: true,
+      });
+      const data = await safeJson<DemandCreateJson>(response, {});
+      if (!response.ok) throw new Error(demandSaveErrorMessage(response, data, "Не удалось автоматически сохранить отгрузку"));
+      const savedId = data.id ?? currentId;
+      if (!savedId) throw new Error("Сервер не вернул ID автоматически сохранённой отгрузки");
+      demandIdRef.current = savedId;
+      setDemandIdLocal(savedId);
+      if (data.name) setExistingDemandName(data.name);
+      if (draftRevisionRef.current === snapshot.revision && !autosavePendingRef.current) setSaveState("saved");
+    } catch {
+      setSaveState("error");
+    } finally {
+      autosaveInFlightRef.current = false;
+      if (autosavePendingRef.current) {
+        autosavePendingRef.current = false;
+        window.setTimeout(() => void performAutosave(), 0);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!draftActivity || existingDemandLoading) return;
+    latestAutosaveSnapshotRef.current = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      revision: draftRevision,
+      demandId: demandIdLocal,
+      demandName: existingDemandName,
+      organization: selectedOrg,
+      store: selectedStore,
+      agent: selectedAgent,
+      attributes,
+      positions,
+      vin,
+      description,
+      applicable,
+      moment: momentStr,
+    };
+    if (!selectedOrg || !selectedStore) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => void performAutosave(), 500);
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [
+    applicable,
+    attributes,
+    demandIdLocal,
+    description,
+    draftActivity,
+    draftRevision,
+    existingDemandLoading,
+    existingDemandName,
+    momentStr,
+    performAutosave,
+    positions,
+    selectedAgent,
+    selectedOrg,
+    selectedStore,
+    vin,
+  ]);
+
+  useEffect(() => {
+    const flushAutosave = () => {
+      if (document.visibilityState === "hidden") void performAutosave();
+    };
+    const flushAutosaveOnPageHide = () => void performAutosave();
+    document.addEventListener("visibilitychange", flushAutosave);
+    window.addEventListener("pagehide", flushAutosaveOnPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", flushAutosave);
+      window.removeEventListener("pagehide", flushAutosaveOnPageHide);
+    };
+  }, [performAutosave]);
 
   const positionAssortmentHrefs = useMemo(
     () => positions.filter((position) => !isNonstockProduct(position)).map((p) => p.assortmentMeta?.href).filter(Boolean).sort() as string[],
@@ -1984,6 +2231,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setAgentDropdownOpen(false);
     setHighlightedAgentIndex(0);
     setReplacingAgent(false);
+    markDraftDirty();
   };
 
   useEffect(() => {
@@ -2053,6 +2301,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     if (!hasQuery) {
       setProductOptions([]);
       setProductSearchError(null);
+      setProductSearchResultMode("text");
       setProductSearchLoading(false);
       setProductResultsOpen(false);
       setHighlightedProductIndex(0);
@@ -2159,6 +2408,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         .then((data) => {
           if (cancelled) return;
           setProductOptions(data.products ?? data.items ?? []);
+          setProductSearchResultMode(data.searchMode ?? "text");
           setHighlightedProductIndex(0);
           setProductResultsOpen(!productResultsDismissedRef.current);
         })
@@ -2446,6 +2696,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       setAgentOptions([]);
       setShowCreateAgentForm(false);
       setReplacingAgent(false);
+      markDraftDirty();
     } catch (e) {
       setCreateAgentError(e instanceof Error ? e.message : "Ошибка сети");
     } finally {
@@ -3416,6 +3667,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       setSubmitError("Укажите организацию, склад и контрагента");
       return;
     }
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     setSubmitError(null);
     setSaveState("idle");
     setSubmitLoading(true);
@@ -3433,23 +3685,21 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         applicable,
         moment: momentStr || toServiceMomentString(),
         attributes: atts,
-        positions:
-          positions.length > 0
-            ? positions.map((position) => demandPositionPayload(position, {
-                priceIsCents: isExistingDraft,
-                includeId: isExistingDraft,
-              }))
+        positions: demandIdLocal
+          ? positions.map((position) => demandPositionPayload(position, { priceIsCents: true, includeId: true }))
+          : positions.length > 0
+            ? positions.map((position) => demandPositionPayload(position, { priceIsCents: false }))
             : undefined,
       };
-      const endpoint = isExistingDraft && demandIdLocal ? `/api/demands/${encodeURIComponent(demandIdLocal)}` : "/api/demands";
+      const endpoint = demandIdLocal ? `/api/demands/${encodeURIComponent(demandIdLocal)}` : "/api/demands";
       const res = await fetch(endpoint, {
-        method: isExistingDraft && demandIdLocal ? "PUT" : "POST",
+        method: demandIdLocal ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await safeJson<DemandCreateJson>(res, {});
       if (!res.ok) {
-        setSubmitError(demandSaveErrorMessage(res, data, isExistingDraft ? "Ошибка сохранения отгрузки" : "Ошибка создания отгрузки"));
+        setSubmitError(demandSaveErrorMessage(res, data, demandIdLocal ? "Ошибка сохранения отгрузки" : "Ошибка создания отгрузки"));
         setSaveState("error");
         return;
       }
@@ -3471,6 +3721,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           }),
         }).catch(() => undefined);
       }
+      setDraftActivity(false);
+      if (!isExistingDraft) window.localStorage.removeItem(SHIPMENT_DRAFT_STORAGE_KEY);
       setSaveState("saved");
       if (applicable) {
         router.push(`/shipment/${nextId}`);
@@ -3726,7 +3978,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const attrEngineSeries = getAttributeString(attributes, (name) => name === "серия двигателя");
   const attrEngineVolume = getAttributeString(attributes, (name) => name === "объем двигателя");
   const attrFillVolume = getAttributeString(attributes, (name) => name === "объем");
-  const attrMotorOil = getAttributeString(attributes, (name) => name === "моторное масло");
+  const attrMotorOil = getAttributeInputString(attributes, (name) => name === "моторное масло");
   const attrMotorOilSource = attributes.find((attribute) => normalizeAttrName(attribute.name) === "моторное масло")?.source ?? "";
   const attrPower = getAttributeString(attributes, (name) => name === "мощность");
   const attrPowerKw = getAttributeString(attributes, (name) => name === "мощность квт");
@@ -3813,7 +4065,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     : nonstockCostBlocksPosting
       ? "Укажите закупочную цену разового товара"
       : "";
-  const saveDisabled = submitLoading || readinessMissing.length > 0 || nonstockCostBlocksPosting;
+  const saveDisabled = submitLoading || saveState === "saving" || readinessMissing.length > 0 || nonstockCostBlocksPosting;
   const documentStepReady = Boolean(selectedOrg && selectedStore);
   const finalStepReady = documentStepReady && Boolean(selectedAgent) && positions.length > 0 && overAvailablePositionsCount === 0 && !nonstockCostBlocksPosting;
   const vehicleAttributeControls = [
@@ -4294,6 +4546,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       ? "В названии и OEM PARTS нет точного нормализованного совпадения для этого MANN-артикула."
       : productSearchMode === "service"
       ? "Мы искали среди услуг. Попробуйте изменить запрос или создайте разовую услугу."
+      : productSearchResultMode === "identifier"
+        ? "Точного совпадения по артикулу или OEM/кросс-номеру нет. Проверьте номер или откройте расширенный поиск по описанию."
       : productSearchMode === "product"
         ? "Мы искали среди товаров. Попробуйте изменить запрос или создайте локальную позицию."
         : "Мы искали среди товаров и услуг. Попробуйте изменить запрос или создайте новую позицию.";
@@ -4742,9 +4996,21 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         </div>
       )}
 
-      {isExistingDraft && (saveState === "saved" || saveState === "dirty") && (
-        <div className={`eco-shipment-save-state ${saveState === "dirty" ? "is-dirty" : ""}`}>
-          {saveState === "dirty" ? "Есть несохранённые изменения" : "Сохранено"}
+      {(isExistingDraft || draftActivity || demandIdLocal) && saveState !== "idle" && (
+        <div className={`eco-shipment-save-state ${saveState === "dirty" || saveState === "error" ? "is-dirty" : ""}`} role="status" aria-live="polite">
+          {saveState === "dirty"
+            ? demandIdLocal
+              ? "Изменения ждут автосохранения"
+              : "Создаём серверный черновик…"
+            : saveState === "saving"
+              ? demandIdLocal
+                ? "Сохраняем изменения…"
+                : "Создаём серверный черновик…"
+              : saveState === "error"
+                ? "Не удалось сохранить автоматически — черновик остался в этом браузере"
+                : existingDemandName
+                  ? `Черновик № ${existingDemandName} сохранён автоматически`
+                  : "Черновик сохранён автоматически"}
         </div>
       )}
 

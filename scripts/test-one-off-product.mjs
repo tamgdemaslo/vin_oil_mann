@@ -183,7 +183,7 @@ assert.match(demandWrite, /groupIdSnapshot:\s*payrollGroup\?\.id \?\? null/);
 assert.match(payroll, /position\.groupIdSnapshot/);
 assert.match(payroll, /resolvePieceworkRule/);
 assert.match(payroll, /calculateLineFinancials/);
-assert.match(demandRead, /positions[\s\S]*JSON\.stringify\(position\.raw/);
+assert.match(demandRead, /local_demand_positions[\s\S]*p\.raw::text/, "shipment search keeps one-off position payloads searchable in SQL");
 assert.match(paymentRoute, /nonstockOilRequiresCheck/);
 assert.match(warehouseAnalytics, /productId/, "warehouse product analytics remains product-card based");
 

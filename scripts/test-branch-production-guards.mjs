@@ -245,6 +245,7 @@ assert.match(
 for (const routePath of [
   "../src/app/api/analytics/customers/route.ts",
   "../src/app/api/catalog/search/route.ts",
+  "../src/app/api/analytics/customers/history/route.ts",
   "../src/app/api/crm/deadline-notifications/route.ts",
   "../src/app/api/crm/deals/route.ts",
   "../src/app/api/dashboard/operations/route.ts",
