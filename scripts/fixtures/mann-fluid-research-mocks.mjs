@@ -15,4 +15,5 @@ export const prisma = {
     update: async ({where,data}) => Object.assign(globalThis.fluidResearchTest.rows.find(r=>r.id===where.id),data),
   },
 };
+export async function assertOpenAIConnection(){if(globalThis.fluidResearchTest.networkFail)throw Error('private network diagnostic');return {ok:true};}
 export function createOpenAIClient(){return {responses:{create:async request=>{const s=globalThis.fluidResearchTest;s.calls++;s.request=request;if(s.fail)throw Error('private provider error');return {id:'test-response',output_text:JSON.stringify(s.payload),output:[{type:'web_search_call',action:{sources:[{url:'https://example.com/manual'}]}}]};}}};}

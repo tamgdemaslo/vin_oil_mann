@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { nextVehicleMannSelection, mannSelectionMatchesMake } from "./client-vehicle-mann-selection";
 import {
   CLIENT_VEHICLE_PASSPORT_FIELDS,
   type ClientVehicleFieldSource,
@@ -165,7 +166,17 @@ export async function upsertClientVehicleProfile(input: {
     actorLogin: input.actor.login,
   });
   const previousVariants = currentRow ? stringArray(currentRow.mannVariantIdsJson) : [];
-  const nextVariants = [...new Set([...previousVariants, ...stringArray(input.mannVariantIds)])];
+  const identityChanged = merge.changedFields.some(field => ["make", "model", "vin", "frameNumber"].includes(field));
+  const nextVariants = nextVehicleMannSelection(previousVariants, input.mannVariantIds === undefined ? undefined : stringArray(input.mannVariantIds), identityChanged);
+  if (nextVariants.length) {
+    const applications = await prisma.mannFilterApplication.findMany({
+      where: { vehicleVariantKey: { in: nextVariants } },
+      select: { vehicleVariantKey: true, make: true },
+    });
+    if (!mannSelectionMatchesMake(merge.values.make, nextVariants, applications)) {
+      return { ok: false as const, error: "Модификация MANN не найдена или относится к другой марке. Выберите модификацию автомобиля заново." };
+    }
+  }
   const variantsChanged = JSON.stringify(previousVariants) !== JSON.stringify(nextVariants);
   const overallStatus: ClientVehicleVerificationStatus = input.mode === "confirmed"
     ? "CONFIRMED"

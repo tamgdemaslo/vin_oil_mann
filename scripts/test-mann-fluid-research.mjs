@@ -1,23 +1,38 @@
 import assert from 'node:assert/strict';
+import {APIConnectionTimeoutError,APIConnectionError} from 'openai';
 import {resolve} from 'node:path';
 import {createJiti} from 'jiti';
 const mock=resolve('scripts/fixtures/mann-fluid-research-mocks.mjs');
 const j=createJiti(import.meta.url,{alias:{'@':resolve('src'),'@/lib/db':mock,'@/lib/openai-client':mock}});
-const {researchMissingMannFluids:run,citedResearchItems,missingMannFluids,researchSystemStates,researchFailure}=await j.import('../src/lib/mann-fluid-research.ts');
+const {researchMissingMannFluids:run,citedResearchItems,missingMannFluids,researchSystemStates,researchFailure,parseResearchResponse}=await j.import('../src/lib/mann-fluid-research.ts');
 const {MANN_FLUID_SYSTEMS}=await j.import('../src/lib/mann-fluid-systems.ts');
 const profile={items:[],status:'none',transmissionOptions:[],containsCatalogPreview:false};
-const input={organizationId:'org1',variantKeys:['key'],vehicleContext:{make:'Test',model:'Car',engineCode:'ABC',year:2020},profile};
+const input={organizationId:'org1',variantKeys:['key'],vehicleContext:{make:'FORD',model:'Car',engineCode:'ABC',year:2020},profile};
 const item={systemCode:'ENGINE_OIL',specification:'TEST',volumeText:'5 л. с фильтром',sourceUrl:'https://example.com/manual',sourceTitle:'Manual',excerpt:'Test excerpt'};
 const application={vehicleVariantKey:'key',make:'FORD',model:'Mondeo V',effectiveVehicleText:'2.5(CNG)',vehicleText:'2.5(CNG)',engineCode:'C25HDEX',vehicleYears:'05/15 ->',modelYears:null,kw:'110',hp:'150'};
 const reset=()=>globalThis.fluidResearchTest={applications:[application,{...application}],rows:[],calls:0,payload:{items:[item],unresolved:[]}};
 const previous=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY='test-only-not-a-real-key';
 try {
+ const longTitle='Manual '.repeat(60);
+ const titleResult=parseResearchResponse({output_text:JSON.stringify({items:[{...item,sourceTitle:longTitle}],systems:[{systemCode:'ENGINE_OIL',applicability:'present',reason:'Found',sourceUrl:item.sourceUrl,sourceTitle:longTitle}],unresolved:[]})});
+ assert.equal(titleResult.items[0].sourceTitle.length,300);assert.equal(titleResult.systems[0].sourceTitle.length,300);
+ assert.equal(titleResult.items[0].specification,item.specification);assert.equal(titleResult.items[0].volumeText,item.volumeText);assert.equal(titleResult.items[0].sourceUrl,item.sourceUrl);
+ assert.throws(()=>parseResearchResponse({output_text:JSON.stringify({items:[{...item,sourceTitle:null}],unresolved:[]})}));
+ assert.deepEqual(parseResearchResponse({status:'completed',output_text:JSON.stringify({items:[],systems:[],unresolved:[]})}),{items:[],systems:[],unresolved:[]});
+ for (const [response,code] of [[{status:'incomplete',output_text:'{}',incomplete_details:{reason:'max_output_tokens'}},'incomplete_output'],[{status:'completed',output_text:''},'empty_output']]) {
+   assert.throws(()=>parseResearchResponse(response),error=>researchFailure(error,'parse').code===code);
+ }
+ assert.throws(()=>parseResearchResponse({output_text:'{"items":[null]}'}));
  assert.equal(researchFailure({name:'APIConnectionTimeoutError'},'request').code,'timeout');
+ assert.equal(new APIConnectionTimeoutError().name,'Error');
+ assert.equal(researchFailure(new APIConnectionTimeoutError(),'request').code,'timeout');
+ assert.equal(researchFailure(new APIConnectionError({message:'secret'}),'request').code,'network');
  assert.equal(researchFailure({status:429,code:'insufficient_quota'},'request').code,'quota');
  assert.equal(researchFailure(new SyntaxError('private response'),'parse').code,'invalid_response');
  assert.equal(researchFailure(new Error('private DB URL'),'save').code,'storage');
  assert.equal(JSON.stringify(researchFailure(new Error('secret-key'),'request')).includes('secret-key'),false);
  let s=reset();assert.equal((await run({...input,variantKeys:['a','b']})).status,'needs_context');assert.equal(s.calls,0);
+ assert.equal((await run({...input,vehicleContext:{make:'NISSAN'}})).status,'needs_context');assert.equal(s.calls,0);assert.equal(s.rows.length,0,'cross-make selection must not create research evidence');
  assert.equal(missingMannFluids(profile).length,MANN_FLUID_SYSTEMS.length,'all aggregates researched, including missing ones');
  const completeProfile={...profile,items:MANN_FLUID_SYSTEMS.map(systemCode=>({systemCode,specifications:['Existing'],capacities:[{nominalLiters:5}]}))};
  assert.equal((await run({...input,profile:completeProfile})).status,'complete');assert.equal(s.calls,0);
@@ -25,6 +40,10 @@ try {
  assert.match(s.lock.sql,/SELECT pg_advisory_xact_lock/);assert.deepEqual(s.lock.values,['org1','VIN_FLUID_RESEARCH_V1']);
  assert.equal(s.rows[0].facts.systems.length,3,'group inventory persisted');
  assert.equal(JSON.parse(s.request.input).allSystems.length,3);
+ assert.equal(s.request.text.format.type,'json_schema');assert.equal(s.request.text.format.strict,true);
+ assert.equal(s.request.reasoning.effort,'low');assert.equal(s.request.max_output_tokens,8000);
+ assert.deepEqual(s.request.text.format.schema.properties.items.items.properties.systemCode.enum,['ENGINE_OIL','ENGINE_COOLANT','BRAKE_FLUID']);
+ assert.deepEqual(s.request.text.format.schema.required,['items','systems','unresolved']);
  assert.ok(s.rows[0].validUntil-Date.now()<7*3600_000,'partial results not cached for 30 days');
  const absence={systemCode:'TRANSFER_CASE',applicability:'absent',reason:'Not fitted',sourceUrl:item.sourceUrl,sourceTitle:'Manual'};
  const payload={items:[],unresolved:['Volume missing'],systems:[absence]};
@@ -52,5 +71,6 @@ try {
  s=reset();s.payload=payload;const driveInput={...input,group:'drivetrain'};const savedAbsence=await run(driveInput);assert.equal(savedAbsence.status,'saved');assert.deepEqual(savedAbsence.unresolved,payload.unresolved);assert.deepEqual((await run(driveInput)).systems,savedAbsence.systems);assert.equal(s.calls,1);
  s=reset();await run(input);s.fail=true;await run({...input,group:'transmission'});assert.equal(s.rows[0].status,'pending_review');assert.equal(s.rows[1].status,'failed');assert.equal(s.rows[1].facts.failure.code,'provider');
  s.fail=false;await run({...input,group:'transmission',retryFailed:true});assert.equal(s.calls,3);await run({...input,retryFailed:true});assert.equal(s.calls,3,'successful group not retried');
+ s=reset();s.networkFail=true;const disconnected=await run(input);assert.equal(disconnected.errorCode,'network');assert.equal(s.calls,0);assert.equal(s.rows[0].facts.failure.stage,'connection');assert.equal(JSON.stringify(disconnected).includes('private'),false);
  console.log('PASS Terra model, required web search, cited-source filtering, missing fields only, tenant cache, failure backoff, rate limit, pending-review persistence');
 }finally{if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;}

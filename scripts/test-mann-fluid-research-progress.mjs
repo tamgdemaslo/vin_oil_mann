@@ -21,4 +21,9 @@ assert.deepEqual(retried,['transmission']);assert.ok(retryEvents.every(r=>r.item
 const controller=new AbortController();const cancelled=[];
 await run({signal:controller.signal,onProgress:r=>cancelled.push(r),request:async()=>{controller.abort();return {status:'saved',items:[item],message:'old vehicle'}}});
 assert.ok(cancelled.every(r=>r.items.length===0),'stale response not published');
+const disconnectedCalls=[],disconnectedEvents=[];
+await run({signal:new AbortController().signal,onProgress:r=>disconnectedEvents.push(r),request:async group=>{disconnectedCalls.push(group);return {status:'unavailable',items:[],errorCode:'network',message:'Нет соединения с ИИ'}}});
+assert.equal(disconnectedCalls.length,2,'no second wave on broken connection');
+assert.equal(disconnectedEvents.at(-1).message,'Нет соединения с ИИ');
+assert.ok(Object.values(disconnectedEvents.at(-1).groups).every(g=>g.status==='failed'));
 console.log('PASS progressive results, two-request limit, isolated failure, selective retry, cancellation');

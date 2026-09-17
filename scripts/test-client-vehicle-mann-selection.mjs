@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {createJiti} from 'jiti';
+const j=createJiti(import.meta.url);
+const {nextVehicleMannSelection:next,mannSelectionMatchesMake:matches}=await j.import('../src/lib/client-vehicle-mann-selection.ts');
+assert.deepEqual(next(['old'],['new','new'],false),['new']);
+assert.deepEqual(next(['old'],undefined,false),['old']);
+assert.deepEqual(next(['old'],[],false),[]);
+assert.deepEqual(next(['old'],undefined,true),[]);
+assert.deepEqual(next(['old'],['new'],true),['new']);
+const rows=[{vehicleVariantKey:'hyundai',make:'HYUNDAI'},{vehicleVariantKey:'nissan',make:'NISSAN'}];
+assert.equal(matches('Nissan',['hyundai'],rows),false);
+assert.equal(matches('Nissan',['nissan'],rows),true);
+assert.equal(matches('Nissan',['nissan','hyundai'],rows),false);
+assert.equal(matches('Nissan',['unknown'],rows),false);
+assert.equal(matches('Nissan',[],rows),true);
+console.log('PASS MANN replacement, omitted/empty selection, identity reset, cross-make and missing-key checks');

@@ -10,6 +10,7 @@ export async function runFluidResearchGroups(options: {
 }) {
   const groups: NonNullable<MannFluidResearchResult["groups"]> = {};
   const results = new Map<MannFluidGroup, MannFluidResearchResult>();
+  let serviceFailure: string | undefined;
   for (const group of MANN_FLUID_GROUP_IDS) {
     const scope = MANN_FLUID_GROUPS[group].systems;
     const prior = options.initial;
@@ -28,7 +29,7 @@ export async function runFluidResearchGroups(options: {
       items: values.flatMap(r => r.items), systems: values.flatMap(r => r.systems ?? []),
       unresolved: [...new Set(values.flatMap(r => r.unresolved ?? []))],
       groups: structuredClone(groups),
-      message: searching ? `Завершено групп: ${done} из ${states.length}. Найденное сохраняется сразу.` : failed ? `Завершено групп: ${done} из ${states.length}. Повторите незавершённые; сохранённые данные не потеряны.` : "Все группы проверены. Найденное сохранено; пропуски отмечены отдельно.",
+      message: searching ? `Завершено групп: ${done} из ${states.length}. Найденное сохраняется сразу.` : serviceFailure ?? (failed ? `Завершено групп: ${done} из ${states.length}. ${done ? "Повторите незавершённые; сохранённые данные не потеряны." : "Поиск не завершён, новых данных нет."}` : "Все группы проверены. Найденное сохранено; пропуски отмечены отдельно."),
     });
   };
   publish();
@@ -50,6 +51,11 @@ export async function runFluidResearchGroups(options: {
           if (!options.signal.aborted) result = await options.request(group);
         }
         if (options.signal.aborted) return;
+        if (["network", "access", "quota", "rate_limit"].includes(result.errorCode ?? "")) {
+          serviceFailure = result.message;
+          // Do not spend another wave of requests on a service-wide failure.
+          for (const waiting of queue.splice(0)) groups[waiting] = { status: "failed", message: result.message };
+        }
         if (result.status === "saved" || result.status === "complete") {
           const scope = MANN_FLUID_GROUPS[group].systems;
           results.set(group, { ...result, items: result.items.filter(i => scope.includes(i.systemCode)), systems: result.systems?.filter(i => scope.includes(i.systemCode)) });
