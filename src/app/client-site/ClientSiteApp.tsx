@@ -853,6 +853,28 @@ function OilCanFallback({ oil, variant = 'shop' }) {
 }
 
 const STOREFRONT_IMAGE_RETRY_DELAYS_MS = [500, 1500, 4000];
+const BARDAHL_XTS_5W40_DRUM_IMAGE = '/products/bardahl-xts-5w40-drum.webp';
+
+function isBardahlXts5W40Bulk(oil) {
+  const label = `${oil.id || ''} ${oil.brand || ''} ${oil.line || ''} ${oil.visc || ''} ${oil.volume || ''} ${oil.type || ''}`;
+  return /bardahl/i.test(label)
+    && /xts/i.test(label)
+    && /5\s*w\s*[- ]?\s*40/i.test(label)
+    && /(?:1\s*л|розлив|боч|bulk)/i.test(label);
+}
+
+function isFourOrFiveLiterPack(oil) {
+  return /(?:^|\D)[45](?:[.,]0)?\s*л(?:\D|$)/i.test(oil.volume || '');
+}
+
+function popularOilDisplay(oil) {
+  if (!isBardahlXts5W40Bulk(oil)) return oil;
+  return {
+    ...oil,
+    volume: 'Бочка',
+    imageHref: BARDAHL_XTS_5W40_DRUM_IMAGE,
+  };
+}
 
 function OilImageSkeleton({ variant }) {
   return (
@@ -864,6 +886,7 @@ function OilImageSkeleton({ variant }) {
 
 function OilProductVisual({ oil, variant = 'shop', priority = false }) {
   const product = variant === 'product';
+  const visualImageHref = isBardahlXts5W40Bulk(oil) ? BARDAHL_XTS_5W40_DRUM_IMAGE : oil.imageHref;
   const [imageAttempt, setImageAttempt] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
@@ -880,10 +903,10 @@ function OilProductVisual({ oil, variant = 'shop', priority = false }) {
     return () => {
       if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
     };
-  }, [oil.imageHref]);
+  }, [visualImageHref]);
 
   useEffect(() => {
-    if (!oil.imageHref || product || priority) {
+    if (!visualImageHref || product || priority) {
       setImageVisible(true);
       return;
     }
@@ -899,16 +922,16 @@ function OilProductVisual({ oil, variant = 'shop', priority = false }) {
     }, { rootMargin: '240px 0px' });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [oil.imageHref, product, priority]);
+  }, [visualImageHref, product, priority]);
 
-  const showImage = Boolean(oil.imageHref) && !imageFailed;
+  const showImage = Boolean(visualImageHref) && !imageFailed;
   const requestImage = showImage && imageVisible;
   const imageWidth = product ? 1200 : 480;
   const imageParams = [`width=${imageWidth}`];
   if (imageAttempt > 0) imageParams.push(`retry=${imageAttempt}`);
   const imageSrc = showImage
-    ? `${oil.imageHref}${oil.imageHref.includes('?') ? '&' : '?'}${imageParams.join('&')}`
-    : oil.imageHref;
+    ? `${visualImageHref}${visualImageHref.includes('?') ? '&' : '?'}${imageParams.join('&')}`
+    : visualImageHref;
   const handleImageError = () => {
     setImageLoaded(false);
     if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
@@ -1410,14 +1433,17 @@ function CasesPreview() {
 function ProductsPreview() {
   const OILS = useContext(CatalogCtx);
   const inStock = OILS.filter(oil => oil.offers?.some(offer => offer.availability === 'IN_STOCK'));
+  const displayable = inStock.filter(oil => isBardahlXts5W40Bulk(oil) || isFourOrFiveLiterPack(oil));
   const preferred = [
-    oil => /bardahl/i.test(`${oil.brand} ${oil.line}`) && /xts/i.test(oil.line || '') && oil.visc === '5W-40' && /(?:1\s*л|розлив)/i.test(`${oil.volume} ${oil.type}`),
-    oil => /eurol/i.test(`${oil.brand} ${oil.line}`) && /fort(?:ence|on)/i.test(oil.line || '') && oil.visc === '5W-30',
-    oil => /(?:lukoil|лукойл)/i.test(`${oil.brand} ${oil.line}`) && /genesis/i.test(oil.line || '') && /euro/i.test(oil.line || '') && oil.visc === '5W-40',
-    oil => /bardahl/i.test(`${oil.brand} ${oil.line}`) && /xts/i.test(oil.line || '') && oil.visc === '5W-30',
+    oil => isBardahlXts5W40Bulk(oil),
+    oil => /eurol/i.test(`${oil.brand} ${oil.line}`) && /fort(?:ence|on)/i.test(oil.line || '') && oil.visc === '5W-30' && isFourOrFiveLiterPack(oil),
+    oil => /(?:lukoil|лукойл)/i.test(`${oil.brand} ${oil.line}`) && /genesis/i.test(oil.line || '') && /euro/i.test(oil.line || '') && oil.visc === '5W-40' && isFourOrFiveLiterPack(oil),
+    oil => /bardahl/i.test(`${oil.brand} ${oil.line}`) && /xts/i.test(oil.line || '') && oil.visc === '5W-30' && isFourOrFiveLiterPack(oil),
   ];
-  const selected = preferred.map(match => inStock.find(match)).filter(Boolean);
-  const picks = [...selected, ...inStock.filter(oil => !selected.some(pick => pick.id === oil.id))].slice(0, 4);
+  const selected = preferred.map(match => displayable.find(match)).filter(Boolean);
+  const picks = [...selected, ...displayable.filter(oil => !selected.some(pick => pick.id === oil.id))]
+    .slice(0, 4)
+    .map(popularOilDisplay);
   return (
     <section style={{background: '#F5F2ED', color: '#0a0a0a', padding: '90px 0 110px', position: 'relative'}}>
       <div className="container">
@@ -1492,18 +1518,18 @@ function TeamPreview() {
     <section style={{background: '#0a0a0a', padding: '0 0 110px'}}>
       <div className="container">
         <SectionHead eyebrow="Наши люди" title="Конкретные люди, не персонал." num="05 / 09" right={<Link to="/team" className="btn ghost sm">Вся команда →</Link>} />
-        <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
+        <div className="responsive-grid team-preview-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 16}}>
           {MASTERS.map((m, idx) => (
             <Link key={m.id} to="/team">
-              <div style={{display: 'flex', flexDirection: 'column', gap: 18, cursor: 'pointer'}}>
+              <div className="team-preview-card" style={{display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0, cursor: 'pointer'}}>
                 <div style={{aspectRatio: '4/5', border: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
                   <MasterPhoto master={m} label={idx+1} sublabel={m.role} />
                 </div>
                 <div>
                   <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em', marginBottom: 8}}>N°0{idx+1}</div>
-                  <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, lineHeight: 1.1, textTransform: 'uppercase', color: '#F5F2ED', marginBottom: 6}}>{m.name}</div>
-                  <div style={{fontSize: 12.5, color: '#9A9A9A', marginBottom: 10}}>{m.role}</div>
-                  <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.06em'}}>
+                  <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 20, lineHeight: 1.08, textTransform: 'uppercase', color: '#F5F2ED', marginBottom: 6, textWrap: 'balance'}}>{m.name}</div>
+                  <div style={{fontSize: 12, lineHeight: 1.35, color: '#9A9A9A', marginBottom: 9}}>{m.role}</div>
+                  <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, lineHeight: 1.4, color: '#858585', letterSpacing: '0.04em'}}>
                     {m.since && Number.isFinite(m.swaps)
                       ? `с ${m.since} · ${fmtNum(m.swaps)} ${m.swapsLabel || 'замен'}`
                       : `${m.city} · команда TGM`}
@@ -1553,7 +1579,7 @@ function HomePage() {
     <main>
       <HomeHero />
       <Tape kind="rust" items={[
-        'Масла из CRM с актуальным наличием',
+        'Актуальное наличие масел',
         'Калининград · 2023 → ∞',
         'Shell · Mobil · ZIC · Total · Bardahl · Lukoil',
         'Среднее время визита 28 минут',
@@ -3040,7 +3066,7 @@ function TeamPage() {
           У нас нет «работников зала», «специалистов фронта» и «администраторов клиентского отдела». У нас — мастера. У каждого имя, лицо, цифра. Если не нравится мастер — скажешь, поменяем. Если нравится — записывайся к конкретному.
         </div>
 
-        <div className="team-grid" style={{padding: '56px 0', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 40}}>
+        <div className="team-grid" style={{padding: '56px 0', display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 16}}>
           {MASTERS.map((m, idx) => <MasterCard key={m.id} m={m} idx={idx} />)}
         </div>
 
@@ -3069,32 +3095,32 @@ function TeamPage() {
 
 function MasterCard({ m, idx }) {
   return (
-    <div className="master-card" style={{display: 'grid', gridTemplateColumns: '260px 1fr', gap: 24, alignItems: 'stretch', border: '1px solid var(--line)', background: '#0e0e0e'}}>
-      <div className="master-card__photo" style={{aspectRatio: '4/5', borderRight: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
+    <div className="master-card" style={{display: 'grid', gridTemplateRows: 'auto 1fr', minWidth: 0, gap: 0, alignItems: 'stretch', border: '1px solid var(--line)', background: '#0e0e0e'}}>
+      <div className="master-card__photo" style={{aspectRatio: '4/5', borderBottom: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
         <MasterPhoto master={m} label={idx+1} sublabel={m.role} priority={idx < 2} />
       </div>
-      <div className="master-card__body" style={{padding: '22px 24px 22px 0', display: 'flex', flexDirection: 'column', gap: 14}}>
+      <div className="master-card__body" style={{padding: 16, display: 'flex', flexDirection: 'column', gap: 12}}>
         <div>
-          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em'}}>N°0{idx+1} · {m.city.toUpperCase()}</div>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.1em'}}>{m.since ? `С ${m.since}` : 'В КОМАНДЕ'}</div>
+          <div className="master-card__meta" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8}}>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: '#C2410C', letterSpacing: '0.1em'}}>N°0{idx+1} · KGD</div>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: '#858585', letterSpacing: '0.08em', whiteSpace: 'nowrap'}}>{m.since ? `С ${m.since}` : 'В КОМАНДЕ'}</div>
           </div>
-          <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 30, lineHeight: 1.05, color: '#F5F2ED', textTransform: 'uppercase', marginTop: 10, letterSpacing: '-0.01em'}}>{m.name}<span style={{color: '#C2410C'}}>.</span></div>
-          <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 400, fontSize: 16, color: '#9A9A9A', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 4}}>{m.role}</div>
+          <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 24, lineHeight: 1.02, color: '#F5F2ED', textTransform: 'uppercase', marginTop: 10, letterSpacing: '-0.01em', textWrap: 'balance'}}>{m.name}<span style={{color: '#C2410C'}}>.</span></div>
+          <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 400, fontSize: 14, lineHeight: 1.2, color: '#9A9A9A', textTransform: 'uppercase', letterSpacing: '0.03em', marginTop: 6}}>{m.role}</div>
         </div>
-        <div style={{paddingTop: 14, borderTop: '1px dashed var(--line)', fontFamily: 'Inter', fontSize: 14.5, color: '#F5F2ED', lineHeight: 1.55, fontStyle: 'normal'}}>
+        <div style={{paddingTop: 12, borderTop: '1px dashed var(--line)', fontFamily: 'Inter', fontSize: 13, color: '#F5F2ED', lineHeight: 1.45, fontStyle: 'normal'}}>
           {m.quote || m.bio}
         </div>
         {m.since && Number.isFinite(m.swaps) ? (
-          <div style={{marginTop: 'auto', display: 'flex', gap: 14, paddingTop: 14, borderTop: '1px solid var(--line)'}}>
-            <div className="numpanel" style={{flex: 1, padding: '12px 14px'}}>
+          <div className="master-card__stats" style={{marginTop: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, paddingTop: 12, borderTop: '1px solid var(--line)'}}>
+            <div className="numpanel" style={{minWidth: 0, padding: '9px 8px'}}>
               <span className="k">Замен / клиентов</span>
-              <span className="v" style={{fontSize: 28}}>{fmtNum(m.swaps)}</span>
+              <span className="v" style={{fontSize: 22}}>{fmtNum(m.swaps)}</span>
               <span className="u">{m.swapsLabel || 'замен'}</span>
             </div>
-            <div className="numpanel" style={{flex: 1, padding: '12px 14px'}}>
+            <div className="numpanel" style={{minWidth: 0, padding: '9px 8px'}}>
               <span className="k">Стаж в TGM</span>
-              <span className="v" style={{fontSize: 28}}>{2026 - m.since}</span>
+              <span className="v" style={{fontSize: 22}}>{2026 - m.since}</span>
               <span className="u">{2026 - m.since === 1 ? 'год' : 'лет'}</span>
             </div>
           </div>
