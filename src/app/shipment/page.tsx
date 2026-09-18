@@ -7,6 +7,9 @@ import { loadLocalDemandList } from "@/lib/local-inventory-read";
 import { ShipmentListFilters, type ShipmentFilterValues } from "./ShipmentListFilters";
 import { ShipmentListWorkspace, type ShipmentListItem } from "./ShipmentListWorkspace";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type DemandAgent = {
   id?: string;
   name?: string;

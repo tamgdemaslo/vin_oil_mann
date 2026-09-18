@@ -1518,33 +1518,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       setLocalDraftHydrated(true);
       return;
     }
-    try {
-      const rawDraft = window.localStorage.getItem(SHIPMENT_DRAFT_STORAGE_KEY);
-      if (!rawDraft) return;
-      const draft = JSON.parse(rawDraft) as Partial<ShipmentLocalDraft>;
-      if (draft.version !== 1) return;
-      setDemandIdLocal(typeof draft.demandId === "string" && draft.demandId ? draft.demandId : null);
-      demandIdRef.current = typeof draft.demandId === "string" && draft.demandId ? draft.demandId : null;
-      setExistingDemandName(typeof draft.demandName === "string" ? draft.demandName : null);
-      setSelectedOrg(draft.organization ?? null);
-      setSelectedStore(draft.store ?? null);
-      setSelectedAgent(draft.agent ?? null);
-      if (draft.agent) setAgentSearch(counterpartyDisplayName(draft.agent));
-      setAttributes(Array.isArray(draft.attributes) ? draft.attributes : []);
-      setPositions(Array.isArray(draft.positions) ? draft.positions : []);
-      setVin(typeof draft.vin === "string" ? draft.vin : "");
-      setDescription(typeof draft.description === "string" ? draft.description : "");
-      setApplicable(Boolean(draft.applicable));
-      setMomentStr(typeof draft.moment === "string" && draft.moment ? draft.moment : toServiceMomentString());
-      setDraftActivity(true);
-      setDraftRevision(1);
-      draftRevisionRef.current = 1;
-      setSaveState("dirty");
-    } catch {
-      window.localStorage.removeItem(SHIPMENT_DRAFT_STORAGE_KEY);
-    } finally {
-      setLocalDraftHydrated(true);
-    }
+    // "Новая отгрузка" всегда начинается с чистой формы. Созданные ранее
+    // серверные черновики открываются из журнала, а не восстанавливаются в новый документ.
+    window.localStorage.removeItem(SHIPMENT_DRAFT_STORAGE_KEY);
+    demandIdRef.current = null;
+    setLocalDraftHydrated(true);
   }, [demandId, isExistingDraft]);
 
   useEffect(() => {
@@ -2046,7 +2024,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       moment: momentStr,
     };
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = setTimeout(() => void performAutosave(), 500);
+    autosaveTimerRef.current = setTimeout(() => void performAutosave(), demandIdRef.current ? 500 : 0);
     return () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     };
@@ -4854,7 +4832,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       <header className="eco-shipment-new-head">
         <div className="eco-shipment-new-head-main">
           <div className="eco-page-kicker">
-            <Link href="/shipment">Операции / Отгрузки</Link>
+            <Link href="/shipment" prefetch={false}>Операции / Отгрузки</Link>
             <span>{isExistingDraft ? " / Редактирование" : " / Новая"}</span>
           </div>
           <div className="eco-shipment-new-title-row">
@@ -4869,7 +4847,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           </div>
         </div>
         <div className="eco-actions">
-          <Link href="/shipment" className="eco-btn eco-shipment-back-link">
+          <Link href="/shipment" prefetch={false} className="eco-btn eco-shipment-back-link">
             <ArrowLeft className="eco-icon" aria-hidden />
             К отгрузкам
           </Link>

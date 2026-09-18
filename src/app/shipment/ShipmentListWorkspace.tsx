@@ -55,6 +55,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 export function ShipmentListWorkspace({ rows, totalCount, totalSumLabel, emptyMessage }: ShipmentListWorkspaceProps) {
   const router = useRouter();
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
+  const refreshedOnMountRef = useRef(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [busyAction, setBusyAction] = useState<"post" | "copy" | "delete" | null>(null);
   const [notice, setNotice] = useState("");
@@ -65,6 +66,25 @@ export function ShipmentListWorkspace({ rows, totalCount, totalSumLabel, emptyMe
   const allOnPageSelected = rows.length > 0 && selectedRows.length === rows.length;
   const partiallySelected = selectedRows.length > 0 && !allOnPageSelected;
   const selectionActive = selectedRows.length > 0;
+
+  useEffect(() => {
+    if (!refreshedOnMountRef.current) {
+      refreshedOnMountRef.current = true;
+      router.refresh();
+    }
+    const refreshRestoredPage = (event: PageTransitionEvent) => {
+      if (event.persisted) router.refresh();
+    };
+    const refreshVisiblePage = () => {
+      if (document.visibilityState === "visible") router.refresh();
+    };
+    window.addEventListener("pageshow", refreshRestoredPage);
+    document.addEventListener("visibilitychange", refreshVisiblePage);
+    return () => {
+      window.removeEventListener("pageshow", refreshRestoredPage);
+      document.removeEventListener("visibilitychange", refreshVisiblePage);
+    };
+  }, [router]);
 
   useEffect(() => {
     if (headerCheckboxRef.current) headerCheckboxRef.current.indeterminate = partiallySelected;
