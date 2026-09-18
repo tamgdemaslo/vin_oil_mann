@@ -18,7 +18,9 @@ assert.match(dockerfile, /WIREPROXY_VERSION=v1\.1\.3/);
 assert.match(dockerfile, /wireproxy_linux_\$\{TARGETARCH\}\.tar\.gz/);
 assert.match(dockerfile, /e88c1d090740373fc606c1bafd81d9a5eadc642cce5667616e20e9d7a444f51c/);
 assert.match(dockerfile, /370e00bd2167960d1ecd1c3c1439715bbaa94a0a110a2040468670c9af6021b6/);
-assert.match(dockerfile, /COPY --from=wireproxy \/usr\/local\/bin\/wireproxy \/usr\/local\/bin\/wireproxy/);
+assert.match(dockerfile, /--mount=type=bind,from=wireproxy,source=\/,target=\/wireproxy,ro/);
+assert.match(dockerfile, /install -m 0555 \/wireproxy\/usr\/local\/bin\/wireproxy \/usr\/local\/bin\/wireproxy/);
+assert.match(dockerfile, /install -m 0755 \/build\/deploy\/timeweb\/start-app\.sh \/usr\/local\/bin\/start-app/);
 
 assert.match(startup, /BindAddress = 127\.0\.0\.1:8888/);
 assert.doesNotMatch(startup, /BindAddress\s*=\s*(?:0\.0\.0\.0|\[::\])/);

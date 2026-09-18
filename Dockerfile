@@ -145,14 +145,21 @@ ENV APP_RELEASE=$APP_RELEASE \
     APP_BUILT_AT=$APP_BUILT_AT \
     APP_EXPECTED_MIGRATION=$APP_EXPECTED_MIGRATION
 
-COPY --from=build --chown=app:app /app/.next/standalone ./
-COPY --from=build --chown=app:app /app/.next/static ./.next/static
-COPY --from=build --chown=app:app /app/public ./public
-COPY --from=build --chown=app:app /app/assets/price-label-fonts ./assets/price-label-fonts
-COPY --from=build --chown=app:app /app/prisma ./prisma
-COPY --from=wireproxy /usr/local/bin/wireproxy /usr/local/bin/wireproxy
-COPY --from=build --chown=app:app /app/deploy/timeweb/start-app.sh /usr/local/bin/start-app
-RUN chmod 755 /usr/local/bin/start-app
+# Timeweb charges noticeable overhead for every final-image layer. Assemble the
+# complete runtime in one layer so a successful Next.js build does not run into
+# the deployment time limit while copying the same build output step by step.
+RUN --mount=type=bind,from=build,source=/app,target=/build,ro \
+    --mount=type=bind,from=wireproxy,source=/,target=/wireproxy,ro \
+  set -eu; \
+  cp -a /build/.next/standalone/. /app/; \
+  mkdir -p /app/.next/static /app/public /app/assets/price-label-fonts /app/prisma; \
+  cp -a /build/.next/static/. /app/.next/static/; \
+  cp -a /build/public/. /app/public/; \
+  cp -a /build/assets/price-label-fonts/. /app/assets/price-label-fonts/; \
+  cp -a /build/prisma/. /app/prisma/; \
+  install -m 0555 /wireproxy/usr/local/bin/wireproxy /usr/local/bin/wireproxy; \
+  install -m 0755 /build/deploy/timeweb/start-app.sh /usr/local/bin/start-app; \
+  chown -R app:app /app
 
 USER app
 EXPOSE 3000
