@@ -1855,6 +1855,7 @@ export default function ProductsClient() {
   const initialLoadStartedRef = useRef(false);
   const skipNextListLoadRef = useRef(false);
   const handledTerminalOemBatchesRef = useRef<Set<string>>(new Set());
+  const oemBatchAdvanceInFlightRef = useRef(false);
 
   const setActionMenuButtonRef = useCallback((id: string, node: HTMLButtonElement | null) => {
     if (node) {
@@ -2028,11 +2029,14 @@ export default function ProductsClient() {
     filtersCollapsed ? "is-filter-collapsed" : "",
     filtersDrawerOpen ? "is-filter-drawer-open" : "",
   ].filter(Boolean).join(" ");
-  const loadKnownOemBatch = useCallback(async (batchId?: string) => {
+  const loadKnownOemBatch = useCallback(async (batchId?: string, advance = false) => {
     try {
       const response = await fetch(batchId
-        ? `/api/products/oem-batches/${encodeURIComponent(batchId)}`
-        : "/api/products/oem-batches?active=1&limit=1", { cache: "no-store" });
+        ? `/api/products/oem-batches/${encodeURIComponent(batchId)}${advance ? "/process" : ""}`
+        : "/api/products/oem-batches?active=1&limit=1", {
+        cache: "no-store",
+        method: advance ? "POST" : "GET",
+      });
       if (!response.ok) return;
       const data = await response.json() as { batch?: ProductOemBatchView; batches?: ProductOemBatchView[] };
       const next = data.batch ?? data.batches?.[0] ?? null;
@@ -2112,8 +2116,26 @@ export default function ProductsClient() {
 
   useEffect(() => {
     if (!knownOemBatch || !["QUEUED", "RUNNING"].includes(knownOemBatch.status)) return;
-    const timer = window.setInterval(() => void loadKnownOemBatch(knownOemBatch.id), 3_000);
-    return () => window.clearInterval(timer);
+    let stopped = false;
+    let timer: number | undefined;
+    const advance = async () => {
+      if (oemBatchAdvanceInFlightRef.current) {
+        if (!stopped) timer = window.setTimeout(() => void advance(), 1_000);
+        return;
+      }
+      oemBatchAdvanceInFlightRef.current = true;
+      try {
+        await loadKnownOemBatch(knownOemBatch.id, true);
+      } finally {
+        oemBatchAdvanceInFlightRef.current = false;
+      }
+      if (!stopped) timer = window.setTimeout(() => void advance(), 1_000);
+    };
+    void advance();
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+    };
   }, [knownOemBatch, loadKnownOemBatch]);
 
   const handleOemBatchChange = useCallback((batch: ProductOemBatchView) => {

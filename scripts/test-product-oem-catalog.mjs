@@ -100,14 +100,16 @@ assert.deepEqual(
   [["MANN", "HU719/7X"], ["MAHLE", "OX188D"], ["FILTRON", "OE650/1"]],
 );
 
-const [catalog, catalogRoute, batches, batchRoute, previewRoute, panel, productsClient, schema, mannCatalog, rosskoImport, localInventory, productCopy, productImport] = await Promise.all([
+const [catalog, catalogRoute, batches, batchRoute, processRoute, previewRoute, panel, productsClient, worker, schema, mannCatalog, rosskoImport, localInventory, productCopy, productImport] = await Promise.all([
   readFile("src/lib/catalog-search.ts", "utf8"),
   readFile("src/app/api/catalog/search/route.ts", "utf8"),
   readFile("src/lib/product-oem-batches.ts", "utf8"),
   readFile("src/app/api/products/oem-batches/route.ts", "utf8"),
+  readFile("src/app/api/products/oem-batches/[batchId]/process/route.ts", "utf8"),
   readFile("src/app/api/products/oem-batches/preview/route.ts", "utf8"),
   readFile("src/components/products/ProductOemBatchPanel.tsx", "utf8"),
   readFile("src/app/inventory/products/ProductsClient.tsx", "utf8"),
+  readFile("src/lib/product-oem-worker.ts", "utf8"),
   readFile("prisma/schema.prisma", "utf8"),
   readFile("src/lib/mann-catalog.ts", "utf8"),
   readFile("src/lib/rossko-product-import.ts", "utf8"),
@@ -128,8 +130,14 @@ assert.match(batches, /resolveCatalogProductSelection\(input\.selection/);
 assert.match(batches, /where:\s*\{\s*branchId,\s*id:\s*\{\s*in:\s*productIds/);
 assert.match(batches, /PRODUCT_OEM_BATCH_RETRYABLE_ITEM_STATUSES = \["FAILED", "ERROR"\]/);
 assert.match(batches, /MISSING_SOURCE_DATA/);
+assert.match(batches, /processNextProductOemItem\(branchId: string, batchId\?: string\)/);
+assert.match(batches, /processProductOemJobsForBranch\(branchId, 1, batchId\)/);
 assert.match(batchRoute, /selection:\s*body\?\.selection/);
 assert.doesNotMatch(batchRoute, /branchId:\s*body/);
+assert.match(processRoute, /advanceProductOemBatch/);
+assert.match(processRoute, /requireBranchApi/);
+assert.match(productsClient, /loadKnownOemBatch\(knownOemBatch\.id, true\)/);
+assert.match(worker, /if \(!current\.started\) return/);
 assert.match(previewRoute, /requireBranchApi/);
 assert.match(previewRoute, /previewProductOemBatch/);
 

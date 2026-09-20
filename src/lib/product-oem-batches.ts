@@ -257,16 +257,21 @@ async function refreshBatchCounters(branchId: string, batchId: string) {
   });
 }
 
-export async function processNextProductOemItem(branchId: string) {
+export async function processNextProductOemItem(branchId: string, batchId?: string) {
   const staleBefore = new Date(Date.now() - 10 * 60_000);
   await prisma.productOemBatchItem.updateMany({
-    where: { branchId, status: "PROCESSING", startedAt: { lt: staleBefore } },
+    where: { branchId, ...(batchId ? { batchId } : {}), status: "PROCESSING", startedAt: { lt: staleBefore } },
     data: { status: "PENDING", startedAt: null, errorMessage: "Предыдущая попытка была прервана и перезапущена" },
   });
 
   for (let claimAttempt = 0; claimAttempt < 5; claimAttempt += 1) {
     const candidate = await prisma.productOemBatchItem.findFirst({
-      where: { branchId, status: "PENDING", batch: { status: { in: [...PRODUCT_OEM_BATCH_ACTIVE_STATUSES] } } },
+      where: {
+        branchId,
+        ...(batchId ? { batchId } : {}),
+        status: "PENDING",
+        batch: { status: { in: [...PRODUCT_OEM_BATCH_ACTIVE_STATUSES] } },
+      },
       include: { product: { select: { name: true } } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
@@ -317,12 +322,24 @@ export async function processNextProductOemItem(branchId: string) {
   return null;
 }
 
-export async function processProductOemJobsForBranch(branchId: string, limit = 1) {
+export async function processProductOemJobsForBranch(branchId: string, limit = 1, batchId?: string) {
   const processed: string[] = [];
   for (let index = 0; index < Math.max(1, Math.min(limit, 10)); index += 1) {
-    const itemId = await processNextProductOemItem(branchId);
+    const itemId = await processNextProductOemItem(branchId, batchId);
     if (!itemId) break;
     processed.push(itemId);
   }
   return processed;
+}
+
+export async function advanceProductOemBatch(branchId: string, batchId: string) {
+  const existing = await prisma.productOemBatch.findFirst({
+    where: { branchId, id: batchId },
+    select: { status: true },
+  });
+  if (!existing) return null;
+  if (PRODUCT_OEM_BATCH_ACTIVE_STATUSES.includes(existing.status as never)) {
+    await processProductOemJobsForBranch(branchId, 1, batchId);
+  }
+  return getProductOemBatch(branchId, batchId);
 }

@@ -119,6 +119,10 @@ async function tickProductOemWorker() {
 
 export function kickProductOemWorker() {
   const current = state();
+  // A kick may accelerate an already enabled dedicated worker, but must not
+  // silently turn the production web process into a one-shot worker. Active
+  // catalog batches are advanced through their scoped API endpoint instead.
+  if (!current.started) return;
   if (current.timer) {
     clearTimeout(current.timer);
     current.timer = undefined;
