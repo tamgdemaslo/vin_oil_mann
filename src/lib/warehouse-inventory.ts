@@ -293,6 +293,7 @@ async function ensureOrganizationWarehouse(organizationId: string, warehouseId: 
 async function buildScopeRows(
   client: Tx | typeof prisma,
   input: {
+    branchId: string;
     organizationId: string;
     warehouseId: string;
     scope: ReturnType<typeof normalizeScope>;
@@ -300,7 +301,7 @@ async function buildScopeRows(
   }
 ): Promise<ScopeRow[]> {
   const balances = await client.localStockBalance.findMany({
-    where: { storeId: input.warehouseId },
+    where: { branchId: input.branchId, storeId: input.warehouseId },
     include: { product: true },
     orderBy: [{ product: { name: "asc" } }],
   });
@@ -334,6 +335,7 @@ async function buildScopeRows(
   if (input.options.includeZeroStock) {
     const products = await client.localProduct.findMany({
       where: {
+        branchId: input.branchId,
         archived: false,
         entityType: { in: [...STOCK_TRACKED_TYPES] },
         id: { notIn: [...seenProducts] },
@@ -722,6 +724,7 @@ export async function previewInventoryScope(sessionId: string): Promise<Inventor
   const session = await prisma.inventorySession.findUnique({ where: { id: sessionId } });
   if (!session) return { ok: false, error: "Инвентаризация не найдена", status: 404 };
   const rows = await buildScopeRows(prisma, {
+    branchId: session.branchId,
     organizationId: session.organizationId,
     warehouseId: session.warehouseId,
     scope: normalizeScope(asRecord(session.scopeJson)),
@@ -742,6 +745,7 @@ export async function startInventorySession(sessionId: string, user: User): Prom
     const scope = normalizeScope(asRecord(session.scopeJson));
     const options = normalizeOptions(asRecord(session.optionsJson));
     const rows = await buildScopeRows(tx, {
+      branchId: session.branchId,
       organizationId: session.organizationId,
       warehouseId: session.warehouseId,
       scope,
@@ -770,6 +774,7 @@ export async function startInventorySession(sessionId: string, user: User): Prom
     const now = new Date();
     await tx.inventoryLine.createMany({
       data: rows.map((row) => ({
+        branchId: session.branchId,
         inventorySessionId: session.id,
         productId: row.productId,
         warehouseId: row.warehouseId,
@@ -788,6 +793,7 @@ export async function startInventorySession(sessionId: string, user: User): Prom
     if (session.warehouseMode === "LOCKED") {
       await tx.inventoryLock.createMany({
         data: rows.map((row) => ({
+          branchId: session.branchId,
           organizationId: session.organizationId,
           warehouseId: session.warehouseId,
           productId: row.productId,

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { createJiti } from "jiti";
 
@@ -38,6 +39,20 @@ assert.deepEqual(
   applyBranchQueryPolicy("LocalDemand", "create", { data: { name: "ДЧ-1" } }, branchOne),
   { data: { name: "ДЧ-1", branchId: "branch-1" } }
 );
+assert.deepEqual(
+  applyBranchQueryPolicy("InventoryLine", "createMany", {
+    data: [
+      { inventorySessionId: "inventory-1", productId: "product-1", warehouseId: "warehouse-1" },
+      { inventorySessionId: "inventory-1", productId: "product-2", warehouseId: "warehouse-1" },
+    ],
+  }, branchOne),
+  {
+    data: [
+      { inventorySessionId: "inventory-1", productId: "product-1", warehouseId: "warehouse-1", branchId: "branch-1" },
+      { inventorySessionId: "inventory-1", productId: "product-2", warehouseId: "warehouse-1", branchId: "branch-1" },
+    ],
+  }
+);
 assert.throws(
   () => applyBranchQueryPolicy("LocalCounterparty", "findUnique", { where: { id: "client-2", branchId: "branch-2" } }, branchOne),
   /другого филиала/
@@ -58,5 +73,14 @@ assert.deepEqual(
   applyBranchQueryPolicy("User", "findMany", { where: { status: "active" } }, branchOne),
   { where: { status: "active" } }
 );
+
+for (const route of [
+  "src/app/api/inventory/sessions/route.ts",
+  "src/app/api/inventory/sessions/[...path]/route.ts",
+]) {
+  const source = fs.readFileSync(path.join(process.cwd(), route), "utf8");
+  assert.match(source, /requireBranchApi/);
+  assert.match(source, /runWithBranchApiContext/);
+}
 
 console.log("Branch scope policy tests passed.");

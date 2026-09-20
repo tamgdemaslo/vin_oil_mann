@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import {
   createInventorySession,
   listInventorySessions,
@@ -13,6 +14,8 @@ function readBool(value: string | null) {
 export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const access = await requireBranchApi({ requireActive: false });
+  if (!access.ok) return access.response;
 
   const sp = request.nextUrl.searchParams;
   const filters: InventorySessionFilters = {
@@ -27,12 +30,16 @@ export async function GET(request: NextRequest) {
     limit: Number(sp.get("limit") ?? 40),
     offset: Number(sp.get("offset") ?? 0),
   };
-  return NextResponse.json(await listInventorySessions(filters));
+  return runWithBranchApiContext(access.context, async () => {
+    return NextResponse.json(await listInventorySessions(filters));
+  });
 }
 
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
 
   let body: unknown;
   try {
@@ -41,7 +48,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
   }
 
-  const result = await createInventorySession(body as Parameters<typeof createInventorySession>[0], session.user);
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status ?? 400 });
-  return NextResponse.json(result.data);
+  return runWithBranchApiContext(access.context, async () => {
+    const result = await createInventorySession(body as Parameters<typeof createInventorySession>[0], session.user);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status ?? 400 });
+    return NextResponse.json(result.data);
+  });
 }

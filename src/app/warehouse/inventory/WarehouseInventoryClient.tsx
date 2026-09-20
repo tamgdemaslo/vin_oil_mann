@@ -404,7 +404,7 @@ function inventoryCountingComplete(session: InventorySession) {
 }
 
 function documentAction(session: InventorySession) {
-  if (session.status === "DRAFT") return "Настроить";
+  if (session.status === "DRAFT") return "Начать подсчёт";
   if (session.status === "PAUSED") return "Продолжить";
   if (session.status === "COUNTING" || session.status === "RECOUNT_REQUIRED") {
     return inventoryCountingComplete(session) ? "Завершить подсчёт" : "Продолжить подсчёт";
