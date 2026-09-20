@@ -190,6 +190,7 @@ type SortDirection = "asc" | "desc";
 type StockFilter = "all" | "inStock" | "outOfStock";
 type OemPartsFilter = "all" | "filled" | "missing";
 type PublicationFilter = "all" | "published" | "hidden" | "needs_attention";
+type QualityIssueFilter = "all" | "missing_oem" | "missing_brand" | "missing_group" | "missing_identifier" | "missing_supplier" | "missing_price" | "negative_stock" | "missing_cell" | "name_review";
 type OemEnrichmentResultFilter = "remaining" | "error" | "no_results" | "missing_source";
 type ProductOriginFilter = "all" | "MANUAL" | "BRANCH_COPY" | "IMPORT" | "SYNC";
 
@@ -213,6 +214,7 @@ type ProductFilters = {
   stock: StockFilter;
   markingProblems: boolean;
   priceMissing: boolean;
+  qualityIssue: QualityIssueFilter;
   oemParts: OemPartsFilter;
   publication: PublicationFilter;
 };
@@ -673,6 +675,7 @@ const emptyFilters: ProductFilters = {
   stock: "all",
   markingProblems: false,
   priceMissing: false,
+  qualityIssue: "all",
   oemParts: "all",
   publication: "all",
 };
@@ -709,6 +712,18 @@ const oemPartsOptions: Array<{ value: OemPartsFilter; label: string }> = [
   { value: "all", label: "Все" },
   { value: "filled", label: "Заполнены" },
   { value: "missing", label: "Не заполнены" },
+];
+const qualityIssueOptions: Array<{ value: QualityIssueFilter; label: string }> = [
+  { value: "all", label: "Все карточки" },
+  { value: "missing_oem", label: "Не заполнен OEM" },
+  { value: "missing_brand", label: "Не заполнен бренд" },
+  { value: "missing_group", label: "Не заполнена группа" },
+  { value: "missing_identifier", label: "Нет артикула или кода" },
+  { value: "missing_supplier", label: "Не заполнен поставщик" },
+  { value: "missing_price", label: "Не настроена цена" },
+  { value: "negative_stock", label: "Отрицательный остаток" },
+  { value: "missing_cell", label: "Не назначена ячейка" },
+  { value: "name_review", label: "Название требует проверки" },
 ];
 const PRODUCT_PAGE_LIMIT = 50;
 const NEW_GROUP_VALUE = "__new_group__";
@@ -994,7 +1009,7 @@ function uniqueGroupsByLabel(groups: string[]) {
   return result;
 }
 
-type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems" | "priceMissing" | "oemParts" | "publication">;
+type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems" | "priceMissing" | "qualityIssue" | "oemParts" | "publication">;
 type FacetKey = "group" | "brand" | "sae" | "supplier" | "apiSpec" | "acea" | "packageVolume" | "entityType";
 type FacetOrderState = Record<FacetKey, Map<string, number>>;
 type FacetPreviewPinState = Record<FacetKey, Set<string>>;
@@ -1997,6 +2012,7 @@ export default function ProductsClient() {
       if (key === "stock") return count + (value !== "all" ? 1 : 0);
       if (key === "oemParts") return count + (value !== "all" ? 1 : 0);
       if (key === "publication") return count + (value !== "all" ? 1 : 0);
+      if (key === "qualityIssue") return count + (value !== "all" ? 1 : 0);
       if (key === "markingProblems" || key === "priceMissing") return count + (value === true ? 1 : 0);
       return count + (Array.isArray(value) ? value.length : 0);
     }, storageCellFilter !== "all" ? 1 : 0),
@@ -2223,6 +2239,9 @@ export default function ProductsClient() {
       } else if (key === "publication") {
         const publicationValue = value as PublicationFilter;
         if (publicationValue !== "all") params.set(key, publicationValue);
+      } else if (key === "qualityIssue") {
+        const qualityIssueValue = value as QualityIssueFilter;
+        if (qualityIssueValue !== "all") params.set(key, qualityIssueValue);
       } else if (key === "markingProblems") {
         if (value === true) params.set(key, "1");
       } else if (key === "priceMissing") {
@@ -2302,7 +2321,8 @@ export default function ProductsClient() {
     const controller = new AbortController();
     loadMoreAbortRef.current = controller;
     try {
-      const params = buildListParams(search, sort, direction, filters, rows.length);
+      const nextOffset = meta.offset + meta.limit;
+      const params = buildListParams(search, sort, direction, filters, nextOffset);
       params.set("context", "products");
       const res = await fetch(`/api/catalog/search?${params.toString()}`, {
         cache: "no-store",
@@ -2596,6 +2616,16 @@ export default function ProductsClient() {
   useEffect(() => {
     const target = loadMoreTargetRef.current;
     if (!target || !meta?.hasMore) return;
+    let frame = 0;
+    const checkPosition = () => {
+      frame = 0;
+      const rect = target.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      if (rect.top <= viewportHeight + 600 && rect.bottom >= -600) void loadMore();
+    };
+    const scheduleCheck = () => {
+      if (!frame) frame = window.requestAnimationFrame(checkPosition);
+    };
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) void loadMore();
@@ -2603,7 +2633,15 @@ export default function ProductsClient() {
       { rootMargin: "600px 0px" }
     );
     observer.observe(target);
-    return () => observer.disconnect();
+    window.addEventListener("scroll", scheduleCheck, true);
+    window.addEventListener("resize", scheduleCheck);
+    scheduleCheck();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", scheduleCheck, true);
+      window.removeEventListener("resize", scheduleCheck);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta?.hasMore, rows.length, loading, loadingMore, search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult]);
 
@@ -2944,6 +2982,9 @@ export default function ProductsClient() {
         } else if (key === "publication") {
           const publicationValue = value as PublicationFilter;
           if (publicationValue !== "all") params.set(key, publicationValue);
+        } else if (key === "qualityIssue") {
+          const qualityIssueValue = value as QualityIssueFilter;
+          if (qualityIssueValue !== "all") params.set(key, qualityIssueValue);
         } else if (key === "markingProblems" || key === "priceMissing") {
           if (value === true) params.set(key, "1");
         } else if (Array.isArray(value)) {
@@ -3639,6 +3680,13 @@ export default function ProductsClient() {
         key: "oemParts",
         label: `OEM Parts: ${oemPartsOptions.find((option) => option.value === filters.oemParts)?.label ?? filters.oemParts}`,
         onRemove: () => changeOemPartsFilter("all"),
+      });
+    }
+    if (filters.qualityIssue !== "all") {
+      chips.push({
+        key: "qualityIssue",
+        label: `Проверка: ${qualityIssueOptions.find((option) => option.value === filters.qualityIssue)?.label ?? filters.qualityIssue}`,
+        onRemove: () => setFilters((prev) => ({ ...prev, qualityIssue: "all" })),
       });
     }
     if (filters.publication !== "all") {
@@ -6452,6 +6500,22 @@ export default function ProductsClient() {
                   </button>
                 ) : null}
               </div>
+            </div>
+
+            <div className="eco-filter-group">
+              <div className="eco-filter-title">Проблемные позиции</div>
+              <select
+                className="eco-input"
+                value={filters.qualityIssue}
+                onChange={(event) => {
+                  setFilters((prev) => ({ ...prev, qualityIssue: event.target.value as QualityIssueFilter }));
+                  closeFilterDrawerOnMobile();
+                }}
+                aria-label="Фильтр проблемных позиций"
+              >
+                {qualityIssueOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <p className="mt-2 text-xs text-[var(--eco-muted)]">Можно сочетать с группой, брендом и другими фильтрами.</p>
             </div>
 
             <div className="eco-filter-group">

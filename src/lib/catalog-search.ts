@@ -27,6 +27,17 @@ export type CatalogSearchType = "product" | "service" | "all";
 export type CatalogOemPartsFilter = "all" | "filled" | "missing";
 export type CatalogOemEnrichmentResultFilter = "all" | "remaining" | "error" | "no_results" | "missing_source";
 export type CatalogPublicationFilter = "all" | "published" | "hidden" | "needs_attention";
+export type CatalogQualityIssueFilter =
+  | "all"
+  | "missing_oem"
+  | "missing_brand"
+  | "missing_group"
+  | "missing_identifier"
+  | "missing_supplier"
+  | "missing_price"
+  | "negative_stock"
+  | "missing_cell"
+  | "name_review";
 
 export type CatalogSearchParams = {
   q?: string;
@@ -49,6 +60,7 @@ export type CatalogSearchParams = {
   stock?: string;
   markingProblems?: boolean;
   priceMissing?: boolean;
+  qualityIssue?: CatalogQualityIssueFilter;
   publication?: CatalogPublicationFilter;
   oemParts?: CatalogOemPartsFilter;
   oemBatchId?: string;
@@ -276,6 +288,7 @@ export type CatalogSearchResult = {
       stock: StockFilter;
       markingProblems: boolean;
       priceMissing: boolean;
+      qualityIssue: CatalogQualityIssueFilter;
       publication: CatalogPublicationFilter;
       oemParts: CatalogOemPartsFilter;
     };
@@ -891,6 +904,68 @@ function normalizeOemPartsFilter(value?: string): CatalogOemPartsFilter {
   return value === "filled" || value === "missing" ? value : "all";
 }
 
+export function normalizeCatalogQualityIssue(value?: string): CatalogQualityIssueFilter {
+  return value === "missing_oem"
+    || value === "missing_brand"
+    || value === "missing_group"
+    || value === "missing_identifier"
+    || value === "missing_supplier"
+    || value === "missing_price"
+    || value === "negative_stock"
+    || value === "missing_cell"
+    || value === "name_review"
+    ? value
+    : "all";
+}
+
+export function catalogItemMatchesQualityIssue(
+  item: Pick<CatalogSearchItem,
+    | "name"
+    | "article"
+    | "code"
+    | "externalCode"
+    | "barcodeEan13"
+    | "barcodeEan8"
+    | "barcodeCode128"
+    | "brand"
+    | "groupPath"
+    | "supplierName"
+    | "salePrice"
+    | "priceNeedsSetup"
+    | "totalQuantity"
+    | "totalAvailable"
+    | "oemPartsCount"
+    | "storageAssignments"
+  >,
+  issue: CatalogQualityIssueFilter,
+  storeId?: string | null,
+) {
+  if (issue === "missing_oem") return item.oemPartsCount === 0;
+  if (issue === "missing_brand") return !item.brand.trim();
+  if (issue === "missing_group") return !item.groupPath.trim();
+  if (issue === "missing_identifier") {
+    return ![
+      item.article,
+      item.code,
+      item.externalCode,
+      item.barcodeEan13,
+      item.barcodeEan8,
+      item.barcodeCode128,
+    ].some((value) => value.trim());
+  }
+  if (issue === "missing_supplier") return !item.supplierName.trim();
+  if (issue === "missing_price") return item.priceNeedsSetup || item.salePrice <= 0;
+  if (issue === "negative_stock") return item.totalQuantity < 0 || item.totalAvailable < 0;
+  if (issue === "missing_cell") {
+    return !item.storageAssignments.some((assignment) => !assignment.cellArchived && (!storeId || assignment.storeId === storeId));
+  }
+  if (issue === "name_review") {
+    const name = item.name.trim();
+    return name.length < 3 || /\s{2,}/u.test(item.name) || /^(без названия|новый товар|товар)$/iu.test(name);
+  }
+  return true;
+}
+
 function normalizeOemEnrichmentResultFilter(value?: string): CatalogOemEnrichmentResultFilter {
   return value === "remaining" || value === "error" || value === "no_results" || value === "missing_source" ? value : "all";
 }
@@ -938,7 +1013,7 @@ function productFacetValues(item: CatalogSearchItem, key: CatalogFacetKey): stri
   return parseStoredAttributeValues(item.apiSpec, profile === "TRANSMISSION_FLUID" ? "transmissionApi" : "engineApi");
 }
 
-function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult["meta"]["filters"]) {
+function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult["meta"]["filters"], storeId?: string | null) {
   if (!filterValuesInclude(filters.brand, productFacetValues(item, "brand"))) return false;
   if (!filterValuesInclude(filters.sae, productFacetValues(item, "sae"))) return false;
   if (!filterValuesInclude(filters.supplier, productFacetValues(item, "supplier"))) return false;
@@ -960,6 +1035,7 @@ function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult
     return false;
   }
   if (filters.priceMissing && !item.priceNeedsSetup) return false;
+  if (!catalogItemMatchesQualityIssue(item, filters.qualityIssue, storeId)) return false;
   if (filters.publication === "published" && item.storefrontPublicationState !== "PUBLISHED") return false;
   if (filters.publication === "hidden" && item.storefrontPublicationState !== "HIDDEN") return false;
   if (filters.publication === "needs_attention" && item.storefrontPublicationProblems.length === 0) return false;
@@ -1233,6 +1309,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     stock: params.inStock ? "inStock" : normalizeStockFilter(params.stock),
     markingProblems: params.markingProblems === true,
     priceMissing: params.priceMissing === true,
+    qualityIssue: normalizeCatalogQualityIssue(params.qualityIssue),
     publication: params.publication === "published" || params.publication === "hidden" || params.publication === "needs_attention"
       ? params.publication
       : "all",
@@ -1291,7 +1368,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
             },
           },
           orderBy: [{ name: "asc" }],
-          take: params.internalLimit != null || filters.oemParts !== "all"
+          take: params.internalLimit != null || filters.oemParts !== "all" || filters.qualityIssue !== "all"
             ? 5001
             : Math.min(1000, Math.max(limit * 30, 100)),
         })
@@ -1312,7 +1389,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
       return [mapProduct(product, score, matchedFields)];
     });
     const facets = buildFacets(scored, filters);
-    const filtered = scored.filter((item) => rowMatchesFilters(item, filters));
+    const filtered = scored.filter((item) => rowMatchesFilters(item, filters, storeId));
     const sorted = filtered.sort((a, b) => compareItems(a, b, sort, direction, context));
     const items = sorted.slice(offset, offset + limit);
     return {
@@ -1364,7 +1441,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
   // Without a search query, facets and totals must be calculated across the
   // whole branch catalog. Limiting candidates before applying filters makes
   // exact totals depend on the first alphabetical page (often exactly 100).
-  const needsCompleteOemResult = filters.oemParts !== "all" || filters.publication !== "all" || normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult) !== "all" || params.internalLimit != null;
+  const needsCompleteOemResult = filters.oemParts !== "all" || filters.qualityIssue !== "all" || filters.publication !== "all" || normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult) !== "all" || params.internalLimit != null;
   const candidateTake = needsCompleteOemResult ? undefined : catalogCandidateTake(tokens.length, limit);
   const products = await prisma.localProduct.findMany({
     where,
@@ -1397,7 +1474,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     return [mapProduct(product, score.score, score.matchedFields)];
   });
   const facets = buildFacets(scored, filters);
-  const filtered = scored.filter((item) => rowMatchesFilters(item, filters));
+  const filtered = scored.filter((item) => rowMatchesFilters(item, filters, storeId));
   const matchedOutsideFilters = Math.max(0, scored.length - filtered.length);
   const sorted = filtered.sort((a, b) => compareItems(a, b, sort, direction, context));
   const items = sorted.slice(offset, offset + limit);
@@ -1457,6 +1534,7 @@ export function normalizeCatalogProductSelectionSnapshot(value: unknown): Catalo
   const type = input.type === "product" || input.type === "service" || input.type === "all" ? input.type : undefined;
   const stock = input.stock === "inStock" || input.stock === "outOfStock" || input.stock === "all" ? input.stock : undefined;
   const oemParts = normalizeOemPartsFilter(selectionString(input.oemParts));
+  const qualityIssue = normalizeCatalogQualityIssue(selectionString(input.qualityIssue));
   const oemEnrichmentResult = normalizeOemEnrichmentResultFilter(selectionString(input.oemEnrichmentResult));
   const publication = ["published", "hidden", "needs_attention"].includes(String(input.publication ?? ""))
     ? input.publication as CatalogPublicationFilter
@@ -1483,6 +1561,7 @@ export function normalizeCatalogProductSelectionSnapshot(value: unknown): Catalo
     stock,
     markingProblems: input.markingProblems === true,
     priceMissing: input.priceMissing === true,
+    qualityIssue,
     publication,
     oemParts,
     oemBatchId: selectionString(input.oemBatchId),

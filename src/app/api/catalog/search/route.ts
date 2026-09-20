@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
     stock: sp.get("stock") ?? undefined,
     markingProblems: sp.get("markingProblems") === "1" || sp.get("markingProblems") === "true",
     priceMissing: sp.get("priceMissing") === "1" || sp.get("priceMissing") === "true",
+    qualityIssue: (sp.get("qualityIssue") ?? undefined) as CatalogSearchParams["qualityIssue"],
     publication: ["published", "hidden", "needs_attention"].includes(sp.get("publication") ?? "")
       ? sp.get("publication") as CatalogSearchParams["publication"]
       : "all",
