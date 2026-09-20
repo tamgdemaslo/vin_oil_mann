@@ -4,6 +4,7 @@ import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import {
   addInventoryProduct,
   approveInventorySession,
+  bindInventoryBarcode,
   cancelInventorySession,
   completeInventoryCounting,
   executeInventoryImport,
@@ -269,6 +270,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (action === "cancel") return apiResult(await cancelInventorySession(sessionId, body as Parameters<typeof cancelInventorySession>[1], session.user));
     if (action === "add-product") return apiResult(await addInventoryProduct(sessionId, body as Parameters<typeof addInventoryProduct>[1], session.user));
     if (action === "scan") return apiResult(await scanInventoryBarcode(sessionId, body as Parameters<typeof scanInventoryBarcode>[1], session.user));
+    if (action === "bind-barcode") return apiResult(await bindInventoryBarcode(sessionId, body as Parameters<typeof bindInventoryBarcode>[1], session.user));
     if (action === "lines" && lineId && (leaf === "count" || leaf === "recount")) {
       return apiResult(await countInventoryLine(sessionId, lineId, body as Parameters<typeof countInventoryLine>[2], session.user));
     }

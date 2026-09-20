@@ -115,7 +115,7 @@ type InventorySession = {
   id: string;
   number: string;
   status: string;
-  countMode: "BLIND" | "QUICK";
+  countMode: "BLIND" | "QUICK" | "SCAN";
   warehouseMode: "LOCKED" | "LIVE";
   scopeType: string;
   scope: unknown;
@@ -217,7 +217,7 @@ type WizardState = {
   brands: string;
   cells: string;
   productIds: string;
-  countMode: "BLIND" | "QUICK";
+  countMode: "BLIND" | "QUICK" | "SCAN";
   warehouseMode: "LOCKED" | "LIVE";
   includeZeroStock: boolean;
   includeArchivedWithStock: boolean;
@@ -227,6 +227,7 @@ type WizardState = {
 };
 
 type SaveState = Record<string, "idle" | "saving" | "saved" | "error">;
+type ProductOption = { id: string; name: string; article: string; code: string; groupPath: string };
 
 function money(cents: number | null | undefined) {
   const value = (cents ?? 0) / 100;
@@ -307,12 +308,12 @@ function defaultWizard(): WizardState {
     comment: "",
     scopeType: "CATEGORIES",
     categorySearch: "",
-    categories: ["Воздушные фильтры"],
+    categories: ["Моторное масло"],
     groups: "",
     brands: "",
     cells: "",
     productIds: "",
-    countMode: "BLIND",
+    countMode: "SCAN",
     warehouseMode: "LOCKED",
     includeZeroStock: false,
     includeArchivedWithStock: true,
@@ -398,6 +399,7 @@ function scopeLabel(session: InventorySession) {
 }
 
 function inventoryCountingComplete(session: InventorySession) {
+  if (session.countMode === "SCAN") return session.totalLines > 0;
   return session.totalLines > 0
     && session.countedLines >= session.totalLines
     && session.recountRequiredLines === 0;
@@ -407,6 +409,7 @@ function documentAction(session: InventorySession) {
   if (session.status === "DRAFT") return "Начать подсчёт";
   if (session.status === "PAUSED") return "Продолжить";
   if (session.status === "COUNTING" || session.status === "RECOUNT_REQUIRED") {
+    if (session.countMode === "SCAN") return "Завершить сканирование и сверить";
     return inventoryCountingComplete(session) ? "Завершить подсчёт" : "Продолжить подсчёт";
   }
   if (session.status === "REVIEW" || session.status === "AWAITING_APPROVAL") return "Открыть сверку";
@@ -434,6 +437,7 @@ function nextStepText(session: InventorySession) {
   if (session.status === "DRAFT") return "Проверьте склад, область товаров и начните подсчёт.";
   if (session.status === "PAUSED") return "Подсчёт приостановлен. Можно продолжить с того же места.";
   if (session.status === "COUNTING") {
+    if (session.countMode === "SCAN") return "Пропикивайте каждую единицу товара. Непропиканные позиции при завершении попадут в недостачу с фактом 0.";
     return inventoryCountingComplete(session)
       ? "Все позиции посчитаны. Завершите подсчёт и перейдите к сверке."
       : "Введите фактическое количество по всем строкам и завершите подсчёт.";
@@ -447,11 +451,18 @@ function nextStepText(session: InventorySession) {
   return "Откройте следующий этап.";
 }
 
+function countModeLabel(mode: InventorySession["countMode"] | WizardState["countMode"]) {
+  if (mode === "SCAN") return "Сканирование поштучно";
+  if (mode === "QUICK") return "Быстрая сверка";
+  return "Слепой подсчёт";
+}
+
 export default function WarehouseInventoryClient({ sessionId }: WarehouseInventoryClientProps = {}) {
   const router = useRouter();
   const isDetail = Boolean(sessionId);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
+  const [productGroups, setProductGroups] = useState<string[]>([]);
   const [sessionsData, setSessionsData] = useState<SessionsResponse | null>(null);
   const [current, setCurrent] = useState<InventorySession | null>(null);
   const [lines, setLines] = useState<InventoryLine[]>([]);
@@ -478,6 +489,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [scanner, setScanner] = useState({ barcode: "", mode: "FIND" });
+  const [scanResult, setScanResult] = useState("");
   const [foundProduct, setFoundProduct] = useState({ productId: "", ean: "", name: "", category: "", cellId: "", quantity: "" });
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -486,12 +498,14 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   const currentStatus = current?.status ?? "";
 
   const loadDictionaries = useCallback(async () => {
-    const [orgData, storesData] = await Promise.all([
+    const [orgData, storesData, groupsData] = await Promise.all([
       requestJson<{ organizations?: Organization[] }>("/api/local-inventory/organizations"),
       requestJson<{ stores?: Store[] }>("/api/local-inventory/stores"),
+      requestJson<{ groups?: string[] }>("/api/local-inventory/product-groups"),
     ]);
     setOrganizations(orgData.organizations ?? []);
     setStores(storesData.stores ?? []);
+    setProductGroups(groupsData.groups ?? []);
     setWizard((prev) => ({
       ...prev,
       organizationId: prev.organizationId || orgData.organizations?.find((item) => item.isDefault)?.id || orgData.organizations?.[0]?.id || "",
@@ -598,6 +612,10 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       void loadReconciliation(currentId).catch((error) => setMessage(error instanceof Error ? error.message : "Не удалось загрузить сверку"));
     }
   }, [currentId, currentStatus, lineFilters, loadLines, loadReconciliation]);
+
+  useEffect(() => {
+    if (current?.countMode === "SCAN") setScanner((prev) => ({ ...prev, mode: "INCREMENT" }));
+  }, [current?.countMode]);
 
   const filteredSessions = useMemo(() => {
     const rows = sessionsData?.sessions ?? [];
@@ -760,6 +778,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     }
     if (current.status === "COUNTING" || current.status === "RECOUNT_REQUIRED") {
       if (inventoryCountingComplete(current)) {
+        if (current.countMode === "SCAN" && !window.confirm("Завершить сканирование? Все непропиканные позиции будут зафиксированы как фактически 0 и показаны в недостаче.")) return;
         void mutateSession("complete-counting");
         return;
       }
@@ -823,6 +842,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
 
   async function scanBarcode() {
     if (!current || !scanner.barcode.trim()) return;
+    let needsProductSelection = false;
     setWorking(true);
     try {
       const data = await requestJson<{
@@ -835,42 +855,62 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         body: JSON.stringify({ barcode: scanner.barcode, mode: scanner.mode === "INCREMENT" ? "INCREMENT" : "FIND" }),
       });
       if (data.status === "COUNTED" && data.line) {
-        setLines((prev) => prev.map((line) => (line.id === data.line!.id ? data.line! : line)));
-        setMessage("Штрихкод найден, количество увеличено на 1");
+        setLines((prev) => {
+          const exists = prev.some((line) => line.id === data.line!.id);
+          return exists ? prev.map((line) => (line.id === data.line!.id ? data.line! : line)) : [data.line!, ...prev];
+        });
+        setCurrent((prev) => prev ? { ...prev, countedLines: prev.countedLines + (lines.find((line) => line.id === data.line!.id)?.finalQuantity == null ? 1 : 0) } : prev);
+        setScanResult(`${data.line.name}: ${qty(data.line.finalQuantity)} шт.`);
+        setScanner((prev) => ({ ...prev, barcode: "" }));
+        setMessage("");
       } else if (data.status === "FOUND" && data.line) {
         setInputValues((prev) => ({ ...prev, [data.line!.id]: data.line!.finalQuantity == null ? "" : String(data.line!.finalQuantity) }));
         setMessage(`Найдена строка: ${data.line.name}`);
       } else if (data.status === "OUT_OF_SCOPE" && data.product) {
+        needsProductSelection = true;
         setFoundProduct((prev) => ({ ...prev, productId: data.product!.id, name: data.product!.name, category: data.product!.category, ean: scanner.barcode }));
         setMessage("Товар найден вне выбранной области. Его можно добавить как найденный дополнительно.");
       } else if (data.status === "CONFLICT") {
         setMessage(`Один штрихкод у нескольких товаров: ${data.products?.map((item) => item.name).join(", ")}`);
       } else {
-        setFoundProduct((prev) => ({ ...prev, ean: scanner.barcode }));
-        setMessage("Штрихкод не найден. Можно найти товар вручную или создать черновик.");
+        needsProductSelection = true;
+        setFoundProduct({ productId: "", ean: scanner.barcode, name: "", category: "", cellId: "", quantity: "" });
+        setScanner((prev) => ({ ...prev, barcode: "" }));
+        setScanResult("");
+        setMessage("Штрихкод не найден. Выберите товар, которому он принадлежит.");
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Сканирование не выполнено");
     } finally {
       setWorking(false);
+      window.setTimeout(() => document.getElementById(needsProductSelection ? "inventory-product-resolve" : "inventory-barcode-input")?.focus(), 0);
     }
   }
 
-  async function addFoundProduct() {
-    if (!current) return;
+  async function bindBarcodeToProduct() {
+    if (!current || !foundProduct.ean || !foundProduct.productId) return;
     setWorking(true);
     try {
-      const data = await requestJson<{ line: InventoryLine }>(`/api/inventory/sessions/${current.id}/add-product`, {
+      const data = await requestJson<{ status: string; line: InventoryLine; addedToSession: boolean; wasCounted: boolean }>(`/api/inventory/sessions/${current.id}/bind-barcode`, {
         method: "POST",
-        body: JSON.stringify(foundProduct),
+        body: JSON.stringify({ barcode: foundProduct.ean, productId: foundProduct.productId }),
       });
-      setLines((prev) => [data.line, ...prev]);
+      setLines((prev) => prev.some((line) => line.id === data.line.id)
+        ? prev.map((line) => line.id === data.line.id ? data.line : line)
+        : [data.line, ...prev]);
+      setCurrent((prev) => prev ? {
+        ...prev,
+        totalLines: prev.totalLines + (data.addedToSession ? 1 : 0),
+        countedLines: prev.countedLines + (data.wasCounted ? 0 : 1),
+      } : prev);
       setFoundProduct({ productId: "", ean: "", name: "", category: "", cellId: "", quantity: "" });
-      setMessage("Товар добавлен как найденный дополнительно");
+      setScanResult(`${data.line.name}: ${qty(data.line.finalQuantity)} шт. Штрихкод сохранён.`);
+      setMessage("");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Не удалось добавить товар");
+      setMessage(error instanceof Error ? error.message : "Не удалось привязать штрихкод");
     } finally {
       setWorking(false);
+      window.setTimeout(() => document.getElementById("inventory-barcode-input")?.focus(), 0);
     }
   }
 
@@ -915,8 +955,8 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
                     <span title={current.status === "PAUSED" ? "Подсчёт приостановлен. Можно продолжить с того же места." : undefined}>
                       <EcoBadge tone={statusTone(current.status)}>{STATUS_LABELS[current.status] ?? current.status}</EcoBadge>
                     </span>
-                    <span title={current.countMode === "BLIND" ? "Во время подсчёта сотрудник не видит учётный остаток, чтобы не подгонять фактическое количество." : "Учётный остаток и разница видны сразу."}>
-                      <EcoBadge tone={current.countMode === "BLIND" ? "info" : "warning"}>{current.countMode === "BLIND" ? "Слепой подсчёт" : "Быстрая сверка"}</EcoBadge>
+                    <span title={current.countMode === "BLIND" ? "Во время подсчёта сотрудник не видит учётный остаток, чтобы не подгонять фактическое количество." : current.countMode === "SCAN" ? "Каждое сканирование добавляет одну фактическую единицу." : "Учётный остаток и разница видны сразу."}>
+                      <EcoBadge tone={current.countMode === "BLIND" ? "info" : "warning"}>{countModeLabel(current.countMode)}</EcoBadge>
                     </span>
                     <span title={current.warehouseMode === "LOCKED" ? "Товары из этой инвентаризации нельзя отгружать, принимать или перемещать до завершения подсчёта." : "Склад продолжает работать, движения учитываются при сверке."}>
                       <EcoBadge tone={current.warehouseMode === "LOCKED" ? "success" : "warning"}>{current.warehouseMode === "LOCKED" ? "Движения заблокированы" : "Склад работает"}</EcoBadge>
@@ -1020,9 +1060,10 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
                   scanner={scanner}
                   setScanner={setScanner}
                   scanBarcode={scanBarcode}
+                  scanResult={scanResult}
                   foundProduct={foundProduct}
                   setFoundProduct={setFoundProduct}
-                  addFoundProduct={addFoundProduct}
+                  bindBarcodeToProduct={bindBarcodeToProduct}
                   onImported={() => loadLines(current.id)}
                   showAccounting={showAccounting}
                   working={working}
@@ -1216,7 +1257,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-sm">
                 <span className="rounded-md bg-zinc-100 px-2 py-1 text-zinc-700">Этап: {WORKFLOW_STAGES[sessionStage(session) - 1]}</span>
-                <span className="rounded-md bg-zinc-100 px-2 py-1 text-zinc-700">{session.countMode === "BLIND" ? "Слепой подсчёт" : "Быстрая сверка"}</span>
+                <span className="rounded-md bg-zinc-100 px-2 py-1 text-zinc-700">{countModeLabel(session.countMode)}</span>
                 <span className="rounded-md bg-zinc-100 px-2 py-1 text-zinc-700">{formatDate(session.createdAt)}</span>
               </div>
               <div className="mt-4 grid grid-cols-4 gap-2 text-sm text-zinc-600">
@@ -1256,6 +1297,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
           setStep={setWizardStep}
           organizations={organizations}
           stores={stores}
+          productGroups={productGroups}
           previewCount={previewCount}
           working={working}
           onPreview={() => void previewScope()}
@@ -1315,7 +1357,7 @@ function DraftInventoryWorkspace({
           <div className="mt-3 grid gap-2 text-sm text-zinc-700 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-md border border-zinc-200 p-3"><b className="block text-zinc-950">Где считаем</b>{current.organizationName} · {current.warehouseName}</div>
             <div className="rounded-md border border-zinc-200 p-3"><b className="block text-zinc-950">Что считаем</b>{scopeLabel(current)}</div>
-            <div className="rounded-md border border-zinc-200 p-3"><b className="block text-zinc-950">Как считаем</b>{current.countMode === "BLIND" ? "Слепой подсчёт" : "Быстрая сверка"}</div>
+            <div className="rounded-md border border-zinc-200 p-3"><b className="block text-zinc-950">Как считаем</b>{countModeLabel(current.countMode)}</div>
             <div className="rounded-md border border-zinc-200 p-3"><b className="block text-zinc-950">Склад</b>{current.warehouseMode === "LOCKED" ? "движения заблокируются" : "продолжает работать"}</div>
           </div>
         </div>
@@ -1335,6 +1377,7 @@ function InventoryWizard({
   setStep,
   organizations,
   stores,
+  productGroups,
   previewCount,
   working,
   onPreview,
@@ -1347,6 +1390,7 @@ function InventoryWizard({
   setStep: (step: number) => void;
   organizations: Organization[];
   stores: Store[];
+  productGroups: string[];
   previewCount: number | null;
   working: boolean;
   onPreview: () => void;
@@ -1447,7 +1491,14 @@ function InventoryWizard({
                     </div>
                   </div>
                 )}
-                {wizard.scopeType === "GROUPS" && <EcoInput value={wizard.groups} onChange={(event) => setWizard((prev) => ({ ...prev, groups: event.target.value }))} placeholder="Группы через запятую" />}
+                {wizard.scopeType === "GROUPS" && (
+                  <label className="text-xs font-medium text-zinc-500">Группа товаров
+                    <EcoSelect value={wizard.groups} onChange={(event) => setWizard((prev) => ({ ...prev, groups: event.target.value }))}>
+                      <option value="">Выберите группу</option>
+                      {productGroups.map((group) => <option key={group} value={group}>{group}</option>)}
+                    </EcoSelect>
+                  </label>
+                )}
                 {wizard.scopeType === "BRANDS" && <EcoInput value={wizard.brands} onChange={(event) => setWizard((prev) => ({ ...prev, brands: event.target.value }))} placeholder="Бренды через запятую" />}
                 {wizard.scopeType === "CELLS" && <EcoInput value={wizard.cells} onChange={(event) => setWizard((prev) => ({ ...prev, cells: event.target.value }))} placeholder="Ячейки через запятую: A-12, B-04" />}
                 {wizard.scopeType === "PRODUCTS" && <EcoInput value={wizard.productIds} onChange={(event) => setWizard((prev) => ({ ...prev, productIds: event.target.value }))} placeholder="ID товаров через запятую" />}
@@ -1476,7 +1527,11 @@ function InventoryWizard({
               <div className="space-y-4">
                 <div>
                   <h3 className="text-sm font-semibold text-zinc-950">Режим подсчёта</h3>
-                  <div className="mt-2 grid gap-3 md:grid-cols-2">
+                  <div className="mt-2 grid gap-3 md:grid-cols-3">
+                    <button type="button" onClick={() => setWizard((prev) => ({ ...prev, countMode: "SCAN" }))} className={`rounded-md border p-4 text-left ${wizard.countMode === "SCAN" ? "border-zinc-950 bg-zinc-50" : "border-zinc-200"}`}>
+                      <div className="flex items-center gap-2 font-semibold"><ScanLine className="h-4 w-4" aria-hidden />Сканирование поштучно</div>
+                      <p className="mt-1 text-sm text-zinc-600">Каждый пик добавляет 1 штуку. Непропиканные товары при сверке считаются отсутствующими.</p>
+                    </button>
                     <button type="button" onClick={() => setWizard((prev) => ({ ...prev, countMode: "BLIND" }))} className={`rounded-md border p-4 text-left ${wizard.countMode === "BLIND" ? "border-zinc-950 bg-zinc-50" : "border-zinc-200"}`}>
                       <div className="font-semibold">Слепой подсчёт</div>
                       <p className="mt-1 text-sm text-zinc-600">Сотрудник не видит учётный остаток, разницу и стоимость во время подсчёта.</p>
@@ -1512,7 +1567,7 @@ function InventoryWizard({
                 </div>
                 <div className="rounded-md border border-zinc-200 p-3 text-sm text-zinc-700">
                   <div><b>Область:</b> {wizard.scopeType === "CATEGORIES" ? wizard.categories.join(", ") : wizard.scopeType}</div>
-                  <div><b>Режим:</b> {wizard.countMode === "BLIND" ? "слепой подсчёт" : "быстрая сверка"}</div>
+                  <div><b>Режим:</b> {countModeLabel(wizard.countMode).toLowerCase()}</div>
                   <div><b>Работа склада:</b> {wizard.warehouseMode === "LOCKED" ? "движения блокируются" : "live-режим"}</div>
                 </div>
                 <EcoButton onClick={onPreview} disabled={working}>
@@ -1553,9 +1608,10 @@ function CountingWorkspace(props: {
   scanner: { barcode: string; mode: string };
   setScanner: (updater: { barcode: string; mode: string } | ((prev: { barcode: string; mode: string }) => { barcode: string; mode: string })) => void;
   scanBarcode: () => Promise<void>;
+  scanResult: string;
   foundProduct: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string };
   setFoundProduct: (updater: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string } | ((prev: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string }) => { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string })) => void;
-  addFoundProduct: () => Promise<void>;
+  bindBarcodeToProduct: () => Promise<void>;
   onImported: () => Promise<void>;
   showAccounting: boolean;
   working: boolean;
@@ -1572,14 +1628,38 @@ function CountingWorkspace(props: {
     scanner,
     setScanner,
     scanBarcode,
+    scanResult,
     foundProduct,
     setFoundProduct,
-    addFoundProduct,
+    bindBarcodeToProduct,
     onImported,
     showAccounting,
     working,
   } = props;
   const [importState, setImportState] = useState<{ loading: boolean; message: string }>({ loading: false, message: "" });
+  const [productSearch, setProductSearch] = useState("");
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [productSearchLoading, setProductSearchLoading] = useState(false);
+
+  useEffect(() => {
+    if (!foundProduct.ean || productSearch.trim().length < 2 || foundProduct.productId) {
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setProductSearchLoading(true);
+      void requestJson<{ products?: ProductOption[] }>(`/api/local-inventory/products?search=${encodeURIComponent(productSearch.trim())}&limit=12`, { signal: controller.signal })
+        .then((data) => setProductOptions(data.products ?? []))
+        .catch((error) => {
+          if (!(error instanceof DOMException && error.name === "AbortError")) setProductOptions([]);
+        })
+        .finally(() => setProductSearchLoading(false));
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [foundProduct.ean, foundProduct.productId, productSearch]);
 
   async function importCountSheet(file: File | null) {
     if (!file) return;
@@ -1655,31 +1735,49 @@ function CountingWorkspace(props: {
               <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "PROBLEM", cell: "" })}>Проблемы</EcoButton>
             </div>
           </div>
-          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+          <div className={`rounded-md border p-4 ${props.current.countMode === "SCAN" ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-zinc-50"}`}>
             <div className="mb-3">
               <div className="flex items-center gap-2 text-base font-semibold text-zinc-950">
                 <ScanLine className="h-5 w-5" aria-hidden />
-                Сканировать или найти товар
+                {props.current.countMode === "SCAN" ? "Сканирование поштучно" : "Сканировать или найти товар"}
               </div>
-              <p className="mt-1 text-sm text-zinc-500">Введите EAN, артикул или внутренний код. Если товар вне области проверки, его можно добавить как найденный.</p>
+              <p className="mt-1 text-sm text-zinc-600">
+                {props.current.countMode === "SCAN"
+                  ? "Поставьте курсор в поле и пропикивайте товары. Каждый Enter сразу добавляет одну штуку."
+                  : "Введите EAN, артикул или внутренний код. Если товар вне области проверки, его можно добавить как найденный."}
+              </p>
             </div>
-            <div className="grid gap-2">
-              <EcoInput value={scanner.barcode} onChange={(event) => setScanner((prev) => ({ ...prev, barcode: event.target.value }))} placeholder="EAN / артикул / код" />
-              <EcoSelect value={scanner.mode} onChange={(event) => setScanner((prev) => ({ ...prev, mode: event.target.value }))}>
-                <option value="FIND">Найти товар</option>
-                <option value="INCREMENT">Каждое сканирование = +1</option>
-              </EcoSelect>
+            <form className="grid gap-2" onSubmit={(event) => { event.preventDefault(); void scanBarcode(); }}>
+              <EcoInput
+                id="inventory-barcode-input"
+                autoFocus={props.current.countMode === "SCAN"}
+                autoComplete="off"
+                value={scanner.barcode}
+                onChange={(event) => setScanner((prev) => ({ ...prev, barcode: event.target.value }))}
+                placeholder="Пикните штрихкод или введите его"
+              />
+              {props.current.countMode !== "SCAN" && (
+                <EcoSelect value={scanner.mode} onChange={(event) => setScanner((prev) => ({ ...prev, mode: event.target.value }))}>
+                  <option value="FIND">Найти товар</option>
+                  <option value="INCREMENT">Каждое сканирование = +1</option>
+                </EcoSelect>
+              )}
               <div className="flex flex-wrap gap-2">
-                <EcoButton variant="primary" onClick={() => void scanBarcode()} disabled={working || !scanner.barcode.trim()}>
-                  {working ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Search className="h-4 w-4" aria-hidden />}
-                  Найти
+                <EcoButton type="submit" variant="primary" disabled={working || !scanner.barcode.trim()}>
+                  {working ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : props.current.countMode === "SCAN" ? <Plus className="h-4 w-4" aria-hidden /> : <Search className="h-4 w-4" aria-hidden />}
+                  {props.current.countMode === "SCAN" ? "Добавить +1" : "Найти"}
                 </EcoButton>
-                <EcoButton onClick={() => void scanBarcode()} disabled={working || !scanner.barcode.trim()}>
+                <EcoButton type="button" onClick={() => void scanBarcode()} disabled={working || !scanner.barcode.trim()}>
                   <Camera className="h-4 w-4" aria-hidden />
                   Сканировать камерой
                 </EcoButton>
               </div>
-            </div>
+              {scanResult && (
+                <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-emerald-800" role="status">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />{scanResult}
+                </div>
+              )}
+            </form>
           </div>
         </div>
       </EcoCard>
@@ -1708,15 +1806,45 @@ function CountingWorkspace(props: {
         <EcoCard>
           <div className="mb-3 flex items-center gap-2">
             <PackagePlus className="h-4 w-4 text-zinc-500" aria-hidden />
-            <h3 className="font-semibold text-zinc-950">Найденный вне списка товар</h3>
+            <h3 className="font-semibold text-zinc-950">Неизвестный или вне области товар</h3>
           </div>
-          <div className="grid gap-2 md:grid-cols-6">
-            <EcoInput value={foundProduct.productId} onChange={(event) => setFoundProduct((prev) => ({ ...prev, productId: event.target.value }))} placeholder="ID товара" />
-            <EcoInput value={foundProduct.ean} onChange={(event) => setFoundProduct((prev) => ({ ...prev, ean: event.target.value }))} placeholder="EAN" />
-            <EcoInput className="md:col-span-2" value={foundProduct.name} onChange={(event) => setFoundProduct((prev) => ({ ...prev, name: event.target.value }))} placeholder="Название" />
-            <EcoInput value={foundProduct.cellId} onChange={(event) => setFoundProduct((prev) => ({ ...prev, cellId: event.target.value }))} placeholder="Ячейка" />
-            <EcoButton onClick={() => void addFoundProduct()} disabled={working}><Plus className="h-4 w-4" aria-hidden />Добавить</EcoButton>
-          </div>
+          {!foundProduct.ean ? (
+            <p className="text-sm text-zinc-500">Если штрихкод не найдётся, здесь появится выбор товара для постоянной привязки.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Штрихкод <b>{foundProduct.ean}</b> {foundProduct.productId ? "найден вне выбранной группы." : "не найден в карточках товаров."}
+              </div>
+              {foundProduct.productId ? (
+                <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div><b className="block text-zinc-950">{foundProduct.name}</b><span className="text-sm text-zinc-500">{foundProduct.category || "без категории"}</span></div>
+                  <EcoButton id="inventory-product-resolve" variant="primary" onClick={() => void bindBarcodeToProduct()} disabled={working}><Plus className="h-4 w-4" aria-hidden />Добавить в инвентаризацию и +1</EcoButton>
+                </div>
+              ) : (
+                <div className="relative">
+                  <EcoInput id="inventory-product-resolve" value={productSearch} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { setProductSearch(event.target.value); setProductOptions([]); setFoundProduct((prev) => ({ ...prev, productId: "", name: "" })); }} placeholder="Найдите товар по названию, артикулу или коду" />
+                  {productSearchLoading && <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-zinc-400" aria-hidden />}
+                  {productOptions.length > 0 && (
+                    <div className="mt-2 max-h-56 overflow-auto rounded-md border border-zinc-200 bg-white p-1 shadow-sm">
+                      {productOptions.map((product) => (
+                        <button
+                          key={product.id}
+                          type="button"
+                          className="block w-full rounded px-3 py-2 text-left hover:bg-zinc-50"
+                          onClick={() => { setFoundProduct((prev) => ({ ...prev, productId: product.id, name: product.name, category: product.groupPath })); setProductSearch(product.name); setProductOptions([]); }}
+                        >
+                          <span className="block text-sm font-medium text-zinc-950">{product.name}</span>
+                          <span className="block text-xs text-zinc-500">{[product.article, product.code, product.groupPath].filter(Boolean).join(" · ") || "без артикула"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {foundProduct.productId && <EcoButton className="mt-2" variant="primary" onClick={() => void bindBarcodeToProduct()} disabled={working}><Plus className="h-4 w-4" aria-hidden />Привязать штрихкод и засчитать +1</EcoButton>}
+                </div>
+              )}
+              <EcoButton size="sm" variant="ghost" onClick={() => { setProductSearch(""); setProductOptions([]); setFoundProduct({ productId: "", ean: "", name: "", category: "", cellId: "", quantity: "" }); }}>Отменить привязку</EcoButton>
+            </div>
+          )}
         </EcoCard>
       </div>
 
@@ -1841,6 +1969,7 @@ function ReconciliationWorkspace({
   const lines = data?.lines ?? [];
   const shortageRows = lines.filter((line) => (line.differenceQuantity ?? 0) < 0);
   const surplusRows = lines.filter((line) => (line.differenceQuantity ?? 0) > 0);
+  const missingRows = lines.filter((line) => line.comment === "Не отсканирован при инвентаризации");
   const cellTransferRows = lines.filter((line) => (line.finalAction || line.proposedAction) === "CELL_TRANSFER");
   const technicalRows = lines.filter((line) => (line.finalAction || line.proposedAction || "").includes("TECHNICAL"));
   const managementRows = lines.filter((line) => (line.finalAction || line.proposedAction) === "SHORTAGE_EXPENSE");
@@ -1853,8 +1982,9 @@ function ReconciliationWorkspace({
 
   return (
     <div className="space-y-4">
-      <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-7">
+      <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-8">
         <MiniMetric label="Совпало" value={current.matchingLines} tone="success" />
+        <MiniMetric label="Не отсканировано" value={missingRows.length} tone={missingRows.length ? "danger" : "neutral"} />
         <MiniMetric label="Недостача" value={shortageRows.length} sub={money(current.totalShortageCostCents)} tone="danger" />
         <MiniMetric label="Излишек" value={surplusRows.length} sub={money(current.totalSurplusCostCents)} tone="success" />
         <MiniMetric label="Перемещения" value={cellTransferRows.length} />
@@ -1916,6 +2046,7 @@ function ReconciliationWorkspace({
                 <td>
                   <div className="font-medium text-zinc-950">{line.name}</div>
                   <div className="text-xs text-zinc-500">{line.article || line.ean || "—"} · {line.category}</div>
+                  {line.comment === "Не отсканирован при инвентаризации" && <div className="mt-1"><EcoBadge tone="danger">не отсканирован · факт 0</EcoBadge></div>}
                 </td>
                 <td>{line.cellId || "без ячейки"}</td>
                 <td>{qty(line.expectedQuantityAtCount)}</td>

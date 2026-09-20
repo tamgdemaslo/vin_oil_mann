@@ -153,7 +153,7 @@ function normalizeOptions(input?: InventoryOptionsInput) {
 }
 
 function normalizeCountMode(value: unknown) {
-  return value === "QUICK" ? "QUICK" : "BLIND";
+  return value === "QUICK" || value === "SCAN" ? value : "BLIND";
 }
 
 function normalizeWarehouseMode(value: unknown) {
@@ -1150,6 +1150,79 @@ export async function completeInventoryCounting(sessionId: string, user: User) {
     if (!["COUNTING", "RECOUNT_REQUIRED"].includes(session.status)) {
       return { ok: false as const, error: "Завершить можно только активный подсчёт" };
     }
+    if (session.countMode === "SCAN") {
+      const pendingRecount = await tx.inventoryLine.findMany({
+        where: {
+          inventorySessionId: sessionId,
+          status: { not: "EXCLUDED" },
+          requiresRecount: true,
+          secondCountQuantity: null,
+        },
+        include: { product: true },
+        take: 20,
+      });
+      if (pendingRecount.length > 0) {
+        return {
+          ok: false as const,
+          error: `Сначала завершите повторный пересчёт: ${pendingRecount.map((line) => line.product?.name ?? line.id).join(", ")}`,
+        };
+      }
+      const unscanned = await tx.inventoryLine.findMany({
+        where: { inventorySessionId: sessionId, status: { not: "EXCLUDED" }, finalQuantity: null },
+      });
+      for (const line of unscanned) {
+        const countedAt = new Date();
+        const movementDelta = session.warehouseMode === "LIVE"
+          ? await movementsDeltaDuringCount(tx, line, session.snapshotAt, countedAt)
+          : ZERO;
+        const expected = line.snapshotQuantity.plus(movementDelta);
+        const outcome = countOutcome({
+          quantity: ZERO,
+          expected,
+          firstQuantity: null,
+          sequence: 1,
+          reserve: line.snapshotReservedQuantity,
+          unitCostCents: line.unitCostSnapshotCents,
+        });
+        await tx.inventoryCountEntry.create({
+          data: {
+            inventoryLineId: line.id,
+            sequence: 1,
+            quantity: ZERO,
+            counterId: user.login,
+            countedAt,
+            comment: "Не отсканирован при инвентаризации",
+            source: "SCAN_MISSING",
+          },
+        });
+        await tx.inventoryLine.update({
+          where: { id: line.id },
+          data: {
+            expectedQuantityAtCount: expected,
+            firstCountQuantity: ZERO,
+            finalQuantity: ZERO,
+            differenceQuantity: outcome.difference,
+            differenceCostCents: outcome.cost,
+            countedAt,
+            countedById: user.login,
+            status: "ZERO_CONFIRMED",
+            proposedAction: outcome.proposedAction,
+            finalAction: line.finalAction ?? outcome.proposedAction,
+            requiresRecount: false,
+            comment: line.comment ?? "Не отсканирован при инвентаризации",
+            stockVersion: { increment: 1 },
+          },
+        });
+        await writeAudit(tx, {
+          sessionId,
+          lineId: line.id,
+          action: "SCAN_MISSING_AS_ZERO",
+          newValue: { quantity: 0, expected: expected.toNumber(), difference: outcome.difference.toNumber() },
+          user,
+          source: "BARCODE",
+        });
+      }
+    }
     const problems = await tx.inventoryLine.findMany({
       where: {
         inventorySessionId: sessionId,
@@ -1818,8 +1891,11 @@ export async function addInventoryProduct(
 export async function scanInventoryBarcode(sessionId: string, body: { barcode?: string; mode?: string }, user: User) {
   const barcode = cleanText(body.barcode);
   if (!barcode) return { ok: false as const, error: "Введите или отсканируйте штрихкод" };
+  const session = await prisma.inventorySession.findUnique({ where: { id: sessionId } });
+  if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
+  if (!COUNTABLE_STATUSES.includes(session.status)) return { ok: false as const, error: "Сканирование сейчас недоступно" };
   const products = await prisma.localProduct.findMany({
-    where: { OR: [{ barcodeEan13: barcode }, { barcodeEan8: barcode }, { barcodeCode128: barcode }, { code: barcode }] },
+    where: { branchId: session.branchId, OR: [{ barcodeEan13: barcode }, { barcodeEan8: barcode }, { barcodeCode128: barcode }, { code: barcode }] },
     take: 10,
   });
   if (products.length === 0) return { ok: true as const, data: { status: "NOT_FOUND", barcode } };
@@ -1835,12 +1911,149 @@ export async function scanInventoryBarcode(sessionId: string, body: { barcode?: 
     return { ok: true as const, data: { status: "OUT_OF_SCOPE", product: { id: product.id, name: product.name, category: categoryForProduct(product) } } };
   }
   if (body.mode === "INCREMENT") {
-    const next = new Prisma.Decimal((line.finalQuantity?.toNumber() ?? 0) + 1);
-    const counted = await countInventoryLine(sessionId, line.id, { quantity: next.toString(), source: "BARCODE" }, user);
-    if (!counted.ok) return counted;
-    return { ok: true as const, data: { status: "COUNTED", line: counted.data.line } };
+    const counted = await prisma.$transaction(async (tx) => {
+      if (line.productId) {
+        await lockInventoryCostKeys(tx, {
+          branchId: session.branchId,
+          storeId: session.warehouseId,
+          productIds: [line.productId],
+        });
+      }
+      const currentLine = await tx.inventoryLine.findFirst({
+        where: { id: line.id, inventorySessionId: sessionId },
+        include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
+      });
+      if (!currentLine) return null;
+      const quantity = (currentLine.finalQuantity ?? ZERO).plus(1);
+      const sequence = currentLine.countEntries.length + 1;
+      const countedAt = new Date();
+      const movementDelta = session.warehouseMode === "LIVE"
+        ? await movementsDeltaDuringCount(tx, currentLine, session.snapshotAt, countedAt)
+        : ZERO;
+      const expected = currentLine.snapshotQuantity.plus(movementDelta);
+      const difference = quantity.minus(expected);
+      const proposedAction = difference.lt(0) ? "SHORTAGE_EXPENSE" : difference.gt(0) ? "SURPLUS_RECEIPT" : "NO_ACTION";
+      await tx.inventoryCountEntry.create({
+        data: {
+          inventoryLineId: currentLine.id,
+          sequence,
+          quantity,
+          counterId: user.login,
+          countedAt,
+          comment: null,
+          source: "BARCODE",
+        },
+      });
+      const updated = await tx.inventoryLine.update({
+        where: { id: currentLine.id },
+        data: {
+          expectedQuantityAtCount: expected,
+          firstCountQuantity: currentLine.firstCountQuantity ?? quantity,
+          finalQuantity: quantity,
+          differenceQuantity: difference,
+          differenceCostCents: costForDifference(difference, currentLine.unitCostSnapshotCents),
+          countedAt: currentLine.countedAt ?? countedAt,
+          countedById: currentLine.countedById ?? user.login,
+          status: "COUNTED",
+          proposedAction,
+          finalAction: proposedAction,
+          requiresRecount: false,
+          stockVersion: { increment: 1 },
+        },
+        include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
+      });
+      await recalculateSessionSummary(tx, sessionId);
+      await writeAudit(tx, {
+        sessionId,
+        lineId: currentLine.id,
+        action: "SCAN_INCREMENT",
+        oldValue: { quantity: currentLine.finalQuantity?.toNumber() ?? 0 },
+        newValue: { quantity: quantity.toNumber(), barcode },
+        user,
+        source: "BARCODE",
+      });
+      return updated;
+    });
+    if (!counted) return { ok: false as const, error: "Строка инвентаризации не найдена", status: 404 };
+    return { ok: true as const, data: { status: "COUNTED", line: mapLine(counted) } };
   }
   return { ok: true as const, data: { status: "FOUND", line: mapLine(line) } };
+}
+
+export async function bindInventoryBarcode(
+  sessionId: string,
+  body: { barcode?: string; productId?: string },
+  user: User
+) {
+  const barcode = cleanText(body.barcode);
+  const productId = cleanText(body.productId);
+  if (!barcode || !productId) return { ok: false as const, error: "Выберите товар для привязки штрихкода" };
+
+  const linked = await prisma.$transaction(async (tx) => {
+    const session = await tx.inventorySession.findUnique({ where: { id: sessionId } });
+    if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
+    if (!COUNTABLE_STATUSES.includes(session.status)) return { ok: false as const, error: "Привязка штрихкода сейчас недоступна" };
+    const product = await tx.localProduct.findFirst({ where: { id: productId, branchId: session.branchId } });
+    if (!product) return { ok: false as const, error: "Товар не найден", status: 404 };
+    const conflict = await tx.localProduct.findFirst({
+      where: {
+        branchId: session.branchId,
+        id: { not: product.id },
+        OR: [{ barcodeEan13: barcode }, { barcodeEan8: barcode }, { barcodeCode128: barcode }, { code: barcode }],
+      },
+      select: { name: true },
+    });
+    if (conflict) return { ok: false as const, error: `Этот штрихкод уже привязан к товару «${conflict.name}»`, status: 409 };
+
+    const alreadyLinked = [product.barcodeEan13, product.barcodeEan8, product.barcodeCode128, product.code].includes(barcode);
+    if (!alreadyLinked) {
+      const barcodePatch: Prisma.LocalProductUpdateInput = {};
+      if (/^\d{13}$/.test(barcode) && !product.barcodeEan13) barcodePatch.barcodeEan13 = barcode;
+      else if (/^\d{8}$/.test(barcode) && !product.barcodeEan8) barcodePatch.barcodeEan8 = barcode;
+      else if (!product.barcodeCode128) barcodePatch.barcodeCode128 = barcode;
+      else return { ok: false as const, error: "У товара уже заполнены все доступные поля штрихкодов" };
+      await tx.localProduct.update({ where: { id: product.id }, data: barcodePatch });
+    }
+
+    let line = await tx.inventoryLine.findFirst({ where: { inventorySessionId: sessionId, productId: product.id } });
+    const addedToSession = !line;
+    const wasCounted = line?.finalQuantity != null;
+    if (!line) {
+      const balance = await tx.localStockBalance.findUnique({
+        where: { productId_storeId: { productId: product.id, storeId: session.warehouseId } },
+      });
+      line = await tx.inventoryLine.create({
+        data: {
+          inventorySessionId: session.id,
+          productId: product.id,
+          warehouseId: session.warehouseId,
+          cellId: cleanText(balance?.slotName) ?? cleanText(product.cell),
+          unitId: product.uomName,
+          snapshotQuantity: balance?.quantity ?? ZERO,
+          snapshotReservedQuantity: balance?.reserve ?? ZERO,
+          snapshotAvailableQuantity: balance?.available ?? ZERO,
+          expectedQuantityAtCount: balance?.quantity ?? ZERO,
+          unitCostSnapshotCents: balance?.buyPriceCents ?? null,
+          stockVersion: balance ? Math.round(balance.syncedAt.getTime() / 1000) : 0,
+          isUnexpected: true,
+        },
+      });
+    }
+    await recalculateSessionSummary(tx, session.id);
+    await writeAudit(tx, {
+      sessionId: session.id,
+      lineId: line.id,
+      action: "LINK_BARCODE",
+      newValue: { productId: product.id, barcode },
+      user,
+      source: "BARCODE",
+    });
+    return { ok: true as const, data: { addedToSession, wasCounted } };
+  });
+  if (!linked.ok) return linked;
+  const scanned = await scanInventoryBarcode(sessionId, { barcode, mode: "INCREMENT" }, user);
+  if (!scanned.ok) return scanned;
+  return { ok: true as const, data: { ...scanned.data, ...linked.data } };
 }
 
 export async function movementsDuringInventory(sessionId: string) {
