@@ -74,7 +74,7 @@ const EXPENSE_WRITE_OFF_REASONS = new Set([
   "Другое фактическое списание",
 ]);
 
-type ProductInput = {
+export type ProductInput = {
   name?: string;
   article?: string;
   code?: string;
@@ -307,7 +307,7 @@ type SupplierInvoicePaymentInput = {
   allowOverpay?: boolean;
 };
 
-type ActingUser = {
+export type ActingUser = {
   login?: string;
   name?: string | null;
   role?: string;
@@ -3074,8 +3074,15 @@ export async function createLocalAdminProduct(
   return { ok: true as const, product: mapProduct(product) };
 }
 
-export async function updateLocalAdminProduct(id: string, body: ProductInput, actor: ActingUser | null | undefined, branchId: string) {
-  const current = await prisma.localProduct.findFirst({ where: { branchId, OR: [{ id }, { id: id }] } });
+export async function updateLocalAdminProduct(
+  id: string,
+  body: ProductInput,
+  actor: ActingUser | null | undefined,
+  branchId: string,
+  options: { transaction?: Prisma.TransactionClient } = {},
+) {
+  const client = options.transaction ?? prisma;
+  const current = await client.localProduct.findFirst({ where: { branchId, OR: [{ id }, { id: id }] } });
   if (!current) return { ok: false as const, error: "Товар не найден", notFound: true };
   const name = body.name == null ? current.name : body.name.trim();
   if (!name) return { ok: false as const, error: "Укажите название товара" };
@@ -3104,7 +3111,8 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
     body.supplierCounterpartyId === undefined ? current.supplierCounterpartyId : body.supplierCounterpartyId,
     branchId,
     {
-    allowExistingArchivedId: current.supplierCounterpartyId,
+      allowExistingArchivedId: current.supplierCounterpartyId,
+      transaction: options.transaction,
     }
   );
   if (!supplierResult.ok) return supplierResult;
@@ -3144,7 +3152,7 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
   if (!marking.ok) return { ok: false as const, error: marking.error };
   const markingConfiguredByUser = booleanFromInput(body.markingConfiguredManually) === true;
   const markingConfiguredManually = current.markingConfiguredManually || markingConfiguredByUser;
-  const product = await prisma.localProduct.update({
+  const product = await client.localProduct.update({
     where: { id: current.id },
     data: {
       name,
@@ -3241,10 +3249,11 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
       oldValue: oldMarking,
       newValue: productMarkingSnapshot(product),
       actor,
+      transaction: options.transaction,
     });
   }
   await writeProductAttributeNormalizationAudit({
-    client: prisma,
+    client,
     branchId,
     productId: product.id,
     action: "update",

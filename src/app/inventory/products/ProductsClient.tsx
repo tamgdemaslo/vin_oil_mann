@@ -274,6 +274,15 @@ type ProductCopyDialogState = {
   selection?: Record<string, unknown>;
   selectionCount: number;
 };
+type ProductBulkEditDraft = {
+  changeBrand: boolean;
+  brand: string;
+  changeGroup: boolean;
+  groupPath: string;
+  changeSupplier: boolean;
+  supplierCounterpartyId: string;
+  supplierName: string;
+};
 type StorefrontPublicationState = "HIDDEN" | "PUBLISHED";
 type StorefrontPublicationStatus = {
   configured: boolean;
@@ -560,6 +569,16 @@ const emptyForm: ProductForm = {
   markingActiveBarrelGtin: "",
   markingVerificationStatus: "",
   markingCurrentVolumeLiters: "",
+};
+
+const emptyBulkEditDraft: ProductBulkEditDraft = {
+  changeBrand: false,
+  brand: "",
+  changeGroup: false,
+  groupPath: "",
+  changeSupplier: false,
+  supplierCounterpartyId: "",
+  supplierName: "",
 };
 
 const productFormKeys = Object.keys(emptyForm) as Array<keyof ProductForm>;
@@ -1432,11 +1451,13 @@ function SupplierCombobox({
   displayName,
   selectedSupplier,
   onChange,
+  disabled = false,
 }: {
   value: string;
   displayName: string;
   selectedSupplier: ProductSupplier | null;
   onChange: (supplier: SupplierOption | null) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -1631,6 +1652,7 @@ function SupplierCombobox({
           className={`product-supplier-control__trigger ${value ? "is-selected" : ""}`}
           aria-haspopup="listbox"
           aria-expanded={open}
+          disabled={disabled}
           onClick={() => { setQuery(""); setOpen((current) => !current); }}
         >
           <Building2 aria-hidden className="eco-icon" />
@@ -1639,7 +1661,7 @@ function SupplierCombobox({
             {selected?.inn ? <em>ИНН {selected.inn}</em> : null}
           </span>
         </button>
-        {value ? (
+        {value && !disabled ? (
           <div className="product-supplier-control__selected-actions">
             <button type="button" onClick={() => window.open(`/inventory/counterparties?search=${encodeURIComponent(displayName)}`, "_blank", "noopener,noreferrer")}>Открыть карточку</button>
             <button type="button" onClick={() => selectSupplier(null)} aria-label="Очистить поставщика"><X aria-hidden className="eco-icon" /></button>
@@ -1769,6 +1791,10 @@ export default function ProductsClient() {
   const [copyDialog, setCopyDialog] = useState<ProductCopyDialogState | null>(null);
   const [bulkActionsOpen, setBulkActionsOpen] = useState(false);
   const [bulkActionsPosition, setBulkActionsPosition] = useState<ActionMenuPosition | null>(null);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkEditDraft, setBulkEditDraft] = useState<ProductBulkEditDraft>(emptyBulkEditDraft);
+  const [bulkEditSaving, setBulkEditSaving] = useState(false);
+  const [bulkEditError, setBulkEditError] = useState<string | null>(null);
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
   const [bulkArchiveSaving, setBulkArchiveSaving] = useState(false);
   const [priceLabelProducts, setPriceLabelProducts] = useState<ProductRow[] | null>(null);
@@ -2478,6 +2504,15 @@ export default function ProductsClient() {
   }, [bulkArchiveOpen, bulkArchiveSaving]);
 
   useEffect(() => {
+    if (!bulkEditOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !bulkEditSaving) setBulkEditOpen(false);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [bulkEditOpen, bulkEditSaving]);
+
+  useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(null), 6500);
     return () => window.clearTimeout(timer);
@@ -2496,9 +2531,9 @@ export default function ProductsClient() {
   }, [formOpen, formSearchNeedle, matchedEditorSectionId]);
 
   useEffect(() => {
-    if (!formOpen) return;
+    if (!formOpen && !bulkEditOpen) return;
     void loadEditorGroups();
-  }, [formOpen, loadEditorGroups]);
+  }, [bulkEditOpen, formOpen, loadEditorGroups]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2989,6 +3024,56 @@ export default function ProductsClient() {
     setBulkActionsOpen(false);
     setBulkArchiveOpen(true);
     setError(null);
+  }
+
+  function openBulkEdit() {
+    if (!selectedProductsCount) return;
+    setBulkActionsOpen(false);
+    setBulkEditDraft(emptyBulkEditDraft);
+    setBulkEditError(null);
+    setBulkEditOpen(true);
+  }
+
+  async function saveBulkEdit() {
+    const changes: { brand?: string; groupPath?: string; supplierCounterpartyId?: string | null } = {};
+    if (bulkEditDraft.changeBrand) changes.brand = bulkEditDraft.brand.trim();
+    if (bulkEditDraft.changeGroup) {
+      if (!bulkEditDraft.groupPath.trim()) {
+        setBulkEditError("Выберите группу товара.");
+        return;
+      }
+      changes.groupPath = bulkEditDraft.groupPath.trim();
+    }
+    if (bulkEditDraft.changeSupplier) changes.supplierCounterpartyId = bulkEditDraft.supplierCounterpartyId || null;
+    if (!Object.keys(changes).length) {
+      setBulkEditError("Отметьте хотя бы одно поле для изменения.");
+      return;
+    }
+
+    setBulkEditSaving(true);
+    setBulkEditError(null);
+    try {
+      const response = await fetch("/api/products/bulk-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productIds: allFilteredProductsSelected ? undefined : selectedProductIds,
+          selection: allFilteredProductsSelected ? buildCatalogSelectionSnapshot() : undefined,
+          changes,
+        }),
+      });
+      const payload = await readJson<{ updatedCount?: number; error?: string }>(response);
+      if (!response.ok) throw new Error(payload?.error ?? "Не удалось обновить товары");
+      const updatedCount = payload?.updatedCount ?? selectedProductsCount;
+      setBulkEditOpen(false);
+      clearProductSelection();
+      setToast({ message: `${productCountText(updatedCount)} обновлено` });
+      await load(search, sort, direction, filters);
+    } catch (bulkError) {
+      setBulkEditError(bulkError instanceof Error ? bulkError.message : String(bulkError));
+    } finally {
+      setBulkEditSaving(false);
+    }
   }
 
   async function requestStorefrontPublicationPreview(
@@ -3814,6 +3899,10 @@ export default function ProductsClient() {
           <ListChecks aria-hidden className="eco-icon" />
           <span><b>Массовые действия</b><small>{selectionLabel}</small></span>
         </div>
+        <button type="button" role="menuitem" onClick={openBulkEdit}>
+          <Pencil aria-hidden className="eco-icon" />
+          <span><b>Редактировать поля</b><small>Бренд, группа товара и поставщик</small></span>
+        </button>
         <button type="button" role="menuitem" onClick={openOemBatchForSelection}>
           <Truck aria-hidden className="eco-icon" />
           <span><b>Заполнить OEM Parts из ROSSKO</b><small>Получить кросс-номера для выбранных товаров</small></span>
@@ -5924,6 +6013,121 @@ export default function ProductsClient() {
               >
                 {archiveSaving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Archive aria-hidden className="eco-icon" />}
                 {archiveSaving ? "Переносим..." : "Перенести в архив"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {bulkEditOpen && (
+        <div
+          className="eco-product-confirm-backdrop"
+          onMouseDown={() => {
+            if (!bulkEditSaving) setBulkEditOpen(false);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="eco-products-bulk-edit-title"
+            className="eco-product-confirm eco-product-bulk-edit"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="eco-product-confirm-icon">
+              <Pencil aria-hidden className="eco-icon" />
+            </div>
+            <div className="eco-product-confirm-copy">
+              <h3 id="eco-products-bulk-edit-title">Массовое редактирование</h3>
+              <p>
+                Новые значения применятся к {productCountText(selectedProductsCount)}. Поля без галочки останутся без изменений.
+              </p>
+            </div>
+
+            <div className="eco-product-bulk-edit__fields">
+              <section className={bulkEditDraft.changeBrand ? "is-enabled" : ""}>
+                <label className="eco-product-bulk-edit__toggle">
+                  <input
+                    type="checkbox"
+                    checked={bulkEditDraft.changeBrand}
+                    onChange={(event) => setBulkEditDraft((current) => ({ ...current, changeBrand: event.target.checked }))}
+                  />
+                  <span><b>Бренд</b><small>Пустое значение очистит бренд у выбранных товаров</small></span>
+                </label>
+                <CreatableSearchCombobox
+                  id="bulk-product-brand"
+                  label="Новое значение"
+                  field="brand"
+                  value={bulkEditDraft.brand}
+                  onChange={(brand) => setBulkEditDraft((current) => ({ ...current, brand }))}
+                  placeholder="Выберите или введите бренд"
+                  disabled={!bulkEditDraft.changeBrand || bulkEditSaving}
+                />
+              </section>
+
+              <section className={bulkEditDraft.changeGroup ? "is-enabled" : ""}>
+                <label className="eco-product-bulk-edit__toggle">
+                  <input
+                    type="checkbox"
+                    checked={bulkEditDraft.changeGroup}
+                    onChange={(event) => setBulkEditDraft((current) => ({ ...current, changeGroup: event.target.checked }))}
+                  />
+                  <span><b>Группа товара</b><small>Все выбранные товары попадут в одну группу</small></span>
+                </label>
+                <label className="product-editor-field">
+                  <span className="product-editor-label"><span>Новая группа</span></span>
+                  <input
+                    className="eco-input product-editor-input"
+                    list="bulk-product-group-options"
+                    value={bulkEditDraft.groupPath}
+                    onChange={(event) => setBulkEditDraft((current) => ({ ...current, groupPath: event.target.value }))}
+                    placeholder={editorGroupsLoading ? "Загружаем группы…" : "Выберите или введите группу"}
+                    disabled={!bulkEditDraft.changeGroup || bulkEditSaving}
+                  />
+                  <datalist id="bulk-product-group-options">
+                    {(editorGroupOptions.length ? editorGroupOptions : filterOptions.groups).map((group) => (
+                      <option key={group} value={group} />
+                    ))}
+                  </datalist>
+                </label>
+              </section>
+
+              <section className={bulkEditDraft.changeSupplier ? "is-enabled" : ""}>
+                <label className="eco-product-bulk-edit__toggle">
+                  <input
+                    type="checkbox"
+                    checked={bulkEditDraft.changeSupplier}
+                    onChange={(event) => setBulkEditDraft((current) => ({ ...current, changeSupplier: event.target.checked }))}
+                  />
+                  <span><b>Поставщик</b><small>Можно назначить поставщика или выбрать «Без поставщика»</small></span>
+                </label>
+                <SupplierCombobox
+                  value={bulkEditDraft.supplierCounterpartyId}
+                  displayName={bulkEditDraft.supplierName}
+                  selectedSupplier={null}
+                  disabled={!bulkEditDraft.changeSupplier || bulkEditSaving}
+                  onChange={(supplier) => setBulkEditDraft((current) => ({
+                    ...current,
+                    supplierCounterpartyId: supplier?.id ?? "",
+                    supplierName: supplier?.displayName ?? "",
+                  }))}
+                />
+              </section>
+            </div>
+
+            {bulkEditError ? (
+              <div className="product-editor-alert is-error eco-product-bulk-edit__error" role="alert">
+                <AlertCircle aria-hidden className="eco-icon" />
+                <span>{bulkEditError}</span>
+              </div>
+            ) : null}
+
+            <footer className="eco-product-confirm-actions">
+              <button type="button" className="eco-btn" onClick={() => setBulkEditOpen(false)} disabled={bulkEditSaving}>
+                Отмена
+              </button>
+              <button type="button" className="eco-btn eco-btn--primary" onClick={() => void saveBulkEdit()} disabled={bulkEditSaving}>
+                {bulkEditSaving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Save aria-hidden className="eco-icon" />}
+                {bulkEditSaving ? "Сохраняем…" : `Применить · ${selectedProductsCount.toLocaleString("ru-RU")}`}
               </button>
             </footer>
           </section>

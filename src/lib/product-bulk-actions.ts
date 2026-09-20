@@ -1,6 +1,11 @@
 import { resolveCatalogProductSelection } from "@/lib/catalog-search";
 import { prisma } from "@/lib/db";
-import { invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
+import {
+  invalidateWarehouseReadCaches,
+  updateLocalAdminProduct,
+  type ActingUser,
+  type ProductInput,
+} from "@/lib/local-inventory-admin";
 
 const MAX_BULK_PRODUCTS = 500;
 
@@ -60,4 +65,39 @@ export async function setProductsArchivedFromSelection(input: {
     updatedCount: changedProductIds.length,
     unchangedCount: products.length - changedProductIds.length,
   };
+}
+
+export async function updateProductsFromSelection(input: {
+  branchId: string;
+  productIds?: unknown[];
+  selection?: unknown;
+  changes: Pick<ProductInput, "brand" | "groupPath" | "supplierCounterpartyId">;
+  actor?: ActingUser | null;
+}) {
+  const changeEntries = Object.entries(input.changes).filter(([, value]) => value !== undefined);
+  if (!changeEntries.length) throw new Error("Выберите хотя бы одно поле для изменения");
+
+  const unsupportedField = changeEntries.find(([field]) => !["brand", "groupPath", "supplierCounterpartyId"].includes(field));
+  if (unsupportedField) throw new Error("Передано поле, недоступное для массового редактирования");
+  if (input.changes.groupPath !== undefined && !input.changes.groupPath.trim()) {
+    throw new Error("Выберите группу товара");
+  }
+
+  const products = await resolveBulkProductIds(input);
+  const normalizedChanges: Pick<ProductInput, "brand" | "groupPath" | "supplierCounterpartyId"> = {};
+  if (input.changes.brand !== undefined) normalizedChanges.brand = input.changes.brand.trim();
+  if (input.changes.groupPath !== undefined) normalizedChanges.groupPath = input.changes.groupPath.trim();
+  if (input.changes.supplierCounterpartyId !== undefined) {
+    normalizedChanges.supplierCounterpartyId = input.changes.supplierCounterpartyId?.trim() || null;
+  }
+
+  await prisma.$transaction(async (transaction) => {
+    for (const product of products) {
+      const result = await updateLocalAdminProduct(product.id, normalizedChanges, input.actor, input.branchId, { transaction });
+      if (!result.ok) throw new Error(result.error);
+    }
+  }, { timeout: 30_000 });
+
+  invalidateWarehouseReadCaches();
+  return { productIds: products.map((product) => product.id), updatedCount: products.length };
 }
