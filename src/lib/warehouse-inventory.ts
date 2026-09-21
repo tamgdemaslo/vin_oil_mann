@@ -406,9 +406,10 @@ function mapSession(row: Prisma.InventorySessionGetPayload<{
   };
 }
 
-function mapLine(row: Prisma.InventoryLineGetPayload<{
-  include: { product: true; countEntries: { orderBy: { sequence: "asc" } } };
-}>) {
+type InventoryLineWithProduct = Prisma.InventoryLineGetPayload<{ include: { product: true } }>;
+type InventoryCountEntryRow = Prisma.InventoryCountEntryGetPayload<Record<string, never>>;
+
+function mapLine(row: InventoryLineWithProduct & { countEntries?: InventoryCountEntryRow[] }) {
   const product = row.product;
   return {
     id: row.id,
@@ -449,7 +450,7 @@ function mapLine(row: Prisma.InventoryLineGetPayload<{
     isUnexpected: row.isUnexpected,
     exclusionReason: row.exclusionReason ?? "",
     stockVersion: row.stockVersion,
-    countEntries: row.countEntries.map((entry) => ({
+    countEntries: (row.countEntries ?? []).map((entry) => ({
       id: entry.id,
       sequence: entry.sequence,
       quantity: decimalToNumber(entry.quantity),
@@ -2041,9 +2042,12 @@ export async function addInventoryProduct(
         stockVersion: balance ? Math.round(balance.syncedAt.getTime() / 1000) : 0,
         isUnexpected: true,
       },
-      include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
+      include: { product: true },
     });
-    await recalculateSessionSummary(tx, session.id);
+    await tx.inventorySession.update({
+      where: { id: session.id },
+      data: { totalLines: { increment: 1 }, version: { increment: 1 } },
+    });
     await writeAudit(tx, { sessionId: session.id, lineId: line.id, action: "ADD_PRODUCT", newValue: { productId: product.id }, user });
     return { ok: true as const, data: { line: mapLine(line) } };
   });
@@ -2065,11 +2069,11 @@ async function incrementInventoryLine(
   const counted = await prisma.$transaction(async (tx) => {
     const currentLine = await tx.inventoryLine.findFirst({
       where: { id: lineId, inventorySessionId: session.id },
-      include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
+      include: { product: true, _count: { select: { countEntries: true } } },
     });
     if (!currentLine) return null;
     const quantity = (currentLine.finalQuantity ?? ZERO).plus(1);
-    const sequence = currentLine.countEntries.length + 1;
+    const sequence = currentLine._count.countEntries + 1;
     const countedAt = new Date();
     const movementDelta = session.warehouseMode === "LIVE"
       ? await movementsDeltaDuringCount(tx, currentLine, session.snapshotAt, countedAt)
@@ -2104,7 +2108,7 @@ async function incrementInventoryLine(
         requiresRecount: false,
         stockVersion: { increment: 1 },
       },
-      include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
+      include: { product: true },
     });
     await updateInventorySessionSummaryForLineChange(tx, session.id, currentLine, updated);
     await writeAudit(tx, {
@@ -2182,7 +2186,7 @@ export async function scanInventoryBarcode(sessionId: string, body: { barcode?: 
   const product = products[0];
   const line = await prisma.inventoryLine.findFirst({
     where: { inventorySessionId: sessionId, productId: product.id },
-    include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
+    include: { product: true },
   });
   if (!line) {
     if (body.mode === "INCREMENT") {

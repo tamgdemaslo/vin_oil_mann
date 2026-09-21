@@ -278,7 +278,17 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (action === "reverse") return apiResult(await reverseInventorySession(sessionId, body as Parameters<typeof reverseInventorySession>[1], session.user));
     if (action === "cancel") return apiResult(await cancelInventorySession(sessionId, body as Parameters<typeof cancelInventorySession>[1], session.user));
     if (action === "add-product") return apiResult(await addInventoryProduct(sessionId, body as Parameters<typeof addInventoryProduct>[1], session.user));
-    if (action === "scan") return apiResult(await scanInventoryBarcode(sessionId, body as Parameters<typeof scanInventoryBarcode>[1], session.user));
+    if (action === "scan") {
+      const startedAt = performance.now();
+      const result = await scanInventoryBarcode(sessionId, body as Parameters<typeof scanInventoryBarcode>[1], session.user);
+      const durationMs = performance.now() - startedAt;
+      if (durationMs >= 750) {
+        console.warn("[inventory] slow barcode scan", { sessionId, durationMs: Math.round(durationMs) });
+      }
+      const response = apiResult(result);
+      response.headers.set("Server-Timing", `inventory-scan;dur=${durationMs.toFixed(1)}`);
+      return response;
+    }
     if (action === "count-product") return apiResult(await countInventoryProduct(sessionId, body as Parameters<typeof countInventoryProduct>[1], session.user));
     if (action === "bind-barcode") return apiResult(await bindInventoryBarcode(sessionId, body as Parameters<typeof bindInventoryBarcode>[1], session.user));
     if (action === "lines" && lineId && (leaf === "count" || leaf === "recount")) {

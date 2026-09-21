@@ -111,6 +111,15 @@ const REASONS = [
 type Organization = { id: string; name: string; isDefault?: boolean };
 type Store = { id: string; name: string };
 
+type ScanVisualFeedback = {
+  token: string;
+  kind: "success" | "error";
+  lineId?: string;
+  name?: string;
+  quantity?: number;
+  message: string;
+};
+
 type InventorySession = {
   id: string;
   number: string;
@@ -245,6 +254,48 @@ function splitList(value: string) {
 
 function isLikelyScannedBarcode(value: string) {
   return /^(?:\d{8}|\d{12,14})$/.test(value.trim());
+}
+
+let scanAudioContext: AudioContext | null = null;
+
+function prepareScanAudio() {
+  if (typeof window === "undefined") return null;
+  try {
+    const AudioContextConstructor = window.AudioContext
+      || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextConstructor) return null;
+    scanAudioContext ??= new AudioContextConstructor();
+    if (scanAudioContext.state === "suspended") void scanAudioContext.resume().catch(() => undefined);
+    return scanAudioContext;
+  } catch {
+    return null;
+  }
+}
+
+function playScanFeedback(kind: "success" | "error") {
+  const context = prepareScanAudio();
+  if (!context) return;
+  const now = context.currentTime;
+  const tones: Array<{ frequency: number; endFrequency?: number; offset: number; duration: number }> = kind === "success"
+    ? [{ frequency: 740, offset: 0, duration: 0.07 }, { frequency: 988, offset: 0.085, duration: 0.09 }]
+    : [{ frequency: 260, endFrequency: 180, offset: 0, duration: 0.2 }];
+
+  for (const tone of tones) {
+    const start = now + tone.offset;
+    const end = start + tone.duration;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = kind === "success" ? "sine" : "triangle";
+    oscillator.frequency.setValueAtTime(tone.frequency, start);
+    if (tone.endFrequency) oscillator.frequency.exponentialRampToValueAtTime(tone.endFrequency, end);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(kind === "success" ? 0.075 : 0.065, start + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, end);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(start);
+    oscillator.stop(end + 0.01);
+  }
 }
 
 function parseCsvLine(line: string) {
@@ -493,7 +544,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [scanner, setScanner] = useState({ barcode: "", mode: "FIND" });
-  const [scanResult, setScanResult] = useState("");
+  const [scanFeedback, setScanFeedback] = useState<ScanVisualFeedback | null>(null);
   const [foundProduct, setFoundProduct] = useState({ productId: "", ean: "", name: "", category: "", cellId: "", quantity: "" });
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -805,7 +856,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         return next;
       });
       await loadLines(current.id, current.countMode === "SCAN");
-      setScanResult("");
+      setScanFeedback(null);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Не удалось убрать позицию");
     } finally {
@@ -907,6 +958,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         body: JSON.stringify({ barcode, mode: scanner.mode === "INCREMENT" ? "INCREMENT" : "FIND" }),
       });
       if (data.status === "COUNTED" && data.line) {
+        playScanFeedback("success");
         setLines((prev) => {
           return [data.line!, ...prev.filter((line) => line.id !== data.line!.id)];
         });
@@ -916,24 +968,40 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
           totalLines: prev.totalLines + (data.addedToSession ? 1 : 0),
           countedLines: prev.countedLines + (data.wasCounted ? 0 : 1),
         } : prev);
-        setScanResult(`${data.line.name}: ${qty(data.line.finalQuantity)} шт.`);
+        setScanFeedback({
+          token: crypto.randomUUID(),
+          kind: "success",
+          lineId: data.line.id,
+          name: data.line.name,
+          quantity: data.line.finalQuantity ?? 0,
+          message: "Товар добавлен",
+        });
         setMessage("");
       } else if (data.status === "FOUND" && data.line) {
+        playScanFeedback("error");
+        setScanFeedback({ token: crypto.randomUUID(), kind: "error", message: `Количество не изменено: ${data.line.name}` });
         setInputValues((prev) => ({ ...prev, [data.line!.id]: data.line!.finalQuantity == null ? "" : String(data.line!.finalQuantity) }));
         setMessage(`Найдена строка: ${data.line.name}`);
       } else if (data.status === "OUT_OF_SCOPE" && data.product) {
+        playScanFeedback("error");
+        setScanFeedback({ token: crypto.randomUUID(), kind: "error", message: `Не добавлено: ${data.product.name} вне области инвентаризации` });
         needsProductSelection = true;
         setFoundProduct((prev) => ({ ...prev, productId: data.product!.id, name: data.product!.name, category: data.product!.category, ean: barcode }));
         setMessage("Товар найден вне выбранной области. Его можно добавить как найденный дополнительно.");
       } else if (data.status === "CONFLICT") {
+        playScanFeedback("error");
+        setScanFeedback({ token: crypto.randomUUID(), kind: "error", message: "Не добавлено: штрихкод привязан к нескольким товарам" });
         setMessage(`Один штрихкод у нескольких товаров: ${data.products?.map((item) => item.name).join(", ")}`);
       } else {
+        playScanFeedback("error");
+        setScanFeedback({ token: crypto.randomUUID(), kind: "error", message: "Не добавлено: штрихкод не найден" });
         needsProductSelection = true;
         setFoundProduct({ productId: "", ean: barcode, name: "", category: "", cellId: "", quantity: "" });
-        setScanResult("");
         setMessage("Штрихкод не найден. Выберите товар, которому он принадлежит.");
       }
     } catch (error) {
+      playScanFeedback("error");
+      setScanFeedback({ token: crypto.randomUUID(), kind: "error", message: "Товар не добавлен: ошибка запроса" });
       setScanner((prev) => ({ ...prev, barcode: prev.barcode || barcode }));
       setMessage(error instanceof Error ? error.message : "Сканирование не выполнено");
     } finally {
@@ -965,7 +1033,14 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
           totalLines: prev.totalLines + (data.addedToSession ? 1 : 0),
           countedLines: prev.countedLines + (data.wasCounted ? 0 : 1),
         } : prev);
-        setScanResult(`${data.line.name}: ${qty(data.line.finalQuantity)} шт.`);
+        setScanFeedback({
+          token: crypto.randomUUID(),
+          kind: "success",
+          lineId: data.line.id,
+          name: data.line.name,
+          quantity: data.line.finalQuantity ?? 0,
+          message: "Товар добавлен",
+        });
         setScanner((prev) => ({ ...prev, barcode: "" }));
         setMessage("");
       } else if (data.status === "OUT_OF_SCOPE" && data.product) {
@@ -999,7 +1074,14 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         countedLines: prev.countedLines + (data.wasCounted ? 0 : 1),
       } : prev);
       setFoundProduct({ productId: "", ean: "", name: "", category: "", cellId: "", quantity: "" });
-      setScanResult(`${data.line.name}: ${qty(data.line.finalQuantity)} шт. Штрихкод сохранён.`);
+      setScanFeedback({
+        token: crypto.randomUUID(),
+        kind: "success",
+        lineId: data.line.id,
+        name: data.line.name,
+        quantity: data.line.finalQuantity ?? 0,
+        message: "Товар добавлен, штрихкод сохранён",
+      });
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Не удалось привязать штрихкод");
@@ -1156,7 +1238,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
                   setScanner={setScanner}
                   scanBarcode={scanBarcode}
                   scanProduct={scanProduct}
-                  scanResult={scanResult}
+                  scanFeedback={scanFeedback}
                   foundProduct={foundProduct}
                   setFoundProduct={setFoundProduct}
                   bindBarcodeToProduct={bindBarcodeToProduct}
@@ -1719,7 +1801,7 @@ function CountingWorkspace(props: {
   setScanner: (updater: { barcode: string; mode: string } | ((prev: { barcode: string; mode: string }) => { barcode: string; mode: string })) => void;
   scanBarcode: (barcodeOverride?: string) => Promise<void>;
   scanProduct: (productId: string) => Promise<void>;
-  scanResult: string;
+  scanFeedback: ScanVisualFeedback | null;
   foundProduct: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string };
   setFoundProduct: (updater: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string } | ((prev: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string }) => { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string })) => void;
   bindBarcodeToProduct: () => Promise<void>;
@@ -1741,7 +1823,7 @@ function CountingWorkspace(props: {
     setScanner,
     scanBarcode,
     scanProduct,
-    scanResult,
+    scanFeedback,
     foundProduct,
     setFoundProduct,
     bindBarcodeToProduct,
@@ -1757,9 +1839,23 @@ function CountingWorkspace(props: {
   const [quickProductOptions, setQuickProductOptions] = useState<ProductOption[]>([]);
   const [quickSearchLoading, setQuickSearchLoading] = useState(false);
   const [pendingBarcodes, setPendingBarcodes] = useState<string[]>([]);
+  const [highlightedLineId, setHighlightedLineId] = useState<string | null>(null);
   const scannerBusyRef = useRef(false);
   const inventorySessionId = props.current.id;
   const countMode = props.current.countMode;
+
+  useEffect(() => {
+    if (scanFeedback?.kind !== "success" || !scanFeedback.lineId) return;
+    let timer: number | undefined;
+    const frame = window.requestAnimationFrame(() => {
+      setHighlightedLineId(scanFeedback.lineId ?? null);
+      timer = window.setTimeout(() => setHighlightedLineId(null), 1600);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [scanFeedback]);
 
   const submitScannerValue = useCallback((value: string) => {
     const barcode = value.trim();
@@ -1924,7 +2020,10 @@ function CountingWorkspace(props: {
                 autoFocus={countMode === "SCAN"}
                 autoComplete="off"
                 value={scanner.barcode}
-                onChange={(event) => setScanner((prev) => ({ ...prev, barcode: event.target.value }))}
+                onChange={(event) => {
+                  prepareScanAudio();
+                  setScanner((prev) => ({ ...prev, barcode: event.target.value }));
+                }}
                 placeholder="Отсканируйте штрихкод или начните вводить название товара"
                 aria-label="Штрихкод или название товара"
               />
@@ -1951,9 +2050,26 @@ function CountingWorkspace(props: {
               </div>
             )}
           </form>
-          {scanResult && (
-            <div className="mt-2 flex items-center gap-2 text-sm font-medium text-emerald-900" role="status">
-              <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />Последнее добавление: {scanResult}
+          {scanFeedback && (
+            <div
+              key={scanFeedback.token}
+              className={`mt-3 flex items-center justify-between gap-4 rounded-md border px-4 py-3 ${scanFeedback.kind === "success" ? "border-emerald-300 bg-emerald-100 text-emerald-950" : "border-red-300 bg-red-50 text-red-950"}`}
+              role="status"
+              aria-live={scanFeedback.kind === "success" ? "polite" : "assertive"}
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                {scanFeedback.kind === "success" ? <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-700" aria-hidden /> : <XCircle className="h-6 w-6 shrink-0 text-red-700" aria-hidden />}
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold">{scanFeedback.message}</div>
+                  {scanFeedback.name && <div className="truncate text-base font-medium">{scanFeedback.name}</div>}
+                </div>
+              </div>
+              {scanFeedback.kind === "success" && (
+                <div className="shrink-0 text-right">
+                  <div className="text-xs font-medium text-emerald-800">Сейчас в подсчёте</div>
+                  <div className="text-2xl font-bold tabular-nums">{qty(scanFeedback.quantity)} шт.</div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2093,10 +2209,18 @@ function CountingWorkspace(props: {
             </tr>
           )}
           {lines.map((line, index) => (
-            <tr key={line.id}>
+            <tr
+              key={line.id}
+              className={`transition-colors duration-500 ${highlightedLineId === line.id ? "bg-emerald-100 outline outline-2 outline-inset outline-emerald-400" : ""}`}
+            >
               <td>
                 <div className="font-medium text-zinc-950">{line.name}</div>
                 <div className="text-xs text-zinc-500">{line.brand || "без бренда"} · {line.unitId || "шт"}</div>
+                {highlightedLineId === line.id && (
+                  <span key={scanFeedback?.token} className="mt-1 inline-flex animate-pulse items-center gap-1 text-xs font-semibold text-emerald-800">
+                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />Только что +1 · теперь {qty(line.finalQuantity)} шт.
+                  </span>
+                )}
                 {line.isUnexpected && <EcoBadge tone="rust">найден дополнительно</EcoBadge>}
               </td>
               <td>
