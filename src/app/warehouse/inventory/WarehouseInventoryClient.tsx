@@ -32,6 +32,7 @@ import { EcoBadge, EcoButton, EcoCard, EcoInput, EcoKpi, EcoSelect, EcoTable } f
 import { safeReadJson } from "@/lib/http-json";
 
 const INVENTORY_CATEGORIES = [
+  "Моторное масло на разлив",
   "Моторное масло",
   "Трансмиссионное масло",
   "Масляные фильтры",
@@ -811,6 +812,9 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       if (path === "cancel") {
         setLines([]);
         setInputValues({});
+        setReconciliation(null);
+      } else if (path === "begin-recount") {
+        setLineFilters({ search: "", status: "RECOUNT_REQUIRED", cell: "" });
         setReconciliation(null);
       } else if (path === "complete-counting" || path === "submit-review" || path === "approve" || path === "post" || path === "reverse") {
         await loadReconciliation(current.id);
@@ -2360,6 +2364,7 @@ function ReconciliationWorkspace({
   const shortageRows = lines.filter((line) => (line.differenceQuantity ?? 0) < 0);
   const surplusRows = lines.filter((line) => (line.differenceQuantity ?? 0) > 0);
   const missingRows = lines.filter((line) => line.comment === "Не отсканирован при инвентаризации");
+  const recountRows = lines.filter((line) => line.requiresRecount || (line.finalAction || line.proposedAction) === "RECOUNT");
   const cellTransferRows = lines.filter((line) => (line.finalAction || line.proposedAction) === "CELL_TRANSFER");
   const technicalRows = lines.filter((line) => (line.finalAction || line.proposedAction || "").includes("TECHNICAL"));
   const managementRows = lines.filter((line) => (line.finalAction || line.proposedAction) === "SHORTAGE_EXPENSE");
@@ -2395,11 +2400,21 @@ function ReconciliationWorkspace({
               <li>Технические корректировки не повлияют на прибыль.</li>
               <li>Складских движений в ведомости: {data?.movements.length ?? 0}.</li>
             </ul>
-            {unresolvedReasons > 0 && <p className="mt-3 text-sm font-medium text-red-700">Нельзя провести: {unresolvedReasons} строки без причины расхождения.</p>}
+            {unresolvedReasons > 0 && <p className="mt-3 text-sm font-medium text-red-700">Нельзя провести: {unresolvedReasons} строк без причины расхождения.</p>}
+            {recountRows.length > 0 && current.status === "REVIEW" && (
+              <p className="mt-2 text-sm text-amber-800">
+                Для повторного подсчёта выбрано строк: {recountRows.length}. Нажмите «Перейти к пересчёту», затем введите фактическое количество и снова завершите подсчёт.
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-            {current.status === "REVIEW" && <EcoButton onClick={() => void mutateSession("submit-review")} disabled={working}><Send className="h-4 w-4" aria-hidden />На подтверждение</EcoButton>}
-            {(current.status === "REVIEW" || (current.status === "AWAITING_APPROVAL" && !current.approvedAt)) && <EcoButton onClick={() => void mutateSession("approve")} disabled={working}><ShieldCheck className="h-4 w-4" aria-hidden />Подтвердить владельцем</EcoButton>}
+            {current.status === "REVIEW" && <EcoButton onClick={() => void mutateSession("submit-review")} disabled={working || unresolvedReasons > 0 || recountRows.length > 0}><Send className="h-4 w-4" aria-hidden />На подтверждение</EcoButton>}
+            {current.status === "REVIEW" && recountRows.length > 0 && (
+              <EcoButton variant="primary" onClick={() => void mutateSession("begin-recount")} disabled={working}>
+                <RotateCcw className="h-4 w-4" aria-hidden />Перейти к пересчёту ({recountRows.length})
+              </EcoButton>
+            )}
+            {(current.status === "REVIEW" || (current.status === "AWAITING_APPROVAL" && !current.approvedAt)) && <EcoButton onClick={() => void mutateSession("approve")} disabled={working || unresolvedReasons > 0 || recountRows.length > 0}><ShieldCheck className="h-4 w-4" aria-hidden />Подтвердить владельцем</EcoButton>}
             {current.status === "AWAITING_APPROVAL" && (
               <EcoButton variant="primary" onClick={() => void mutateSession("post", { idempotencyKey: crypto.randomUUID() })} disabled={working || !canPost}>
                 <CheckCircle2 className="h-4 w-4" aria-hidden />Провести инвентаризацию
@@ -2411,7 +2426,7 @@ function ReconciliationWorkspace({
         </div>
       </EcoCard>
 
-      <EcoTable className="max-h-[660px]">
+      <EcoTable className="max-h-[660px] !overflow-auto">
         <thead>
           <tr>
             <th>Товар</th>

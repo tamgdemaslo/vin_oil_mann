@@ -5,6 +5,7 @@ import {
   addInventoryProduct,
   approveInventorySession,
   bindInventoryBarcode,
+  beginInventoryRecount,
   cancelInventorySession,
   completeInventoryCounting,
   countInventoryProduct,
@@ -272,6 +273,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (action === "pause") return apiResult(await setInventoryCountingPaused(sessionId, true, session.user));
     if (action === "resume") return apiResult(await setInventoryCountingPaused(sessionId, false, session.user));
     if (action === "complete-counting") return apiResult(await completeInventoryCounting(sessionId, session.user));
+    if (action === "begin-recount") return apiResult(await beginInventoryRecount(sessionId, session.user));
     if (action === "submit-review") return apiResult(await submitInventoryReview(sessionId, session.user));
     if (action === "approve") return apiResult(await approveInventorySession(sessionId, session.user));
     if (action === "post") return apiResult(await postInventorySession(sessionId, body as Parameters<typeof postInventorySession>[1], session.user));

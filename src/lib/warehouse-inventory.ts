@@ -5,6 +5,7 @@ import { calculateWeightedAverageCostCents, requireBalanceAverageCost } from "@/
 import { lockInventoryCostKeys } from "@/lib/inventory-costing-db";
 
 export const INVENTORY_CATEGORIES = [
+  "Моторное масло на разлив",
   "Моторное масло",
   "Трансмиссионное масло",
   "Масляные фильтры",
@@ -187,6 +188,9 @@ function stockTracked(entityType: string | null | undefined) {
 function categoryForProduct(product: { groupPath?: string | null; name?: string | null }) {
   const source = `${product.groupPath ?? ""} ${product.name ?? ""}`.toLowerCase();
   if (!source.trim()) return "";
+  if ((source.includes("моторн") || source.includes("масло")) && /(?:на разлив|розлив|бочк)/.test(source)) {
+    return "Моторное масло на разлив";
+  }
   for (const category of INVENTORY_CATEGORIES) {
     if (category === "Прочее") continue;
     if (source.includes(category.toLowerCase())) return category;
@@ -1406,6 +1410,36 @@ export async function submitInventoryReview(sessionId: string, user: User) {
     });
     await writeAudit(tx, { sessionId, action: "SUBMIT_REVIEW", user });
     return { ok: true as const, data: { session: mapSession(row) } };
+  });
+  return result;
+}
+
+export async function beginInventoryRecount(sessionId: string, user: User) {
+  const result = await prisma.$transaction(async (tx) => {
+    const session = await tx.inventorySession.findUnique({ where: { id: sessionId } });
+    if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
+    if (session.status !== "REVIEW") {
+      return { ok: false as const, error: "Повторный пересчёт можно начать только со сверки" };
+    }
+    const recountLines = await tx.inventoryLine.count({
+      where: { inventorySessionId: sessionId, status: { not: "EXCLUDED" }, requiresRecount: true },
+    });
+    if (recountLines === 0) return { ok: false as const, error: "Сначала выберите действие «Повторный пересчёт» хотя бы для одной строки" };
+
+    const updated = await tx.inventorySession.update({
+      where: { id: sessionId },
+      data: {
+        status: "RECOUNT_REQUIRED",
+        countingCompletedAt: null,
+        reviewedAt: null,
+        approvedAt: null,
+        approvedById: null,
+        version: { increment: 1 },
+      },
+      include: { organization: true, warehouse: true, _count: { select: { lines: true } } },
+    });
+    await writeAudit(tx, { sessionId, action: "BEGIN_RECOUNT", newValue: { recountLines }, user });
+    return { ok: true as const, data: { session: mapSession(updated), recountLines } };
   });
   return result;
 }
