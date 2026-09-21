@@ -196,6 +196,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
         search: sp.get("search") ?? undefined,
         status: sp.get("status") ?? undefined,
         cell: sp.get("cell") ?? undefined,
+        countedOnly: sp.get("countedOnly") === "1",
         limit: Number(sp.get("limit") ?? 100),
         offset: Number(sp.get("offset") ?? 0),
       }));

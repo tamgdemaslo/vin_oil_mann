@@ -910,11 +910,12 @@ export async function setInventoryCountingPaused(sessionId: string, paused: bool
   return { ok: true as const, data: { session: mapSession(updated) } };
 }
 
-export async function listInventoryLines(sessionId: string, params: { search?: string; status?: string; cell?: string; limit?: number; offset?: number } = {}) {
+export async function listInventoryLines(sessionId: string, params: { search?: string; status?: string; cell?: string; countedOnly?: boolean; limit?: number; offset?: number } = {}) {
   const search = cleanText(params.search)?.toLowerCase();
   const where: Prisma.InventoryLineWhereInput = { inventorySessionId: sessionId };
   if (params.status && params.status !== "ALL") where.status = params.status;
   if (params.cell) where.cellId = params.cell;
+  if (params.countedOnly) where.finalQuantity = { not: null };
   if (search) {
     where.product = {
       OR: [
@@ -2085,6 +2086,13 @@ export async function scanInventoryBarcode(sessionId: string, body: { barcode?: 
     include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
   });
   if (!line) {
+    if (body.mode === "INCREMENT") {
+      const added = await addInventoryProduct(sessionId, { productId: product.id }, user);
+      if (!added.ok) return added;
+      const counted = await incrementInventoryLine(session, added.data.line.id, user, "BARCODE", barcode);
+      if (!counted.ok) return counted;
+      return { ok: true as const, data: { ...counted.data, addedToSession: true } };
+    }
     return { ok: true as const, data: { status: "OUT_OF_SCOPE", product: { id: product.id, name: product.name, category: categoryForProduct(product) } } };
   }
   if (body.mode === "INCREMENT") {

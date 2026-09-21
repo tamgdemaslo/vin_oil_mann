@@ -26,7 +26,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EcoBadge, EcoButton, EcoCard, EcoInput, EcoKpi, EcoSelect, EcoTable } from "@/components/platform/EcoUI";
 import { safeReadJson } from "@/lib/http-json";
 
@@ -240,6 +240,10 @@ function qty(value: number | null | undefined) {
 
 function splitList(value: string) {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function isLikelyScannedBarcode(value: string) {
+  return /^(?:\d{8}|\d{12,14})$/.test(value.trim());
 }
 
 function parseCsvLine(line: string) {
@@ -536,11 +540,12 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     setCurrent(data.session);
   }, [sessionId]);
 
-  const loadLines = useCallback(async (sessionId: string) => {
+  const loadLines = useCallback(async (sessionId: string, countedOnly = false) => {
     const params = new URLSearchParams();
     if (lineFilters.search) params.set("search", lineFilters.search);
     if (lineFilters.status && lineFilters.status !== "ALL") params.set("status", lineFilters.status);
     if (lineFilters.cell) params.set("cell", lineFilters.cell);
+    if (countedOnly) params.set("countedOnly", "1");
     params.set("limit", "250");
     const data = await requestJson<LinesResponse>(`/api/inventory/sessions/${sessionId}/lines?${params.toString()}`);
     setLines(data.lines);
@@ -606,11 +611,11 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   useEffect(() => {
     if (!currentId) return;
     if (["COUNTING", "RECOUNT_REQUIRED", "PAUSED"].includes(currentStatus)) {
-      void loadLines(currentId).catch((error) => setMessage(error instanceof Error ? error.message : "Не удалось загрузить строки"));
+      void loadLines(currentId, current?.countMode === "SCAN").catch((error) => setMessage(error instanceof Error ? error.message : "Не удалось загрузить строки"));
     } else {
       void loadReconciliation(currentId).catch((error) => setMessage(error instanceof Error ? error.message : "Не удалось загрузить сверку"));
     }
-  }, [currentId, currentStatus, lineFilters, loadLines, loadReconciliation]);
+  }, [current?.countMode, currentId, currentStatus, lineFilters, loadLines, loadReconciliation]);
 
   useEffect(() => {
     if (current?.countMode === "SCAN") setScanner((prev) => ({ ...prev, mode: "INCREMENT" }));
@@ -839,12 +844,12 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     }
   }
 
-  async function scanBarcode() {
-    const barcode = scanner.barcode.trim();
+  async function scanBarcode(barcodeOverride?: string) {
+    const barcode = (barcodeOverride ?? scanner.barcode).trim();
     if (!current || working || !barcode) return;
     let needsProductSelection = false;
     setWorking(true);
-    setScanner((prev) => ({ ...prev, barcode: "" }));
+    setScanner((prev) => prev.barcode.trim() === barcode ? { ...prev, barcode: "" } : prev);
     try {
       const data = await requestJson<{
         status: string;
@@ -852,6 +857,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         product?: { id: string; name: string; category: string };
         products?: Array<{ id: string; name: string; article?: string }>;
         wasCounted?: boolean;
+        addedToSession?: boolean;
       }>(`/api/inventory/sessions/${current.id}/scan`, {
         method: "POST",
         body: JSON.stringify({ barcode, mode: scanner.mode === "INCREMENT" ? "INCREMENT" : "FIND" }),
@@ -860,7 +866,12 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         setLines((prev) => {
           return [data.line!, ...prev.filter((line) => line.id !== data.line!.id)];
         });
-        setCurrent((prev) => prev ? { ...prev, countedLines: prev.countedLines + (data.wasCounted ? 0 : 1) } : prev);
+        setInputValues((prev) => ({ ...prev, [data.line!.id]: String(data.line!.finalQuantity ?? "") }));
+        setCurrent((prev) => prev ? {
+          ...prev,
+          totalLines: prev.totalLines + (data.addedToSession ? 1 : 0),
+          countedLines: prev.countedLines + (data.wasCounted ? 0 : 1),
+        } : prev);
         setScanResult(`${data.line.name}: ${qty(data.line.finalQuantity)} шт.`);
         setMessage("");
       } else if (data.status === "FOUND" && data.line) {
@@ -904,6 +915,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       });
       if (data.status === "COUNTED" && data.line) {
         setLines((prev) => [data.line!, ...prev.filter((line) => line.id !== data.line!.id)]);
+        setInputValues((prev) => ({ ...prev, [data.line!.id]: String(data.line!.finalQuantity ?? "") }));
         setCurrent((prev) => prev ? {
           ...prev,
           totalLines: prev.totalLines + (data.addedToSession ? 1 : 0),
@@ -936,6 +948,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       setLines((prev) => prev.some((line) => line.id === data.line.id)
         ? prev.map((line) => line.id === data.line.id ? data.line : line)
         : [data.line, ...prev]);
+      setInputValues((prev) => ({ ...prev, [data.line.id]: String(data.line.finalQuantity ?? "") }));
       setCurrent((prev) => prev ? {
         ...prev,
         totalLines: prev.totalLines + (data.addedToSession ? 1 : 0),
@@ -1103,7 +1116,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
                   foundProduct={foundProduct}
                   setFoundProduct={setFoundProduct}
                   bindBarcodeToProduct={bindBarcodeToProduct}
-                  onImported={() => loadLines(current.id)}
+                  onImported={() => loadLines(current.id, current.countMode === "SCAN")}
                   showAccounting={showAccounting}
                   working={working}
                 />
@@ -1646,7 +1659,7 @@ function CountingWorkspace(props: {
   saveCount: (line: InventoryLine, confirmZero?: boolean, source?: string) => Promise<void>;
   scanner: { barcode: string; mode: string };
   setScanner: (updater: { barcode: string; mode: string } | ((prev: { barcode: string; mode: string }) => { barcode: string; mode: string })) => void;
-  scanBarcode: () => Promise<void>;
+  scanBarcode: (barcodeOverride?: string) => Promise<void>;
   scanProduct: (productId: string) => Promise<void>;
   scanResult: string;
   foundProduct: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string };
@@ -1683,11 +1696,51 @@ function CountingWorkspace(props: {
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [quickProductOptions, setQuickProductOptions] = useState<ProductOption[]>([]);
   const [quickSearchLoading, setQuickSearchLoading] = useState(false);
+  const [pendingBarcodes, setPendingBarcodes] = useState<string[]>([]);
+  const scannerBusyRef = useRef(false);
   const inventorySessionId = props.current.id;
+  const countMode = props.current.countMode;
+
+  const submitScannerValue = useCallback((value: string) => {
+    const barcode = value.trim();
+    if (!barcode) return;
+    setQuickProductOptions([]);
+    setScanner((prev) => prev.barcode.trim() === barcode ? { ...prev, barcode: "" } : prev);
+    if (working || scannerBusyRef.current) {
+      setPendingBarcodes((prev) => [...prev, barcode]);
+      return;
+    }
+    scannerBusyRef.current = true;
+    void scanBarcode(barcode).finally(() => {
+      scannerBusyRef.current = false;
+      setPendingBarcodes((prev) => [...prev]);
+    });
+  }, [scanBarcode, setScanner, working]);
+
+  useEffect(() => {
+    if (working || scannerBusyRef.current || pendingBarcodes.length === 0) return;
+    const timer = window.setTimeout(() => {
+      const [next, ...rest] = pendingBarcodes;
+      setPendingBarcodes(rest);
+      scannerBusyRef.current = true;
+      void scanBarcode(next).finally(() => {
+        scannerBusyRef.current = false;
+        setPendingBarcodes((prev) => [...prev]);
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [pendingBarcodes, scanBarcode, working]);
+
+  useEffect(() => {
+    const barcode = scanner.barcode.trim();
+    if (countMode !== "SCAN" || !isLikelyScannedBarcode(barcode)) return;
+    const timer = window.setTimeout(() => submitScannerValue(barcode), 140);
+    return () => window.clearTimeout(timer);
+  }, [countMode, scanner.barcode, submitScannerValue]);
 
   useEffect(() => {
     const query = scanner.barcode.trim();
-    if (query.length < 2) return;
+    if (query.length < 2 || isLikelyScannedBarcode(query)) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setQuickSearchLoading(true);
@@ -1757,15 +1810,28 @@ function CountingWorkspace(props: {
 
   const problemCount = lines.filter((line) => line.status === "PROBLEM" || line.requiresRecount || line.status === "RECOUNT_REQUIRED").length;
   const unexpectedCount = lines.filter((line) => line.isUnexpected).length;
+  const scannedUnits = lines.reduce((total, line) => total + (line.finalQuantity ?? 0), 0);
+  const isScanMode = countMode === "SCAN";
 
   return (
     <div className="space-y-4">
-      <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-        <MiniMetric label="Всего" value={props.current.totalLines} />
-        <MiniMetric label="Посчитано" value={props.current.countedLines} tone="info" />
-        <MiniMetric label="Осталось" value={Math.max(0, props.current.totalLines - props.current.countedLines)} />
-        <MiniMetric label="Проблемы" value={problemCount} tone={problemCount ? "warning" : "neutral"} />
-        <MiniMetric label="Найдено дополнительно" value={unexpectedCount} tone={unexpectedCount ? "rust" : "neutral"} />
+      <section className={`grid gap-2 sm:grid-cols-2 ${isScanMode ? "xl:grid-cols-4" : "xl:grid-cols-5"}`}>
+        {isScanMode ? (
+          <>
+            <MiniMetric label="Пропикано позиций" value={props.current.countedLines} tone="info" />
+            <MiniMetric label="Пропикано единиц" value={qty(scannedUnits)} tone="success" />
+            <MiniMetric label="В очереди" value={pendingBarcodes.length} tone={pendingBarcodes.length ? "warning" : "neutral"} />
+            <MiniMetric label="Найдено дополнительно" value={unexpectedCount} tone={unexpectedCount ? "rust" : "neutral"} />
+          </>
+        ) : (
+          <>
+            <MiniMetric label="Всего" value={props.current.totalLines} />
+            <MiniMetric label="Посчитано" value={props.current.countedLines} tone="info" />
+            <MiniMetric label="Осталось" value={Math.max(0, props.current.totalLines - props.current.countedLines)} />
+            <MiniMetric label="Проблемы" value={problemCount} tone={problemCount ? "warning" : "neutral"} />
+            <MiniMetric label="Найдено дополнительно" value={unexpectedCount} tone={unexpectedCount ? "rust" : "neutral"} />
+          </>
+        )}
       </section>
 
       <EcoCard>
@@ -1775,15 +1841,27 @@ function CountingWorkspace(props: {
               <ScanLine className="h-5 w-5" aria-hidden />
               Сканировать или добавить товар
             </div>
-            <p className="text-sm text-emerald-900">Сканер добавляет одну штуку сразу после Enter</p>
+            <p className="text-sm text-emerald-900">Штрихкод распознаётся и добавляется автоматически</p>
           </div>
-          <form className="relative mt-3" onSubmit={(event) => { event.preventDefault(); void scanBarcode(); }}>
+          <form className="relative mt-3" onSubmit={(event) => {
+            event.preventDefault();
+            const query = scanner.barcode.trim();
+            if (!isLikelyScannedBarcode(query) && quickProductOptions.length > 0) {
+              const product = quickProductOptions[0];
+              setQuickProductOptions([]);
+              setScanner((prev) => ({ ...prev, barcode: "" }));
+              void scanProduct(product.id);
+              return;
+            }
+            submitScannerValue(query);
+          }}>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-500" aria-hidden />
               <EcoInput
                 id="inventory-barcode-input"
-                className="h-12 w-full pl-10 pr-12 text-base"
-                autoFocus={props.current.countMode === "SCAN"}
+                className="h-12 w-full text-base"
+                style={{ paddingLeft: 44, paddingRight: 48 }}
+                autoFocus={countMode === "SCAN"}
                 autoComplete="off"
                 value={scanner.barcode}
                 onChange={(event) => setScanner((prev) => ({ ...prev, barcode: event.target.value }))}
@@ -1800,14 +1878,14 @@ function CountingWorkspace(props: {
                     key={product.id}
                     type="button"
                     className="flex w-full items-center justify-between gap-4 rounded px-3 py-2 text-left hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-700"
-                    onClick={() => { setQuickProductOptions([]); void scanProduct(product.id); }}
+                    onClick={() => { setQuickProductOptions([]); setScanner((prev) => ({ ...prev, barcode: "" })); void scanProduct(product.id); }}
                     disabled={working}
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-zinc-950">{product.name}</span>
                       <span className="block truncate text-xs text-zinc-500">{[product.article, product.code, product.groupPath].filter(Boolean).join(" · ") || "без артикула"}</span>
                     </span>
-                    <span className="shrink-0 text-xs font-semibold text-emerald-800">Добавить +1</span>
+                    <span className="shrink-0 text-xs font-semibold text-emerald-800">+1</span>
                   </button>
                 ))}
               </div>
@@ -1823,7 +1901,7 @@ function CountingWorkspace(props: {
         <div className="mt-4">
           <div className="mb-3 flex items-center gap-2">
             <Search className="h-4 w-4 text-zinc-500" aria-hidden />
-            <h2 className="text-base font-semibold text-zinc-950">Позиции для подсчёта</h2>
+            <h2 className="text-base font-semibold text-zinc-950">{isScanMode ? "Пропиканные товары" : "Позиции для подсчёта"}</h2>
           </div>
           <div className="grid gap-2 md:grid-cols-3">
             <label className="text-xs font-medium text-zinc-500">
@@ -1834,7 +1912,9 @@ function CountingWorkspace(props: {
               Статус
               <EcoSelect value={lineFilters.status} onChange={(event) => setLineFilters((prev) => ({ ...prev, status: event.target.value }))}>
                 <option value="ALL">Все статусы</option>
-                {Object.entries(LINE_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                {Object.entries(LINE_STATUS_LABELS)
+                  .filter(([value]) => !isScanMode || value !== "NOT_COUNTED")
+                  .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </EcoSelect>
             </label>
             <label className="text-xs font-medium text-zinc-500">
@@ -1845,11 +1925,13 @@ function CountingWorkspace(props: {
               </EcoSelect>
             </label>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "NOT_COUNTED", cell: "" })}>Не посчитано</EcoButton>
-            <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "RECOUNT_REQUIRED", cell: "" })}>Требует пересчёта</EcoButton>
-            <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "PROBLEM", cell: "" })}>Проблемы</EcoButton>
-          </div>
+          {!isScanMode && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "NOT_COUNTED", cell: "" })}>Не посчитано</EcoButton>
+              <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "RECOUNT_REQUIRED", cell: "" })}>Требует пересчёта</EcoButton>
+              <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "PROBLEM", cell: "" })}>Проблемы</EcoButton>
+            </div>
+          )}
         </div>
       </EcoCard>
 
@@ -1935,6 +2017,21 @@ function CountingWorkspace(props: {
           </tr>
         </thead>
         <tbody>
+          {lines.length === 0 && (
+            <tr>
+              <td colSpan={showAccounting ? 10 : 9} className="py-12 text-center">
+                <div className="mx-auto flex max-w-md flex-col items-center gap-2">
+                  <ScanLine className="h-8 w-8 text-zinc-400" aria-hidden />
+                  <div className="font-semibold text-zinc-900">{isScanMode ? "Пока ничего не пропикано" : "Позиции не найдены"}</div>
+                  <div className="text-sm text-zinc-500">
+                    {isScanMode
+                      ? "Отсканируйте первый товар или найдите его по названию — он появится здесь с фактическим количеством."
+                      : "Измените фильтры списка или проверьте область инвентаризации."}
+                  </div>
+                </div>
+              </td>
+            </tr>
+          )}
           {lines.map((line, index) => (
             <tr key={line.id}>
               <td>
