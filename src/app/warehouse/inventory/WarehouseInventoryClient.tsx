@@ -776,7 +776,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       await loadSessions();
       if (isDetail) {
         setCurrent(data.session);
-        await loadLines(data.session.id);
+        await loadLines(data.session.id, data.session.countMode === "SCAN");
       } else {
         router.push(`/warehouse/inventory/${data.session.id}`);
       }
@@ -820,7 +820,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       } else if (path === "complete-counting" || path === "submit-review" || path === "approve" || path === "post" || path === "reverse") {
         await loadReconciliation(current.id);
       } else {
-        await loadLines(current.id);
+        await loadLines(current.id, current.countMode === "SCAN");
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Действие не выполнено");

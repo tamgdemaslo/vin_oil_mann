@@ -553,31 +553,6 @@ function inventorySummaryContribution(line: InventorySummaryLine) {
   };
 }
 
-async function updateInventorySessionSummaryForLineChange(
-  tx: Tx,
-  sessionId: string,
-  before: InventorySummaryLine,
-  after: InventorySummaryLine,
-) {
-  const previous = inventorySummaryContribution(before);
-  const next = inventorySummaryContribution(after);
-  await tx.inventorySession.update({
-    where: { id: sessionId },
-    data: {
-      countedLines: { increment: next.countedLines - previous.countedLines },
-      matchingLines: { increment: next.matchingLines - previous.matchingLines },
-      shortageLines: { increment: next.shortageLines - previous.shortageLines },
-      surplusLines: { increment: next.surplusLines - previous.surplusLines },
-      recountRequiredLines: { increment: next.recountRequiredLines - previous.recountRequiredLines },
-      totalShortageCostCents: { increment: next.totalShortageCostCents - previous.totalShortageCostCents },
-      totalSurplusCostCents: { increment: next.totalSurplusCostCents - previous.totalSurplusCostCents },
-      managementExpenseCents: { increment: next.managementExpenseCents - previous.managementExpenseCents },
-      technicalAdjustmentCents: { increment: next.technicalAdjustmentCents - previous.technicalAdjustmentCents },
-      version: { increment: 1 },
-    },
-  });
-}
-
 async function movementsDeltaDuringCount(tx: Tx, line: { productId: string | null; warehouseId: string; cellId: string | null }, from: Date | null, to: Date) {
   if (!from || !line.productId) return ZERO;
   const rows = await tx.inventoryLedgerEntry.findMany({
@@ -2061,14 +2036,17 @@ type CountableInventorySession = Prisma.InventorySessionGetPayload<Record<string
 
 async function incrementInventoryLine(
   session: CountableInventorySession,
-  lineId: string,
+  locator: { lineId: string } | { productId: string },
   user: User,
   source: "BARCODE" | "PRODUCT_SEARCH",
   barcode?: string,
 ) {
   const counted = await prisma.$transaction(async (tx) => {
     const currentLine = await tx.inventoryLine.findFirst({
-      where: { id: lineId, inventorySessionId: session.id },
+      where: {
+        inventorySessionId: session.id,
+        ...("lineId" in locator ? { id: locator.lineId } : { productId: locator.productId }),
+      },
       include: { product: true, _count: { select: { countEntries: true } } },
     });
     if (!currentLine) return null;
@@ -2081,16 +2059,15 @@ async function incrementInventoryLine(
     const expected = currentLine.snapshotQuantity.plus(movementDelta);
     const difference = quantity.minus(expected);
     const proposedAction = difference.lt(0) ? "SHORTAGE_EXPENSE" : difference.gt(0) ? "SURPLUS_RECEIPT" : "NO_ACTION";
-    await tx.inventoryCountEntry.create({
-      data: {
-        inventoryLineId: currentLine.id,
-        sequence,
-        quantity,
-        counterId: user.login,
-        countedAt,
-        comment: null,
-        source,
-      },
+    const differenceCostCents = costForDifference(difference, currentLine.unitCostSnapshotCents);
+    const previousSummary = inventorySummaryContribution(currentLine);
+    const nextSummary = inventorySummaryContribution({
+      ...currentLine,
+      finalQuantity: quantity,
+      differenceQuantity: difference,
+      differenceCostCents,
+      status: "COUNTED",
+      requiresRecount: false,
     });
     const updated = await tx.inventoryLine.update({
       where: { id: currentLine.id },
@@ -2099,7 +2076,7 @@ async function incrementInventoryLine(
         firstCountQuantity: currentLine.firstCountQuantity ?? quantity,
         finalQuantity: quantity,
         differenceQuantity: difference,
-        differenceCostCents: costForDifference(difference, currentLine.unitCostSnapshotCents),
+        differenceCostCents,
         countedAt: currentLine.countedAt ?? countedAt,
         countedById: currentLine.countedById ?? user.login,
         status: "COUNTED",
@@ -2107,10 +2084,33 @@ async function incrementInventoryLine(
         finalAction: proposedAction,
         requiresRecount: false,
         stockVersion: { increment: 1 },
+        countEntries: {
+          create: {
+            sequence,
+            quantity,
+            counterId: user.login,
+            countedAt,
+            comment: null,
+            source,
+          },
+        },
+        session: {
+          update: {
+            countedLines: { increment: nextSummary.countedLines - previousSummary.countedLines },
+            matchingLines: { increment: nextSummary.matchingLines - previousSummary.matchingLines },
+            shortageLines: { increment: nextSummary.shortageLines - previousSummary.shortageLines },
+            surplusLines: { increment: nextSummary.surplusLines - previousSummary.surplusLines },
+            recountRequiredLines: { increment: nextSummary.recountRequiredLines - previousSummary.recountRequiredLines },
+            totalShortageCostCents: { increment: nextSummary.totalShortageCostCents - previousSummary.totalShortageCostCents },
+            totalSurplusCostCents: { increment: nextSummary.totalSurplusCostCents - previousSummary.totalSurplusCostCents },
+            managementExpenseCents: { increment: nextSummary.managementExpenseCents - previousSummary.managementExpenseCents },
+            technicalAdjustmentCents: { increment: nextSummary.technicalAdjustmentCents - previousSummary.technicalAdjustmentCents },
+            version: { increment: 1 },
+          },
+        },
       },
       include: { product: true },
     });
-    await updateInventorySessionSummaryForLineChange(tx, session.id, currentLine, updated);
     await writeAudit(tx, {
       sessionId: session.id,
       lineId: currentLine.id,
@@ -2164,7 +2164,7 @@ export async function countInventoryProduct(sessionId: string, body: { productId
     if (!added.ok) return added;
     line = { id: added.data.line.id };
   }
-  const counted = await incrementInventoryLine(session, line.id, user, "PRODUCT_SEARCH");
+  const counted = await incrementInventoryLine(session, { lineId: line.id }, user, "PRODUCT_SEARCH");
   if (!counted.ok) return counted;
   return { ok: true as const, data: { ...counted.data, addedToSession } };
 }
@@ -2172,35 +2172,37 @@ export async function countInventoryProduct(sessionId: string, body: { productId
 export async function scanInventoryBarcode(sessionId: string, body: { barcode?: string; mode?: string }, user: User) {
   const barcode = cleanText(body.barcode);
   if (!barcode) return { ok: false as const, error: "Введите или отсканируйте штрихкод" };
-  const session = await prisma.inventorySession.findUnique({ where: { id: sessionId } });
+  const [session, products] = await Promise.all([
+    prisma.inventorySession.findUnique({ where: { id: sessionId } }),
+    prisma.localProduct.findMany({
+      where: { OR: [{ barcodeEan13: barcode }, { barcodeEan8: barcode }, { barcodeCode128: barcode }, { code: barcode }] },
+      take: 10,
+    }),
+  ]);
   if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
   if (!COUNTABLE_STATUSES.includes(session.status)) return { ok: false as const, error: "Сканирование сейчас недоступно" };
-  const products = await prisma.localProduct.findMany({
-    where: { branchId: session.branchId, OR: [{ barcodeEan13: barcode }, { barcodeEan8: barcode }, { barcodeCode128: barcode }, { code: barcode }] },
-    take: 10,
-  });
   if (products.length === 0) return { ok: true as const, data: { status: "NOT_FOUND", barcode } };
   if (products.length > 1) {
     return { ok: true as const, data: { status: "CONFLICT", products: products.map((product) => ({ id: product.id, name: product.name, article: product.article })) } };
   }
   const product = products[0];
+  if (body.mode === "INCREMENT") {
+    const counted = await incrementInventoryLine(session, { productId: product.id }, user, "BARCODE", barcode);
+    if (counted.ok) return counted;
+    if (counted.status === 404) {
+      const added = await addInventoryProduct(sessionId, { productId: product.id }, user);
+      if (!added.ok) return added;
+      const addedCount = await incrementInventoryLine(session, { lineId: added.data.line.id }, user, "BARCODE", barcode);
+      if (!addedCount.ok) return addedCount;
+      return { ok: true as const, data: { ...addedCount.data, addedToSession: true } };
+    }
+    return counted;
+  }
   const line = await prisma.inventoryLine.findFirst({
     where: { inventorySessionId: sessionId, productId: product.id },
     include: { product: true },
   });
-  if (!line) {
-    if (body.mode === "INCREMENT") {
-      const added = await addInventoryProduct(sessionId, { productId: product.id }, user);
-      if (!added.ok) return added;
-      const counted = await incrementInventoryLine(session, added.data.line.id, user, "BARCODE", barcode);
-      if (!counted.ok) return counted;
-      return { ok: true as const, data: { ...counted.data, addedToSession: true } };
-    }
-    return { ok: true as const, data: { status: "OUT_OF_SCOPE", product: { id: product.id, name: product.name, category: categoryForProduct(product) } } };
-  }
-  if (body.mode === "INCREMENT") {
-    return incrementInventoryLine(session, line.id, user, "BARCODE", barcode);
-  }
+  if (!line) return { ok: true as const, data: { status: "OUT_OF_SCOPE", product: { id: product.id, name: product.name, category: categoryForProduct(product) } } };
   return { ok: true as const, data: { status: "FOUND", line: mapLine(line) } };
 }
 
