@@ -512,6 +512,71 @@ async function recalculateSessionSummary(tx: Tx, sessionId: string) {
   });
 }
 
+type InventorySummaryLine = {
+  status: string;
+  finalQuantity: Prisma.Decimal | null;
+  differenceQuantity: Prisma.Decimal | null;
+  differenceCostCents: number | null;
+  requiresRecount: boolean;
+  affectsManagementProfit: boolean;
+};
+
+function inventorySummaryContribution(line: InventorySummaryLine) {
+  if (line.status === "EXCLUDED") {
+    return {
+      countedLines: 0,
+      matchingLines: 0,
+      shortageLines: 0,
+      surplusLines: 0,
+      recountRequiredLines: 0,
+      totalShortageCostCents: 0,
+      totalSurplusCostCents: 0,
+      managementExpenseCents: 0,
+      technicalAdjustmentCents: 0,
+    };
+  }
+  const difference = line.differenceQuantity?.toNumber() ?? null;
+  const cost = Math.abs(line.differenceCostCents ?? 0);
+  const shortage = difference != null && difference < 0;
+  const surplus = difference != null && difference > 0;
+  return {
+    countedLines: line.finalQuantity == null ? 0 : 1,
+    matchingLines: difference === 0 ? 1 : 0,
+    shortageLines: shortage ? 1 : 0,
+    surplusLines: surplus ? 1 : 0,
+    recountRequiredLines: line.requiresRecount ? 1 : 0,
+    totalShortageCostCents: shortage ? cost : 0,
+    totalSurplusCostCents: surplus ? cost : 0,
+    managementExpenseCents: shortage && line.affectsManagementProfit ? cost : 0,
+    technicalAdjustmentCents: (shortage && !line.affectsManagementProfit) || (surplus && !line.affectsManagementProfit) ? cost : 0,
+  };
+}
+
+async function updateInventorySessionSummaryForLineChange(
+  tx: Tx,
+  sessionId: string,
+  before: InventorySummaryLine,
+  after: InventorySummaryLine,
+) {
+  const previous = inventorySummaryContribution(before);
+  const next = inventorySummaryContribution(after);
+  await tx.inventorySession.update({
+    where: { id: sessionId },
+    data: {
+      countedLines: { increment: next.countedLines - previous.countedLines },
+      matchingLines: { increment: next.matchingLines - previous.matchingLines },
+      shortageLines: { increment: next.shortageLines - previous.shortageLines },
+      surplusLines: { increment: next.surplusLines - previous.surplusLines },
+      recountRequiredLines: { increment: next.recountRequiredLines - previous.recountRequiredLines },
+      totalShortageCostCents: { increment: next.totalShortageCostCents - previous.totalShortageCostCents },
+      totalSurplusCostCents: { increment: next.totalSurplusCostCents - previous.totalSurplusCostCents },
+      managementExpenseCents: { increment: next.managementExpenseCents - previous.managementExpenseCents },
+      technicalAdjustmentCents: { increment: next.technicalAdjustmentCents - previous.technicalAdjustmentCents },
+      version: { increment: 1 },
+    },
+  });
+}
+
 async function movementsDeltaDuringCount(tx: Tx, line: { productId: string | null; warehouseId: string; cellId: string | null }, from: Date | null, to: Date) {
   if (!from || !line.productId) return ZERO;
   const rows = await tx.inventoryLedgerEntry.findMany({
@@ -1888,6 +1953,118 @@ export async function addInventoryProduct(
   return result;
 }
 
+type CountableInventorySession = Prisma.InventorySessionGetPayload<Record<string, never>>;
+
+async function incrementInventoryLine(
+  session: CountableInventorySession,
+  lineId: string,
+  user: User,
+  source: "BARCODE" | "PRODUCT_SEARCH",
+  barcode?: string,
+) {
+  const counted = await prisma.$transaction(async (tx) => {
+    const currentLine = await tx.inventoryLine.findFirst({
+      where: { id: lineId, inventorySessionId: session.id },
+      include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
+    });
+    if (!currentLine) return null;
+    const quantity = (currentLine.finalQuantity ?? ZERO).plus(1);
+    const sequence = currentLine.countEntries.length + 1;
+    const countedAt = new Date();
+    const movementDelta = session.warehouseMode === "LIVE"
+      ? await movementsDeltaDuringCount(tx, currentLine, session.snapshotAt, countedAt)
+      : ZERO;
+    const expected = currentLine.snapshotQuantity.plus(movementDelta);
+    const difference = quantity.minus(expected);
+    const proposedAction = difference.lt(0) ? "SHORTAGE_EXPENSE" : difference.gt(0) ? "SURPLUS_RECEIPT" : "NO_ACTION";
+    await tx.inventoryCountEntry.create({
+      data: {
+        inventoryLineId: currentLine.id,
+        sequence,
+        quantity,
+        counterId: user.login,
+        countedAt,
+        comment: null,
+        source,
+      },
+    });
+    const updated = await tx.inventoryLine.update({
+      where: { id: currentLine.id },
+      data: {
+        expectedQuantityAtCount: expected,
+        firstCountQuantity: currentLine.firstCountQuantity ?? quantity,
+        finalQuantity: quantity,
+        differenceQuantity: difference,
+        differenceCostCents: costForDifference(difference, currentLine.unitCostSnapshotCents),
+        countedAt: currentLine.countedAt ?? countedAt,
+        countedById: currentLine.countedById ?? user.login,
+        status: "COUNTED",
+        proposedAction,
+        finalAction: proposedAction,
+        requiresRecount: false,
+        stockVersion: { increment: 1 },
+      },
+      include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
+    });
+    await updateInventorySessionSummaryForLineChange(tx, session.id, currentLine, updated);
+    await writeAudit(tx, {
+      sessionId: session.id,
+      lineId: currentLine.id,
+      action: "SCAN_INCREMENT",
+      oldValue: { quantity: currentLine.finalQuantity?.toNumber() ?? 0 },
+      newValue: { quantity: quantity.toNumber(), barcode: barcode ?? null },
+      user,
+      source,
+    });
+    return { updated, wasCounted: currentLine.finalQuantity != null };
+  });
+  if (!counted) return { ok: false as const, error: "Строка инвентаризации не найдена", status: 404 };
+  return { ok: true as const, data: { status: "COUNTED", line: mapLine(counted.updated), wasCounted: counted.wasCounted } };
+}
+
+export async function searchInventoryProducts(sessionId: string, query?: string) {
+  const search = cleanText(query);
+  if (!search || search.length < 2) return { products: [] };
+  const session = await prisma.inventorySession.findUnique({ where: { id: sessionId }, select: { branchId: true } });
+  if (!session) return null;
+  const products = await prisma.localProduct.findMany({
+    where: {
+      branchId: session.branchId,
+      archived: false,
+      OR: [
+        { name: { contains: search, mode: "insensitive" } },
+        { article: { contains: search, mode: "insensitive" } },
+        { code: { contains: search, mode: "insensitive" } },
+        { barcodeEan13: { contains: search, mode: "insensitive" } },
+        { barcodeEan8: { contains: search, mode: "insensitive" } },
+        { barcodeCode128: { contains: search, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true, name: true, article: true, code: true, groupPath: true },
+    orderBy: { name: "asc" },
+    take: 12,
+  });
+  return { products };
+}
+
+export async function countInventoryProduct(sessionId: string, body: { productId?: string }, user: User) {
+  const productId = cleanText(body.productId);
+  if (!productId) return { ok: false as const, error: "Выберите товар" };
+  const session = await prisma.inventorySession.findUnique({ where: { id: sessionId } });
+  if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
+  if (!COUNTABLE_STATUSES.includes(session.status)) return { ok: false as const, error: "Подсчёт сейчас недоступен" };
+  let line = await prisma.inventoryLine.findFirst({ where: { inventorySessionId: sessionId, productId }, select: { id: true } });
+  const addedToSession = !line;
+  if (!line) {
+    const added = await addInventoryProduct(sessionId, { productId }, user);
+    if (!added.ok) return added;
+    line = { id: added.data.line.id };
+  }
+  const counted = await incrementInventoryLine(session, line.id, user, "PRODUCT_SEARCH");
+  if (!counted.ok) return counted;
+  return { ok: true as const, data: { ...counted.data, addedToSession } };
+}
+
 export async function scanInventoryBarcode(sessionId: string, body: { barcode?: string; mode?: string }, user: User) {
   const barcode = cleanText(body.barcode);
   if (!barcode) return { ok: false as const, error: "Введите или отсканируйте штрихкод" };
@@ -1911,71 +2088,7 @@ export async function scanInventoryBarcode(sessionId: string, body: { barcode?: 
     return { ok: true as const, data: { status: "OUT_OF_SCOPE", product: { id: product.id, name: product.name, category: categoryForProduct(product) } } };
   }
   if (body.mode === "INCREMENT") {
-    const counted = await prisma.$transaction(async (tx) => {
-      if (line.productId) {
-        await lockInventoryCostKeys(tx, {
-          branchId: session.branchId,
-          storeId: session.warehouseId,
-          productIds: [line.productId],
-        });
-      }
-      const currentLine = await tx.inventoryLine.findFirst({
-        where: { id: line.id, inventorySessionId: sessionId },
-        include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
-      });
-      if (!currentLine) return null;
-      const quantity = (currentLine.finalQuantity ?? ZERO).plus(1);
-      const sequence = currentLine.countEntries.length + 1;
-      const countedAt = new Date();
-      const movementDelta = session.warehouseMode === "LIVE"
-        ? await movementsDeltaDuringCount(tx, currentLine, session.snapshotAt, countedAt)
-        : ZERO;
-      const expected = currentLine.snapshotQuantity.plus(movementDelta);
-      const difference = quantity.minus(expected);
-      const proposedAction = difference.lt(0) ? "SHORTAGE_EXPENSE" : difference.gt(0) ? "SURPLUS_RECEIPT" : "NO_ACTION";
-      await tx.inventoryCountEntry.create({
-        data: {
-          inventoryLineId: currentLine.id,
-          sequence,
-          quantity,
-          counterId: user.login,
-          countedAt,
-          comment: null,
-          source: "BARCODE",
-        },
-      });
-      const updated = await tx.inventoryLine.update({
-        where: { id: currentLine.id },
-        data: {
-          expectedQuantityAtCount: expected,
-          firstCountQuantity: currentLine.firstCountQuantity ?? quantity,
-          finalQuantity: quantity,
-          differenceQuantity: difference,
-          differenceCostCents: costForDifference(difference, currentLine.unitCostSnapshotCents),
-          countedAt: currentLine.countedAt ?? countedAt,
-          countedById: currentLine.countedById ?? user.login,
-          status: "COUNTED",
-          proposedAction,
-          finalAction: proposedAction,
-          requiresRecount: false,
-          stockVersion: { increment: 1 },
-        },
-        include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
-      });
-      await recalculateSessionSummary(tx, sessionId);
-      await writeAudit(tx, {
-        sessionId,
-        lineId: currentLine.id,
-        action: "SCAN_INCREMENT",
-        oldValue: { quantity: currentLine.finalQuantity?.toNumber() ?? 0 },
-        newValue: { quantity: quantity.toNumber(), barcode },
-        user,
-        source: "BARCODE",
-      });
-      return updated;
-    });
-    if (!counted) return { ok: false as const, error: "Строка инвентаризации не найдена", status: 404 };
-    return { ok: true as const, data: { status: "COUNTED", line: mapLine(counted) } };
+    return incrementInventoryLine(session, line.id, user, "BARCODE", barcode);
   }
   return { ok: true as const, data: { status: "FOUND", line: mapLine(line) } };
 }

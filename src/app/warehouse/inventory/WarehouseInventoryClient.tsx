@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  Camera,
   Check,
   CheckCircle2,
   ClipboardList,
@@ -841,7 +840,55 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   }
 
   async function scanBarcode() {
-    if (!current || !scanner.barcode.trim()) return;
+    const barcode = scanner.barcode.trim();
+    if (!current || working || !barcode) return;
+    let needsProductSelection = false;
+    setWorking(true);
+    setScanner((prev) => ({ ...prev, barcode: "" }));
+    try {
+      const data = await requestJson<{
+        status: string;
+        line?: InventoryLine;
+        product?: { id: string; name: string; category: string };
+        products?: Array<{ id: string; name: string; article?: string }>;
+        wasCounted?: boolean;
+      }>(`/api/inventory/sessions/${current.id}/scan`, {
+        method: "POST",
+        body: JSON.stringify({ barcode, mode: scanner.mode === "INCREMENT" ? "INCREMENT" : "FIND" }),
+      });
+      if (data.status === "COUNTED" && data.line) {
+        setLines((prev) => {
+          return [data.line!, ...prev.filter((line) => line.id !== data.line!.id)];
+        });
+        setCurrent((prev) => prev ? { ...prev, countedLines: prev.countedLines + (data.wasCounted ? 0 : 1) } : prev);
+        setScanResult(`${data.line.name}: ${qty(data.line.finalQuantity)} шт.`);
+        setMessage("");
+      } else if (data.status === "FOUND" && data.line) {
+        setInputValues((prev) => ({ ...prev, [data.line!.id]: data.line!.finalQuantity == null ? "" : String(data.line!.finalQuantity) }));
+        setMessage(`Найдена строка: ${data.line.name}`);
+      } else if (data.status === "OUT_OF_SCOPE" && data.product) {
+        needsProductSelection = true;
+        setFoundProduct((prev) => ({ ...prev, productId: data.product!.id, name: data.product!.name, category: data.product!.category, ean: barcode }));
+        setMessage("Товар найден вне выбранной области. Его можно добавить как найденный дополнительно.");
+      } else if (data.status === "CONFLICT") {
+        setMessage(`Один штрихкод у нескольких товаров: ${data.products?.map((item) => item.name).join(", ")}`);
+      } else {
+        needsProductSelection = true;
+        setFoundProduct({ productId: "", ean: barcode, name: "", category: "", cellId: "", quantity: "" });
+        setScanResult("");
+        setMessage("Штрихкод не найден. Выберите товар, которому он принадлежит.");
+      }
+    } catch (error) {
+      setScanner((prev) => ({ ...prev, barcode: prev.barcode || barcode }));
+      setMessage(error instanceof Error ? error.message : "Сканирование не выполнено");
+    } finally {
+      setWorking(false);
+      window.setTimeout(() => document.getElementById(needsProductSelection ? "inventory-product-resolve" : "inventory-barcode-input")?.focus(), 0);
+    }
+  }
+
+  async function scanProduct(productId: string) {
+    if (!current || !productId) return;
     let needsProductSelection = false;
     setWorking(true);
     try {
@@ -849,38 +896,29 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         status: string;
         line?: InventoryLine;
         product?: { id: string; name: string; category: string };
-        products?: Array<{ id: string; name: string; article?: string }>;
-      }>(`/api/inventory/sessions/${current.id}/scan`, {
+        addedToSession?: boolean;
+        wasCounted?: boolean;
+      }>(`/api/inventory/sessions/${current.id}/count-product`, {
         method: "POST",
-        body: JSON.stringify({ barcode: scanner.barcode, mode: scanner.mode === "INCREMENT" ? "INCREMENT" : "FIND" }),
+        body: JSON.stringify({ productId }),
       });
       if (data.status === "COUNTED" && data.line) {
-        setLines((prev) => {
-          const exists = prev.some((line) => line.id === data.line!.id);
-          return exists ? prev.map((line) => (line.id === data.line!.id ? data.line! : line)) : [data.line!, ...prev];
-        });
-        setCurrent((prev) => prev ? { ...prev, countedLines: prev.countedLines + (lines.find((line) => line.id === data.line!.id)?.finalQuantity == null ? 1 : 0) } : prev);
+        setLines((prev) => [data.line!, ...prev.filter((line) => line.id !== data.line!.id)]);
+        setCurrent((prev) => prev ? {
+          ...prev,
+          totalLines: prev.totalLines + (data.addedToSession ? 1 : 0),
+          countedLines: prev.countedLines + (data.wasCounted ? 0 : 1),
+        } : prev);
         setScanResult(`${data.line.name}: ${qty(data.line.finalQuantity)} шт.`);
         setScanner((prev) => ({ ...prev, barcode: "" }));
         setMessage("");
-      } else if (data.status === "FOUND" && data.line) {
-        setInputValues((prev) => ({ ...prev, [data.line!.id]: data.line!.finalQuantity == null ? "" : String(data.line!.finalQuantity) }));
-        setMessage(`Найдена строка: ${data.line.name}`);
       } else if (data.status === "OUT_OF_SCOPE" && data.product) {
         needsProductSelection = true;
-        setFoundProduct((prev) => ({ ...prev, productId: data.product!.id, name: data.product!.name, category: data.product!.category, ean: scanner.barcode }));
-        setMessage("Товар найден вне выбранной области. Его можно добавить как найденный дополнительно.");
-      } else if (data.status === "CONFLICT") {
-        setMessage(`Один штрихкод у нескольких товаров: ${data.products?.map((item) => item.name).join(", ")}`);
-      } else {
-        needsProductSelection = true;
-        setFoundProduct({ productId: "", ean: scanner.barcode, name: "", category: "", cellId: "", quantity: "" });
-        setScanner((prev) => ({ ...prev, barcode: "" }));
-        setScanResult("");
-        setMessage("Штрихкод не найден. Выберите товар, которому он принадлежит.");
+        setFoundProduct((prev) => ({ ...prev, productId: data.product!.id, name: data.product!.name, category: data.product!.category, ean: "" }));
+        setMessage("Товар найден вне выбранной области инвентаризации.");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Сканирование не выполнено");
+      setMessage(error instanceof Error ? error.message : "Не удалось добавить товар");
     } finally {
       setWorking(false);
       window.setTimeout(() => document.getElementById(needsProductSelection ? "inventory-product-resolve" : "inventory-barcode-input")?.focus(), 0);
@@ -1060,6 +1098,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
                   scanner={scanner}
                   setScanner={setScanner}
                   scanBarcode={scanBarcode}
+                  scanProduct={scanProduct}
                   scanResult={scanResult}
                   foundProduct={foundProduct}
                   setFoundProduct={setFoundProduct}
@@ -1608,6 +1647,7 @@ function CountingWorkspace(props: {
   scanner: { barcode: string; mode: string };
   setScanner: (updater: { barcode: string; mode: string } | ((prev: { barcode: string; mode: string }) => { barcode: string; mode: string })) => void;
   scanBarcode: () => Promise<void>;
+  scanProduct: (productId: string) => Promise<void>;
   scanResult: string;
   foundProduct: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string };
   setFoundProduct: (updater: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string } | ((prev: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string }) => { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string })) => void;
@@ -1628,6 +1668,7 @@ function CountingWorkspace(props: {
     scanner,
     setScanner,
     scanBarcode,
+    scanProduct,
     scanResult,
     foundProduct,
     setFoundProduct,
@@ -1640,6 +1681,31 @@ function CountingWorkspace(props: {
   const [productSearch, setProductSearch] = useState("");
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
+  const [quickProductOptions, setQuickProductOptions] = useState<ProductOption[]>([]);
+  const [quickSearchLoading, setQuickSearchLoading] = useState(false);
+  const inventorySessionId = props.current.id;
+
+  useEffect(() => {
+    const query = scanner.barcode.trim();
+    if (query.length < 2) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setQuickSearchLoading(true);
+      void requestJson<{ products?: ProductOption[] }>(
+        `/api/inventory/sessions/${inventorySessionId}/product-options?query=${encodeURIComponent(query)}`,
+        { signal: controller.signal },
+      )
+        .then((data) => setQuickProductOptions(data.products ?? []))
+        .catch((error) => {
+          if (!(error instanceof DOMException && error.name === "AbortError")) setQuickProductOptions([]);
+        })
+        .finally(() => setQuickSearchLoading(false));
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [inventorySessionId, scanner.barcode]);
 
   useEffect(() => {
     if (!foundProduct.ean || productSearch.trim().length < 2 || foundProduct.productId) {
@@ -1703,81 +1769,86 @@ function CountingWorkspace(props: {
       </section>
 
       <EcoCard>
-        <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
-          <div>
-            <div className="mb-3 flex items-center gap-2">
-              <Search className="h-4 w-4 text-zinc-500" aria-hidden />
-              <h2 className="text-base font-semibold text-zinc-950">Позиции для подсчёта</h2>
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 text-base font-semibold text-zinc-950">
+              <ScanLine className="h-5 w-5" aria-hidden />
+              Сканировать или добавить товар
             </div>
-            <div className="grid gap-2 md:grid-cols-3">
-              <label className="text-xs font-medium text-zinc-500">
-                Поиск товара
-                <EcoInput value={lineFilters.search} onChange={(event) => setLineFilters((prev) => ({ ...prev, search: event.target.value }))} placeholder="Название, артикул, EAN, OEM" />
-              </label>
-              <label className="text-xs font-medium text-zinc-500">
-                Статус
-                <EcoSelect value={lineFilters.status} onChange={(event) => setLineFilters((prev) => ({ ...prev, status: event.target.value }))}>
-                  <option value="ALL">Все статусы</option>
-                  {Object.entries(LINE_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </EcoSelect>
-              </label>
-              <label className="text-xs font-medium text-zinc-500">
-                Ячейка
-                <EcoSelect value={lineFilters.cell} onChange={(event) => setLineFilters((prev) => ({ ...prev, cell: event.target.value }))}>
-                  <option value="">Все ячейки</option>
-                  {lineCells.map((cell) => <option key={cell} value={cell}>{cell}</option>)}
-                </EcoSelect>
-              </label>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "NOT_COUNTED", cell: "" })}>Не посчитано</EcoButton>
-              <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "RECOUNT_REQUIRED", cell: "" })}>Требует пересчёта</EcoButton>
-              <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "PROBLEM", cell: "" })}>Проблемы</EcoButton>
-            </div>
+            <p className="text-sm text-emerald-900">Сканер добавляет одну штуку сразу после Enter</p>
           </div>
-          <div className={`rounded-md border p-4 ${props.current.countMode === "SCAN" ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-zinc-50"}`}>
-            <div className="mb-3">
-              <div className="flex items-center gap-2 text-base font-semibold text-zinc-950">
-                <ScanLine className="h-5 w-5" aria-hidden />
-                {props.current.countMode === "SCAN" ? "Сканирование поштучно" : "Сканировать или найти товар"}
-              </div>
-              <p className="mt-1 text-sm text-zinc-600">
-                {props.current.countMode === "SCAN"
-                  ? "Поставьте курсор в поле и пропикивайте товары. Каждый Enter сразу добавляет одну штуку."
-                  : "Введите EAN, артикул или внутренний код. Если товар вне области проверки, его можно добавить как найденный."}
-              </p>
-            </div>
-            <form className="grid gap-2" onSubmit={(event) => { event.preventDefault(); void scanBarcode(); }}>
+          <form className="relative mt-3" onSubmit={(event) => { event.preventDefault(); void scanBarcode(); }}>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-500" aria-hidden />
               <EcoInput
                 id="inventory-barcode-input"
+                className="h-12 w-full pl-10 pr-12 text-base"
                 autoFocus={props.current.countMode === "SCAN"}
                 autoComplete="off"
                 value={scanner.barcode}
                 onChange={(event) => setScanner((prev) => ({ ...prev, barcode: event.target.value }))}
-                placeholder="Пикните штрихкод или введите его"
+                placeholder="Отсканируйте штрихкод или начните вводить название товара"
+                aria-label="Штрихкод или название товара"
               />
-              {props.current.countMode !== "SCAN" && (
-                <EcoSelect value={scanner.mode} onChange={(event) => setScanner((prev) => ({ ...prev, mode: event.target.value }))}>
-                  <option value="FIND">Найти товар</option>
-                  <option value="INCREMENT">Каждое сканирование = +1</option>
-                </EcoSelect>
-              )}
-              <div className="flex flex-wrap gap-2">
-                <EcoButton type="submit" variant="primary" disabled={working || !scanner.barcode.trim()}>
-                  {working ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : props.current.countMode === "SCAN" ? <Plus className="h-4 w-4" aria-hidden /> : <Search className="h-4 w-4" aria-hidden />}
-                  {props.current.countMode === "SCAN" ? "Добавить +1" : "Найти"}
-                </EcoButton>
-                <EcoButton type="button" onClick={() => void scanBarcode()} disabled={working || !scanner.barcode.trim()}>
-                  <Camera className="h-4 w-4" aria-hidden />
-                  Сканировать камерой
-                </EcoButton>
+              {(working || quickSearchLoading) && <Loader2 className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-emerald-700" aria-label="Поиск" />}
+            </div>
+            <button type="submit" className="sr-only" tabIndex={-1}>Добавить одну штуку</button>
+            {quickProductOptions.length > 0 && scanner.barcode.trim().length >= 2 && (
+              <div className="absolute left-0 right-0 z-30 mt-1 max-h-72 overflow-y-auto rounded-md border border-zinc-200 bg-white p-1 shadow-md">
+                {quickProductOptions.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    className="flex w-full items-center justify-between gap-4 rounded px-3 py-2 text-left hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-700"
+                    onClick={() => { setQuickProductOptions([]); void scanProduct(product.id); }}
+                    disabled={working}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-zinc-950">{product.name}</span>
+                      <span className="block truncate text-xs text-zinc-500">{[product.article, product.code, product.groupPath].filter(Boolean).join(" · ") || "без артикула"}</span>
+                    </span>
+                    <span className="shrink-0 text-xs font-semibold text-emerald-800">Добавить +1</span>
+                  </button>
+                ))}
               </div>
-              {scanResult && (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-emerald-800" role="status">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />{scanResult}
-                </div>
-              )}
-            </form>
+            )}
+          </form>
+          {scanResult && (
+            <div className="mt-2 flex items-center gap-2 text-sm font-medium text-emerald-900" role="status">
+              <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />Последнее добавление: {scanResult}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Search className="h-4 w-4 text-zinc-500" aria-hidden />
+            <h2 className="text-base font-semibold text-zinc-950">Позиции для подсчёта</h2>
+          </div>
+          <div className="grid gap-2 md:grid-cols-3">
+            <label className="text-xs font-medium text-zinc-500">
+              Фильтр списка
+              <EcoInput value={lineFilters.search} onChange={(event) => setLineFilters((prev) => ({ ...prev, search: event.target.value }))} placeholder="Название, артикул, EAN, OEM" />
+            </label>
+            <label className="text-xs font-medium text-zinc-500">
+              Статус
+              <EcoSelect value={lineFilters.status} onChange={(event) => setLineFilters((prev) => ({ ...prev, status: event.target.value }))}>
+                <option value="ALL">Все статусы</option>
+                {Object.entries(LINE_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </EcoSelect>
+            </label>
+            <label className="text-xs font-medium text-zinc-500">
+              Ячейка
+              <EcoSelect value={lineFilters.cell} onChange={(event) => setLineFilters((prev) => ({ ...prev, cell: event.target.value }))}>
+                <option value="">Все ячейки</option>
+                {lineCells.map((cell) => <option key={cell} value={cell}>{cell}</option>)}
+              </EcoSelect>
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "NOT_COUNTED", cell: "" })}>Не посчитано</EcoButton>
+            <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "RECOUNT_REQUIRED", cell: "" })}>Требует пересчёта</EcoButton>
+            <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "PROBLEM", cell: "" })}>Проблемы</EcoButton>
           </div>
         </div>
       </EcoCard>
@@ -1848,7 +1919,7 @@ function CountingWorkspace(props: {
         </EcoCard>
       </div>
 
-      <EcoTable className="max-h-[620px]">
+      <EcoTable>
         <thead>
           <tr>
             <th>Товар</th>

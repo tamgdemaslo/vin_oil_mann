@@ -7,6 +7,7 @@ import {
   bindInventoryBarcode,
   cancelInventorySession,
   completeInventoryCounting,
+  countInventoryProduct,
   executeInventoryImport,
   countInventoryLine,
   getInventoryReconciliation,
@@ -17,6 +18,7 @@ import {
   previewInventoryScope,
   reverseInventorySession,
   scanInventoryBarcode,
+  searchInventoryProducts,
   setInventoryCountingPaused,
   startInventorySession,
   submitInventoryReview,
@@ -199,6 +201,11 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       }));
     }
 
+    if (action === "product-options") {
+      const data = await searchInventoryProducts(sessionId, request.nextUrl.searchParams.get("query") ?? undefined);
+      return data ? NextResponse.json(data) : apiError("Инвентаризация не найдена", 404);
+    }
+
     if (action === "reconciliation") {
       const data = await getInventoryReconciliation(sessionId);
       return data ? NextResponse.json(data) : apiError("Инвентаризация не найдена", 404);
@@ -270,6 +277,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (action === "cancel") return apiResult(await cancelInventorySession(sessionId, body as Parameters<typeof cancelInventorySession>[1], session.user));
     if (action === "add-product") return apiResult(await addInventoryProduct(sessionId, body as Parameters<typeof addInventoryProduct>[1], session.user));
     if (action === "scan") return apiResult(await scanInventoryBarcode(sessionId, body as Parameters<typeof scanInventoryBarcode>[1], session.user));
+    if (action === "count-product") return apiResult(await countInventoryProduct(sessionId, body as Parameters<typeof countInventoryProduct>[1], session.user));
     if (action === "bind-barcode") return apiResult(await bindInventoryBarcode(sessionId, body as Parameters<typeof bindInventoryBarcode>[1], session.user));
     if (action === "lines" && lineId && (leaf === "count" || leaf === "recount")) {
       return apiResult(await countInventoryLine(sessionId, lineId, body as Parameters<typeof countInventoryLine>[2], session.user));
