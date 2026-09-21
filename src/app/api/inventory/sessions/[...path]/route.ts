@@ -16,6 +16,7 @@ import {
   movementsDuringInventory,
   postInventorySession,
   previewInventoryScope,
+  removeInventoryLine,
   reverseInventorySession,
   scanInventoryBarcode,
   searchInventoryProducts,
@@ -292,6 +293,23 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       return apiError("Используйте /api/inventory/sessions/:id/import/execute", 400);
     }
 
+    return apiError("Неизвестный endpoint", 404);
+  });
+}
+
+export async function DELETE(_request: NextRequest, { params }: RouteContext) {
+  const session = await getSession();
+  if (!session) return apiError("Необходима авторизация", 401);
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
+
+  return runWithBranchApiContext(access.context, async () => {
+    const path = (await params).path;
+    const [sessionId, action, lineId] = path;
+    if (!sessionId) return apiError("Не выбрана инвентаризация", 400);
+    if (action === "lines" && lineId) {
+      return apiResult(await removeInventoryLine(sessionId, lineId, session.user));
+    }
     return apiError("Неизвестный endpoint", 404);
   });
 }

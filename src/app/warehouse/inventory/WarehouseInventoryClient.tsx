@@ -22,6 +22,7 @@ import {
   Send,
   ShieldCheck,
   SlidersHorizontal,
+  Trash2,
   Undo2,
   XCircle,
 } from "lucide-react";
@@ -612,6 +613,9 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     if (!currentId) return;
     if (["COUNTING", "RECOUNT_REQUIRED", "PAUSED"].includes(currentStatus)) {
       void loadLines(currentId, current?.countMode === "SCAN").catch((error) => setMessage(error instanceof Error ? error.message : "Не удалось загрузить строки"));
+    } else if (currentStatus === "CANCELLED") {
+      setLines([]);
+      setReconciliation(null);
     } else {
       void loadReconciliation(currentId).catch((error) => setMessage(error instanceof Error ? error.message : "Не удалось загрузить сверку"));
     }
@@ -758,7 +762,11 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       });
       if (data.session) setCurrent(data.session);
       if (!isDetail) await loadSessions();
-      if (path === "complete-counting" || path === "submit-review" || path === "approve" || path === "post" || path === "reverse") {
+      if (path === "cancel") {
+        setLines([]);
+        setInputValues({});
+        setReconciliation(null);
+      } else if (path === "complete-counting" || path === "submit-review" || path === "approve" || path === "post" || path === "reverse") {
         await loadReconciliation(current.id);
       } else {
         await loadLines(current.id);
@@ -767,6 +775,42 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       setMessage(error instanceof Error ? error.message : "Действие не выполнено");
     } finally {
       setWorking(false);
+    }
+  }
+
+  function cancelCurrentSession() {
+    if (!current || working) return;
+    const confirmed = window.confirm(
+      "Полностью отменить инвентаризацию? Все результаты подсчёта будут удалены. Списаний, оприходований и корректировок не будет.",
+    );
+    if (!confirmed) return;
+    void mutateSession("cancel", { reason: "Отменено пользователем до проведения" });
+  }
+
+  async function removeCountedLine(line: InventoryLine) {
+    if (!current || working) return;
+    if (!window.confirm(`Убрать «${line.name}» из результатов подсчёта?`)) return;
+    setWorking(true);
+    setMessage("");
+    try {
+      const data = await requestJson<{ lineId: string; removal: "DELETED" | "RESET"; session: InventorySession }>(
+        `/api/inventory/sessions/${current.id}/lines/${line.id}`,
+        { method: "DELETE" },
+      );
+      setCurrent(data.session);
+      setInputValues((prev) => {
+        const next = { ...prev };
+        delete next[line.id];
+        delete next[`comment:${line.id}`];
+        return next;
+      });
+      await loadLines(current.id, current.countMode === "SCAN");
+      setScanResult("");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Не удалось убрать позицию");
+    } finally {
+      setWorking(false);
+      window.setTimeout(() => document.getElementById("inventory-barcode-input")?.focus(), 0);
     }
   }
 
@@ -969,7 +1013,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
 
   if (isDetail) {
     const isCounting = !!current && ["COUNTING", "PAUSED", "RECOUNT_REQUIRED"].includes(current.status);
-    const isReview = !!current && ["REVIEW", "AWAITING_APPROVAL", "POSTED", "REVERSED", "CANCELLED"].includes(current.status);
+    const isReview = !!current && ["REVIEW", "AWAITING_APPROVAL", "POSTED", "REVERSED"].includes(current.status);
 
     return (
       <div className="space-y-4">
@@ -1035,8 +1079,8 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
                     </summary>
                     <div className="absolute right-0 z-20 mt-2 w-64 rounded-md border border-zinc-200 bg-white p-2 shadow-lg">
                       {!["POSTED", "REVERSED", "CANCELLED"].includes(current.status) && (
-                        <button type="button" className="w-full rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50" onClick={() => void mutateSession("cancel", { reason: window.prompt("Причина отмены") || "" })}>
-                          Отменить инвентаризацию
+                        <button type="button" className="w-full rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50" onClick={cancelCurrentSession}>
+                          Полностью отменить
                         </button>
                       )}
                       {current.status === "POSTED" && (
@@ -1116,6 +1160,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
                   foundProduct={foundProduct}
                   setFoundProduct={setFoundProduct}
                   bindBarcodeToProduct={bindBarcodeToProduct}
+                  removeLine={removeCountedLine}
                   onImported={() => loadLines(current.id, current.countMode === "SCAN")}
                   showAccounting={showAccounting}
                   working={working}
@@ -1131,9 +1176,22 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
                   saveState={saveState}
                   saveResolution={saveResolution}
                   mutateSession={mutateSession}
+                  cancelSession={cancelCurrentSession}
                   working={working}
                 />
               </div>
+            )}
+
+            {current.status === "CANCELLED" && (
+              <EcoCard>
+                <div className="flex min-h-40 flex-col items-center justify-center text-center">
+                  <XCircle className="h-8 w-8 text-zinc-500" aria-hidden />
+                  <h2 className="mt-3 text-lg font-semibold text-zinc-950">Инвентаризация полностью отменена</h2>
+                  <p className="mt-1 max-w-xl text-sm text-zinc-600">
+                    Результаты подсчёта удалены. Складских списаний, оприходований или корректировок нет.
+                  </p>
+                </div>
+              </EcoCard>
             )}
           </>
         ) : (
@@ -1665,6 +1723,7 @@ function CountingWorkspace(props: {
   foundProduct: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string };
   setFoundProduct: (updater: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string } | ((prev: { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string }) => { productId: string; ean: string; name: string; category: string; cellId: string; quantity: string })) => void;
   bindBarcodeToProduct: () => Promise<void>;
+  removeLine: (line: InventoryLine) => Promise<void>;
   onImported: () => Promise<void>;
   showAccounting: boolean;
   working: boolean;
@@ -1686,6 +1745,7 @@ function CountingWorkspace(props: {
     foundProduct,
     setFoundProduct,
     bindBarcodeToProduct,
+    removeLine,
     onImported,
     showAccounting,
     working,
@@ -2098,6 +2158,9 @@ function CountingWorkspace(props: {
                   </EcoButton>
                   <EcoButton size="sm" onClick={() => { setInputValues((prev) => ({ ...prev, [line.id]: "0" })); void saveCount(line, true); }} disabled={props.current.status === "PAUSED"}>Фактически 0</EcoButton>
                   <EcoButton size="sm" onClick={() => void saveCount(line, false, "RECOUNT")} disabled={props.current.status === "PAUSED"}><RotateCcw className="h-4 w-4" aria-hidden />Пересчёт</EcoButton>
+                  <EcoButton size="sm" variant="danger" onClick={() => void removeLine(line)} disabled={working || props.current.status === "PAUSED"}>
+                    <Trash2 className="h-4 w-4" aria-hidden />Убрать
+                  </EcoButton>
                 </div>
               </td>
             </tr>
@@ -2125,6 +2188,7 @@ function ReconciliationWorkspace({
   saveState,
   saveResolution,
   mutateSession,
+  cancelSession,
   working,
 }: {
   current: InventorySession;
@@ -2132,6 +2196,7 @@ function ReconciliationWorkspace({
   saveState: SaveState;
   saveResolution: (line: InventoryLine, patch: Partial<InventoryLine>) => Promise<void>;
   mutateSession: (path: string, body?: unknown) => Promise<void>;
+  cancelSession: () => void;
   working: boolean;
 }) {
   const lines = data?.lines ?? [];
@@ -2184,7 +2249,7 @@ function ReconciliationWorkspace({
               </EcoButton>
             )}
             {current.status === "POSTED" && <EcoButton variant="danger" onClick={() => void mutateSession("reverse", { reason: window.prompt("Причина обратной операции") || "" })} disabled={working}><Undo2 className="h-4 w-4" aria-hidden />Создать обратную операцию</EcoButton>}
-            {!["POSTED", "REVERSED", "CANCELLED"].includes(current.status) && <EcoButton variant="danger" onClick={() => void mutateSession("cancel", { reason: window.prompt("Причина отмены") || "" })} disabled={working}><XCircle className="h-4 w-4" aria-hidden />Отменить</EcoButton>}
+            {!["POSTED", "REVERSED", "CANCELLED"].includes(current.status) && <EcoButton variant="danger" onClick={cancelSession} disabled={working}><XCircle className="h-4 w-4" aria-hidden />Полностью отменить</EcoButton>}
           </div>
         </div>
       </EcoCard>
