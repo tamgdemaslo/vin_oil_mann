@@ -5,7 +5,6 @@ import {
   addInventoryProduct,
   approveInventorySession,
   bindInventoryBarcode,
-  beginInventoryRecount,
   cancelInventorySession,
   completeInventoryCounting,
   countInventoryProduct,
@@ -17,6 +16,7 @@ import {
   movementsDuringInventory,
   postInventorySession,
   previewInventoryScope,
+  refreshInventoryReviewScope,
   removeInventoryLine,
   reverseInventorySession,
   scanInventoryBarcode,
@@ -25,6 +25,7 @@ import {
   startInventorySession,
   submitInventoryReview,
   updateInventoryLineResolution,
+  updateInventoryLineActual,
   updateInventorySession,
   validateInventoryImport,
 } from "@/lib/warehouse-inventory";
@@ -251,6 +252,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     if (action === "lines" && lineId && leaf === "resolution") {
       return apiResult(await updateInventoryLineResolution(sessionId, lineId, body as Parameters<typeof updateInventoryLineResolution>[2], session.user));
     }
+    if (action === "lines" && lineId && leaf === "actual") {
+      return apiResult(await updateInventoryLineActual(sessionId, lineId, body as Parameters<typeof updateInventoryLineActual>[2], session.user));
+    }
 
     return apiError("Неизвестный endpoint", 404);
   });
@@ -273,7 +277,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (action === "pause") return apiResult(await setInventoryCountingPaused(sessionId, true, session.user));
     if (action === "resume") return apiResult(await setInventoryCountingPaused(sessionId, false, session.user));
     if (action === "complete-counting") return apiResult(await completeInventoryCounting(sessionId, session.user));
-    if (action === "begin-recount") return apiResult(await beginInventoryRecount(sessionId, session.user));
+    if (action === "refresh-review-scope") return apiResult(await refreshInventoryReviewScope(sessionId, session.user));
     if (action === "submit-review") return apiResult(await submitInventoryReview(sessionId, session.user));
     if (action === "approve") return apiResult(await approveInventorySession(sessionId, session.user));
     if (action === "post") return apiResult(await postInventorySession(sessionId, body as Parameters<typeof postInventorySession>[1], session.user));

@@ -1330,6 +1330,146 @@ export async function getInventoryReconciliation(sessionId: string) {
   };
 }
 
+export async function refreshInventoryReviewScope(sessionId: string, user: User) {
+  const result = await prisma.$transaction(async (tx) => {
+    const session = await tx.inventorySession.findUnique({ where: { id: sessionId } });
+    if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
+    if (session.status !== "REVIEW") return { ok: false as const, error: "Область можно обновить только на этапе сверки" };
+
+    const scope = normalizeScope(asRecord(session.scopeJson));
+    const options = normalizeOptions(asRecord(session.optionsJson));
+    const lines = await tx.inventoryLine.findMany({
+      where: { inventorySessionId: sessionId },
+      include: { product: true },
+    });
+    const removed = lines.filter((line) => line.product && !line.isUnexpected && !productMatchesScope(
+      line.product,
+      { slotName: line.cellId },
+      scope,
+      options,
+    ));
+    const removedIds = removed.map((line) => line.id);
+    const removedProductIds = removed.flatMap((line) => line.productId ? [line.productId] : []);
+    if (removedIds.length > 0) {
+      await tx.inventoryLock.deleteMany({
+        where: { inventorySessionId: sessionId, productId: { in: removedProductIds } },
+      });
+      await tx.inventoryLine.deleteMany({ where: { id: { in: removedIds } } });
+    }
+
+    const legacyRecounts = lines.filter((line) => !removedIds.includes(line.id) && (line.finalAction === "RECOUNT" || line.requiresRecount));
+    for (const line of legacyRecounts) {
+      const difference = line.differenceQuantity ?? ZERO;
+      const finalAction = difference.lt(0) ? "SHORTAGE_EXPENSE" : difference.gt(0) ? "SURPLUS_RECEIPT" : "NO_ACTION";
+      await tx.inventoryLine.update({
+        where: { id: line.id },
+        data: {
+          finalAction,
+          proposedAction: finalAction,
+          requiresRecount: false,
+          status: line.finalQuantity?.equals(ZERO) ? "ZERO_CONFIRMED" : "COUNTED",
+          reasonCode: null,
+          affectsManagementProfit: finalAction === "SHORTAGE_EXPENSE",
+        },
+      });
+    }
+
+    await recalculateSessionSummary(tx, sessionId);
+    const updated = await tx.inventorySession.findUniqueOrThrow({
+      where: { id: sessionId },
+      include: { organization: true, warehouse: true, _count: { select: { lines: true } } },
+    });
+    await writeAudit(tx, {
+      sessionId,
+      action: "REFRESH_REVIEW_SCOPE",
+      oldValue: { totalLines: lines.length },
+      newValue: { totalLines: updated.totalLines, removedLines: removedIds.length, normalizedLegacyRecounts: legacyRecounts.length },
+      user,
+    });
+    return { ok: true as const, data: { session: mapSession(updated), removedLines: removedIds.length } };
+  });
+  return result;
+}
+
+export async function updateInventoryLineActual(
+  sessionId: string,
+  lineId: string,
+  body: { quantity?: unknown },
+  user: User,
+) {
+  const quantity = decimalFromInput(body.quantity);
+  if (quantity == null) return { ok: false as const, error: "Введите фактическое количество" };
+
+  const result = await prisma.$transaction(async (tx) => {
+    const session = await tx.inventorySession.findUnique({ where: { id: sessionId } });
+    if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
+    if (session.status !== "REVIEW") return { ok: false as const, error: "Факт можно исправлять только на этапе сверки" };
+
+    const current = await tx.inventoryLine.findFirst({ where: { id: lineId, inventorySessionId: sessionId } });
+    if (!current) return { ok: false as const, error: "Строка инвентаризации не найдена", status: 404 };
+    if (current.status === "EXCLUDED") return { ok: false as const, error: "Исключённую строку нельзя редактировать" };
+
+    const difference = quantity.minus(current.expectedQuantityAtCount);
+    const proposedAction = difference.lt(0) ? "SHORTAGE_EXPENSE" : difference.gt(0) ? "SURPLUS_RECEIPT" : "NO_ACTION";
+    const shortageActions = new Set(["SHORTAGE_EXPENSE", "SHORTAGE_TECHNICAL", "SKIP"]);
+    const surplusActions = new Set(["SURPLUS_RECEIPT", "SURPLUS_TECHNICAL", "SKIP"]);
+    const existingAction = current.finalAction;
+    const keepExistingAction = difference.lt(0)
+      ? shortageActions.has(existingAction ?? "")
+      : difference.gt(0)
+        ? surplusActions.has(existingAction ?? "")
+        : existingAction === "NO_ACTION";
+    const finalAction = keepExistingAction ? existingAction : proposedAction;
+    const countedAt = new Date();
+    const sequence = await tx.inventoryCountEntry.count({ where: { inventoryLineId: lineId } }) + 1;
+
+    await tx.inventoryCountEntry.create({
+      data: {
+        inventoryLineId: lineId,
+        sequence,
+        quantity,
+        counterId: user.login,
+        countedAt,
+        comment: "Факт исправлен на этапе сверки",
+        source: "REVIEW_EDIT",
+      },
+    });
+    const row = await tx.inventoryLine.update({
+      where: { id: lineId },
+      data: {
+        finalQuantity: quantity,
+        differenceQuantity: difference,
+        differenceCostCents: costForDifference(difference, current.unitCostSnapshotCents),
+        status: quantity.equals(ZERO) ? "ZERO_CONFIRMED" : "COUNTED",
+        proposedAction,
+        finalAction,
+        reasonCode: null,
+        requiresRecount: false,
+        affectsManagementProfit: finalAction === "SHORTAGE_EXPENSE",
+        recountedAt: countedAt,
+        recountedById: user.login,
+        stockVersion: { increment: 1 },
+      },
+      include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
+    });
+    await recalculateSessionSummary(tx, sessionId);
+    const updatedSession = await tx.inventorySession.findUniqueOrThrow({
+      where: { id: sessionId },
+      include: { organization: true, warehouse: true, _count: { select: { lines: true } } },
+    });
+    await writeAudit(tx, {
+      sessionId,
+      lineId,
+      action: "REVIEW_EDIT_ACTUAL",
+      oldValue: { finalQuantity: current.finalQuantity, differenceQuantity: current.differenceQuantity },
+      newValue: { finalQuantity: quantity, differenceQuantity: difference, finalAction },
+      user,
+    });
+    return { ok: true as const, data: { line: mapLine(row), session: mapSession(updatedSession) } };
+  });
+  return result;
+}
+
 export async function updateInventoryLineResolution(
   sessionId: string,
   lineId: string,
@@ -1343,7 +1483,6 @@ export async function updateInventoryLineResolution(
     "SURPLUS_RECEIPT",
     "SURPLUS_TECHNICAL",
     "CELL_TRANSFER",
-    "RECOUNT",
     "SKIP",
   ]);
   const current = await prisma.inventoryLine.findFirst({ where: { id: lineId, inventorySessionId: sessionId } });
@@ -1367,8 +1506,7 @@ export async function updateInventoryLineResolution(
             reasonCode: cleanText(body.reasonCode) ?? current.reasonCode,
             comment: body.comment === undefined ? undefined : cleanText(body.comment),
             affectsManagementProfit: body.affectsManagementProfit ?? (action === "SHORTAGE_EXPENSE"),
-            requiresRecount: action === "RECOUNT",
-            status: action === "RECOUNT" ? "RECOUNT_REQUIRED" : current.status,
+            requiresRecount: false,
           },
       include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
     });
@@ -1393,16 +1531,6 @@ export async function submitInventoryReview(sessionId: string, user: User) {
       },
     });
     if (unresolved > 0) return { ok: false as const, error: "Выберите действие для всех расхождений" };
-    const missingReasons = await tx.inventoryLine.count({
-      where: {
-        inventorySessionId: sessionId,
-        status: { not: "EXCLUDED" },
-        differenceQuantity: { not: 0 },
-        finalAction: { notIn: ["NO_ACTION", "SKIP"] },
-        reasonCode: null,
-      },
-    });
-    if (missingReasons > 0) return { ok: false as const, error: "Укажите причины для всех расхождений" };
     const row = await tx.inventorySession.update({
       where: { id: sessionId },
       data: { status: "AWAITING_APPROVAL", reviewedAt: new Date(), version: { increment: 1 } },
@@ -1410,36 +1538,6 @@ export async function submitInventoryReview(sessionId: string, user: User) {
     });
     await writeAudit(tx, { sessionId, action: "SUBMIT_REVIEW", user });
     return { ok: true as const, data: { session: mapSession(row) } };
-  });
-  return result;
-}
-
-export async function beginInventoryRecount(sessionId: string, user: User) {
-  const result = await prisma.$transaction(async (tx) => {
-    const session = await tx.inventorySession.findUnique({ where: { id: sessionId } });
-    if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
-    if (session.status !== "REVIEW") {
-      return { ok: false as const, error: "Повторный пересчёт можно начать только со сверки" };
-    }
-    const recountLines = await tx.inventoryLine.count({
-      where: { inventorySessionId: sessionId, status: { not: "EXCLUDED" }, requiresRecount: true },
-    });
-    if (recountLines === 0) return { ok: false as const, error: "Сначала выберите действие «Повторный пересчёт» хотя бы для одной строки" };
-
-    const updated = await tx.inventorySession.update({
-      where: { id: sessionId },
-      data: {
-        status: "RECOUNT_REQUIRED",
-        countingCompletedAt: null,
-        reviewedAt: null,
-        approvedAt: null,
-        approvedById: null,
-        version: { increment: 1 },
-      },
-      include: { organization: true, warehouse: true, _count: { select: { lines: true } } },
-    });
-    await writeAudit(tx, { sessionId, action: "BEGIN_RECOUNT", newValue: { recountLines }, user });
-    return { ok: true as const, data: { session: mapSession(updated), recountLines } };
   });
   return result;
 }
@@ -1542,9 +1640,6 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
     });
     const unfinished = lines.find((line) => line.finalQuantity == null || (line.differenceQuantity != null && !line.differenceQuantity.equals(ZERO) && !line.finalAction));
     if (unfinished) return { ok: false as const, error: "Не все строки готовы к проведению" };
-    const missingReason = lines.find((line) => line.differenceQuantity != null && !line.differenceQuantity.equals(ZERO) && !line.reasonCode && line.finalAction !== "NO_ACTION" && line.finalAction !== "SKIP");
-    if (missingReason) return { ok: false as const, error: "Для всех расхождений нужна причина" };
-
     const movingLines = lines.filter((line) => ledgerMovementForAction(line.finalAction, line.differenceQuantity) && line.productId && line.differenceQuantity);
     await lockInventoryCostKeys(tx, {
       branchId: session.branchId,

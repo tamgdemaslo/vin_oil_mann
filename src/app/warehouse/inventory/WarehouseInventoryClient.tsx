@@ -79,7 +79,6 @@ const FINAL_ACTIONS = [
   { value: "SURPLUS_RECEIPT", label: "Оприходование излишка" },
   { value: "SURPLUS_TECHNICAL", label: "Техническая корректировка" },
   { value: "CELL_TRANSFER", label: "Перемещение между ячейками" },
-  { value: "RECOUNT", label: "Повторный пересчёт" },
   { value: "SKIP", label: "Не проводить строку" },
 ];
 
@@ -88,26 +87,10 @@ const ACTION_HINTS: Record<string, string> = {
   SHORTAGE_TECHNICAL: "Остаток изменится, но прибыль не изменится. Используйте для исправления старых ошибок учёта.",
   SURPLUS_RECEIPT: "Остаток увеличится, товар будет оприходован на склад.",
   SURPLUS_TECHNICAL: "Остаток изменится, но прибыль не изменится. Используйте для исправления старых ошибок учёта.",
-  RECOUNT: "Строка вернётся на повторный подсчёт.",
   SKIP: "По этой строке складское движение не будет создано.",
   NO_ACTION: "Расхождений нет, движение не требуется.",
   CELL_TRANSFER: "Будет оформлено перемещение между ячейками.",
 };
-
-const REASONS = [
-  "Ошибка начальных остатков",
-  "Ошибка импорта",
-  "Ошибка миграции",
-  "Товар продан, но не списан",
-  "Порча",
-  "Утрата",
-  "Внутреннее использование",
-  "Не проведена приёмка",
-  "Возврат не был оформлен",
-  "Перемещение без документа",
-  "Ошибка единицы измерения",
-  "Другое",
-];
 
 type Organization = { id: string; name: string; isDefault?: boolean };
 type Store = { id: string; name: string };
@@ -547,6 +530,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   const [scanFeedback, setScanFeedback] = useState<ScanVisualFeedback | null>(null);
   const [foundProduct, setFoundProduct] = useState({ productId: "", ean: "", name: "", category: "", cellId: "", quantity: "" });
   const [helpOpen, setHelpOpen] = useState(false);
+  const reviewScopeRefreshRef = useRef("");
 
   const activeTab = SESSION_TABS.find((item) => item.id === tab) ?? SESSION_TABS[0];
   const currentId = current?.id ?? "";
@@ -671,6 +655,25 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       void loadReconciliation(currentId).catch((error) => setMessage(error instanceof Error ? error.message : "Не удалось загрузить сверку"));
     }
   }, [current?.countMode, currentId, currentStatus, lineFilters, loadLines, loadReconciliation]);
+
+  useEffect(() => {
+    if (!currentId || currentStatus !== "REVIEW" || reviewScopeRefreshRef.current === currentId) return;
+    const hasLegacyBulkOil = reconciliation?.lines.some((line) => line.category === "Моторное масло на разлив");
+    if (!hasLegacyBulkOil) return;
+    reviewScopeRefreshRef.current = currentId;
+    setWorking(true);
+    void requestJson<{ session: InventorySession; removedLines: number }>(`/api/inventory/sessions/${currentId}/refresh-review-scope`, {
+      method: "POST",
+      body: "{}",
+    })
+      .then(async (data) => {
+        setCurrent(data.session);
+        await loadReconciliation(currentId);
+        if (data.removedLines > 0) setMessage(`Из инвентаризации исключено разливное масло: ${data.removedLines} поз.`);
+      })
+      .catch((error) => setMessage(error instanceof Error ? error.message : "Не удалось обновить область инвентаризации"))
+      .finally(() => setWorking(false));
+  }, [currentId, currentStatus, loadReconciliation, reconciliation?.lines]);
 
   const filteredSessions = useMemo(() => {
     const rows = sessionsData?.sessions ?? [];
@@ -803,7 +806,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     setWorking(true);
     setMessage("");
     try {
-      const data = await requestJson<{ session?: InventorySession; alreadyPosted?: boolean; alreadyReversed?: boolean }>(`/api/inventory/sessions/${current.id}/${path}`, {
+      const data = await requestJson<{ session?: InventorySession; alreadyPosted?: boolean; alreadyReversed?: boolean; removedLines?: number }>(`/api/inventory/sessions/${current.id}/${path}`, {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -813,10 +816,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         setLines([]);
         setInputValues({});
         setReconciliation(null);
-      } else if (path === "begin-recount") {
-        setLineFilters({ search: "", status: "RECOUNT_REQUIRED", cell: "" });
-        setReconciliation(null);
-      } else if (path === "complete-counting" || path === "submit-review" || path === "approve" || path === "post" || path === "reverse") {
+      } else if (path === "complete-counting" || path === "refresh-review-scope" || path === "submit-review" || path === "approve" || path === "post" || path === "reverse") {
         await loadReconciliation(current.id);
       } else {
         await loadLines(current.id, current.countMode === "SCAN");
@@ -935,6 +935,31 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     } catch (error) {
       setSaveState((prev) => ({ ...prev, [line.id]: "error" }));
       setMessage(error instanceof Error ? error.message : "Не удалось сохранить решение");
+    }
+  }
+
+  async function saveReviewActual(line: InventoryLine, quantity: string) {
+    if (!current || quantity.trim() === "") return;
+    const normalized = Number(quantity.trim().replace(",", "."));
+    if (!Number.isFinite(normalized) || normalized < 0) {
+      setMessage("Введите корректное фактическое количество");
+      return;
+    }
+    if (normalized === line.finalQuantity) return;
+    setSaveState((prev) => ({ ...prev, [line.id]: "saving" }));
+    try {
+      const data = await requestJson<{ line: InventoryLine; session: InventorySession }>(`/api/inventory/sessions/${current.id}/lines/${line.id}/actual`, {
+        method: "PATCH",
+        body: JSON.stringify({ quantity: normalized }),
+      });
+      setReconciliation((prev) => prev ? { ...prev, session: data.session, lines: prev.lines.map((item) => (item.id === line.id ? data.line : item)) } : prev);
+      setCurrent(data.session);
+      setSaveState((prev) => ({ ...prev, [line.id]: "saved" }));
+      setMessage("");
+      window.setTimeout(() => setSaveState((prev) => ({ ...prev, [line.id]: "idle" })), 1400);
+    } catch (error) {
+      setSaveState((prev) => ({ ...prev, [line.id]: "error" }));
+      setMessage(error instanceof Error ? error.message : "Не удалось исправить фактическое количество");
     }
   }
 
@@ -1251,6 +1276,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
                   data={reconciliation}
                   saveState={saveState}
                   saveResolution={saveResolution}
+                  saveActual={saveReviewActual}
                   mutateSession={mutateSession}
                   cancelSession={cancelCurrentSession}
                   working={working}
@@ -2335,10 +2361,10 @@ const InventoryCountRow = memo(function InventoryCountRow({
 function actionOptionsForLine(line: InventoryLine) {
   const difference = line.differenceQuantity ?? 0;
   if (difference < 0) {
-    return FINAL_ACTIONS.filter((item) => ["SHORTAGE_EXPENSE", "SHORTAGE_TECHNICAL", "RECOUNT", "SKIP"].includes(item.value));
+    return FINAL_ACTIONS.filter((item) => ["SHORTAGE_EXPENSE", "SHORTAGE_TECHNICAL", "SKIP"].includes(item.value));
   }
   if (difference > 0) {
-    return FINAL_ACTIONS.filter((item) => ["SURPLUS_RECEIPT", "SURPLUS_TECHNICAL", "RECOUNT", "SKIP"].includes(item.value));
+    return FINAL_ACTIONS.filter((item) => ["SURPLUS_RECEIPT", "SURPLUS_TECHNICAL", "SKIP"].includes(item.value));
   }
   return FINAL_ACTIONS.filter((item) => item.value === "NO_ACTION" || item.value === "CELL_TRANSFER" || item.value === "SKIP");
 }
@@ -2348,6 +2374,7 @@ function ReconciliationWorkspace({
   data,
   saveState,
   saveResolution,
+  saveActual,
   mutateSession,
   cancelSession,
   working,
@@ -2356,6 +2383,7 @@ function ReconciliationWorkspace({
   data: ReconciliationResponse | null;
   saveState: SaveState;
   saveResolution: (line: InventoryLine, patch: Partial<InventoryLine>) => Promise<void>;
+  saveActual: (line: InventoryLine, quantity: string) => Promise<void>;
   mutateSession: (path: string, body?: unknown) => Promise<void>;
   cancelSession: () => void;
   working: boolean;
@@ -2364,16 +2392,10 @@ function ReconciliationWorkspace({
   const shortageRows = lines.filter((line) => (line.differenceQuantity ?? 0) < 0);
   const surplusRows = lines.filter((line) => (line.differenceQuantity ?? 0) > 0);
   const missingRows = lines.filter((line) => line.comment === "Не отсканирован при инвентаризации");
-  const recountRows = lines.filter((line) => line.requiresRecount || (line.finalAction || line.proposedAction) === "RECOUNT");
   const cellTransferRows = lines.filter((line) => (line.finalAction || line.proposedAction) === "CELL_TRANSFER");
   const technicalRows = lines.filter((line) => (line.finalAction || line.proposedAction || "").includes("TECHNICAL"));
   const managementRows = lines.filter((line) => (line.finalAction || line.proposedAction) === "SHORTAGE_EXPENSE");
-  const unresolvedReasons = lines.filter((line) => {
-    const difference = line.differenceQuantity ?? 0;
-    const action = line.finalAction || line.proposedAction;
-    return difference !== 0 && action !== "RECOUNT" && action !== "SKIP" && !line.reasonCode;
-  }).length;
-  const canPost = current.status === "AWAITING_APPROVAL" && Boolean(current.approvedAt) && unresolvedReasons === 0;
+  const canPost = current.status === "AWAITING_APPROVAL" && Boolean(current.approvedAt);
 
   return (
     <div className="space-y-4">
@@ -2400,21 +2422,11 @@ function ReconciliationWorkspace({
               <li>Технические корректировки не повлияют на прибыль.</li>
               <li>Складских движений в ведомости: {data?.movements.length ?? 0}.</li>
             </ul>
-            {unresolvedReasons > 0 && <p className="mt-3 text-sm font-medium text-red-700">Нельзя провести: {unresolvedReasons} строк без причины расхождения.</p>}
-            {recountRows.length > 0 && current.status === "REVIEW" && (
-              <p className="mt-2 text-sm text-amber-800">
-                Для повторного подсчёта выбрано строк: {recountRows.length}. Нажмите «Перейти к пересчёту», затем введите фактическое количество и снова завершите подсчёт.
-              </p>
-            )}
+            {current.status === "REVIEW" && <p className="mt-3 text-sm text-zinc-600">Если количество указано неверно, исправьте его прямо в колонке «Факт». Разница и итоговые суммы пересчитаются автоматически.</p>}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-            {current.status === "REVIEW" && <EcoButton onClick={() => void mutateSession("submit-review")} disabled={working || unresolvedReasons > 0 || recountRows.length > 0}><Send className="h-4 w-4" aria-hidden />На подтверждение</EcoButton>}
-            {current.status === "REVIEW" && recountRows.length > 0 && (
-              <EcoButton variant="primary" onClick={() => void mutateSession("begin-recount")} disabled={working}>
-                <RotateCcw className="h-4 w-4" aria-hidden />Перейти к пересчёту ({recountRows.length})
-              </EcoButton>
-            )}
-            {(current.status === "REVIEW" || (current.status === "AWAITING_APPROVAL" && !current.approvedAt)) && <EcoButton onClick={() => void mutateSession("approve")} disabled={working || unresolvedReasons > 0 || recountRows.length > 0}><ShieldCheck className="h-4 w-4" aria-hidden />Подтвердить владельцем</EcoButton>}
+            {current.status === "REVIEW" && <EcoButton onClick={() => void mutateSession("submit-review")} disabled={working}><Send className="h-4 w-4" aria-hidden />На подтверждение</EcoButton>}
+            {(current.status === "REVIEW" || (current.status === "AWAITING_APPROVAL" && !current.approvedAt)) && <EcoButton onClick={() => void mutateSession("approve")} disabled={working}><ShieldCheck className="h-4 w-4" aria-hidden />Подтвердить владельцем</EcoButton>}
             {current.status === "AWAITING_APPROVAL" && (
               <EcoButton variant="primary" onClick={() => void mutateSession("post", { idempotencyKey: crypto.randomUUID() })} disabled={working || !canPost}>
                 <CheckCircle2 className="h-4 w-4" aria-hidden />Провести инвентаризацию
@@ -2437,15 +2449,15 @@ function ReconciliationWorkspace({
             <th>Резерв</th>
             <th>Себестоимость</th>
             <th>Действие</th>
-            <th>Причина</th>
             <th>Статус</th>
           </tr>
         </thead>
         <tbody>
           {lines.map((line) => {
-            const action = line.finalAction || line.proposedAction || (line.differenceQuantity && line.differenceQuantity < 0 ? "SHORTAGE_EXPENSE" : line.differenceQuantity && line.differenceQuantity > 0 ? "SURPLUS_RECEIPT" : "NO_ACTION");
+            const storedAction = line.finalAction || line.proposedAction;
+            const fallbackAction = line.differenceQuantity && line.differenceQuantity < 0 ? "SHORTAGE_EXPENSE" : line.differenceQuantity && line.differenceQuantity > 0 ? "SURPLUS_RECEIPT" : "NO_ACTION";
+            const action = storedAction === "RECOUNT" ? fallbackAction : storedAction || fallbackAction;
             const actionOptions = actionOptionsForLine(line);
-            const needsReason = (line.differenceQuantity ?? 0) !== 0 && action !== "RECOUNT" && action !== "SKIP" && !line.reasonCode;
             return (
               <tr key={line.id}>
                 <td>
@@ -2455,7 +2467,28 @@ function ReconciliationWorkspace({
                 </td>
                 <td>{line.cellId || "без ячейки"}</td>
                 <td>{qty(line.expectedQuantityAtCount)}</td>
-                <td>{qty(line.finalQuantity)}</td>
+                <td>
+                  <EcoInput
+                    key={`${line.id}:${line.finalQuantity}`}
+                    className="w-24 font-semibold tabular-nums"
+                    inputMode="decimal"
+                    defaultValue={line.finalQuantity ?? ""}
+                    aria-label={`Фактическое количество: ${line.name}`}
+                    disabled={current.status !== "REVIEW" || saveState[line.id] === "saving"}
+                    onBlur={(event) => void saveActual(line, event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }
+                      if (event.key === "Escape") {
+                        event.currentTarget.value = String(line.finalQuantity ?? "");
+                        event.currentTarget.blur();
+                      }
+                    }}
+                  />
+                  {saveState[line.id] === "saving" && <div className="mt-1 text-xs text-zinc-500">Пересчёт…</div>}
+                </td>
                 <td className={line.differenceQuantity && line.differenceQuantity < 0 ? "text-red-700" : line.differenceQuantity && line.differenceQuantity > 0 ? "text-emerald-700" : ""}>
                   {qty(line.differenceQuantity)}
                   <div className="text-xs text-zinc-500">{money(line.differenceCostCents)}</div>
@@ -2475,13 +2508,6 @@ function ReconciliationWorkspace({
                     />
                     влияет на прибыль
                   </label>
-                </td>
-                <td>
-                  <EcoSelect value={line.reasonCode} onChange={(event) => void saveResolution(line, { reasonCode: event.target.value })}>
-                    <option value="">Выберите</option>
-                    {REASONS.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
-                  </EcoSelect>
-                  {needsReason && <p className="mt-1 text-xs text-red-700">Укажите причину</p>}
                 </td>
                 <td>
                   <EcoBadge tone={statusTone(line.status)}>{LINE_STATUS_LABELS[line.status] ?? line.status}</EcoBadge>
