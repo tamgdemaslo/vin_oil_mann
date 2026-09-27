@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Bot, CircleStop, Cog, Droplet, Gauge, GitBranch, Info, Link2, RefreshCw, Settings, Snowflake, type LucideIcon } from "lucide-react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import type { MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
-import { MANN_FLUID_SYSTEMS, MANN_FLUID_LABELS, MANN_FLUID_GROUP_IDS, MANN_FLUID_GROUPS } from "@/lib/mann-fluid-systems";
+import { MANN_FLUID_SYSTEMS, MANN_FLUID_LABELS, MANN_FLUID_GROUP_IDS, MANN_FLUID_GROUPS, type MannFluidSystem } from "@/lib/mann-fluid-systems";
 import { runFluidResearchGroups } from "@/lib/mann-fluid-research-progress";
 import { mannCapacityLabel as capacityLabel } from "@/lib/mann-capacity-label";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
@@ -143,6 +144,87 @@ const RESEARCH_COPY = [
   "У похожих машин бывают разные требования",
 ];
 
+const FLUID_SYSTEM_ICONS: Record<MannFluidSystem, LucideIcon> = {
+  ENGINE_OIL: Droplet,
+  ENGINE_COOLANT: Snowflake,
+  BRAKE_FLUID: CircleStop,
+  AUTOMATIC_TRANSMISSION: Settings,
+  MANUAL_TRANSMISSION: Cog,
+  CVT_TRANSMISSION: RefreshCw,
+  ROBOT_TRANSMISSION: Bot,
+  POWER_STEERING: Gauge,
+  TRANSFER_CASE: GitBranch,
+  FRONT_DIFFERENTIAL: GitBranch,
+  REAR_DIFFERENTIAL: GitBranch,
+  AWD_COUPLING: Link2,
+};
+
+type FluidCardTone = "confirmed" | "warning" | "muted" | "progress";
+
+function FluidFactPopover({ label, title, children }: { label: string; title: string; children: ReactNode }) {
+  return <details className="eco-fluid-popover">
+    <summary aria-label={label} title={label}><Info size={15} aria-hidden="true" /></summary>
+    <div className="eco-fluid-popover__panel" role="group" aria-label={title}>
+      <strong>{title}</strong>
+      <div>{children}</div>
+    </div>
+  </details>;
+}
+
+function FluidCard({
+  systemCode,
+  label,
+  componentModel,
+  specifications,
+  volumes,
+  status,
+  tone,
+  conditions,
+  sources,
+  absent = false,
+}: {
+  systemCode: MannFluidSystem;
+  label: string;
+  componentModel?: string | null;
+  specifications: string[];
+  volumes: string[];
+  status: string;
+  tone: FluidCardTone;
+  conditions?: ReactNode;
+  sources?: ReactNode;
+  absent?: boolean;
+}) {
+  const Icon = FLUID_SYSTEM_ICONS[systemCode];
+  const mainSpecification = specifications[0] ?? "—";
+  const mainVolume = volumes[0] ?? "Не указан";
+  return <article className={`eco-fluid-card${absent ? " is-absent" : ""}`} role="listitem">
+    <header className="eco-fluid-card__head">
+      <span className="eco-fluid-card__icon" aria-hidden="true"><Icon size={22} strokeWidth={1.7} /></span>
+      <div className="eco-fluid-card__title">
+        <strong>{label}</strong>
+        {componentModel ? <span>{componentModel}</span> : null}
+      </div>
+      <span className={`eco-fluid-card__status is-${tone}`}><i aria-hidden="true" />{status}</span>
+    </header>
+    <div className="eco-fluid-card__fact">
+      <span>Допуск</span>
+      <strong title={mainSpecification}>{mainSpecification}</strong>
+      {specifications.length > 1 ? <FluidFactPopover label={`Все допуски: ${label}`} title="Допуски и вязкость">
+        <ul>{specifications.map(value => <li key={value}>{value}</li>)}</ul>
+      </FluidFactPopover> : null}
+    </div>
+    <div className="eco-fluid-card__fact">
+      <span>Объём</span>
+      <strong title={mainVolume}>{mainVolume}</strong>
+      {(volumes.length || conditions || sources) ? <FluidFactPopover label={`Объёмы, условия и источники: ${label}`} title="Объёмы и условия">
+        {volumes.length ? <ul>{volumes.map(value => <li key={value}>{value}</li>)}</ul> : <p>Объём не указан.</p>}
+        {conditions ? <div className="eco-fluid-popover__conditions">{conditions}</div> : null}
+        {sources ? <div className="eco-fluid-popover__sources"><b>Источники</b>{sources}</div> : null}
+      </FluidFactPopover> : null}
+    </div>
+  </article>;
+}
+
 export function FluidResearchResults({ result, onRetry, profile }: { result: MannFluidResearchResult; onRetry?: () => void; profile?: MannUnifiedTechnicalProfile | null }) {
   const [tick, setTick] = useState(0);
   const searching = result.status === "searching";
@@ -162,10 +244,8 @@ export function FluidResearchResults({ result, onRetry, profile }: { result: Man
     {searching && !result.items.length && !Object.values(result.groups ?? {}).some(g => g.status === "done") ? <>
       <p className="eco-fluid-research__caption">{tick >= 6 ? "Поиск занимает больше обычного. Фильтры уже можно добавлять." : RESEARCH_COPY[tick % RESEARCH_COPY.length]}</p>
       <div className="eco-fluid-research__skeleton" aria-hidden="true"><i /><i /><i /></div>
-    </> : <div className="eco-fluid-table-wrap"><table className="eco-fluid-table">
-      <caption className="eco-sr-only">Предварительные результаты поиска жидкостей</caption>
-      <thead><tr><th scope="col">Жидкость / узел</th><th scope="col">Допуск / вязкость</th><th scope="col">Объём и условия</th><th scope="col">Проверка</th></tr></thead>
-      <tbody>{MANN_FLUID_SYSTEMS.map(systemCode => {
+    </> : <div className="eco-fluid-grid-wrap">
+      <div className="eco-fluid-grid" role="list" aria-label="Предварительные результаты поиска жидкостей">{MANN_FLUID_SYSTEMS.map(systemCode => {
         const items = result.items.filter(item => item.systemCode === systemCode);
         const catalog = profile?.items.filter(item => item.systemCode === systemCode) ?? [];
         const state = result.systems?.find(row => row.systemCode === systemCode);
@@ -175,18 +255,22 @@ export function FluidResearchResults({ result, onRetry, profile }: { result: Man
         const specifications = [...new Set([...catalog.flatMap(item => [...item.specifications, ...item.viscosityGrades]), ...items.flatMap(item => item.specification ? item.specification.split(/;\s*/) : [])])];
         const volumes = [...new Set([...catalog.filter(item => !item.requiresReview).flatMap(item => item.capacities.map(capacityLabel)), ...items.map(item => item.volumeText).filter(Boolean)])];
         const sources = items.length ? items : state?.sourceUrl ? [state] : [];
-        return <tr key={systemCode}>
-          <th scope="row">{MANN_FLUID_LABELS[systemCode]}</th>
-          <td data-label="Допуск / вязкость">{!absent && specifications.length ? specifications.map((value, index) => <span className="eco-fluid-capacity" key={index}>{value}</span>) : "—"}</td>
-          <td data-label="Объём и условия">{!absent && volumes.length ? volumes.map((value, index) => <span className="eco-fluid-capacity" key={index}>{value}</span>) : "—"}</td>
-          <td data-label="Проверка"><span className="eco-fluid-status">{absent ? "Не предусмотрен · по данным ИИ" : items.length ? "Требует проверки" : catalog.length ? "См. технический профиль" : groupState?.status === "failed" ? "Поиск не завершён" : groupState?.status === "searching" ? "Идёт поиск" : groupState?.status === "queued" ? "Ожидает поиска" : state?.applicability === "present" ? "Агрегат есть, данные не найдены" : "Не подтверждено"}</span>
-            {groupState?.status === "failed" ? <p>{groupState.message}</p> : null}
-            {state?.reason ? <p>{state.reason}</p> : null}
-            {sources.length ? <details><summary>Источник</summary>{sources.map((source, index) => <a key={index} href={source.sourceUrl} target="_blank" rel="noopener noreferrer">{source.sourceTitle}</a>)}</details> : null}
-          </td>
-        </tr>;
-      })}</tbody>
-    </table><p className="eco-fluid-research__caption">Прочерк — значение не заполнено. «Не предусмотрен» и «Не подтверждено» — разные состояния. Данные ИИ требуют проверки.</p>
+        const status = absent ? "Не предусмотрен" : items.length ? "Требует проверки" : catalog.length ? "Есть данные" : groupState?.status === "failed" ? "Сбой поиска" : groupState?.status === "searching" ? "Ищем" : groupState?.status === "queued" ? "В очереди" : state?.applicability === "present" ? "Данных нет" : "Не подтверждено";
+        const tone: FluidCardTone = catalog.length && !items.length ? "confirmed" : groupState?.status === "searching" || groupState?.status === "queued" ? "progress" : absent || (!items.length && state?.applicability !== "present" && groupState?.status !== "failed") ? "muted" : "warning";
+        return <FluidCard
+          key={systemCode}
+          systemCode={systemCode}
+          label={MANN_FLUID_LABELS[systemCode]}
+          specifications={absent ? [] : specifications}
+          volumes={absent ? [] : volumes}
+          status={status}
+          tone={tone}
+          absent={absent}
+          conditions={(groupState?.status === "failed" || state?.reason) ? <>{groupState?.status === "failed" ? <p>{groupState.message}</p> : null}{state?.reason ? <p>{state.reason}</p> : null}</> : null}
+          sources={sources.length ? sources.map((source, index) => <a key={index} href={source.sourceUrl} target="_blank" rel="noopener noreferrer">{source.sourceTitle}</a>) : null}
+        />;
+      })}</div>
+      <p className="eco-fluid-research__caption">Пустое значение — данные не найдены. «Не предусмотрен» и «не подтверждено» — разные состояния. Данные ИИ требуют проверки.</p>
       {result.unresolved?.length ? <details><summary>Что осталось уточнить</summary><ul>{result.unresolved.map((reason, index) => <li key={index}>{reason}</li>)}</ul></details> : null}
     </div>}
   </section>;
@@ -312,29 +396,33 @@ export function TechnicalProfile({
         <div className="eco-vehicle-lookup__profile-state is-warning">{error}</div>
       ) : profile?.items.length ? (
         <>
-          <div className="eco-fluid-table-wrap"><table className="eco-fluid-table">
-            <caption className="eco-sr-only">Жидкости из технического каталога</caption>
-            <thead><tr><th scope="col">Жидкость / узел</th><th scope="col">Допуск / вязкость</th><th scope="col">Объём и условия</th><th scope="col">Проверка</th></tr></thead>
-            <tbody>{profile.items.map(item => <tr key={item.revisionId}>
-              <th scope="row">{item.systemLabel}{item.componentModel ? <small>{item.componentModel}</small> : null}</th>
-              <td data-label="Допуск / вязкость">{item.specifications.length ? item.specifications.join(" · ") : "Допуск не указан"}{item.viscosityGrades.length ? <small>{item.viscosityGrades.join(" · ")}</small> : null}</td>
-              <td data-label="Объём и условия">{item.requiresReview ? "Объём требует проверки" : item.capacities.length ? item.capacities.map((capacity, index) => <span className="eco-fluid-capacity" key={index}>{capacityLabel(capacity)}</span>) : "Не указан"}</td>
-              <td data-label="Проверка">
-                <span className={`eco-fluid-status ${item.sourceStatus === "primary_source" && !item.requiresReview && !item.userConfirmedTransmissionModel && !item.userConfirmedEquipment ? "is-confirmed" : ""}`}>{item.sourceStatus === "primary_source" && !item.requiresReview && !item.userConfirmedTransmissionModel && !item.userConfirmedEquipment ? "По источнику" : "Требует проверки"}</span>
-                <details><summary>Источники и условия</summary>
-                  {item.userConfirmedTransmission ? <p>Тип коробки указан вручную.</p> : null}
-                  {item.userConfirmedTransmissionModel ? <p>Модель коробки указана вручную. Данные предварительные.</p> : null}
-                  {item.userConfirmedEquipment ? <p>Установленный узел указан вручную. Данные предварительные.</p> : null}
-                  {item.recommendation ? <p>{item.recommendation}</p> : null}
-                  {item.replacementInterval ? <p>Интервал: {item.replacementInterval}</p> : null}
-                  {item.evidence.length ? item.evidence.map((source, index) => {
-                    const label = [source.title ?? source.publisher ?? "Документ", source.printedPage != null ? `стр. ${source.printedPage}` : null].filter(Boolean).join(" · ");
-                    return source.url ? <a href={source.url} target="_blank" rel="noreferrer" key={index}>{label}</a> : <p key={index}>{label}</p>;
-                  }) : <p>Источник не указан.</p>}
-                </details>
-              </td>
-            </tr>)}</tbody>
-          </table></div>
+          <div className="eco-fluid-grid" role="list" aria-label="Жидкости из технического каталога">{profile.items.map(item => {
+            const confirmed = item.sourceStatus === "primary_source" && !item.requiresReview && !item.userConfirmedTransmissionModel && !item.userConfirmedEquipment;
+            const conditions = <>
+              {item.userConfirmedTransmission ? <p>Тип коробки указан вручную.</p> : null}
+              {item.userConfirmedTransmissionModel ? <p>Модель коробки указана вручную. Данные предварительные.</p> : null}
+              {item.userConfirmedEquipment ? <p>Установленный узел указан вручную. Данные предварительные.</p> : null}
+              {item.recommendation ? <p>{item.recommendation}</p> : null}
+              {item.replacementInterval ? <p>Интервал: {item.replacementInterval}</p> : null}
+              {item.requiresReview ? <p>Объём требует проверки.</p> : null}
+            </>;
+            const sources = item.evidence.length ? item.evidence.map((source, index) => {
+              const label = [source.title ?? source.publisher ?? "Документ", source.printedPage != null ? `стр. ${source.printedPage}` : null].filter(Boolean).join(" · ");
+              return source.url ? <a href={source.url} target="_blank" rel="noreferrer" key={index}>{label}</a> : <p key={index}>{label}</p>;
+            }) : <p>Источник не указан.</p>;
+            return <FluidCard
+              key={item.revisionId}
+              systemCode={item.systemCode as MannFluidSystem}
+              label={item.systemLabel}
+              componentModel={item.componentModel}
+              specifications={[...item.specifications, ...item.viscosityGrades]}
+              volumes={item.requiresReview ? [] : item.capacities.map(capacityLabel)}
+              status={confirmed ? "По источнику" : "Требует проверки"}
+              tone={confirmed ? "confirmed" : "warning"}
+              conditions={conditions}
+              sources={sources}
+            />;
+          })}</div>
           {profile.notice ? <details className="eco-vehicle-lookup__profile-source"><summary>Подробнее о данных каталога</summary><p>{profile.notice}</p></details> : null}
         </>
       ) : researchPendingOrFound ? null : (
