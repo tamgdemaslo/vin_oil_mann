@@ -1,10 +1,12 @@
 "use client";
 
 import {
+  AlertTriangle,
   Banknote,
   CalendarDays,
   ChevronDown,
   ChevronRight,
+  CircleCheck,
   Gauge,
   MessageCircle,
   MoreHorizontal,
@@ -191,6 +193,64 @@ type DashboardData = {
   notificationCounts: Record<NotificationUrgency | "total", number>;
   documents: Array<{ id: string; type: string; name: string; date: string; sumCents: number; href: string }>;
 };
+
+type TelegramDashboardStatus = {
+  connected: boolean;
+  status: string;
+  branchName: string;
+  canManage: boolean;
+};
+
+function TelegramDashboardNotice() {
+  const [state, setState] = useState<TelegramDashboardStatus | "loading" | "error">("loading");
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/dashboard/telegram-status", { cache: "no-store" });
+        if (!response.ok) throw new Error("telegram_status_failed");
+        const data = await response.json() as TelegramDashboardStatus;
+        if (active) setState(data);
+      } catch {
+        if (active) setState("error");
+      }
+    };
+    void load();
+    const onFocus = () => void load();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
+  if (state === "loading") return null;
+  if (state !== "error" && state.connected) {
+    return (
+      <div className="eco-dashboard-telegram is-connected" role="status">
+        <CircleCheck size={19} aria-hidden="true" />
+        <span><strong>Telegram подключён</strong><small>{state.branchName} · уведомления и сообщения работают</small></span>
+      </div>
+    );
+  }
+
+  const canManage = state !== "error" && state.canManage;
+  return (
+    <section className="eco-dashboard-telegram is-warning" role="alert" aria-labelledby="telegram-dashboard-title">
+      <AlertTriangle size={22} aria-hidden="true" />
+      <div className="eco-dashboard-telegram__copy">
+        <h2 id="telegram-dashboard-title">Срочно: Telegram не настроен для филиала</h2>
+        <p>{state === "error" || state.status === "error" ? "Не удалось проверить подключение. Проверьте его в настройках интеграций." : `${state.branchName}: сотрудники не смогут получать уведомления и отвечать клиентам через рабочий Telegram.`}</p>
+      </div>
+      {canManage ? (
+        <Link className="eco-dashboard-telegram__action" href="/cabinet/integrations">Настроить Telegram <ChevronRight size={16} aria-hidden="true" /></Link>
+      ) : (
+        <span className="eco-dashboard-telegram__hint">Попросите администратора филиала подключить Telegram</span>
+      )}
+    </section>
+  );
+}
 
 const CASH_SHIFT_EVENT = "eco-cash-shift-changed";
 
@@ -1217,6 +1277,7 @@ function AdminDayCenter({
       <div className="eco-visually-hidden" role="status" aria-live="polite">
         {loading ? "Загружаем операционный центр." : refreshing ? "Обновляем операционный центр." : "Операционный центр обновлён."}
       </div>
+      <TelegramDashboardNotice />
       <header className="eco-admin-day-head">
         <div>
           <span className="eco-ops-eyebrow">Рабочий день · {userName}</span>
@@ -1508,6 +1569,7 @@ export default function HomeDashboard({
         <div className="eco-visually-hidden" role="status" aria-live="polite">
           {loading ? "Загружаем личный расчёт." : refreshing ? "Обновляем личный расчёт." : "Личный расчёт обновлён."}
         </div>
+        <TelegramDashboardNotice />
         <MyPayrollCard
           data={employeePayroll}
           loading={loading || refreshing}
@@ -1545,6 +1607,7 @@ export default function HomeDashboard({
       <div className="eco-visually-hidden" role="status" aria-live="polite">
         {loading ? "Загружаем операционную сводку." : refreshing ? "Обновляем операционную сводку." : loadState === "stale" ? "Показаны ранее загруженные данные." : "Операционная сводка обновлена."}
       </div>
+      <TelegramDashboardNotice />
       <section className="eco-mobile-control" aria-label={`Мобильный контроль дня для ${userName}`}>
         <header className="eco-mobile-top">
           <div>
