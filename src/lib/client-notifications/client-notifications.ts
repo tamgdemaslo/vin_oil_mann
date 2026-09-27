@@ -3045,9 +3045,10 @@ export async function sendTestNotification(input: {
 export async function retryNotificationJob(id: string) {
   await ensureClientNotificationsSchema();
   const organizationId = getMessengerOrganizationId();
-  await prisma.$executeRaw`
+  const rows = await prisma.$queryRaw<NotificationJobRow[]>`
     UPDATE notification_jobs
     SET status = 'queued',
+        scheduled_at = now(),
         attempts = 0,
         next_attempt_at = NULL,
         error_message = NULL,
@@ -3055,7 +3056,32 @@ export async function retryNotificationJob(id: string) {
     WHERE organization_id = ${organizationId}
       AND branch_id = ${activeNotificationBranchId()}
       AND id = ${id}
-      AND status IN ('error', 'client_not_connected', 'no_consent', 'skipped', 'sending', 'template_error')
+      AND status IN ('error', 'client_not_connected', 'no_consent', 'skipped', 'sending', 'template_error', 'queued', 'scheduled')
+    RETURNING id,
+      organization_id AS "organizationId",
+      event_type AS "eventType",
+      channel,
+      client_id AS "clientId",
+      appointment_id AS "appointmentId",
+      diagnostic_report_id AS "diagnosticReportId",
+      template_id AS "templateId",
+      scheduled_at AS "scheduledAt",
+      status,
+      idempotency_key AS "idempotencyKey",
+      payload_json AS "payloadJson",
+      error_message AS "errorMessage",
+      attempts,
+      next_attempt_at AS "nextAttemptAt",
+      sent_at AS "sentAt",
+      provider_message_id AS "providerMessageId",
+      messenger_message_id AS "messengerMessageId",
+      messenger_outbox_id AS "messengerOutboxId",
+      conversation_id AS "conversationId",
+      branch_id AS "branchId",
+      initiated_by_id AS "initiatedById",
+      created_at AS "createdAt",
+      updated_at AS "updatedAt"
   `;
-  return processDueClientNotificationJobs(5);
+  if (!rows[0]) return [];
+  return [await processClientNotificationJob(rows[0])];
 }

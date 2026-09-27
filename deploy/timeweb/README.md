@@ -33,6 +33,16 @@ The platform filesystem is replaced on every deployment. Do not use
 `/app/.data` as the durable source of business files: store them in PostgreSQL
 or object storage instead.
 
+## Client notification queue
+
+The web process does not run background workers unless explicitly enabled.
+Configure a trusted scheduler to call `GET /api/cron/client-notifications`
+once per minute with `Authorization: Bearer <CRON_SECRET>`, and set the same
+`CRON_SECRET` in App Platform variables. Check the response for `ok: true` and
+per-branch processing results. Without this scheduled call, due client
+notifications remain queued until an owner manually processes them in the
+notifications journal.
+
 ## OpenAI WireGuard route
 
 If the App Platform region cannot reach OpenAI directly, set

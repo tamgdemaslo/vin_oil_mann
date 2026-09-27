@@ -413,10 +413,53 @@ export default function ClientNotificationsClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await safeReadJson<{ error?: string }>(response);
+      const data = await safeReadJson<{
+        error?: string;
+        processed?: Array<{ id?: string; status?: string; error?: string }>;
+        result?: { created?: boolean; id?: string; reason?: string; status?: string };
+      }>(response);
       if (!response.ok) throw new Error(data?.error ?? "Команда не выполнена");
       await loadSettings();
-      setResult({ tone: "success", title: "Уведомления", message: success });
+      const processed = data?.processed ?? [];
+      const lastProcessed = body.action === "test"
+        ? processed.find((item) => item.id === data?.result?.id)
+        : processed.at(-1);
+      if (body.action === "test") {
+        if (lastProcessed?.status === "sent" || lastProcessed?.status === "delivered") {
+          setResult({ tone: "success", title: "Тест отправлен", message: "Telegram подтвердил отправку тестового сообщения." });
+        } else if (lastProcessed) {
+          const status = statusText(settings, lastProcessed.status ?? "unknown");
+          setResult({
+            tone: ["error", "template_error"].includes(lastProcessed.status ?? "") ? "danger" : "warning",
+            title: `Тест: ${status}`,
+            message: lastProcessed.error || `Сообщение не отправлено. Текущий статус: ${status}.`,
+          });
+        } else if (data?.result?.created === false) {
+          setResult({ tone: "warning", title: "Тест не создан", message: data.result.reason || "Проверьте журнал отправок." });
+        } else {
+          setResult({ tone: "warning", title: "Тест в очереди", message: "Задача создана, но обработчик очереди её не забрал. Проверьте запуск фоновой обработки." });
+        }
+      } else if (body.action === "process") {
+        setResult({
+          tone: "success",
+          title: "Очередь обработана",
+          message: processed.length ? `Обработано: ${processed.length}. Статусы обновлены в журнале.` : "Подходящих задач для обработки сейчас нет.",
+        });
+      } else if (body.action === "retry") {
+        if (lastProcessed) {
+          const status = statusText(settings, lastProcessed.status ?? "unknown");
+          const sent = ["sent", "delivered"].includes(lastProcessed.status ?? "");
+          setResult({
+            tone: sent ? "success" : ["error", "template_error"].includes(lastProcessed.status ?? "") ? "danger" : "warning",
+            title: sent ? "Сообщение отправлено" : `Повтор: ${status}`,
+            message: lastProcessed.error || (sent ? "Telegram подтвердил отправку." : `Сообщение не отправлено. Статус: ${status}.`),
+          });
+        } else {
+          setResult({ tone: "warning", title: "Повтор не выполнен", message: "Задача не найдена или её статус не допускает повтор. Обновите журнал и проверьте текущий статус." });
+        }
+      } else {
+        setResult({ tone: "success", title: "Уведомления", message: success });
+      }
     } catch (error) {
       setResult({ tone: "danger", title: "Уведомления", message: error instanceof Error ? error.message : "Команда не выполнена." });
     } finally {
