@@ -3032,6 +3032,10 @@ export async function sendTestNotification(input: {
     clientId: input.clientId,
     clientPhone: input.clientPhone,
     clientName: input.clientName,
+    // Do not reuse the sample appointment (A-461) for test sends. The
+    // idempotency key must identify each test attempt, not the demo record.
+    appointmentId: null,
+    diagnosticReportId: null,
     payload: { telegramId: input.telegramId },
   });
   const result = await createNotificationJob(rule, template, {
