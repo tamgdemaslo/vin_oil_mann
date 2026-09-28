@@ -18,7 +18,7 @@ import {
 } from "@/lib/date-time";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { listMessengerChannels, sendMessage } from "@/lib/messenger/messenger-gateway";
-import { startContactConversation } from "@/lib/messenger/messenger-contact-actions";
+import { ContactActionError, startContactConversation } from "@/lib/messenger/messenger-contact-actions";
 import { ensureMessengerIntegrationCoreSchema } from "@/lib/messenger/messenger-schema";
 import { assertMessengerOutboundTextSafe } from "@/lib/messenger/messenger-security";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
@@ -286,6 +286,8 @@ type ConversationTarget = {
   messengerAccountId: string | null;
   clientId: string | null;
 };
+
+class TelegramRecipientResolutionError extends Error {}
 
 type NotificationCounterpartyRow = {
   id: string;
@@ -1836,8 +1838,12 @@ async function startTelegramConversationFromContact(
       messengerAccountId: null,
       clientId: resolved.clientId,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    throw new TelegramRecipientResolutionError(
+      error instanceof ContactActionError
+        ? error.message
+        : "Не удалось найти или открыть Telegram-диалог по номеру клиента."
+    );
   }
 }
 
@@ -2367,14 +2373,29 @@ async function processClientNotificationJob(job: NotificationJobRow) {
       AND branch_id = ${activeNotificationBranchId()}
   `;
 
-  const target = await findTelegramConversation({
-    clientId: job.clientId,
-    clientName: stringValue(payload.clientName),
-    clientPhone: stringValue(payload.clientPhone),
-    appointmentId: job.appointmentId,
-    diagnosticReportId: job.diagnosticReportId,
-    payload,
-  });
+  let target: ConversationTarget | null;
+  try {
+    target = await findTelegramConversation({
+      clientId: job.clientId,
+      clientName: stringValue(payload.clientName),
+      clientPhone: stringValue(payload.clientPhone),
+      appointmentId: job.appointmentId,
+      diagnosticReportId: job.diagnosticReportId,
+      payload,
+    });
+  } catch (error) {
+    if (error instanceof TelegramRecipientResolutionError) {
+      return finishJob(job, "client_not_connected", {
+        renderedMessage,
+        errorMessage: error.message,
+      });
+    }
+    return finishJob(job, "error", {
+      renderedMessage,
+      errorMessage: "Не удалось проверить Telegram-диалог клиента. Повторите позже.",
+      retry: true,
+    });
+  }
   if (!target) {
     return finishJob(job, "client_not_connected", {
       renderedMessage,
