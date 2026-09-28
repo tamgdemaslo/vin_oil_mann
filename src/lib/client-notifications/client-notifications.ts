@@ -19,6 +19,7 @@ import {
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { listMessengerChannels, sendMessage } from "@/lib/messenger/messenger-gateway";
 import { ContactActionError, startContactConversation } from "@/lib/messenger/messenger-contact-actions";
+import { redactKnownSecrets } from "@/lib/messenger/messenger-crypto";
 import { ensureMessengerIntegrationCoreSchema } from "@/lib/messenger/messenger-schema";
 import { assertMessengerOutboundTextSafe } from "@/lib/messenger/messenger-security";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
@@ -1839,10 +1840,13 @@ async function startTelegramConversationFromContact(
       clientId: resolved.clientId,
     };
   } catch (error) {
+    const detail = error instanceof Error ? redactKnownSecrets(error.message).trim() : "";
     throw new TelegramRecipientResolutionError(
       error instanceof ContactActionError
         ? error.message
-        : "Не удалось найти или открыть Telegram-диалог по номеру клиента."
+        : detail
+          ? `Не удалось найти или открыть Telegram-диалог по номеру клиента: ${detail}`
+          : "Не удалось найти или открыть Telegram-диалог по номеру клиента."
     );
   }
 }
