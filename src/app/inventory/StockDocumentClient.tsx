@@ -1262,13 +1262,13 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     }
   }
 
-  function buildCurrentDocument(data: { id?: string; name?: string; status?: StockDocumentStatus; applicable?: boolean; invoice?: MovementRow["invoice"] | null }): MovementRow {
+  function buildCurrentDocument(data: { id?: string; name?: string; status?: StockDocumentStatus; applicable?: boolean; invoice?: MovementRow["invoice"] | null }, moment: string): MovementRow {
     return {
       id: data.id || editingDocument?.id || "",
       branchId: editingDocument?.branchId ?? "",
       type,
       name: data.name || editingDocument?.name || "",
-      moment: editingDocument?.moment || toServiceMomentString(),
+      moment,
       documentDate,
       status: data.status ?? (data.applicable ? "posted" : "draft"),
       applicable: Boolean(data.applicable),
@@ -1338,6 +1338,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     }
 
     const action: SaveAction = nextApplicable ? "conduct" : "draft";
+    const currentMoment = toServiceMomentString();
+    const moment = currentMoment.slice(0, 10) === documentDate ? currentMoment : `${documentDate} 00:00:00`;
     setSavingAction(action);
     setFormError(null);
     setInfo(null);
@@ -1353,6 +1355,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             storeId: selectedStoreId || undefined,
             counterpartyId: selectedCounterparty?.id ?? null,
             documentDate,
+            moment,
             description: description.trim() || undefined,
             adjustmentType: isReceipt ? undefined : adjustmentType,
             adjustmentMethod: isReceipt ? undefined : "WRITE_OFF_QUANTITY",
@@ -1399,7 +1402,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         status: data?.status,
         applicable: nextApplicable,
         invoice: data?.invoice ?? null,
-      });
+      }, moment);
       const successMessage = nextApplicable
         ? `${title} ${nextDocument.name} проведена. Остатки обновлены.`
         : `${title} ${nextDocument.name} сохранена как черновик.`;

@@ -29,6 +29,8 @@ export type ProductDocumentHistoryItem = {
   documentId: string;
   documentNumber: string;
   documentDate: string;
+  createdAt?: string | null;
+  postedAt?: string | null;
   status: string;
   quantity: number;
   quantityDirection: ProductHistoryDirection;
@@ -500,7 +502,7 @@ export async function getProductDocumentHistory(
             auditLogs: {
               orderBy: { createdAt: "desc" },
               take: 12,
-              select: { action: true, createdById: true, createdByName: true },
+              select: { action: true, createdById: true, createdByName: true, createdAt: true },
             },
           },
           orderBy: [{ momentAt: "desc" }, { id: "desc" }],
@@ -616,6 +618,8 @@ export async function getProductDocumentHistory(
       documentId: document.id,
       documentNumber: document.name,
       documentDate: document.momentAt.toISOString(),
+      createdAt: document.createdAt.toISOString(),
+      postedAt: postAudit?.createdAt.toISOString() ?? null,
       status,
       quantity: document.positions.reduce((sum, position) => sum + decimal(position.quantity), 0),
       quantityDirection: presentation.direction === "none" ? "none" : effectiveHistoryDirection(status, presentation.direction),

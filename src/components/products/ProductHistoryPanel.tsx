@@ -30,6 +30,8 @@ type HistoryItem = {
   documentId: string;
   documentNumber: string;
   documentDate: string;
+  createdAt?: string | null;
+  postedAt?: string | null;
   status: string;
   quantity: number;
   quantityDirection: HistoryDirection;
@@ -87,6 +89,7 @@ const periodOptions: Array<{ value: HistoryPeriod; label: string }> = [
 
 const quantityFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 });
 const timeFormatter = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" });
+const dateTimeFormatter = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const dateFormatter = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long" });
 const dateWithYearFormatter = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" });
 
@@ -177,7 +180,9 @@ function HistoryRow({ item }: { item: HistoryItem }) {
       <details className="product-history-details">
         <summary>Подробнее</summary>
         <dl>
-          <div><dt>Дата</dt><dd>{dateWithYearFormatter.format(new Date(item.documentDate))}, {timeFormatter.format(new Date(item.documentDate))}</dd></div>
+          <div><dt>Дата документа</dt><dd>{dateWithYearFormatter.format(new Date(item.documentDate))}, {timeFormatter.format(new Date(item.documentDate))}</dd></div>
+          {item.createdAt ? <div><dt>Создан</dt><dd>{dateTimeFormatter.format(new Date(item.createdAt))}</dd></div> : null}
+          {item.postedAt ? <div><dt>Проведён</dt><dd>{dateTimeFormatter.format(new Date(item.postedAt))}</dd></div> : null}
           {item.inventory ? (
             <>
               <div><dt>Учёт</dt><dd>{quantityFormatter.format(item.inventory.accountedQuantity)} {item.unit}</dd></div>

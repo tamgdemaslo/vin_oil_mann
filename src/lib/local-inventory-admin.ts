@@ -6,7 +6,7 @@ import {
 } from "@/lib/anonymous-retail-counterparty";
 import type { User } from "@/lib/auth";
 import { addExpense, getCurrentShift } from "@/lib/cashbox";
-import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
+import { parseServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
 import { cancelReceiptBarrelsTx, lockBarrelProducts, registerReceiptBarrelsTx, receiptBarrelsFromRaw } from "@/lib/bulk-oil-barrels";
 import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
@@ -817,7 +817,10 @@ function optionalDocumentDateFromInput(value?: string | null): string | null {
 
 function momentFromInput(value: string | undefined, documentDate: string): Date {
   const raw = value?.trim();
-  return parseServiceDateTime(raw || `${documentDate} 00:00:00`) ?? new Date();
+  const now = new Date();
+  const nowMoment = toServiceMomentString(now);
+  const defaultMoment = nowMoment.slice(0, 10) === documentDate ? nowMoment : `${documentDate} 00:00:00`;
+  return parseServiceDateTime(raw || defaultMoment) ?? now;
 }
 
 function buildProductSearchText(input: {
