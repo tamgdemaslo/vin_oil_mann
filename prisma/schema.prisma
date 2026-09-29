@@ -2514,6 +2514,7 @@ model LocalStore {
   storageCells           StorageCell[]
   storageAssignments     ProductStorageAssignment[]
   storefrontBranchStores StorefrontBranchStore[]
+  bulkOilBarrels         LocalBulkOilBarrel[]
 
   @@unique([branchId, id])
   @@index([name])
@@ -2609,6 +2610,7 @@ model LocalProduct {
   inventoryLocks             InventoryLock[]
   photos                     LocalProductPhoto[]
   markingAuditLogs           ProductMarkingAuditLog[]
+  bulkOilBarrels              LocalBulkOilBarrel[]
   mannLinks                  ProductMannLink[]
   mannPomanMigrationAudits   ProductMannPomanMigrationAudit[]
   oemBatchItems              ProductOemBatchItem[]
@@ -3476,6 +3478,53 @@ model LocalProductPhoto {
 }
 
 /// Локальные остатки ассортимента по складам.
+/// Physical containers of a litre-sale product. Codes remain unique after closure.
+model LocalBulkOilBarrel {
+  id                String   @id @default(cuid())
+  branchId          String   @map("branch_id")
+  productId         String   @map("product_id")
+  product           LocalProduct @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Restrict)
+  storeId           String   @map("store_id")
+  store             LocalStore @relation(fields: [branchId, storeId], references: [branchId, id], onDelete: Restrict)
+  number            String
+  markingCode       String   @map("marking_code") @db.Text
+  gtin              String
+  status            String   @default("SEALED")
+  receivedLiters    Decimal  @map("received_liters") @db.Decimal(14, 3)
+  remainingLiters   Decimal  @map("remaining_liters") @db.Decimal(14, 3)
+  receiptDocumentId String?  @map("receipt_document_id")
+  receivedAt        DateTime @default(now()) @map("received_at")
+  openedAt          DateTime? @map("opened_at")
+  closedAt          DateTime? @map("closed_at")
+  createdByLogin    String?  @map("created_by_login")
+  events            LocalBulkOilBarrelEvent[]
+
+  @@unique([branchId, id])
+  @@unique([branchId, markingCode])
+  @@index([branchId, productId, status])
+  @@index([branchId, receiptDocumentId])
+  @@map("local_bulk_oil_barrels")
+}
+
+/// Immutable history, including idempotent litre withdrawals and discrepancies.
+model LocalBulkOilBarrelEvent {
+  id             String   @id @default(cuid())
+  branchId       String   @map("branch_id")
+  barrelId       String   @map("barrel_id")
+  barrel         LocalBulkOilBarrel @relation(fields: [branchId, barrelId], references: [branchId, id], onDelete: Restrict)
+  action         String
+  operationKey   String   @map("operation_key")
+  volumeLiters   Decimal  @default(0) @map("volume_liters") @db.Decimal(14, 3)
+  reason         String?  @db.Text
+  documentId     String?  @map("document_id")
+  createdByLogin String?  @map("created_by_login")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([branchId, operationKey])
+  @@index([branchId, barrelId, createdAt])
+  @@map("local_bulk_oil_barrel_events")
+}
+
 model LocalStockBalance {
   id        String       @id @default(cuid())
   branchId  String       @default("branch-main") @map("branch_id")

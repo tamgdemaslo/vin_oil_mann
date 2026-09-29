@@ -83,6 +83,7 @@
     "test:branch-isolation": "node scripts/check-branch-isolation.mjs && node scripts/test-branch-scope-policy.mjs && node scripts/test-branch-production-guards.mjs && node scripts/test-branch-print-context.mjs",
     "test:branch-security-db": "node scripts/test-branch-security-db.mjs",
     "test:inventory-document-branch-isolation": "node scripts/test-inventory-document-branch-isolation.mjs",
+    "test:bulk-oil-barrels": "node scripts/test-bulk-oil-barrels.mjs",
     "test:inventory-costing": "node scripts/test-inventory-costing.mjs",
     "test:one-off-product": "node scripts/test-one-off-product.mjs",
     "test:sales-performance": "node scripts/test-sales-performance.mjs",

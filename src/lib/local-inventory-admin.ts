@@ -8,6 +8,7 @@ import type { User } from "@/lib/auth";
 import { addExpense, getCurrentShift } from "@/lib/cashbox";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
+import { cancelReceiptBarrelsTx, lockBarrelProducts, registerReceiptBarrelsTx, receiptBarrelsFromRaw } from "@/lib/bulk-oil-barrels";
 import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
 import { buildCatalogSearchText } from "@/lib/catalog-search";
 import { mergeProductCrossReferences } from "@/lib/product-cross-references";
@@ -264,6 +265,7 @@ type StockDocumentInput = {
     slotName?: string;
     selectedCellId?: string;
     makeDefaultCell?: boolean;
+    barrels?: { markingCode: string; volumeLiters: number }[];
   }[];
   invoice?: {
     create?: boolean;
@@ -2908,6 +2910,7 @@ export async function createLocalAdminProduct(
   const oemParts = mergeProductCrossReferences(cleanText(body.oemParts), [legacyMannName]);
   const cell = cleanText(body.cell);
   const mannCharacteristicName = cleanText(body.mannCharacteristicName);
+  if (body.markingSettings?.barrelTrackingEnabled || body.markingSettings?.activeBarrelId) return { ok: false as const, error: "Сначала создайте товар, затем включите учёт бочек в карточке." };
   const marking = normalizeProductMarkingData(body, undefined, uomName, groupPath);
   if (!marking.ok) return { ok: false as const, error: marking.error };
   const markingConfiguredManually = booleanFromInput(body.markingConfiguredManually) === true;
@@ -3080,8 +3083,12 @@ export async function updateLocalAdminProduct(
   actor: ActingUser | null | undefined,
   branchId: string,
   options: { transaction?: Prisma.TransactionClient } = {},
-) {
-  const client = options.transaction ?? prisma;
+): Promise<{ ok: true; product: ReturnType<typeof mapProduct> } | { ok: false; error: string; notFound?: boolean }> {
+  if (!options.transaction) {
+    return prisma.$transaction(async (tx) => updateLocalAdminProduct(id, body, actor, branchId, { transaction: tx }));
+  }
+  const client = options.transaction;
+  await lockBarrelProducts(client, branchId, [id]);
   const current = await client.localProduct.findFirst({ where: { branchId, OR: [{ id }, { id: id }] } });
   if (!current) return { ok: false as const, error: "Товар не найден", notFound: true };
   const name = body.name == null ? current.name : body.name.trim();
@@ -3148,6 +3155,21 @@ export async function updateLocalAdminProduct(
   const mannCharacteristicName =
     body.mannCharacteristicName === undefined ? current.mannCharacteristicName : cleanText(body.mannCharacteristicName);
   const oldMarking = productMarkingSnapshot(current);
+  const existingSettings = normalizeProductMarkingSettings(current.markingSettings);
+  if (!existingSettings.barrelTrackingEnabled && (body.markingSettings?.barrelTrackingEnabled || body.markingSettings?.activeBarrelId)) return { ok: false as const, error: "Включите отдельный учёт через блок бочек в карточке товара." };
+  if (existingSettings.barrelTrackingEnabled) {
+    const submitted = body.markingSettings == null ? existingSettings : normalizeProductMarkingSettings(body.markingSettings);
+    if ((body.markingMode !== undefined && body.markingMode !== "BULK_OIL_FROM_MARKED_BARREL") ||
+        (body.markingEnabled !== undefined && !markingEnabledFromInput(body.markingEnabled, true)) ||
+        (submitted.activeBarrelMarkingCode !== existingSettings.activeBarrelMarkingCode ||
+         submitted.currentVolumeLiters !== existingSettings.currentVolumeLiters ||
+         submitted.declaredVolumeLiters !== existingSettings.declaredVolumeLiters ||
+         submitted.activeBarrelName !== existingSettings.activeBarrelName ||
+         submitted.activeBarrelGtin !== existingSettings.activeBarrelGtin)) {
+      return { ok: false as const, error: "Код и остаток бочки управляются отдельным учётом. Обновите карточку; для подключения другой бочки используйте «Сменить бочку»." };
+    }
+    body = { ...body, markingSettings: { ...submitted, barrelTrackingEnabled: true, activeBarrelId: existingSettings.activeBarrelId } };
+  }
   const marking = normalizeProductMarkingData(body, current, uomName, groupPath);
   if (!marking.ok) return { ok: false as const, error: marking.error };
   const markingConfiguredByUser = booleanFromInput(body.markingConfiguredManually) === true;
@@ -3288,51 +3310,6 @@ export async function updateLocalAdminProduct(
   invalidateRestockNeedsLists();
   invalidateLocalInventoryFinanceCache();
   return { ok: true as const, product: mapProduct(product) };
-}
-
-export async function applyBulkOilSaleMovements(
-  movements: Array<{ productId: string; volumeLiters: number }>,
-  actor?: ActingUser | null
-) {
-  for (const movement of movements) {
-    if (!movement.productId || !Number.isFinite(movement.volumeLiters) || movement.volumeLiters <= 0) continue;
-    const current = await prisma.localProduct.findUnique({ where: { id: movement.productId } });
-    if (!current || current.markingMode !== "BULK_OIL_FROM_MARKED_BARREL" || !current.markingEnabled) continue;
-
-    const settings = normalizeProductMarkingSettings(current.markingSettings);
-    if (settings.currentVolumeLiters == null) continue;
-
-    const oldMarking = productMarkingSnapshot(current);
-    const nextSettings: ProductMarkingSettings = {
-      ...settings,
-      currentVolumeLiters: Math.max(0, settings.currentVolumeLiters - movement.volumeLiters),
-    };
-    const nextStatus = deriveProductMarkingStatus({
-      markingEnabled: true,
-      markingMode: "BULK_OIL_FROM_MARKED_BARREL",
-      uomName: current.uomName,
-      settings: nextSettings,
-    });
-    const updated = await prisma.localProduct.update({
-      where: { id: current.id },
-      data: {
-        markingStatus: nextStatus,
-        markingSettings: toJson(nextSettings),
-      },
-    });
-    await writeProductMarkingAudit({
-      productId: updated.id,
-      oldValue: oldMarking,
-      newValue: productMarkingSnapshot(updated),
-      actor,
-    });
-  }
-
-  if (movements.length > 0) {
-    invalidateProductFilterOptions();
-    invalidateRestockNeedsLists();
-    invalidateLocalInventoryFinanceCache();
-  }
 }
 
 export function invalidateCounterpartyRows() {
@@ -4646,6 +4623,7 @@ export async function updateLocalSupplierInvoiceStatus(invoiceId: string, status
 }
 
 type CostedStockDocumentPosition = {
+  raw?: unknown;
   product: { id: string; name: string };
   quantity: Prisma.Decimal;
   priceCents: number;
@@ -4705,6 +4683,13 @@ async function applyPostedStockDocumentMovements<T extends CostedStockDocumentPo
     warehouseId: input.store.id,
     productIds: input.positions.map((position) => position.product.id),
   });
+  if (input.type === "receipt") {
+    await registerReceiptBarrelsTx(tx, {
+      branchId: input.branchId, documentId: input.documentId, storeId: input.store.id,
+      positions: input.positions.map((position) => ({ productId: position.product.id, quantity: position.quantity.toNumber(), raw: position.raw })),
+      actor: input.user,
+    });
+  }
   for (const [positionIndex, position] of input.positions.entries()) {
     const selectedCell = input.type === "receipt" && position.selectedCellId
       ? await tx.storageCell.findFirst({
@@ -5344,6 +5329,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
                 ...jsonRecord(position.sourcePosition.raw),
                 salePrice: position.raw.salePrice,
                 makeDefaultCell: position.raw.makeDefaultCell,
+                barrels: position.raw.barrels,
               })
             : toJson(position.raw),
         };
@@ -5779,6 +5765,7 @@ async function rollbackPostedReceiptStock(
     warehouseId: document.store.id,
     productIds: positions.map((position) => position.productId),
   });
+  await cancelReceiptBarrelsTx(tx, document.branchId, document.id, user);
   const originalEntries = await tx.inventoryLedgerEntry.findMany({
     where: {
       branchId: document.branchId,
@@ -5892,6 +5879,7 @@ async function postDraftReceiptStock(
     slotName: position.slotName,
     selectedCellId: position.selectedCellId,
     makeDefaultCell: jsonRecord(position.raw).makeDefaultCell === true,
+    raw: position.raw,
   }));
   const effectivePositions = await preparePostedStockDocumentCosts(tx, {
     branchId: document.branchId,
@@ -6343,6 +6331,8 @@ export async function listLocalStockDocuments(params: {
           code: position.product?.code ?? "",
           brand: position.product?.brand ?? "",
           entityType: position.product?.entityType ?? "",
+          markingMode: position.product?.markingMode ?? "NOT_MARKED",
+          barrels: receiptBarrelsFromRaw(position.raw),
           quantity: position.quantity.toNumber(),
           price: position.priceCentsPerUnit / 100,
           salePrice: Number.isFinite(Number(raw.salePrice))

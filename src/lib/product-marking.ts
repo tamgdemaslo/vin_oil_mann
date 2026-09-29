@@ -30,6 +30,8 @@ export type ProductMarkingSettings = {
   activeBarrelGtin: string;
   verificationStatus: string;
   currentVolumeLiters: number | null;
+  barrelTrackingEnabled: boolean;
+  activeBarrelId: string;
 };
 
 export const DEFAULT_MARKING_SETTINGS: ProductMarkingSettings = {
@@ -43,6 +45,8 @@ export const DEFAULT_MARKING_SETTINGS: ProductMarkingSettings = {
   activeBarrelGtin: "",
   verificationStatus: "",
   currentVolumeLiters: null,
+  barrelTrackingEnabled: false,
+  activeBarrelId: "",
 };
 
 export const DEFAULT_BULK_OIL_MARKING_SETTINGS: ProductMarkingSettings = {
@@ -135,6 +139,8 @@ export function normalizeProductMarkingSettings(value: unknown): ProductMarkingS
     activeBarrelGtin: stringValue(record.activeBarrelGtin),
     verificationStatus: stringValue(record.verificationStatus),
     currentVolumeLiters: numberOrNull(record.currentVolumeLiters),
+    barrelTrackingEnabled: booleanValue(record.barrelTrackingEnabled),
+    activeBarrelId: stringValue(record.activeBarrelId),
   };
 }
 

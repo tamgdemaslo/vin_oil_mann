@@ -4,7 +4,11 @@ import { submitAqsiFiscalization } from "@/lib/aqsi-fiscalization";
 import { getAqsiMarkingBypassPassword } from "@/lib/aqsi-integration";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { getCurrentShift } from "@/lib/cashbox";
-import { applyBulkOilSaleMovements } from "@/lib/local-inventory-admin";
+import { invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
+import { consumeBulkOilTx, type BulkOilMovement } from "@/lib/bulk-oil-barrels";
+import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
+import type { SyncAqsiPendingOrderInput } from "@/lib/aqsi";
 import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 import {
   isRecognizedMotorOilMarkingCode,
@@ -41,6 +45,7 @@ type PaymentBody = {
 type OrderPosition = {
   id: string;
   productId?: string | null;
+  storeId?: string;
   name: string;
   quantity: number;
   priceCents: number;
@@ -59,7 +64,7 @@ type OrderPosition = {
 
 type BuildAqsiResult = {
   items: AqsiPendingOrderItem[];
-  bulkOilMovements: Array<{ productId: string; volumeLiters: number }>;
+  bulkOilMovements: BulkOilMovement[];
 };
 
 function pickCustomerContact(agent: DemandAgent | undefined): string | undefined {
@@ -277,7 +282,7 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody, bypassPassword
     }
 
     if (bulkOil && row.productId) {
-      bulkOilMovements.push({ productId: row.productId, volumeLiters: quantity });
+      bulkOilMovements.push({ productId: row.productId, volumeLiters: quantity, markingCode: activeBarrelCode, storeId: row.storeId ?? "" });
     }
 
     items.push({
@@ -304,6 +309,8 @@ async function sendAqsiOrder(input: {
   customer?: string | null;
   customerContact?: string | null;
   items: AqsiPendingOrderItem[];
+  bulkOilMovements?: BulkOilMovement[];
+  actor?: { login?: string; name?: string | null };
 }) {
   const submission = await submitAqsiFiscalization({
     id: input.id,
@@ -314,7 +321,7 @@ async function sendAqsiOrder(input: {
     customer: input.customer ?? "",
     customerContact: input.customerContact ?? undefined,
     items: input.items,
-  });
+  }, input.bulkOilMovements?.length ? (tx) => consumeBulkOilTx(tx, getScopedBranchId(), input.id, input.bulkOilMovements!, input.actor) : undefined);
 
   if (submission.pending) {
     return NextResponse.json({
@@ -350,12 +357,21 @@ async function trySendLocalDemand(
     return NextResponse.json({ error: loaded.error }, { status: 400 });
   }
 
+  const accepted = await prisma.aqsiFiscalizationRecord.findFirst({ where: { branchId: getScopedBranchId(), documentType: "local_demand", documentId: loaded.data.header.id } });
+  if (accepted) {
+    const payload = accepted.payloadJson as unknown as SyncAqsiPendingOrderInput;
+    if (payload.items.some((item) => item.measuredPour)) {
+      return sendAqsiOrder({ ...payload, registerId: accepted.registerId });
+    }
+  }
+
   const rows: OrderPosition[] = loaded.data.positions.map((position) => {
     const nonstockOilRequiresCheck = position.lineKind === "nonstock_product"
       && ["ENGINE_OIL", "TRANSMISSION_FLUID"].includes(position.oneOffProduct?.groupCode ?? "");
     return {
       id: position.id,
       productId: position.product?.id,
+      storeId: loaded.data.header.storeId,
       name: position.name,
       quantity: position.quantity,
       priceCents: position.price,
@@ -386,8 +402,10 @@ async function trySendLocalDemand(
     customer: loaded.data.header.agentName ?? "",
     customerContact: pickCustomerContact(agent),
     items: built.items,
+    bulkOilMovements: built.bulkOilMovements,
+    actor: actor ?? undefined,
   });
-  await applyBulkOilSaleMovements(built.bulkOilMovements, actor);
+  invalidateWarehouseReadCaches();
   return response;
 }
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { syncAqsiPendingOrder, type SyncAqsiPendingOrderInput } from "@/lib/aqsi";
 import { resolveAqsiCashRegister, safeAqsiError } from "@/lib/aqsi-integration";
@@ -147,25 +147,31 @@ async function executeRecord(recordId: string) {
   }
 }
 
-export async function submitAqsiFiscalization(input: SyncAqsiPendingOrderInput) {
+/** Persist the immutable payload and its barrel withdrawal as one operation. */
+export async function enqueueAqsiFiscalization(
+  input: SyncAqsiPendingOrderInput,
+  registerId: string,
+  beforeEnqueue?: (tx: Prisma.TransactionClient) => Promise<void>,
+) {
   const tenant = tenantOrThrow();
-  const register = await resolveAqsiCashRegister(input.registerId);
   const key = idempotencyKey(input.id);
-  let record = await prisma.aqsiFiscalizationRecord.upsert({
-    where: { branchId_idempotencyKey: { branchId: tenant.branchId, idempotencyKey: key } },
-    update: {},
-    create: {
-      id: randomUUID(),
-      branchId: tenant.branchId,
-      organizationId: tenant.organizationId,
-      registerId: register.registerId,
-      documentType: "local_demand",
-      documentId: input.id,
-      idempotencyKey: key,
-      payloadJson: { ...input, registerId: register.registerId } as Prisma.InputJsonValue,
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`aqsi:${tenant.branchId}:${key}`}, 0))::text`);
+    const existing = await tx.aqsiFiscalizationRecord.findUnique({ where: { branchId_idempotencyKey: { branchId: tenant.branchId, idempotencyKey: key } } });
+    if (existing) return existing;
+    if (beforeEnqueue) await beforeEnqueue(tx);
+    return tx.aqsiFiscalizationRecord.create({ data: {
+      id: randomUUID(), branchId: tenant.branchId, organizationId: tenant.organizationId,
+      registerId, documentType: "local_demand", documentId: input.id,
+      idempotencyKey: key, payloadJson: { ...input, registerId } as Prisma.InputJsonValue,
       status: "pending",
-    },
+    } });
   });
+}
+
+export async function submitAqsiFiscalization(input: SyncAqsiPendingOrderInput, beforeEnqueue?: (tx: Prisma.TransactionClient) => Promise<void>) {
+  const register = await resolveAqsiCashRegister(input.registerId);
+  let record = await enqueueAqsiFiscalization(input, register.registerId, beforeEnqueue);
   if (record.status === "succeeded") {
     return {
       ok: true as const,
@@ -186,7 +192,8 @@ export async function submitAqsiFiscalization(input: SyncAqsiPendingOrderInput) 
   if (record.status !== "processing") {
     record = await prisma.aqsiFiscalizationRecord.update({
       where: { id: record.id },
-      data: { registerId: register.registerId, payloadJson: { ...input, registerId: register.registerId } as Prisma.InputJsonValue, status: "pending" },
+      // The first accepted payload pins the code of the physical drum across retries.
+      data: { registerId: register.registerId, status: "pending" },
     });
   }
   return executeRecord(record.id);
