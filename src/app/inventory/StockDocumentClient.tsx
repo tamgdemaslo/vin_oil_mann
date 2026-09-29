@@ -34,6 +34,8 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
+import BarrelReceiptFields from "@/components/receipts/BarrelReceiptFields";
+import type { BarrelReceiptInput } from "@/lib/bulk-oil-barrels";
 import MoneyInput from "@/components/MoneyInput";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
@@ -54,6 +56,7 @@ const DOCUMENT_PAGE_SIZE = 30;
 type StoreOption = { id: string; name: string; isMain?: boolean };
 type CounterpartyOption = { id: string; name: string; phone?: string; legalTitle?: string; inn?: string };
 type ProductOption = {
+  markingMode?: string;
   id: string;
   name: string;
   article: string;
@@ -84,6 +87,8 @@ type KnownCell = { cellId: string; storeId: string; storeName: string; slotName:
 type StorageCellOption = KnownCell & { name: string; zone: string; productCount: number };
 
 type Position = {
+  markingMode?: string;
+  barrels?: BarrelReceiptInput[];
   localId: string;
   documentPositionId?: string;
   productId: string;
@@ -139,6 +144,8 @@ type MovementRow = {
     sum: number;
   } | null;
   positions: {
+    markingMode?: string;
+    barrels?: BarrelReceiptInput[];
     id: string;
     productId: string | null;
     name: string;
@@ -574,6 +581,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         article: position.article || position.code,
         code: position.code,
         brand: position.brand,
+        markingMode: position.markingMode,
+        barrels: position.barrels ?? [],
         quantity: position.quantity,
         price: position.price,
         salePrice: position.salePrice,
@@ -620,7 +629,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   }
 
   function copyFromDocument(document: MovementRow) {
-    fillFormFromDocument({ ...document, id: "", name: "", status: "draft", applicable: false, invoice: null }, "new");
+    fillFormFromDocument({ ...document, id: "", name: "", status: "draft", applicable: false, invoice: null, positions: document.positions.map((position) => ({ ...position, barrels: position.barrels?.map((barrel) => ({ ...barrel, markingCode: "" })) })) }, "new");
     setEditingDocument(null);
     setCreateInvoice(false);
     setInvoiceNumber("");
@@ -957,6 +966,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           article: product.article || product.code,
           code: product.code,
           brand: product.brand || product.supplierName || "",
+          markingMode: product.markingMode,
+          barrels: [],
           quantity: quantityToAdd,
           price: isReceipt ? product.buyPrice ?? 0 : storeAverageCost ?? 0,
           salePrice: product.salePrice ?? 0,
@@ -1282,6 +1293,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         article: position.article,
         code: position.code,
         brand: position.brand,
+        markingMode: position.markingMode,
+        barrels: position.barrels ?? [],
         quantity: position.quantity,
         price: position.price,
         salePrice: position.salePrice,
@@ -1357,6 +1370,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             positions: positions.map((position) => ({
               id: position.documentPositionId,
               productId: position.productId,
+              barrels: isReceipt ? position.barrels : undefined,
               quantity: Number(position.quantity) || 0,
               price: Number(position.price) || 0,
               salePrice: isReceipt ? Math.max(0, Number(position.salePrice) || 0) : undefined,
@@ -2406,6 +2420,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                 <ExternalLink size={13} />
                               </a>
                               <span>{[position.brand, position.article, position.code].filter(Boolean).join(" · ") || "без дополнительных данных"}</span>
+                              {isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL" && <BarrelReceiptFields barrels={position.barrels ?? []} readOnly={readOnly} onChange={(barrels) => updatePosition(position.localId, { barrels, quantity: barrels.reduce((sum, b) => sum + (Number(b.volumeLiters) || 0), 0) })} />}
                             </td>
                             {!isReceipt && <td className="l-mono">{position.article || position.code || "—"}</td>}
                             <td className="l-number">{position.availableKnown ? formatQty(position.available) : "—"}</td>
@@ -2545,6 +2560,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                             </button>
                           </div>
                         )}
+
+                        {isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL" && <BarrelReceiptFields barrels={position.barrels ?? []} readOnly={readOnly} onChange={(barrels) => updatePosition(position.localId, { barrels, quantity: barrels.reduce((sum, b) => sum + (Number(b.volumeLiters) || 0), 0) })} />}
                         <label className="is-quantity">
                           Кол-во
                           <input type="number" min={0} step={0.001} value={position.quantity} disabled={readOnly} onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })} />

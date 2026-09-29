@@ -71310,3 +71310,36 @@ select[size="1"]::-ms-expand {
   .eco-shipment-new-page .eco-shipment-mann-actions { grid-column: 3; grid-row: 1; }
   .eco-shipment-new-page .eco-vehicle-selected-conditions { padding-inline: 16px; }
 }
+
+/* Physical barrels: scan at receipt, connect once when starting a pour. */
+.eco-barrel-manager { margin: 16px 0; padding: 16px; border: 1px solid var(--eco-line, #e5e2da); border-radius: 12px; color: var(--eco-ink, #0a0a0a); background: var(--eco-bg, #fafaf7); }
+.eco-barrel-manager-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.eco-barrel-manager h4, .eco-barrel-manager h5 { margin: 0; font-size: 14px; font-weight: 700; }
+.eco-barrel-manager p { font-size: 13px; line-height: 1.5; margin: 12px 0; }
+.eco-barrel-manager label, .eco-barrel-receipt-fields label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; min-width: 0; }
+.eco-barrel-manager select, .eco-barrel-manager textarea, .eco-barrel-receipt-fields input, .eco-barrel-receipt-fields textarea { width: 100%; min-width: 0; padding: 8px 10px; color: var(--eco-ink, #0a0a0a); background: #fff; border: 1px solid var(--eco-line-strong, #ccc8bf); border-radius: 6px; font-size: 13px; }
+.eco-barrel-manager textarea, .eco-barrel-receipt-fields textarea { overflow-wrap: anywhere; resize: vertical; }
+.eco-barrel-manager textarea::placeholder, .eco-barrel-receipt-fields textarea::placeholder { color: #536375; }
+.eco-barrel-manager button, .eco-barrel-receipt-fields button { padding: 7px 10px; border: 1px solid var(--eco-line-strong, #ccc8bf); border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.eco-barrel-manager .eco-btn--primary { margin-top: 12px; }
+.eco-barrel-manager button:disabled, .eco-barrel-receipt-fields button:disabled { opacity: .55; cursor: default; }
+.eco-barrel-manager button:not(.eco-btn--primary):hover:not(:disabled), .eco-barrel-receipt-fields button:hover:not(:disabled) { background: var(--eco-hover, #f1f0ea); color: var(--eco-ink, #0a0a0a); }
+.eco-barrel-manager :is(button, input, select, textarea):focus-visible, .eco-barrel-receipt-fields :is(button, input, textarea):focus-visible { outline: 2px solid var(--eco-rust, #c2410c); outline-offset: 2px; }
+.eco-barrel-switch { display: grid; gap: 12px; padding-top: 12px; border-top: 1px solid var(--eco-line, #e5e2da); }
+.eco-barrel-manager .eco-barrel-checkbox { display: flex; gap: 8px; align-items: center; }
+.eco-barrel-checkbox input { width: 16px; height: 16px; }
+.eco-barrel-table-wrap { overflow-x: auto; margin-top: 16px; }
+.eco-barrel-table-wrap table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.eco-barrel-table-wrap caption { text-align: left; margin-bottom: 8px; font-weight: 600; }
+.eco-barrel-table-wrap th, .eco-barrel-table-wrap td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--eco-line, #e5e2da); vertical-align: top; }
+.eco-barrel-table-wrap td small { display: block; color: #536375; margin-top: 3px; }
+.eco-barrel-receipt-fields { display: grid; gap: 8px; margin-top: 12px; max-width: 100%; color: var(--eco-ink, #0a0a0a); }
+.eco-barrel-receipt-fields > strong { font-size: 12px; }
+.eco-barrel-receipt-fields > small { color: #536375; font-size: 11px; line-height: 1.4; }
+.eco-barrel-receipt-row { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr) 80px; }
+.eco-barrel-receipt-row button { justify-self: start; }
+@media (max-width: 600px) {
+  .eco-barrel-manager { padding: 12px; }
+  .eco-barrel-manager-heading { flex-wrap: wrap; }
+  .eco-barrel-table-wrap th, .eco-barrel-table-wrap td { padding: 8px 4px; }
+}

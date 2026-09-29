@@ -3,6 +3,7 @@ import { type BranchContext, type BranchSummary } from "@/lib/branch-context";
 import { buildCatalogSearchText } from "@/lib/catalog-search";
 import { dashboardPermissionsFromJson } from "@/lib/dashboard-variant";
 import { prisma } from "@/lib/db";
+import { normalizeProductMarkingSettings } from "@/lib/product-marking";
 import { normalizePartNumberForCrossMatch } from "@/lib/part-number-cross-reference";
 import { sameExactProductIdentity } from "@/lib/product-identity";
 
@@ -332,8 +333,11 @@ function copyData(source: SourceProduct, input: {
     attributes: copyAttributesWithoutLocations(source.attributes) as Prisma.InputJsonValue | undefined,
     markingEnabled: source.markingEnabled,
     markingMode: source.markingMode,
-    markingStatus: source.markingStatus,
-    markingSettings: source.markingSettings as Prisma.InputJsonValue | undefined,
+    markingStatus: source.markingMode === "BULK_OIL_FROM_MARKED_BARREL" ? "REQUIRES_CHECK" : source.markingStatus,
+    // A card copy is not a movement of a physical drum or its marking code.
+    markingSettings: source.markingMode === "BULK_OIL_FROM_MARKED_BARREL"
+      ? { ...normalizeProductMarkingSettings(source.markingSettings), barrelTrackingEnabled: false, activeBarrelId: "", activeBarrelName: "", activeBarrelMarkingCode: "", activeBarrelGtin: "", currentVolumeLiters: null } as unknown as Prisma.InputJsonValue
+      : source.markingSettings as Prisma.InputJsonValue | undefined,
     markingConfiguredManually: source.markingConfiguredManually,
     markingConfiguredAt: source.markingConfiguredAt,
     markingConfiguredByLogin: source.markingConfiguredByLogin,

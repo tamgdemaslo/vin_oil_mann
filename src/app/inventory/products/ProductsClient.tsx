@@ -1,5 +1,7 @@
 "use client";
 
+import BulkOilBarrelManager from "@/components/receipts/BulkOilBarrelManager";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
@@ -4567,6 +4569,7 @@ export default function ProductsClient() {
           <input
             type="checkbox"
             checked={enabled}
+            disabled={Boolean(editingProduct?.markingSettings?.barrelTrackingEnabled)}
             onChange={(event) => {
               const checked = event.target.checked;
               updateMarkingForm({
@@ -4608,6 +4611,7 @@ export default function ProductsClient() {
               </span>
               <select
                 value={mode}
+                disabled={Boolean(editingProduct?.markingSettings?.barrelTrackingEnabled)}
                 onChange={(event) => updateMarkingForm({ markingMode: event.target.value })}
                 className={`eco-input product-editor-input ${errorMessage ? "has-error" : ""}`}
               >
@@ -4633,14 +4637,23 @@ export default function ProductsClient() {
                     <span>{problems.join(" ")}</span>
                   </div>
                 ) : null}
+                {editingId && editingProduct?.markingMode === "BULK_OIL_FROM_MARKED_BARREL" ? <BulkOilBarrelManager key={editingId} productId={editingId} stores={storageStores} onChanged={async () => {
+                  const product = await refreshProduct(editingId);
+                  const fresh = formFromProduct(product);
+                  const snapshot = { markingAllowRepeatedBarrelCode: fresh.markingAllowRepeatedBarrelCode, markingPartialWithdrawalEnabled: fresh.markingPartialWithdrawalEnabled, markingDeclaredVolumeLiters: fresh.markingDeclaredVolumeLiters, markingCurrentVolumeLiters: fresh.markingCurrentVolumeLiters, markingActiveBarrelName: fresh.markingActiveBarrelName, markingActiveBarrelCode: fresh.markingActiveBarrelCode, markingActiveBarrelGtin: fresh.markingActiveBarrelGtin };
+                  setForm((prev) => ({ ...prev, ...snapshot }));
+                  setFormBaseline((prev) => ({ ...prev, ...snapshot }));
+                }} /> : <p className="product-editor-hint">Сохраните товар, затем включите отдельный учёт бочек в карточке.</p>}
                 <div className="product-editor-grid product-editor-compact-grid">
                   {renderField("markingDeclaredVolumeLiters", "Объём бочки, л", {
+                    readOnly: Boolean(editingProduct?.markingSettings?.barrelTrackingEnabled),
                     type: "number",
                     required: true,
                     placeholder: "200",
                     hint: "Полный объём бочки при открытии, например 200 л. Нужен, чтобы система понимала, сколько всего можно продать из этой бочки.",
                   })}
                   {renderField("markingCurrentVolumeLiters", "Остаток бочки, л", {
+                    readOnly: Boolean(editingProduct?.markingSettings?.barrelTrackingEnabled),
                     type: "number",
                     placeholder: "200",
                     hint: "Это локальный остаток масла в выбранной бочке в литрах. Он уменьшается после каждой продажи через Эко-платформу.",
@@ -4651,10 +4664,12 @@ export default function ProductsClient() {
                     hint: "Часть масла, которую обычно невозможно продать из бочки до конца. Когда остаток приблизится к ней, бочку нужно закрывать или проверять.",
                   })}
                   {renderField("markingActiveBarrelName", "Активная бочка", {
+                    readOnly: Boolean(editingProduct?.markingSettings?.barrelTrackingEnabled),
                     placeholder: "Bardahl XTS 5W-30, бочка 200 л",
                     hint: "Это бочка, из которой сейчас продаётся масло. При продаже система берёт код маркировки именно из неё и уменьшает её остаток.",
                   })}
                   {renderField("markingActiveBarrelGtin", "GTIN бочки, 14 цифр", {
+                    readOnly: Boolean(editingProduct?.markingSettings?.barrelTrackingEnabled),
                     placeholder: "14 цифр",
                     hint: "GTIN входит в DataMatrix-код и нужен для проверки, что код маркировки относится к правильному товару.",
                   })}
@@ -4663,6 +4678,7 @@ export default function ProductsClient() {
                     hint: "Показывает, можно ли безопасно продавать товар с текущими настройками. Жёлтый или красный статус требует проверки до продажи.",
                   })}
                   {renderField("markingActiveBarrelCode", "Код маркировки бочки", {
+                    readOnly: Boolean(editingProduct?.markingSettings?.barrelTrackingEnabled),
                     type: "textarea",
                     rows: 2,
                     full: true,
