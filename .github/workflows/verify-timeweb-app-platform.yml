@@ -61,6 +61,9 @@ jobs:
       - name: Verify ROSSKO branch consumers
         run: npm run test:ai-assistant-branch-context && npm run test:rossko-api
 
+      - name: Verify barrel scanner formats
+        run: npm run test:barrel-marking-input
+
       - name: TypeScript check
         run: npx tsc --noEmit
 

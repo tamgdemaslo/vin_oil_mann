@@ -1,4 +1,5 @@
 "use client";
+import BarrelCodeInput from "@/components/receipts/BarrelCodeInput";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EcoButton } from "@/components/platform/EcoUI";
@@ -62,7 +63,7 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
         {sealed.length ? <div className="eco-barrel-switch">
           <h5>{active ? "Сменить бочку" : "Начать разлив"}</h5>
           <label>Новая бочка<select aria-label="Новая бочка" value={selectedId} disabled={busy} onChange={(e) => { setSelectedId(e.target.value); setScannedCode(""); }}><option value="">Выберите принятую бочку</option>{sealed.map((b) => <option key={b.id} value={b.id}>{b.number} · {b.remainingLiters} л · {b.storeName}</option>)}</select></label>
-          <label>Или отсканируйте код новой бочки<textarea aria-label="Код новой бочки" rows={2} value={scannedCode} disabled={busy} placeholder="Полный DataMatrix принятой бочки" onChange={(e) => setScannedCode(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} /></label>
+          <label>Или отсканируйте код новой бочки<BarrelCodeInput label="Код новой бочки" value={scannedCode} disabled={busy} onCommit={setScannedCode} /></label>
           {active && active.remainingLiters > 0 && <>
             <p>В старой бочке числится <b>{active.remainingLiters} л</b>. Если она пустая, этот остаток будет списан отдельным документом и учтён как расход.</p>
             <label className="eco-barrel-checkbox"><input type="checkbox" checked={confirmEmpty} disabled={busy} onChange={(e) => setConfirmEmpty(e.target.checked)} />Старая бочка физически пустая</label>

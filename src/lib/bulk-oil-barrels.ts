@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { isRecognizedMotorOilMarkingCode, normalizeMarkingCodeInput, parseMarkingCodesInput } from "@/lib/marking";
+import { getMotorOilMarkingCodeError, isRecognizedMotorOilMarkingCode, normalizeMarkingCodeInput, parseMarkingCodesInput } from "@/lib/marking";
 import { deriveProductMarkingStatus, normalizeProductMarkingSettings, type ProductMarkingSettings } from "@/lib/product-marking";
 
 export type BarrelReceiptInput = { markingCode: string; volumeLiters: number };
@@ -17,7 +17,8 @@ export function parseBarrelReceipts(value: unknown, quantity: number): BarrelRec
     const row = item as Record<string, unknown>;
     const markingCode = normalizeMarkingCodeInput(String(row.markingCode ?? ""));
     const volumeLiters = Number(String(row.volumeLiters ?? "").replace(",", "."));
-    if (!isRecognizedMotorOilMarkingCode(markingCode)) throw new Error("Отсканируйте полный DataMatrix-код бочки.");
+    const codeError = getMotorOilMarkingCodeError(markingCode);
+    if (codeError) throw new Error(codeError);
     if (seen.has(markingCode)) throw new Error("Одна бочка указана в приёмке дважды.");
     if (!Number.isFinite(volumeLiters) || volumeLiters <= 0 || volumeLiters > 99999999999 || Math.abs(volumeLiters * 1000 - Math.round(volumeLiters * 1000)) > 0.00001) throw new Error("Объём бочки должен быть положительным числом, не более трёх знаков после запятой.");
     seen.add(markingCode);

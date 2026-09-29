@@ -2373,8 +2373,15 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                     </div>
                   )}
 
-                  <div className="eco-receipt-position-table">
+                  <div className={`eco-receipt-position-table${isReceipt ? " is-receipt" : ""}`}>
                     <table>
+                      {isReceipt && <colgroup>
+                        <col className="eco-receipt-col-select" /><col className="eco-receipt-col-product" />
+                        <col className="eco-receipt-col-stock" /><col className="eco-receipt-col-quantity" />
+                        <col className="eco-receipt-col-price" /><col className="eco-receipt-col-sale" />
+                        <col className="eco-receipt-col-sum" /><col className="eco-receipt-col-cell" />
+                        <col className="eco-receipt-col-actions" />
+                      </colgroup>}
                       <thead>
                         <tr>
                           <th className="eco-receipt-select-col" aria-label="Выбор строк" />
@@ -2395,7 +2402,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                           const selected = selectedPositionIds.includes(position.localId);
                           const profit = receiptProfit(position);
                           return (
-                          <tr key={position.localId} className={selected ? "is-selected" : undefined}>
+                          <Fragment key={position.localId}><tr className={selected ? "is-selected" : undefined}>
                             <td className="eco-receipt-select-cell">
                               {!readOnly && isReceipt && (
                                 <button
@@ -2408,7 +2415,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                 </button>
                               )}
                             </td>
-                            <td>
+                            <td className="eco-receipt-product-cell">
                               <a
                                 href={productHref(position.productId)}
                                 target="_blank"
@@ -2420,7 +2427,6 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                 <ExternalLink size={13} />
                               </a>
                               <span>{[position.brand, position.article, position.code].filter(Boolean).join(" · ") || "без дополнительных данных"}</span>
-                              {isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL" && <BarrelReceiptFields barrels={position.barrels ?? []} readOnly={readOnly} onChange={(barrels) => updatePosition(position.localId, { barrels, quantity: barrels.reduce((sum, b) => sum + (Number(b.volumeLiters) || 0), 0) })} />}
                             </td>
                             {!isReceipt && <td className="l-mono">{position.article || position.code || "—"}</td>}
                             <td className="l-number">{position.availableKnown ? formatQty(position.available) : "—"}</td>
@@ -2432,6 +2438,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                 value={position.quantity}
                                 onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })}
                                 disabled={readOnly}
+                                readOnly={isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL"}
+                                aria-label={`Количество: ${position.name}`}
+                                title={position.markingMode === "BULK_OIL_FROM_MARKED_BARREL" ? "Общий объём бочек, л" : undefined}
                               />
                             </td>
                             <td>
@@ -2475,23 +2484,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                   <span>{position.slotName || "Не указана"}</span>
                                 </button>
                                 {issue === "wrong-store" && <small className="is-danger">другой склад</small>}
-                                {!position.slotName && <small>Для товара ещё не назначено место хранения.</small>}
                               </div>
                             </td>
                             <td>
                               {!readOnly && (
                                 <div className="eco-receipt-table-actions">
-                                  {isReceipt && (
-                                    <button
-                                      type="button"
-                                      className="eco-icon-btn"
-                                      title="Назначить ячейку"
-                                      aria-label="Назначить ячейку"
-                                      onClick={() => openCellEditor(position)}
-                                    >
-                                      <MapPin size={16} />
-                                    </button>
-                                  )}
                                   {!isReceipt && position.availableKnown && position.available > 0 && (
                                     <button
                                       type="button"
@@ -2516,6 +2513,12 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                               )}
                             </td>
                           </tr>
+                          {isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL" && <tr className={`eco-receipt-barrels-detail${selected ? " is-selected" : ""}`}>
+                            <td aria-hidden="true" /><td colSpan={8}>
+                              <BarrelReceiptFields barrels={position.barrels ?? []} readOnly={readOnly} onChange={(barrels) => updatePosition(position.localId, { barrels, quantity: barrels.reduce((sum, b) => sum + (Number(b.volumeLiters) || 0), 0) })} />
+                            </td>
+                          </tr>}
+                          </Fragment>
                           );
                         })}
                       </tbody>
@@ -2564,7 +2567,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                         {isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL" && <BarrelReceiptFields barrels={position.barrels ?? []} readOnly={readOnly} onChange={(barrels) => updatePosition(position.localId, { barrels, quantity: barrels.reduce((sum, b) => sum + (Number(b.volumeLiters) || 0), 0) })} />}
                         <label className="is-quantity">
                           Кол-во
-                          <input type="number" min={0} step={0.001} value={position.quantity} disabled={readOnly} onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })} />
+                          <input type="number" min={0} step={0.001} value={position.quantity} disabled={readOnly} readOnly={isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL"} onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })} />
                         </label>
                         <label className="is-buy-price">
                           {productPriceLabel}

@@ -78,12 +78,10 @@ export function requiredMarkingCodeCount(
 }
 
 function restoreMotorOilSeparators(value: string): string {
-  if (value.includes(GS)) return value;
-
-  const long = value.match(/^(01\d{14}21.{13})91(.{4})92(.{44})$/u);
+  const long = value.match(/^(01\d{14}21.{13})\u001d?91(.{4})\u001d?92(.{44})$/u);
   if (long) return `${long[1]}${GS}91${long[2]}${GS}92${long[3]}`;
 
-  const short = value.match(/^(01\d{14}21.{13})93(.{4})$/u);
+  const short = value.match(/^(01\d{14}21.{13})\u001d?93(.{4})$/u);
   if (short) return `${short[1]}${GS}93${short[2]}`;
 
   return value;
@@ -108,6 +106,18 @@ export function isRecognizedMotorOilMarkingCode(value: string): boolean {
     /^01\d{14}21.{13}\u001d91.{4}\u001d92.{44}$/u.test(normalized) ||
     /^01\d{14}21.{13}\u001d93.{4}$/u.test(normalized)
   );
+}
+
+/** Structural validation only; the fiscal provider verifies authenticity. */
+export function getMotorOilMarkingCodeError(value: string): string | null {
+  const code = normalizeMarkingCodeInput(value);
+  if (isRecognizedMotorOilMarkingCode(code)) return null;
+  if (!code) return "Отсканируйте DataMatrix-код бочки.";
+  const long = code.match(/^01\d{14}21.{13}\u001d?91.{4}\u001d?92(.*)$/u);
+  if (long && long[1].length !== 44) return `Длина кода проверки: ${long[1].length} из 44 символов. Отсканируйте бочку ещё раз.`;
+  const short = code.match(/^01\d{14}21.{13}\u001d?93(.*)$/u);
+  if (short && short[1].length !== 4) return `Длина кода проверки: ${short[1].length} из 4 символов. Отсканируйте бочку ещё раз.`;
+  return "Код бочки не распознан. Очистите поле и отсканируйте полный DataMatrix ещё раз.";
 }
 
 export function parseMarkingCodesInput(value: string): string[] {
