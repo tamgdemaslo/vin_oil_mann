@@ -90,6 +90,7 @@ function restoreMotorOilSeparators(value: string): string {
 export function normalizeMarkingCodeInput(value: string): string {
   const normalized = value
     .trim()
+    .replace(/^\uFEFF/, "")
     .replace(/^\]d2/i, "")
     .replace(/\u00e8/g, "")
     .replace(/\\u001d|\\x1d|\[gs\]|\(gs\)|\{gs\}|<gs>|<fnc1>|\[fnc1\]/gi, GS)
@@ -97,7 +98,8 @@ export function normalizeMarkingCodeInput(value: string): string {
     .replace(/[\u001e\u001f]/g, GS)
     .replace(/[ \t\r\n]+/g, "");
 
-  return restoreMotorOilSeparators(normalized);
+  const payload = normalized.replace(/^(?:\u001d|\uFEFF)*\]d2/i, "").replace(/^\u001d+|\u001d+$/g, "");
+  return restoreMotorOilSeparators(payload);
 }
 
 export function isRecognizedMotorOilMarkingCode(value: string): boolean {

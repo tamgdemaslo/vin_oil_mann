@@ -6,7 +6,7 @@ import { EcoButton } from "@/components/platform/EcoUI";
 import type { ProductMarkingSettings } from "@/lib/product-marking";
 
 type Barrel = { id: string; number: string; status: string; remainingLiters: number; receivedLiters: number; storeName: string; receivedAt: string };
-type Data = { settings: ProductMarkingSettings; barrels: Barrel[] };
+type Data = { settings: ProductMarkingSettings; barrels: Barrel[]; eligibleCorrections?: { id: string; name: string; moment: string; quantity: number }[] };
 const statusName: Record<string, string> = { SEALED: "Запечатанная", OPEN: "В разливе", CLOSED: "Закрыта", CANCELLED: "Приёмка отменена" };
 export default function BulkOilBarrelManager({ productId, stores, onChanged }: { productId: string; stores: { id: string; name: string }[]; onChanged: () => Promise<void> }) {
   const [data, setData] = useState<Data | null>(null);
@@ -18,6 +18,8 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
   const [selectedId, setSelectedId] = useState("");
   const [scannedCode, setScannedCode] = useState("");
   const [confirmEmpty, setConfirmEmpty] = useState(false);
+  const [alreadyAdjusted, setAlreadyAdjusted] = useState(false);
+  const [correctionDocumentId, setCorrectionDocumentId] = useState("");
   const [reason, setReason] = useState("");
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -25,7 +27,7 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
       const response = await fetch(`/api/local-inventory/products/${encodeURIComponent(productId)}/barrels`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Не удалось загрузить бочки.");
-      setData(payload); setConfirmEmpty(false); setReason("");
+      setData(payload); setConfirmEmpty(false); setAlreadyAdjusted(false); setCorrectionDocumentId(""); setReason("");
     } catch (e) { setError(e instanceof Error ? e.message : "Не удалось загрузить бочки."); }
     finally { setLoading(false); }
   }, [productId]);
@@ -37,11 +39,11 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
       const response = await fetch(`/api/local-inventory/products/${encodeURIComponent(productId)}/barrels`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, storeId,
         barrelId: scannedCode.trim() ? undefined : selectedId, scannedCode,
         expectedActiveId: data.settings.activeBarrelId, expectedRemainingLiters: data.settings.currentVolumeLiters,
-        confirmEmpty, reason,
+        confirmEmpty, reason, alreadyAdjustedDocumentId: alreadyAdjusted ? correctionDocumentId : undefined,
       }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Не удалось сменить бочку.");
-      setData(payload); setSelectedId(""); setScannedCode(""); setReason(""); setConfirmEmpty(false);
+      setData(payload); setSelectedId(""); setScannedCode(""); setReason(""); setConfirmEmpty(false); setAlreadyAdjusted(false); setCorrectionDocumentId("");
       await onChanged();
       setNotice(action === "enable" ? "Отдельный учёт бочек включён. Складской остаток сохранён." : "Бочка подключена. Следующие продажи будут списываться из неё.");
     } catch (e) { setError(e instanceof Error ? e.message : "Не удалось сменить бочку."); }
@@ -49,6 +51,7 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
   }
   const active = data?.barrels.find((b) => b.status === "OPEN");
   const sealed = data?.barrels.filter((b) => b.status === "SEALED") ?? [];
+  const selectedCorrection = data?.eligibleCorrections?.find((document) => document.id === correctionDocumentId);
   return <section className="eco-barrel-manager" aria-label="Учёт бочек" aria-busy={loading || busy}>
     <div className="eco-barrel-manager-heading"><h4>Бочки на складе</h4><EcoButton size="sm" type="button" disabled={busy || loading} onClick={() => void load()}>Обновить</EcoButton></div>
     {error && <p role="alert" className="product-editor-error">{error}</p>}
@@ -65,11 +68,14 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
           <label>Новая бочка<select aria-label="Новая бочка" value={selectedId} disabled={busy} onChange={(e) => { setSelectedId(e.target.value); setScannedCode(""); }}><option value="">Выберите принятую бочку</option>{sealed.map((b) => <option key={b.id} value={b.id}>{b.number} · {b.remainingLiters} л · {b.storeName}</option>)}</select></label>
           <label>Или отсканируйте код новой бочки<BarrelCodeInput label="Код новой бочки" value={scannedCode} disabled={busy} onCommit={setScannedCode} /></label>
           {active && active.remainingLiters > 0 && <>
-            <p>В старой бочке числится <b>{active.remainingLiters} л</b>. Если она пустая, этот остаток будет списан отдельным документом и учтён как расход.</p>
+            <p>В старой бочке числится <b>{active.remainingLiters} л</b>. Если остаток ещё не списан, система создаст документ списания при смене.</p>
             <label className="eco-barrel-checkbox"><input type="checkbox" checked={confirmEmpty} disabled={busy} onChange={(e) => setConfirmEmpty(e.target.checked)} />Старая бочка физически пустая</label>
+            <label className="eco-barrel-checkbox"><input type="checkbox" checked={alreadyAdjusted} disabled={busy} onChange={(e) => { setAlreadyAdjusted(e.target.checked); setCorrectionDocumentId(""); }} />Закрыть без нового списания и привязать корректировку</label>
+            {alreadyAdjusted && <label>Проведённая корректировка<select aria-label="Проведённая корректировка" value={correctionDocumentId} disabled={busy} onChange={(e) => setCorrectionDocumentId(e.target.value)}><option value="">Выберите корректировку</option>{(data.eligibleCorrections ?? []).map((doc) => <option key={doc.id} value={doc.id}>{doc.name} · списано {doc.quantity} л · {new Date(doc.moment).toLocaleDateString("ru-RU")}</option>)}</select><small>Она будет привязана к закрытию бочки. Складской остаток не изменится.</small></label>}
+            {alreadyAdjusted && selectedCorrection && Math.abs(selectedCorrection.quantity - active.remainingLiters) > 0.000001 && <p role="status">Корректировка списывает {selectedCorrection.quantity} л, а в старой записи числится {active.remainingLiters} л. Разница {Math.abs(selectedCorrection.quantity - active.remainingLiters).toFixed(1)} л будет отмечена в истории бочки без повторного движения по складу.</p>}
             <label>Причина расхождения<textarea aria-label="Причина расхождения" rows={2} value={reason} disabled={busy} onChange={(e) => setReason(e.target.value)} placeholder="Например: остаток после проверки, потери при разливе" /></label>
           </>}
-          <EcoButton type="button" variant="primary" disabled={busy || (!selectedId && !scannedCode.trim()) || Boolean(active && active.remainingLiters > 0 && (!confirmEmpty || !reason.trim()))} onClick={() => void submit("switch")}>{busy ? "Сохранение…" : active ? "Закрыть старую и подключить новую" : "Начать разлив"}</EcoButton>
+          <EcoButton type="button" variant="primary" disabled={busy || (!selectedId && !scannedCode.trim()) || Boolean(active && active.remainingLiters > 0 && (!confirmEmpty || !reason.trim() || (alreadyAdjusted && !correctionDocumentId)))} onClick={() => void submit("switch")}>{busy ? "Сохранение…" : active ? "Закрыть старую и подключить новую" : "Начать разлив"}</EcoButton>
         </div> : <p>Запечатанных бочек нет. <Link href="/inventory/receipts">Примите новую бочку на склад</Link> и отсканируйте её код в приёмке.</p>}
         <div className="eco-barrel-table-wrap"><table><caption>Все бочки этого товара</caption><thead><tr><th>Бочка / приёмка</th><th>Статус</th><th>Остаток</th><th>Склад</th></tr></thead><tbody>{data.barrels.map((b) => <tr key={b.id}><td>{b.number}<small>{new Date(b.receivedAt).toLocaleDateString("ru-RU")}</small></td><td>{statusName[b.status] ?? b.status}</td><td>{b.remainingLiters} / {b.receivedLiters} л</td><td>{b.storeName}</td></tr>)}</tbody></table></div>
       </>}

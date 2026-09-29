@@ -8,10 +8,12 @@ export default function BarrelCodeInput({ value, disabled, label, onCommit }: {
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastCommittedValue = useRef(value);
   const commit = useRef(onCommit);
   useEffect(() => { commit.current = onCommit; }, [onCommit]);
   const hintId = useId();
   useEffect(() => {
+    lastCommittedValue.current = value;
     if (input.current && document.activeElement !== input.current) input.current.value = value;
   }, [value]);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
@@ -19,6 +21,8 @@ export default function BarrelCodeInput({ value, disabled, label, onCommit }: {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     const code = input.current?.value ?? "";
+    if (code === lastCommittedValue.current) return;
+    lastCommittedValue.current = code;
     commit.current(code);
   }
   const error = value ? getMotorOilMarkingCodeError(value) : null;
@@ -41,6 +45,10 @@ export default function BarrelCodeInput({ value, disabled, label, onCommit }: {
           if (event.key === "Enter") event.preventDefault();
           flush();
         }
+      }} onPaste={() => {
+        // Clipboard scans can be followed immediately by the Conduct button.
+        // Commit the pasted value after the browser updates the textarea.
+        setTimeout(flush, 0);
       }} />
     <small id={hintId} className={error ? "is-error" : undefined} aria-live="polite">
       {error || (value ? "Формат кода распознан" : "Сканируйте код целиком")}

@@ -128,10 +128,28 @@ export async function listProductBarrels(branchId: string, productId: string) {
   const product = await prisma.localProduct.findFirst({ where: { id: productId, branchId } });
   if (!product) throw new Error("Товар не найден.");
   const barrels = await prisma.localBulkOilBarrel.findMany({ where: { branchId, productId }, include: { store: { select: { name: true } } }, orderBy: { receivedAt: "desc" } });
-  return { settings: normalizeProductMarkingSettings(product.markingSettings), barrels: barrels.map((b) => ({ ...b, receivedLiters: b.receivedLiters.toNumber(), remainingLiters: b.remainingLiters.toNumber(), storeName: b.store.name, store: undefined })) };
+  const settings = normalizeProductMarkingSettings(product.markingSettings);
+  const active = barrels.find((barrel) => barrel.id === settings.activeBarrelId && barrel.status === "OPEN");
+  const eligibleCorrections = active
+    ? await prisma.localInventoryDocument.findMany({
+        where: {
+          branchId, type: "writeoff", adjustmentType: "technical", applicable: true, isDeleted: false,
+          status: "posted", storeId: active.storeId,
+          positions: { some: { productId } },
+        },
+        select: { id: true, name: true, momentAt: true, positions: { where: { productId }, select: { quantity: true } } },
+        orderBy: [{ momentAt: "desc" }, { id: "desc" }],
+        take: 20,
+      })
+    : [];
+  return {
+    settings,
+    barrels: barrels.map((b) => ({ ...b, receivedLiters: b.receivedLiters.toNumber(), remainingLiters: b.remainingLiters.toNumber(), storeName: b.store.name, store: undefined })),
+    eligibleCorrections: eligibleCorrections.map((document) => ({ id: document.id, name: document.name, moment: document.momentAt.toISOString(), quantity: document.positions[0]?.quantity.toNumber() ?? 0 })),
+  };
 }
 
-export async function switchBarrelTx(tx: Prisma.TransactionClient, input: { branchId: string; productId: string; barrelId?: string; scannedCode?: string; expectedActiveId: string; expectedRemainingLiters: number | null; confirmEmpty: boolean; reason: string; actor?: Actor }, writeoff: (barrel: { storeId: string; remainingLiters: number; number: string }) => Promise<string>) {
+export async function switchBarrelTx(tx: Prisma.TransactionClient, input: { branchId: string; productId: string; barrelId?: string; scannedCode?: string; expectedActiveId: string; expectedRemainingLiters: number | null; confirmEmpty: boolean; reason: string; alreadyAdjustedDocumentId?: string; actor?: Actor }, writeoff: (barrel: { storeId: string; remainingLiters: number; number: string }) => Promise<string>) {
   await lockBarrelProducts(tx, input.branchId, [input.productId]);
   const product = await tx.localProduct.findFirst({ where: { id: input.productId, branchId: input.branchId } });
   if (!product || !product.markingEnabled || product.markingMode !== "BULK_OIL_FROM_MARKED_BARREL") throw new Error("Товар не настроен для разлива.");
@@ -148,16 +166,35 @@ export async function switchBarrelTx(tx: Prisma.TransactionClient, input: { bran
     const remaining = old.remainingLiters.toNumber();
     if (remaining !== settings.currentVolumeLiters) throw new Error("Остаток бочки не совпадает с карточкой. Требуется проверка учёта.");
     let documentId: string | undefined;
+    let discrepancyLiters = remaining;
+    let discrepancyReason = input.reason.trim();
     if (remaining > 0) {
       if (!input.confirmEmpty || !input.reason.trim()) throw new Error(`В старой бочке числится ${remaining} л. Подтвердите, что она пуста, и укажите причину расхождения.`);
-      documentId = await writeoff({ storeId: old.storeId, remainingLiters: remaining, number: old.number });
-      await event(tx, input.branchId, old.id, "DISCREPANCY", input.actor, { volumeLiters: remaining, reason: input.reason.trim(), documentId });
+      if (input.alreadyAdjustedDocumentId) {
+        const adjustment = await tx.localInventoryDocument.findFirst({
+          where: {
+            id: input.alreadyAdjustedDocumentId, branchId: input.branchId, type: "writeoff", adjustmentType: "technical",
+            applicable: true, isDeleted: false, status: "posted", storeId: old.storeId,
+            positions: { some: { productId: input.productId } },
+          },
+          select: { id: true, positions: { where: { productId: input.productId }, select: { quantity: true } } },
+        });
+        if (!adjustment) throw new Error("Выбранная корректировка не относится к этому товару и складу.");
+        documentId = adjustment.id;
+        const adjustedLiters = adjustment.positions[0]?.quantity.toNumber();
+        if (adjustedLiters == null) throw new Error("В корректировке не найдено количество для этого товара.");
+        discrepancyLiters = Math.round(Math.abs(remaining - adjustedLiters) * 1000) / 1000;
+        discrepancyReason = `Корректировка ${adjustment.id} списала ${adjustedLiters} л; в старой записи бочки числилось ${remaining} л. Разница ${discrepancyLiters} л. ${discrepancyReason}`;
+      } else {
+        documentId = await writeoff({ storeId: old.storeId, remainingLiters: remaining, number: old.number });
+      }
+      await event(tx, input.branchId, old.id, "DISCREPANCY", input.actor, { volumeLiters: discrepancyLiters, reason: discrepancyReason, documentId });
     }
     await tx.localBulkOilBarrel.update({ where: { id: old.id, branchId: input.branchId }, data: { status: "CLOSED", remainingLiters: 0, closedAt: new Date() } });
-    await event(tx, input.branchId, old.id, "CLOSED", input.actor);
+    await event(tx, input.branchId, old.id, "CLOSED", input.actor, { documentId });
   }
   await tx.localBulkOilBarrel.update({ where: { id: next.id, branchId: input.branchId }, data: { status: "OPEN", openedAt: new Date() } });
-  await event(tx, input.branchId, next.id, "OPENED", input.actor);
+  await event(tx, input.branchId, next.id, "OPENED", input.actor, { documentId: next.receiptDocumentId ?? undefined });
   await writeSettings(tx, input.branchId, product, { ...settings, activeBarrelId: next.id, activeBarrelName: next.number, activeBarrelMarkingCode: next.markingCode, activeBarrelGtin: next.gtin, declaredVolumeLiters: next.receivedLiters.toNumber(), currentVolumeLiters: next.remainingLiters.toNumber() }, input.actor);
 }
 

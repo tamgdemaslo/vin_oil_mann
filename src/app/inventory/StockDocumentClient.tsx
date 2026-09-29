@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import BarrelReceiptFields from "@/components/receipts/BarrelReceiptFields";
 import type { BarrelReceiptInput } from "@/lib/bulk-oil-barrels";
+import { getMotorOilMarkingCodeError } from "@/lib/marking";
 import MoneyInput from "@/components/MoneyInput";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
@@ -342,6 +343,10 @@ function isCancelledDocument(document: Pick<MovementRow, "status" | "applicable"
   return documentStatus(document) === "cancelled";
 }
 
+function isPostedTechnicalCorrection(document: Pick<MovementRow, "type" | "adjustmentType" | "status" | "applicable">) {
+  return document.type === "writeoff" && document.adjustmentType === "technical" && isPostedDocument(document);
+}
+
 function adjustmentMeta(document: Pick<MovementRow, "adjustmentType" | "affectsManagementProfit">) {
   return document.adjustmentType === "technical" || document.affectsManagementProfit === false
     ? { label: "Техническая · без влияния", tone: "info" as const }
@@ -408,6 +413,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [warehouseCellsLoading, setWarehouseCellsLoading] = useState(false);
 
   const [documentDate, setDocumentDate] = useState(todayInput());
+  const [documentTime, setDocumentTime] = useState(toServiceMomentString().slice(11, 16));
   const [createInvoice, setCreateInvoice] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(todayInput());
@@ -446,7 +452,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [newProduct, setNewProduct] = useState(emptyProductDraft);
   const [newProductSaving, setNewProductSaving] = useState(false);
 
-  const readOnly = formMode === "view" || Boolean(editingDocument && !isDraftDocument(editingDocument));
+  const readOnly = formMode === "view" || Boolean(editingDocument && !isDraftDocument(editingDocument) && !(formMode === "edit" && isPostedTechnicalCorrection(editingDocument)));
 
   const total = useMemo(
     () => positions.reduce((sum, position) => sum + position.quantity * position.price, 0),
@@ -488,19 +494,26 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
 
   const hasInvalidQty = positions.some((position) => Number(position.quantity) <= 0);
   const hasInvalidReceiptPrice = isReceipt && positions.some((position) => Number(position.price) <= 0);
+  const hasBulkOilReceipt = isReceipt && positions.some((position) => position.markingMode === "BULK_OIL_FROM_MARKED_BARREL");
+  const barrelReceiptError = isReceipt
+    ? positions.filter((position) => position.markingMode === "BULK_OIL_FROM_MARKED_BARREL")
+      .flatMap((position) => position.barrels?.length ? position.barrels : [{ markingCode: "", volumeLiters: 0 }])
+      .map((barrel) => getMotorOilMarkingCodeError(barrel.markingCode)).find(Boolean) ?? null
+    : null;
   const missingCellCount = isReceipt ? positions.filter((position) => !cleanCell(position.slotName)).length : 0;
   const hasKnownWriteoffOverAvailable = !isReceipt && positions.some((position) => (
     position.availableKnown && Number(position.quantity) > Number(position.available) + 0.000001
   ));
   const reasonOptions = adjustmentType === "technical" ? technicalAdjustmentReasons : expenseWriteoffReasons;
   const canSaveDraft = !readOnly && positions.length > 0 && !hasInvalidQty && !savingAction;
-  const canConduct = canSaveDraft && Boolean(selectedStoreId) && !hasInvalidReceiptPrice && (isReceipt || Boolean(adjustmentReason)) && !hasKnownWriteoffOverAvailable;
+  const canConduct = canSaveDraft && Boolean(selectedStoreId) && !hasInvalidReceiptPrice && !barrelReceiptError && (isReceipt || Boolean(adjustmentReason)) && !hasKnownWriteoffOverAvailable;
   const footerHelper = (() => {
     if (readOnly) return `${editingDocument ? statusMeta(editingDocument).label : "Документ"} открыт только для просмотра. Для нового движения используйте копию или корректировку.`;
     if (positions.length === 0) return "Добавьте хотя бы одну позицию, чтобы сохранить документ.";
     if (hasInvalidQty) return "Количество по каждой позиции должно быть больше нуля.";
     if (!selectedStoreId) return "Черновик можно сохранить без движения остатков; для проведения выберите склад.";
     if (hasInvalidReceiptPrice) return "Для проведения укажите закупочную цену по каждой позиции.";
+    if (barrelReceiptError) return barrelReceiptError;
     if (missingCellCount > 0 && isReceipt) return `У ${missingCellCount} поз. не указана ячейка. Проведение разрешено, если для склада ячейки не обязательны.`;
     if (!isReceipt && !adjustmentReason) return "Для проведения выберите причину списания или корректировки.";
     if (hasKnownWriteoffOverAvailable) return "Нельзя провести списание больше доступного остатка по выбранному складу.";
@@ -524,6 +537,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setProducts([]);
     setProductQuantities({});
     setDocumentDate(today);
+    setDocumentTime(toServiceMomentString().slice(11, 16));
     setCreateInvoice(false);
     setInvoiceNumber("");
     setInvoiceDate(today);
@@ -610,6 +624,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setProductSearch("");
     setProducts([]);
     setDocumentDate(document.documentDate || today);
+    setDocumentTime(toServiceMomentString(document.moment).slice(11, 16));
     setCreateInvoice(Boolean(document.invoice));
     setInvoiceNumber(document.invoice?.number ?? "");
     setInvoiceDate(document.invoice?.invoiceDate || document.documentDate || today);
@@ -623,6 +638,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   function openExistingDocument(document: MovementRow) {
     if (isPostedDocument(document) && isReceipt) {
       setReceiptDialog({ type: "edit-posted", document });
+      return;
+    }
+    if (isPostedTechnicalCorrection(document)) {
+      fillFormFromDocument(document, "edit");
+      setInfo("Изменение доступно, пока после корректировки не было расхода товара. Остаток будет пересчитан на разницу.");
       return;
     }
     fillFormFromDocument(document, isDraftDocument(document) ? "edit" : "view");
@@ -1336,15 +1356,18 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       setFormError("Выберите поставщика из списка или создайте нового поставщика для счёта");
       return;
     }
+    if (nextApplicable && barrelReceiptError) {
+      setFormError(barrelReceiptError);
+      return;
+    }
 
     const action: SaveAction = nextApplicable ? "conduct" : "draft";
-    const currentMoment = toServiceMomentString();
-    const moment = currentMoment.slice(0, 10) === documentDate ? currentMoment : `${documentDate} 00:00:00`;
+    const moment = `${documentDate} ${documentTime || "00:00"}:00`;
     setSavingAction(action);
     setFormError(null);
     setInfo(null);
     try {
-      const isUpdate = Boolean(editingDocument?.id && !editingDocument.applicable);
+      const isUpdate = Boolean(editingDocument?.id && (!editingDocument.applicable || (formMode === "edit" && isPostedTechnicalCorrection(editingDocument))));
       const res = await fetch(
         isUpdate ? `/api/local-inventory/movements/${editingDocument!.id}` : "/api/local-inventory/movements",
         {
@@ -2029,6 +2052,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                       />
                     </label>
 
+                    <label className="eco-receipt-field">
+                      <span>Время документа</span>
+                      <EcoInput type="time" value={documentTime} onChange={(event) => setDocumentTime(event.target.value)} disabled={readOnly} />
+                    </label>
+
                     {!isReceipt && (
                       <>
                         <label className="eco-receipt-field is-wide">
@@ -2376,7 +2404,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                     </div>
                   )}
 
-                  <div className={`eco-receipt-position-table${isReceipt ? " is-receipt" : ""}`}>
+                  <div className={`eco-receipt-position-table${isReceipt ? " is-receipt" : ""}${hasBulkOilReceipt ? " has-barrel-receipt" : ""}`}>
                     <table>
                       {isReceipt && <colgroup>
                         <col className="eco-receipt-col-select" /><col className="eco-receipt-col-product" />
@@ -2535,11 +2563,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                     )}
                   </div>
 
-                  <div className="eco-receipt-position-cards">
+                  <div className={`eco-receipt-position-cards${hasBulkOilReceipt ? " has-barrel-receipt" : ""}`}>
                     {positions.map((position) => {
                       const profit = receiptProfit(position);
                       return (
-                      <div key={position.localId} className="eco-receipt-position-card">
+                      <div key={position.localId} className={`eco-receipt-position-card${isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL" ? " has-barrel-receipt" : ""}`}>
                         <div>
                           <a
                             href={productHref(position.productId)}
@@ -2683,14 +2711,23 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                         <Trash2 size={15} /> Удалить
                       </EcoButton>
                     )}
-                    <EcoButton type="button" variant="primary" onClick={() => void submit(false)} disabled={!canSaveDraft} title={!canSaveDraft ? footerHelper : undefined}>
-                      {savingAction === "draft" ? <Loader2 size={15} /> : <Save size={15} />}
-                      Сохранить черновик
-                    </EcoButton>
-                    <EcoButton type="button" className="eco-receipt-conduct-btn" onClick={() => void submit(true)} disabled={!canConduct} title={!canConduct ? footerHelper : undefined}>
-                      {savingAction === "conduct" ? <Loader2 size={15} /> : <CheckCircle2 size={15} />}
-                      Провести {isReceipt ? "приёмку" : "списание"}
-                    </EcoButton>
+                    {editingDocument?.applicable && isPostedTechnicalCorrection(editingDocument) ? (
+                      <EcoButton type="button" variant="primary" onClick={() => void submit(true)} disabled={!canConduct} title={!canConduct ? footerHelper : undefined}>
+                        {savingAction === "conduct" ? <Loader2 size={15} /> : <Save size={15} />}
+                        Сохранить изменения
+                      </EcoButton>
+                    ) : (
+                      <>
+                        <EcoButton type="button" variant="primary" onClick={() => void submit(false)} disabled={!canSaveDraft} title={!canSaveDraft ? footerHelper : undefined}>
+                          {savingAction === "draft" ? <Loader2 size={15} /> : <Save size={15} />}
+                          Сохранить черновик
+                        </EcoButton>
+                        <EcoButton type="button" className="eco-receipt-conduct-btn" onClick={() => void submit(true)} disabled={!canConduct} title={!canConduct ? footerHelper : undefined}>
+                          {savingAction === "conduct" ? <Loader2 size={15} /> : <CheckCircle2 size={15} />}
+                          Провести {isReceipt ? "приёмку" : "списание"}
+                        </EcoButton>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -2983,8 +3020,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                             </div>
                           ) : (
                             <div className="eco-receipt-table-actions">
-                              <button type="button" title={document.applicable ? "Открыть" : "Редактировать"} aria-label={document.applicable ? "Открыть" : "Редактировать"} onClick={() => openExistingDocument(document)} disabled={allBranchesMode}>
-                                {document.applicable ? <Eye size={16} /> : <Pencil size={16} />}
+                              <button type="button" title={document.applicable && !isPostedTechnicalCorrection(document) ? "Открыть" : "Редактировать"} aria-label={document.applicable && !isPostedTechnicalCorrection(document) ? "Открыть" : "Редактировать"} onClick={() => openExistingDocument(document)} disabled={allBranchesMode}>
+                                {document.applicable && !isPostedTechnicalCorrection(document) ? <Eye size={16} /> : <Pencil size={16} />}
                               </button>
                               <button type="button" title="Создать на основе" aria-label="Создать на основе" onClick={() => copyFromDocument(document)} disabled={allBranchesMode}>
                                 <Copy size={16} />

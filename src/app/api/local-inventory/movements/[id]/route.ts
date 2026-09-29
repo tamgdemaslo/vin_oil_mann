@@ -27,7 +27,7 @@ export async function PUT(
       session.user
     );
     if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
+      return NextResponse.json({ error: result.error }, { status: "notFound" in result && result.notFound ? 404 : "status" in result ? result.status ?? 400 : 400 });
     }
     return NextResponse.json(result.document);
   });

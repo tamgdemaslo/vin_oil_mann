@@ -71386,10 +71386,44 @@ select[size="1"]::-ms-expand {
 .eco-receipt-position-table.is-receipt .eco-barrel-receipt-volume input { height: 52px; }
 .eco-barrel-receipt-row .eco-barrel-receipt-remove { margin-top: 22px; width: 44px; height: 52px; padding: 0; }
 .eco-receipt-position-card > .eco-barrel-receipt-fields { grid-column: 1 / -1; }
+
+/* Bulky barcode details use a stable card layout instead of stretching the receipt table row. */
+.eco-receipt-drawer.is-workspace .eco-receipt-position-table.is-receipt.has-barrel-receipt { display: none; }
+.eco-receipt-drawer.is-workspace .eco-receipt-position-cards.has-barrel-receipt { display: grid; gap: 12px; }
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(110px, 1fr));
+  align-items: start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 10px;
+}
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > div:first-child,
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > .eco-receipt-card-cell,
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > .eco-barrel-receipt-fields,
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > .eco-receipt-position-card-total,
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > button { grid-column: 1 / -1; }
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > .eco-receipt-card-cell { padding-block: 8px; }
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-barrel-receipt-fields { padding-top: 12px; border-top: 1px solid var(--eco-line); }
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-barrel-receipt-row { grid-template-columns: minmax(0, 1fr) 132px 44px; }
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-barrel-code-input textarea { height: 48px; }
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-barrel-receipt-volume input { height: 48px; }
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-receipt-position-card-total { grid-column: 1 / span 3; }
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > button { grid-column: 4; }
 @media (max-width: 600px) {
   .eco-barrel-receipt-row { grid-template-columns: minmax(0, 1fr) 44px; gap: 8px; }
   .eco-barrel-receipt-code { grid-column: 1 / -1; }
   .eco-barrel-receipt-volume { grid-column: 1; }
   .eco-barrel-receipt-row .eco-barrel-receipt-remove { grid-column: 2; margin-top: 22px; }
   .eco-barrel-code-input textarea { height: 72px; }
+}
+@media (max-width: 720px) {
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; gap: 10px; }
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > .is-quantity,
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > .is-buy-price,
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > .is-sale-price,
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > .eco-receipt-position-card-total,
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > button { grid-column: 1 / -1; }
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-barrel-receipt-row { grid-template-columns: minmax(0, 1fr) 96px 40px; gap: 8px; }
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-barrel-receipt-remove { width: 40px; }
 }

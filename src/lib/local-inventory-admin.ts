@@ -5094,6 +5094,158 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
   };
 }
 
+async function updatePostedTechnicalCorrection(
+  current: Prisma.LocalInventoryDocumentGetPayload<{ include: { positions: true; supplierInvoice: true } }>,
+  body: StockDocumentInput,
+  user?: ActingUser,
+) {
+  if (!current) return { ok: false as const, error: "Складской документ не найден", notFound: true };
+  if (!canManageReceiptDangerousActions(user)) {
+    return { ok: false as const, error: "Недостаточно прав. Проведённые корректировки может редактировать только владелец или администратор.", status: 403 };
+  }
+  if (current.isDeleted || current.source !== "local" || current.type !== "writeoff" || current.adjustmentType !== "technical" || !isReceiptPosted(current)) {
+    return { ok: false as const, error: "Можно редактировать только проведённую техническую корректировку локального склада." };
+  }
+  if (body.type && body.type !== "writeoff") return { ok: false as const, error: "Тип корректировки нельзя изменить." };
+  if (body.applicable === false) return { ok: false as const, error: "Проведённую корректировку нельзя сохранить как черновик." };
+  if (body.adjustmentType && body.adjustmentType !== "technical") return { ok: false as const, error: "Тип проведённой корректировки нельзя изменить." };
+  const branchId = current.branchId;
+  const storeId = current.storeId;
+  if (!storeId || (body.storeId && body.storeId !== storeId)) return { ok: false as const, error: "Склад проведённой корректировки нельзя изменить." };
+  const originalPositions = current.positions.filter((position) => position.productId);
+  const productIds = [...new Set(originalPositions.map((position) => position.productId!))];
+  if (!productIds.length || productIds.length !== originalPositions.length) {
+    return { ok: false as const, error: "В документе есть повторяющиеся или несвязанные позиции. Для него доступна только новая корректировка." };
+  }
+  const inputPositions = body.positions ?? [];
+  if (inputPositions.length !== originalPositions.length) {
+    return { ok: false as const, error: "При редактировании проведённой корректировки нельзя добавлять или удалять товары." };
+  }
+  const inputByProduct = new Map<string, NonNullable<StockDocumentInput["positions"]>[number]>();
+  for (const position of inputPositions) {
+    const productId = position.productId?.trim() ?? "";
+    if (!productId || inputByProduct.has(productId)) return { ok: false as const, error: "Каждый товар корректировки должен быть указан один раз." };
+    inputByProduct.set(productId, position);
+  }
+  if (productIds.some((id) => !inputByProduct.has(id))) {
+    return { ok: false as const, error: "Набор товаров проведённой корректировки нельзя изменить." };
+  }
+  const updates = originalPositions.map((position) => {
+    const input = inputByProduct.get(position.productId!)!;
+    const quantity = Number(input.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 99999999999 || Math.abs(quantity * 1000 - Math.round(quantity * 1000)) > 0.00001) {
+      throw new Error(`Количество товара «${position.productName}» должно быть больше нуля и содержать не более трёх знаков после запятой.`);
+    }
+    return { position, quantity: Math.round(quantity * 1000) / 1000 };
+  });
+  const documentDate = documentDateFromInput(body.documentDate || current.documentDate);
+  const momentAt = momentFromInput(body.moment, documentDate);
+  const minMoment = new Date(Math.min(current.momentAt.getTime(), momentAt.getTime()));
+  const description = body.description?.trim() || null;
+  const adjustmentReason = cleanText(body.adjustmentReason) ?? cleanText(current.adjustmentReason) ?? cleanText(current.description);
+  const reasonError = validateWriteoffReason("technical", adjustmentReason, true);
+  if (reasonError) return { ok: false as const, error: reasonError };
+  const updatedAt = new Date();
+  const oldSnapshot = stockDocumentSnapshot(current);
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockInventoryCostKeys(tx, { branchId, storeId, productIds });
+      await assertNoActiveInventoryLocks(tx, { organizationId: current.storeId ? (await tx.localStore.findUnique({ where: { id: storeId }, select: { organizationId: true } }))?.organizationId ?? null : null, warehouseId: storeId, productIds });
+      await lockBarrelProducts(tx, branchId, productIds);
+
+      const latest = await tx.localInventoryDocument.findUnique({ where: { id: current.id }, select: { momentAt: true, applicable: true, status: true, isDeleted: true } });
+      if (!latest || latest.isDeleted || !latest.applicable || normalizeStockDocumentStatus(latest.status, latest.applicable) !== "posted") {
+        throw new Error("Документ уже изменился. Обновите страницу и повторите проверку.");
+      }
+      const [laterSales, laterWriteoffs, laterInventory, crossedStockDocuments] = await Promise.all([
+        tx.localDemandPosition.findFirst({
+          where: { productId: { in: productIds }, demand: { is: { applicable: true, storeId, momentAt: { gt: minMoment } } } },
+          select: { product: { select: { name: true } } },
+        }),
+        tx.localInventoryDocument.findFirst({
+          where: { id: { not: current.id }, type: "writeoff", applicable: true, isDeleted: false, status: { not: "cancelled" }, storeId, momentAt: { gt: minMoment }, positions: { some: { productId: { in: productIds } } } },
+          select: { name: true },
+        }),
+        tx.inventoryLine.findFirst({
+          where: { productId: { in: productIds }, warehouseId: storeId, session: { is: { postedAt: { gt: minMoment } } } },
+          select: { session: { select: { number: true } } },
+        }),
+        momentAt > current.momentAt
+          ? tx.localInventoryDocument.findFirst({
+              where: { id: { not: current.id }, type: { in: ["receipt", "writeoff"] }, applicable: true, isDeleted: false, status: { not: "cancelled" }, storeId, momentAt: { gt: current.momentAt, lte: momentAt }, positions: { some: { productId: { in: productIds } } } },
+              select: { name: true },
+            })
+          : Promise.resolve(null),
+      ]);
+      if (laterSales) throw new Error(`Нельзя изменить корректировку: после неё уже использовали товар «${laterSales.product?.name ?? "без названия"}». Создайте новую корректировку.`);
+      if (laterWriteoffs) throw new Error(`Нельзя изменить корректировку: позже уже проведено списание ${laterWriteoffs.name}.`);
+      if (laterInventory) throw new Error(`Нельзя изменить корректировку: позже проведена инвентаризация ${laterInventory.session.number}.`);
+      if (crossedStockDocuments) throw new Error(`Нельзя перенести время корректировки за документ ${crossedStockDocuments.name}.`);
+
+      const balanceRows = await tx.localStockBalance.findMany({ where: { storeId, productId: { in: productIds } } });
+      const balanceByProduct = new Map(balanceRows.map((balance) => [balance.productId, balance]));
+      const ledgerRows = await tx.inventoryLedgerEntry.findMany({ where: { sourceType: "INVENTORY_DOCUMENT", sourceId: current.id, productId: { in: productIds } }, orderBy: [{ revision: "desc" }, { createdAt: "desc" }] });
+      for (const { position, quantity } of updates) {
+        const balance = balanceByProduct.get(position.productId!);
+        if (!balance) throw new Error(`Нет складского остатка товара «${position.productName}».`);
+        const oldQuantity = position.quantity.toNumber();
+        const quantityDelta = oldQuantity - quantity;
+        const currentQuantity = balance.quantity.toNumber();
+        const reserve = balance.reserve.toNumber();
+        const nextQuantity = currentQuantity + quantityDelta;
+        const nextAvailable = nextQuantity - reserve;
+        if (nextQuantity < -0.000001 || nextAvailable < -0.000001) {
+          throw new Error(`Нельзя увеличить корректировку по товару «${position.productName}»: на складе недостаточно свободного остатка.`);
+        }
+        if (Math.abs(quantityDelta) < 0.000001) continue;
+        await tx.localStockBalance.update({ where: { id: balance.id }, data: { quantity: new Prisma.Decimal(nextQuantity), available: new Prisma.Decimal(nextAvailable), syncedAt: updatedAt } });
+        const sourceEntry = ledgerRows.find((entry) => entry.productId === position.productId);
+        const unitCost = balance.buyPriceCents ?? sourceEntry?.unitCostSnapshot ?? position.priceCentsPerUnit;
+        await tx.inventoryLedgerEntry.create({
+          data: {
+            branchId, sourceType: "INVENTORY_DOCUMENT", sourceId: current.id, organizationId: (await tx.localStore.findUnique({ where: { id: storeId }, select: { organizationId: true } }))?.organizationId ?? null,
+            productId: position.productId, storeId, movementType: "WRITEOFF_EDIT_ADJUSTMENT", quantityDelta: new Prisma.Decimal(quantityDelta),
+            unitCostSnapshot: unitCost, totalCostSnapshot: inventoryLineCostCents(Math.abs(quantityDelta), unitCost),
+            revision: (ledgerRows.reduce((max, entry) => Math.max(max, entry.revision), 0) || 0) + 1,
+            createdById: user?.login ?? null, createdByName: user?.name ?? null,
+            raw: toJson({ correctionEdit: true, oldDocumentQuantity: oldQuantity, newDocumentQuantity: quantity, balanceBefore: { quantity: currentQuantity, reserve, available: balance.available.toNumber() }, balanceAfter: { quantity: nextQuantity, reserve, available: nextAvailable } }),
+          },
+        });
+      }
+
+      const sumCents = updates.reduce((sum, { position, quantity }) => sum + Math.round(quantity * position.priceCentsPerUnit), 0);
+      const next = await tx.localInventoryDocument.update({
+        where: { id: current.id },
+        data: { momentAt, documentDate, description, adjustmentReason, sumCents, raw: toJson({ ...jsonRecord(current.raw), lastEditedAt: updatedAt.toISOString(), lastEditedBy: user?.login ?? null }) },
+        include: { positions: true, supplierInvoice: true },
+      });
+      for (const { position, quantity } of updates) {
+        await tx.localInventoryDocumentPosition.update({ where: { id: position.id }, data: { quantity: new Prisma.Decimal(quantity) } });
+      }
+      const updatedPositions = next.positions.map((position) => {
+        const original = originalPositions.find((item) => item.id === position.id)!;
+        const change = updates.find((item) => item.position.id === position.id)!;
+        return { ...position, quantity: new Prisma.Decimal(change.quantity), productName: original.productName };
+      });
+      const auditNext = { ...next, positions: updatedPositions };
+      await writeStockDocumentAudit(tx, {
+        documentId: current.id, action: "edit_posted_correction", statusBefore: "posted", statusAfter: "posted",
+        message: "Проведённая техническая корректировка изменена. Складской остаток обновлён на разницу.",
+        oldValue: oldSnapshot, newValue: stockDocumentSnapshot(auditNext), user,
+      });
+      return auditNext;
+    });
+    invalidateWarehouseReadCaches();
+    return { ok: true as const, document: {
+      id: updated.id, name: updated.name, type: updated.type, status: normalizeStockDocumentStatus(updated.status, updated.applicable),
+      applicable: updated.applicable, adjustmentType: updated.adjustmentType, adjustmentMethod: updated.adjustmentMethod,
+      adjustmentReason: updated.adjustmentReason, affectsManagementProfit: updated.affectsManagementProfit, invoice: null,
+    } };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось безопасно изменить корректировку" };
+  }
+}
+
 export async function updateLocalStockDocument(documentId: string, body: StockDocumentInput, user?: ActingUser) {
   const branchId = getScopedBranchId();
   const id = documentId?.trim();
@@ -5113,6 +5265,10 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
   }
   if (body.type && body.type !== current.type) {
     return { ok: false as const, error: "Тип складского документа нельзя изменить" };
+  }
+  const postedTechnicalCorrection = current.type === "writeoff" && current.adjustmentType === "technical" && isReceiptPosted(current);
+  if (postedTechnicalCorrection) {
+    return updatePostedTechnicalCorrection(current, body, user);
   }
   if (!isReceiptDraft(current)) {
     return { ok: false as const, error: "Проведённый документ нельзя редактировать. Создайте документ на основе." };

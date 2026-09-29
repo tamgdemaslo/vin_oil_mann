@@ -40,7 +40,9 @@ export async function POST(request: NextRequest, { params }: Params) {
             scannedCode: typeof body.scannedCode === "string" ? body.scannedCode : undefined,
             expectedActiveId: String(body.expectedActiveId ?? ""),
             expectedRemainingLiters: body.expectedRemainingLiters == null ? null : Number(body.expectedRemainingLiters),
-            confirmEmpty: body.confirmEmpty === true, reason: String(body.reason ?? ""), actor: access.context.user,
+            confirmEmpty: body.confirmEmpty === true, reason: String(body.reason ?? ""),
+            alreadyAdjustedDocumentId: typeof body.alreadyAdjustedDocumentId === "string" ? body.alreadyAdjustedDocumentId : undefined,
+            actor: access.context.user,
           }, async (barrel) => {
             const result = await createLocalStockDocument({ type: "writeoff", storeId: barrel.storeId, applicable: true,
               adjustmentType: "expense", adjustmentMethod: "WRITE_OFF_QUANTITY", adjustmentReason: "Другое фактическое списание",
