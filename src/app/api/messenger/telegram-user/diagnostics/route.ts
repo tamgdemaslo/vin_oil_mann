@@ -20,6 +20,6 @@ export async function GET() {
   lastProbeByBranch.set(branchId, Date.now());
   return runWithBranchApiContext(auth.context, async () => {
     const result = await diagnoseTelegramUserConnection();
-    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(result, { headers: { "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" } });
   });
 }

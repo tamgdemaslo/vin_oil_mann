@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import net from "node:net";
 import { touchClientCaseMessageState } from "@/lib/client-case-workflow";
 import { prisma } from "@/lib/db";
 import type { Attachment, MessageOutbox, MessengerAccount, MessengerAccountStatus, MessengerConnection } from "../messenger-types";
@@ -576,6 +577,32 @@ export async function diagnoseTelegramUserConnection() {
   const { StringSession } = await loadGramJs();
   const dcId = new StringSession(sessionString).dcId;
   const credentials = await resolveTelegramUserCredentials();
+  const networkProbe = async () => {
+    const { PromisedWebSockets } = await loadGramJs();
+    const tcp = new Promise<{ transport: string; ok: boolean; error?: string }>((resolve) => {
+      const socket = net.createConnection({ host: telegramTcpDcAddress(dcId).ipAddress, port: 443 });
+      const finish = (ok: boolean, error?: string) => {
+        clearTimeout(timer);
+        socket.destroy();
+        resolve({ transport: "tcp_socket", ok, ...(error ? { error } : {}) });
+      };
+      const timer = setTimeout(() => finish(false, "TIMEOUT"), 8_000);
+      socket.once("connect", () => finish(true));
+      socket.once("error", (error: NodeJS.ErrnoException) => finish(false, error.code ?? "SOCKET_ERROR"));
+    });
+    const websocket = (async () => {
+      const socket = new PromisedWebSockets() as { connect: (port: number, host: string) => Promise<unknown>; close: () => Promise<void> };
+      try {
+        await withTelegramConnectTimeout(socket.connect(443, telegramWebDcAddress(dcId).ipAddress), 8_000);
+        return { transport: "websocket_handshake", ok: true };
+      } catch (error) {
+        return { transport: "websocket_handshake", ok: false, error: error instanceof Error ? redactKnownSecrets(error.message).slice(0, 200) : "HANDSHAKE_FAILED" };
+      } finally {
+        await socket.close().catch(() => {});
+      }
+    })();
+    return Promise.all([tcp, websocket]);
+  };
   const probe = async (saved: boolean) => {
     const started = Date.now();
     let client: TelegramRuntimeClient | null = null;
@@ -613,8 +640,8 @@ export async function diagnoseTelegramUserConnection() {
       await agent.close();
     }
   };
-  const [probes, tunnel] = await Promise.all([Promise.all([probe(false), probe(true)]), tunnelProbe()]);
-  return { ok: probes.every((item) => item.ok), accountStatus: account.status, dcId, probes, tunnel };
+  const [probes, tunnel, network] = await Promise.all([Promise.all([probe(false), probe(true)]), tunnelProbe(), networkProbe()]);
+  return { ok: probes.every((item) => item.ok), accountStatus: account.status, dcId, network, probes, tunnel, nodeVersion: process.version };
 }
 
 function safeDisconnectTelegramClient(client: TelegramRuntimeClient) {
