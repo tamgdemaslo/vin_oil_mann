@@ -20,6 +20,7 @@ import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { listMessengerChannels, sendMessage } from "@/lib/messenger/messenger-gateway";
 import { ContactActionError, startContactConversation } from "@/lib/messenger/messenger-contact-actions";
 import { redactKnownSecrets } from "@/lib/messenger/messenger-crypto";
+import { isTelegramConnectionFailure } from "@/lib/messenger/channels/telegram-connect";
 import { ensureMessengerIntegrationCoreSchema } from "@/lib/messenger/messenger-schema";
 import { assertMessengerOutboundTextSafe } from "@/lib/messenger/messenger-security";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
@@ -288,7 +289,11 @@ type ConversationTarget = {
   clientId: string | null;
 };
 
-class TelegramRecipientResolutionError extends Error {}
+class TelegramRecipientResolutionError extends Error {
+  constructor(message: string, readonly retryable = false) {
+    super(message);
+  }
+}
 
 type NotificationCounterpartyRow = {
   id: string;
@@ -1846,7 +1851,8 @@ async function startTelegramConversationFromContact(
         ? error.message
         : detail
           ? `Не удалось найти или открыть Telegram-диалог по номеру клиента: ${detail}`
-          : "Не удалось найти или открыть Telegram-диалог по номеру клиента."
+          : "Не удалось найти или открыть Telegram-диалог по номеру клиента.",
+      isTelegramConnectionFailure(error)
     );
   }
 }
@@ -2389,9 +2395,10 @@ async function processClientNotificationJob(job: NotificationJobRow) {
     });
   } catch (error) {
     if (error instanceof TelegramRecipientResolutionError) {
-      return finishJob(job, "client_not_connected", {
+      return finishJob(job, error.retryable ? "error" : "client_not_connected", {
         renderedMessage,
         errorMessage: error.message,
+        retry: error.retryable,
       });
     }
     return finishJob(job, "error", {

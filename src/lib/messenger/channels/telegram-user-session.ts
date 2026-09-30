@@ -19,6 +19,7 @@ import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store"
 import { resolveTelegramUserCredentials } from "@/lib/telegram-user-integration";
 import { hasConsecutiveIntegrationFailures, notifyIntegrationOwner, recordIntegrationAudit } from "@/lib/integration-owner-notifications";
 import type { ChannelSendResult, MessengerChannelAdapter } from "./types";
+import { connectTelegramWithFallback, type TelegramTransport } from "./telegram-connect";
 
 type SecretPayload = {
   v?: unknown;
@@ -174,6 +175,7 @@ type GramJsModule = {
   TelegramClient: new (session: unknown, apiId: number, apiHash: string, options: Record<string, unknown>) => unknown;
   StringSession: new (session: string) => TelegramStringSession;
   PromisedWebSockets: new () => unknown;
+  ConnectionTCPObfuscated: new (input: Record<string, unknown>) => unknown;
   Api: {
     auth: {
       SendCode: new (input: Record<string, unknown>) => unknown;
@@ -445,11 +447,13 @@ async function loadGramJs(): Promise<GramJsModule> {
     const telegram = await import("telegram");
     const extensions = await import("telegram/extensions");
     const sessions = await import("telegram/sessions");
+    const connections = await import("telegram/network/connection");
     return {
       TelegramClient: telegram.TelegramClient as GramJsModule["TelegramClient"],
       Api: telegram.Api as unknown as GramJsModule["Api"],
       StringSession: sessions.StringSession as GramJsModule["StringSession"],
       PromisedWebSockets: extensions.PromisedWebSockets as GramJsModule["PromisedWebSockets"],
+      ConnectionTCPObfuscated: connections.ConnectionTCPObfuscated as unknown as GramJsModule["ConnectionTCPObfuscated"],
       Password: telegram.password as GramJsModule["Password"],
       version: typeof telegram.version === "string" ? telegram.version : undefined,
     };
@@ -458,47 +462,56 @@ async function loadGramJs(): Promise<GramJsModule> {
   }
 }
 
+let lastWorkingDirectTransport: TelegramTransport | null = null;
+
 async function getClient(
   session = "",
   credentials?: { apiId: number; apiHash: string },
   options: { autoReconnect?: boolean } = {}
 ) {
   const { apiId, apiHash } = credentials ?? await resolveTelegramUserCredentials();
-  const { TelegramClient, StringSession, PromisedWebSockets } = await loadGramJs();
+  const { TelegramClient, StringSession, PromisedWebSockets, ConnectionTCPObfuscated } = await loadGramJs();
   const proxy = telegramSocksProxy();
-  const stringSession = new StringSession(session);
-  const useWebSocket = !proxy && telegramTransport() === "websocket";
-  const initialDc = useWebSocket
-    ? telegramWebDcAddress(stringSession.dcId || 4)
-    : telegramTcpDcAddress(stringSession.dcId || 4);
-  stringSession.setDC(initialDc.id, initialDc.ipAddress, initialDc.port);
-  const client = new TelegramClient(stringSession, apiId, apiHash, {
-    connectionRetries: telegramConnectionRetries(),
-    // Regular operations own a short-lived client and destroy it in finally.
-    // Leaving GramJS auto-reconnect enabled lets it keep reconnecting after a
-    // connect timeout, even though the owning operation has already failed.
-    autoReconnect: options.autoReconnect ?? false,
-    testServers: false,
-    // When WSS is explicitly requested, GramJS needs both the WebSocket socket
-    // implementation and a web DC hostname. Node.js otherwise uses raw TCP.
-    useWSS: useWebSocket,
-    ...(useWebSocket ? { networkSocket: PromisedWebSockets } : {}),
-    ...(proxy ? { proxy } : {}),
-  }) as TelegramRuntimeClient;
-  // GramJS prints the complete WebSocket event (including its internal client
-  // graph) on connection failures. Application-level errors below are enough
-  // for diagnostics and keep production logs bounded.
-  client.setLogLevel?.(telegramGramJsLogLevel());
-  if (useWebSocket) {
-    client.getDC = async (dcId, downloadDC = false) => telegramWebDcAddress(dcId, downloadDC);
-  }
-  try {
-    await withTelegramConnectTimeout(client.connect(), telegramConnectTimeoutMs());
-  } catch (error) {
-    await disconnectTelegramClient(client);
-    throw error;
-  }
-  return client;
+  const connected = await connectTelegramWithFallback<TelegramRuntimeClient>({
+    preferredTransport: lastWorkingDirectTransport ?? telegramTransport(),
+    proxyConfigured: Boolean(proxy),
+    createClient: (transport) => {
+      // Each attempt retains the same authorization key and DC but owns its socket.
+      const stringSession = new StringSession(session);
+      const useWebSocket = transport === "websocket";
+      const initialDc = useWebSocket
+        ? telegramWebDcAddress(stringSession.dcId || 4)
+        : telegramTcpDcAddress(stringSession.dcId || 4);
+      stringSession.setDC(initialDc.id, initialDc.ipAddress, initialDc.port);
+      const client = new TelegramClient(stringSession, apiId, apiHash, {
+        connectionRetries: telegramConnectionRetries(),
+        // Regular operations own a short-lived client and destroy it in finally.
+        // Leaving GramJS auto-reconnect enabled lets it keep reconnecting after a
+        // connect timeout, even though the owning operation has already failed.
+        autoReconnect: options.autoReconnect ?? false,
+        testServers: false,
+        // For WSS, GramJS needs both the WebSocket socket
+        // implementation and a web DC hostname. Node.js otherwise uses raw TCP.
+        useWSS: useWebSocket,
+        // Telegram requires obfuscated MTProto framing over WebSocket. GramJS
+        // defaults to TCPFull in Node even when useWSS is set.
+        ...(useWebSocket ? { networkSocket: PromisedWebSockets, connection: ConnectionTCPObfuscated } : {}),
+        ...(proxy ? { proxy } : {}),
+      }) as TelegramRuntimeClient;
+      // GramJS prints the complete WebSocket event (including its internal client
+      // graph) on connection failures. Application-level errors below are enough
+      // for diagnostics and keep production logs bounded.
+      client.setLogLevel?.(telegramGramJsLogLevel());
+      if (useWebSocket) {
+        client.getDC = async (dcId, downloadDC = false) => telegramWebDcAddress(dcId, downloadDC);
+      }
+      return client;
+    },
+    connectClient: (client) => withTelegramConnectTimeout(client.connect(), telegramConnectTimeoutMs()),
+    closeClient: disconnectTelegramClient,
+  });
+  if (!proxy) lastWorkingDirectTransport = connected.transport;
+  return connected.client;
 }
 
 async function withTelegramConnectTimeout<T>(promise: Promise<T>, timeoutMs: number) {

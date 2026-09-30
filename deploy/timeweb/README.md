@@ -43,6 +43,16 @@ per-branch processing results. Without this scheduled call, due client
 notifications remain queued until an owner manually processes them in the
 notifications journal.
 
+## Telegram connectivity
+
+Telegram user sessions try MTProto TCP and secure WebSocket on port 443 when
+the first transport fails to connect. `TELEGRAM_TRANSPORT=websocket` selects
+WebSocket as the first attempt; the default is TCP. The process remembers the
+last working direct transport. `TELEGRAM_CONNECT_TIMEOUT_MS` limits each
+attempt (default: 10000). Both attempts use the same authorized session and DC.
+When a SOCKS proxy is configured, all attempts stay on that proxy; there is no
+direct fallback. Connection failures retain notification retry scheduling.
+
 ## OpenAI WireGuard route
 
 If the App Platform region cannot reach OpenAI directly, set
