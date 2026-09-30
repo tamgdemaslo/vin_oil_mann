@@ -53,6 +53,18 @@ attempt (default: 10000). Both attempts use the same authorized session and DC.
 When a SOCKS proxy is configured, all attempts stay on that proxy; there is no
 direct fallback. Connection failures retain notification retry scheduling.
 
+The TCP connection class explicitly uses port 443: GramJS otherwise uses port
+80 for the main connection regardless of the port saved in `StringSession`.
+An authorized branch integration manager can open
+`/api/messenger/telegram-user/diagnostics` to compare a fresh anonymous MTProto
+connection with the saved account session on its own DC. This check never sends
+messages or exports session secrets. It also checks the public Telegram HTTPS
+endpoint through the existing loopback tunnel, when configured. Individual
+transport failures appear in the runtime log as
+`[messenger.telegram_user.connect]` with sanitized errors.
+For local socket checks without any account, run
+`node scripts/probe-telegram-network.mjs`.
+
 ## OpenAI WireGuard route
 
 If the App Platform region cannot reach OpenAI directly, set

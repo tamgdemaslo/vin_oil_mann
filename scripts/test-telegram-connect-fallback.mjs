@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
-import { ConnectionTCPObfuscated } from "telegram/network/connection/index.js";
-import { PromisedWebSockets } from "telegram/extensions/index.js";
+import { ConnectionTCPFull, ConnectionTCPObfuscated } from "telegram/network/connection/index.js";
+import { PromisedNetSockets, PromisedWebSockets } from "telegram/extensions/index.js";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
@@ -94,17 +94,17 @@ class FakeClient {
     Object.assign(this, { session, apiId, apiHash, options });
     configuredClients.push(this);
   }
-  async connect() { if (!this.options.useWSS) throw timeout; }
+  async connect() { return this.options.useWSS; }
   async destroy() { this.closed = true; }
 }
-const getClient = new Function("loadGramJs", "resolveTelegramUserCredentials", "telegramSocksProxy", "telegramTransport", "telegramWebDcAddress", "telegramTcpDcAddress", "telegramConnectionRetries", "telegramGramJsLogLevel", "connectTelegramWithFallback", "withTelegramConnectTimeout", "telegramConnectTimeoutMs", "disconnectTelegramClient", `${factoryJs}; return getClient;`)(
-  async () => ({ TelegramClient: FakeClient, StringSession: FakeSession, PromisedWebSockets, ConnectionTCPObfuscated }),
+const getClient = new Function("loadGramJs", "resolveTelegramUserCredentials", "telegramSocksProxy", "telegramTransport", "telegramWebDcAddress", "telegramTcpDcAddress", "telegramConnectionRetries", "telegramGramJsLogLevel", "connectTelegramWithFallback", "withTelegramConnectTimeout", "telegramConnectTimeoutMs", "disconnectTelegramClient", "redactKnownSecrets", `${factoryJs}; return getClient;`)(
+  async () => ({ TelegramClient: FakeClient, StringSession: FakeSession, PromisedWebSockets, ConnectionTCPObfuscated, ConnectionTCPFull }),
   async () => { throw new Error("Credentials should be supplied by the test"); },
   () => undefined, () => "tcp",
   (id) => ({ id, ipAddress: "venus.web.telegram.org", port: 443 }),
   (id) => ({ id, ipAddress: "149.154.167.40", port: 443 }),
   () => 1, () => "none", connectTelegramWithFallback,
-  async (promise) => promise, () => 10000, async (client) => client.destroy(),
+  async (promise) => promise, () => 10000, async (client) => client.destroy(), (value) => value,
 );
 const credentials = { apiId: 12345, apiHash: "0".repeat(32) };
 const connected = await getClient("same-authorized-session", credentials);
@@ -112,6 +112,8 @@ assert.equal(configuredClients.length, 2);
 assert.equal(configuredClients[0].closed, true);
 assert.ok(configuredClients.every(client => client.session.value === "same-authorized-session" && client.session.dcId === 2));
 assert.notEqual(configuredClients[0].session, connected.session);
+const tcpConnection = new configuredClients[0].options.connection({ ip: "149.154.167.51", port: 80, dcId: 2, loggers: {}, socket: PromisedNetSockets });
+assert.equal(tcpConnection._port, 443, "GramJS port 80 must be overridden at the connection layer");
 assert.equal(connected.options.networkSocket, PromisedWebSockets);
 assert.equal(connected.options.connection, ConnectionTCPObfuscated);
 assert.equal((await connected.getDC(2)).ipAddress, "venus.web.telegram.org");

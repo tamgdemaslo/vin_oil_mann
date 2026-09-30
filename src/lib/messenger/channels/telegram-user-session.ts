@@ -5,7 +5,7 @@ import type { Attachment, MessageOutbox, MessengerAccount, MessengerAccountStatu
 import { enqueueMessengerMediaJob, refreshMessageAttachmentsJson } from "../messenger-media";
 import { isPhotoAttachmentType, messengerAttachmentDisplayName } from "../messenger-attachment-normalization";
 import { ensureMessengerIntegrationCoreSchema } from "../messenger-schema";
-import { assertIntegrationEncryptionConfigured } from "../messenger-crypto";
+import { assertIntegrationEncryptionConfigured, redactKnownSecrets } from "../messenger-crypto";
 import {
   messengerObjectKey,
   messengerStorageProxyUrl,
@@ -141,7 +141,8 @@ type TelegramMessage = {
 };
 
 type TelegramRuntimeClient = {
-  connect(): Promise<void>;
+  connect(): Promise<boolean | void>;
+  onError?: (error: unknown) => Promise<void>;
   setLogLevel?: (level: "none" | "error" | "warn" | "info" | "debug") => void;
   disconnect?: () => Promise<void>;
   destroy?: () => Promise<void>;
@@ -176,6 +177,7 @@ type GramJsModule = {
   StringSession: new (session: string) => TelegramStringSession;
   PromisedWebSockets: new () => unknown;
   ConnectionTCPObfuscated: new (input: Record<string, unknown>) => unknown;
+  ConnectionTCPFull: new (input: Record<string, unknown>) => object;
   Api: {
     auth: {
       SendCode: new (input: Record<string, unknown>) => unknown;
@@ -454,6 +456,7 @@ async function loadGramJs(): Promise<GramJsModule> {
       StringSession: sessions.StringSession as GramJsModule["StringSession"],
       PromisedWebSockets: extensions.PromisedWebSockets as GramJsModule["PromisedWebSockets"],
       ConnectionTCPObfuscated: connections.ConnectionTCPObfuscated as unknown as GramJsModule["ConnectionTCPObfuscated"],
+      ConnectionTCPFull: connections.ConnectionTCPFull as unknown as GramJsModule["ConnectionTCPFull"],
       Password: telegram.password as GramJsModule["Password"],
       version: typeof telegram.version === "string" ? telegram.version : undefined,
     };
@@ -467,11 +470,16 @@ let lastWorkingDirectTransport: TelegramTransport | null = null;
 async function getClient(
   session = "",
   credentials?: { apiId: number; apiHash: string },
-  options: { autoReconnect?: boolean } = {}
+  options: { autoReconnect?: boolean; probeDcId?: number } = {}
 ) {
   const { apiId, apiHash } = credentials ?? await resolveTelegramUserCredentials();
-  const { TelegramClient, StringSession, PromisedWebSockets, ConnectionTCPObfuscated } = await loadGramJs();
+  const { TelegramClient, StringSession, PromisedWebSockets, ConnectionTCPObfuscated, ConnectionTCPFull } = await loadGramJs();
   const proxy = telegramSocksProxy();
+  const attempts = new WeakMap<TelegramRuntimeClient, { transport: TelegramTransport; dcId: number; host: string; port: number }>();
+  // GramJS otherwise forces raw TCP to port 80, ignoring StringSession.port.
+  class Tcp443Connection extends ConnectionTCPFull {
+    constructor(input: Record<string, unknown>) { super({ ...input, port: 443 }); }
+  }
   const connected = await connectTelegramWithFallback<TelegramRuntimeClient>({
     preferredTransport: lastWorkingDirectTransport ?? telegramTransport(),
     proxyConfigured: Boolean(proxy),
@@ -480,8 +488,8 @@ async function getClient(
       const stringSession = new StringSession(session);
       const useWebSocket = transport === "websocket";
       const initialDc = useWebSocket
-        ? telegramWebDcAddress(stringSession.dcId || 4)
-        : telegramTcpDcAddress(stringSession.dcId || 4);
+        ? telegramWebDcAddress(stringSession.dcId || options.probeDcId || 4)
+        : telegramTcpDcAddress(stringSession.dcId || options.probeDcId || 4);
       stringSession.setDC(initialDc.id, initialDc.ipAddress, initialDc.port);
       const client = new TelegramClient(stringSession, apiId, apiHash, {
         connectionRetries: telegramConnectionRetries(),
@@ -495,7 +503,7 @@ async function getClient(
         useWSS: useWebSocket,
         // Telegram requires obfuscated MTProto framing over WebSocket. GramJS
         // defaults to TCPFull in Node even when useWSS is set.
-        ...(useWebSocket ? { networkSocket: PromisedWebSockets, connection: ConnectionTCPObfuscated } : {}),
+        ...(useWebSocket ? { networkSocket: PromisedWebSockets, connection: ConnectionTCPObfuscated } : { connection: Tcp443Connection }),
         ...(proxy ? { proxy } : {}),
       }) as TelegramRuntimeClient;
       // GramJS prints the complete WebSocket event (including its internal client
@@ -505,9 +513,28 @@ async function getClient(
       if (useWebSocket) {
         client.getDC = async (dcId, downloadDC = false) => telegramWebDcAddress(dcId, downloadDC);
       }
+      attempts.set(client, { transport, dcId: initialDc.id, host: initialDc.ipAddress, port: initialDc.port });
       return client;
     },
-    connectClient: (client) => withTelegramConnectTimeout(client.connect(), telegramConnectTimeoutMs()),
+    connectClient: async (client) => {
+      let libraryError: string | undefined;
+      client.onError = async (error) => {
+        libraryError = redactKnownSecrets(error instanceof Error ? error.message : "WebSocket connection error").slice(0, 300);
+      };
+      try {
+        const connected = await withTelegramConnectTimeout(client.connect(), telegramConnectTimeoutMs());
+        if (connected === false) throw new Error(`Telegram connection not connected${libraryError ? `: ${libraryError}` : ""}`);
+      } catch (error) {
+        console.warn("[messenger.telegram_user.connect]", JSON.stringify({
+          ...attempts.get(client), action: "connect_failed",
+          error: redactKnownSecrets(error instanceof Error ? error.message : "WebSocket connection error").slice(0, 300),
+          libraryError,
+        }));
+        throw error;
+      } finally {
+        client.onError = undefined;
+      }
+    },
     closeClient: disconnectTelegramClient,
   });
   if (!proxy) lastWorkingDirectTransport = connected.transport;
@@ -538,6 +565,56 @@ async function disconnectTelegramClient(client: TelegramRuntimeClient) {
       error: safeError(error, "Telegram client close failed"),
     });
   });
+}
+
+export async function diagnoseTelegramUserConnection() {
+  const account = await getActiveTelegramUserAccount();
+  if (!account?.isActive) return { ok: false, error: "Нет активного Telegram-аккаунта филиала." };
+  const session = await getSessionByAccount(account.id);
+  const sessionString = decryptSecret(session?.sessionEncrypted);
+  if (!sessionString) return { ok: false, error: "Сохранённая Telegram-сессия недоступна." };
+  const { StringSession } = await loadGramJs();
+  const dcId = new StringSession(sessionString).dcId;
+  const credentials = await resolveTelegramUserCredentials();
+  const probe = async (saved: boolean) => {
+    const started = Date.now();
+    let client: TelegramRuntimeClient | null = null;
+    try {
+      client = await getClient(saved ? sessionString : "", credentials, { probeDcId: dcId });
+      if (saved) await withTelegramConnectTimeout(client.getMe!(), 10_000);
+      return { stage: saved ? "saved_session" : "anonymous_same_dc", ok: true, elapsedMs: Date.now() - started };
+    } catch (error) {
+      const causes: string[] = [];
+      let current: unknown = error;
+      for (let depth = 0; depth < 3 && current instanceof Error; depth++) {
+        causes.push(redactKnownSecrets(current.message).slice(0, 300));
+        current = current.cause;
+      }
+      return { stage: saved ? "saved_session" : "anonymous_same_dc", ok: false, elapsedMs: Date.now() - started, errors: causes };
+    } finally {
+      if (client) await disconnectTelegramClient(client);
+    }
+  };
+  const tunnelProbe = async () => {
+    if (process.env.OPENAI_PROXY_URL?.trim() !== "http://127.0.0.1:8888") return { configured: false };
+    const { fetch: proxyFetch, ProxyAgent } = await import("undici");
+    const agent = new ProxyAgent("http://127.0.0.1:8888");
+    try {
+      // Public endpoint only: determine whether the existing tunnel can reach
+      // Telegram HTTPS without sending a session, credentials or client data.
+      const response = await proxyFetch(`https://${telegramWebDcAddress(dcId).ipAddress}/apiws`, {
+        dispatcher: agent, signal: AbortSignal.timeout(8_000),
+      });
+      await response.body?.cancel();
+      return { configured: true, reachable: true, httpStatus: response.status };
+    } catch {
+      return { configured: true, reachable: false };
+    } finally {
+      await agent.close();
+    }
+  };
+  const [probes, tunnel] = await Promise.all([Promise.all([probe(false), probe(true)]), tunnelProbe()]);
+  return { ok: probes.every((item) => item.ok), accountStatus: account.status, dcId, probes, tunnel };
 }
 
 function safeDisconnectTelegramClient(client: TelegramRuntimeClient) {
