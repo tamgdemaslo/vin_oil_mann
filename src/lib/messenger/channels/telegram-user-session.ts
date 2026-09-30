@@ -19,7 +19,7 @@ import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store"
 import { resolveTelegramUserCredentials } from "@/lib/telegram-user-integration";
 import { hasConsecutiveIntegrationFailures, notifyIntegrationOwner, recordIntegrationAudit } from "@/lib/integration-owner-notifications";
 import type { ChannelSendResult, MessengerChannelAdapter } from "./types";
-import { connectTelegramWithFallback, type TelegramTransport } from "./telegram-connect";
+import { canUseTelegramUserSession, connectTelegramWithFallback, type TelegramTransport } from "./telegram-connect";
 
 type SecretPayload = {
   v?: unknown;
@@ -623,7 +623,10 @@ export async function listTelegramUserAccounts(): Promise<MessengerAccount[]> {
 
 export async function getActiveTelegramUserAccount() {
   const accounts = await listTelegramUserAccounts();
-  return accounts.find((account) => account.isActive && account.status === "connected") ?? accounts[0] ?? null;
+  return accounts.find((account) => account.isActive && account.status === "connected")
+    ?? accounts.find(canUseTelegramUserSession)
+    ?? accounts[0]
+    ?? null;
 }
 
 async function getSessionByAccount(accountId: string) {
@@ -2342,7 +2345,7 @@ async function upsertTelegramConversationFromUser(input: {
 
 export async function resolveTelegramUserPeerByPhone(phoneInput: string): Promise<TelegramResolvedPeer | { ok: false; reason: string; message: string }> {
   const account = await getActiveTelegramUserAccount();
-  if (!account || !account.isActive || account.status !== "connected") {
+  if (!account || !canUseTelegramUserSession(account)) {
     return {
       ok: false,
       reason: "telegram_not_connected",

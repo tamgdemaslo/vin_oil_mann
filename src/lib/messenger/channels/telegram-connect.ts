@@ -1,5 +1,9 @@
 export type TelegramTransport = "tcp" | "websocket";
 
+export function canUseTelegramUserSession(account: { isActive: boolean; status: string } | null): boolean {
+  return Boolean(account?.isActive && (account.status === "connected" || account.status === "degraded"));
+}
+
 export function isTelegramConnectionFailure(error: unknown): boolean {
   if (error instanceof TelegramConnectionError) return true;
   if (!error || typeof error !== "object") return false;

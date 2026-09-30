@@ -8,7 +8,14 @@ import { PromisedWebSockets } from "telegram/extensions/index.js";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
-const { connectTelegramWithFallback, TelegramConnectionError, isTelegramConnectionFailure } = await jiti.import("../src/lib/messenger/channels/telegram-connect.ts");
+const { canUseTelegramUserSession, connectTelegramWithFallback, TelegramConnectionError, isTelegramConnectionFailure } = await jiti.import("../src/lib/messenger/channels/telegram-connect.ts");
+
+assert.equal(canUseTelegramUserSession({ isActive: true, status: "degraded" }), true, "A temporary sync failure must allow reconnection for first contact");
+for (const status of ["needs_auth", "disconnected", "waiting_password", "error"]) {
+  assert.equal(canUseTelegramUserSession({ isActive: true, status }), false);
+}
+assert.equal(canUseTelegramUserSession({ isActive: false, status: "connected" }), false);
+assert.equal(canUseTelegramUserSession(null), false);
 
 async function attempt({ preferredTransport = "tcp", proxyConfigured = false, failures = {} } = {}) {
   const events = [];
