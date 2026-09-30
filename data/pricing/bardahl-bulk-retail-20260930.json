@@ -1,0 +1,13 @@
+{
+  "approvedAt": "2026-09-30",
+  "currency": "RUB",
+  "unit": "litre",
+  "defaultProfitPerLitreCents": 60000,
+  "litresOverrides": { "cmr52o8c2000iog0puz26vkz3": 0.5 },
+  "targets": [
+    { "id": "cmqqs3ei10063rs0prb7rfim1", "branchId": "branch-main", "article": "36547", "salePriceCents": 213000 },
+    { "id": "cmqrzv88r00r1rs0ptfvupqdw", "branchId": "branch-main", "article": "36897", "salePriceCents": 199000 },
+    { "id": "cmtfhv1f804a9ld0w1hxa9y1o", "branchId": "cmsd9o02w006qmu01u4ij1lhz", "article": "36547", "salePriceCents": 213000 },
+    { "id": "cmtfhna2y0464ld0wpv1jl27i", "branchId": "cmsd9o02w006qmu01u4ij1lhz", "article": "36897", "salePriceCents": 199000 }
+  ]
+}
