@@ -36,3 +36,14 @@ assert.match(startup, /application will start with OpenAI unavailable/);
 assert.doesNotMatch(startup, /unset OPENAI_PROXY_URL/);
 
 console.info("Timeweb WireGuard proxy runtime guard: PASS");
+
+assert.match(startup, /BindAddress = 127\.0\.0\.1:1080/);
+assert.match(startup, /BindAddress = 127\.0\.0\.1:8889/);
+assert.match(startup, /unset TELEGRAM_WIREPROXY_CONFIG/);
+assert.match(startup, /unset DISABLED_WIREPROXY_CONFIG/);
+assert.match(startup, /export TELEGRAM_PROXY_HOST=127\.0\.0\.1/);
+assert.match(startup, /export TELEGRAM_PROXY_PORT=1080/);
+assert.match(startup, /export TELEGRAM_PROXY_SOCKS_TYPE=5/);
+assert.match(startup, /Telegram WireGuard proxy unavailable; notifications will retry/);
+assert.match(startup, /kill -TERM "\$TELEGRAM_WIREPROXY_PID"/);
+console.info("Dedicated Telegram WireGuard route guard: PASS");

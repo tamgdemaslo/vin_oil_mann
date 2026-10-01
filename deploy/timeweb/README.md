@@ -65,6 +65,22 @@ transport failures appear in the runtime log as
 For local socket checks without any account, run
 `node scripts/probe-telegram-network.mjs`.
 
+## Telegram WireGuard route
+
+Set `TELEGRAM_WIREPROXY_CONFIG` to a standard WireGuard client profile as a
+multiline App Platform secret when direct Telegram connections time out. Use a
+dedicated peer on the exit server; do not run two clients with the same peer
+identity at the same time. A reachable WireGuard UDP port is required: successful
+handshakes alone do not prove that tunneled TCP traffic works.
+
+Startup appends SOCKS5 on `127.0.0.1:1080` and an HTTP diagnostic listener on
+`127.0.0.1:8889`, strips the profile from the Node environment, and exports the
+Telegram SOCKS settings. Do not also set an external Telegram proxy. Only
+Telegram uses this route. The public Telegram HTTPS probe checks startup
+connectivity; saved-session MTProto and an own-phone test verify delivery.
+During a tunnel outage CRM remains available and Telegram keeps its proxy route
+with retryable failures. Existing OpenAI routing is configured independently.
+
 ## OpenAI WireGuard route
 
 If the App Platform region cannot reach OpenAI directly, set

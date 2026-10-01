@@ -623,9 +623,13 @@ export async function diagnoseTelegramUserConnection() {
     }
   };
   const tunnelProbe = async () => {
-    if (process.env.OPENAI_PROXY_URL?.trim() !== "http://127.0.0.1:8888") return { configured: false };
+    const proxyUrl = process.env.TELEGRAM_WIREPROXY_ENABLED === "true"
+      ? "http://127.0.0.1:8889"
+      : process.env.OPENAI_PROXY_URL?.trim() === "http://127.0.0.1:8888"
+        ? "http://127.0.0.1:8888" : null;
+    if (!proxyUrl) return { configured: false };
     const { fetch: proxyFetch, ProxyAgent } = await import("undici");
-    const agent = new ProxyAgent("http://127.0.0.1:8888");
+    const agent = new ProxyAgent(proxyUrl);
     try {
       // Public endpoint only: determine whether the existing tunnel can reach
       // Telegram HTTPS without sending a session, credentials or client data.

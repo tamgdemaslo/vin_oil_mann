@@ -3,6 +3,7 @@ set -eu
 
 APP_ROOT="${APP_ROOT:-$(pwd)}"
 WIREPROXY_PID=""
+TELEGRAM_WIREPROXY_PID=""
 APP_PID=""
 
 stop_children() {
@@ -11,6 +12,9 @@ stop_children() {
   fi
   if [ -n "$WIREPROXY_PID" ]; then
     kill -TERM "$WIREPROXY_PID" 2>/dev/null || true
+  fi
+  if [ -n "$TELEGRAM_WIREPROXY_PID" ]; then
+    kill -TERM "$TELEGRAM_WIREPROXY_PID" 2>/dev/null || true
   fi
 }
 
@@ -115,6 +119,72 @@ start_wireproxy() {
   echo "OpenAI WireGuard proxy did not become ready; application will start with OpenAI unavailable" >&2
 }
 
+start_telegram_wireproxy() {
+  # Also strip the retired profile: its private key must not reach Node.
+  unset DISABLED_WIREPROXY_CONFIG
+  if [ -z "${TELEGRAM_WIREPROXY_CONFIG:-}" ]; then
+    return
+  fi
+
+  if ! printf '%s\n' "$TELEGRAM_WIREPROXY_CONFIG" | awk '
+    /^[[:space:]]*\[/ {
+      section = tolower($0)
+      gsub(/[[:space:]]/, "", section)
+      if (section != "[interface]" && section != "[peer]") exit 1
+    }
+  '; then
+    echo "TELEGRAM_WIREPROXY_CONFIG may contain only [Interface] and [Peer] sections" >&2
+    exit 1
+  fi
+  if [ -n "${TELEGRAM_PROXY_HOST:-}${TELEGRAM_PROXY_PORT:-}" ]; then
+    echo "Configure either TELEGRAM_WIREPROXY_CONFIG or an external Telegram proxy" >&2
+    exit 1
+  fi
+
+  config_path="/tmp/timeweb-telegram-wireproxy.conf"
+  umask 077
+  {
+    printf '%s\n\n' "$TELEGRAM_WIREPROXY_CONFIG"
+    printf '%s\n' '[Socks5]' 'BindAddress = 127.0.0.1:1080' '' \
+      '[http]' 'BindAddress = 127.0.0.1:8889'
+  } > "$config_path"
+  unset TELEGRAM_WIREPROXY_CONFIG
+  export TELEGRAM_PROXY_HOST=127.0.0.1
+  export TELEGRAM_PROXY_PORT=1080
+  export TELEGRAM_PROXY_SOCKS_TYPE=5
+  export TELEGRAM_WIREPROXY_ENABLED=true
+
+  # Parser errors can contain key values, so expose only a fixed error message.
+  if ! /usr/local/bin/wireproxy -c "$config_path" -n >/dev/null 2>&1; then
+    echo "Telegram WireGuard proxy configuration is invalid" >&2
+    exit 1
+  fi
+  /usr/local/bin/wireproxy -c "$config_path" -s &
+  TELEGRAM_WIREPROXY_PID=$!
+
+  attempt=1
+  while [ "$attempt" -le 2 ]; do
+    if ! kill -0 "$TELEGRAM_WIREPROXY_PID" 2>/dev/null; then
+      TELEGRAM_WIREPROXY_PID=""
+      break
+    fi
+    telegram_status="$(curl --silent --output /dev/null \
+      --write-out '%{http_code}' --proxy http://127.0.0.1:8889 \
+      --connect-timeout 4 --max-time 8 https://venus.web.telegram.org/apiws || true)"
+    case "$telegram_status" in
+      200|400|404|426)
+        echo "Telegram WireGuard proxy is ready"
+        return
+        ;;
+    esac
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+  # CRM stays available during a tunnel outage. Telegram keeps the loopback
+  # SOCKS route, and notification failures remain eligible for retry.
+  echo "Telegram WireGuard proxy unavailable; notifications will retry" >&2
+}
+
 # App Platform builds the repository directly, rather than through the former
 # image-publishing workflow. The newest migration bundled with that build is
 # used for readiness checks unless an operator explicitly overrides it.
@@ -147,9 +217,10 @@ else
 fi
 
 start_wireproxy
+start_telegram_wireproxy
 cd "$SERVER_ROOT"
 
-if [ -z "$WIREPROXY_PID" ]; then
+if [ -z "$WIREPROXY_PID" ] && [ -z "$TELEGRAM_WIREPROXY_PID" ]; then
   exec node server.js
 fi
 
@@ -158,6 +229,12 @@ APP_PID=$!
 app_status=0
 wait "$APP_PID" || app_status=$?
 APP_PID=""
+
+if [ -n "$TELEGRAM_WIREPROXY_PID" ]; then
+  kill -TERM "$TELEGRAM_WIREPROXY_PID" 2>/dev/null || true
+  wait "$TELEGRAM_WIREPROXY_PID" 2>/dev/null || true
+  TELEGRAM_WIREPROXY_PID=""
+fi
 
 kill -TERM "$WIREPROXY_PID" 2>/dev/null || true
 wait "$WIREPROXY_PID" 2>/dev/null || true
