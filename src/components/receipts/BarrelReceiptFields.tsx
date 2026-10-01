@@ -1,5 +1,6 @@
 "use client";
 
+import QuantityInput from "@/components/QuantityInput";
 import { Plus, Trash2 } from "lucide-react";
 import { EcoButton } from "@/components/platform/EcoUI";
 import BarrelCodeInput from "@/components/receipts/BarrelCodeInput";
@@ -19,7 +20,7 @@ export default function BarrelReceiptFields({ barrels, readOnly, onChange }: {
         <BarrelCodeInput value={barrel.markingCode} disabled={readOnly} label={`Код маркировки бочки ${index + 1}`}
           onCommit={(markingCode) => onChange(barrels.map((b, i) => i === index ? { ...b, markingCode } : b))} />
       </label>
-      <label className="eco-barrel-receipt-volume">Объём, л<input aria-label={`Объём бочки ${index + 1}, л`} type="number" min="0.001" step="0.001" value={barrel.volumeLiters || ""} disabled={readOnly} onChange={(e) => onChange(barrels.map((b, i) => i === index ? { ...b, volumeLiters: Number(e.target.value) } : b))} /></label>
+      <label className="eco-barrel-receipt-volume">Объём, л<QuantityInput aria-label={`Объём бочки ${index + 1}, л`} min="0.001" step="0.001" value={barrel.volumeLiters} disabled={readOnly} onValueChange={(volumeLiters) => onChange(barrels.map((b, i) => i === index ? { ...b, volumeLiters } : b))} /></label>
       {!readOnly && <EcoButton variant="ghost" size="sm" className="eco-barrel-receipt-remove" type="button" aria-label={`Убрать бочку ${index + 1}`} title={`Убрать бочку ${index + 1}`} onClick={() => onChange(barrels.filter((_, i) => i !== index))}><Trash2 size={16} /></EcoButton>}
     </div>)}
     <small>Количество и цены — за литр. После приёмки бочки запечатаны; начало разлива — в карточке товара.</small>

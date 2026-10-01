@@ -16,6 +16,7 @@ type MoneyInputProps = Omit<
   onValueChange: (value: number, draft: string) => void;
   fractionDigits?: number;
   emptyWhenZero?: boolean;
+  minimumFractionDigits?: number;
 };
 
 function roundMoney(value: number, fractionDigits: number) {
@@ -63,12 +64,12 @@ export function sanitizeMoneyInput(value: string, fractionDigits = 2): string {
   return integer || "0";
 }
 
-function formatMoneyInputValue(value: MoneyValue, fractionDigits: number, emptyWhenZero: boolean) {
+function formatMoneyInputValue(value: MoneyValue, fractionDigits: number, emptyWhenZero: boolean, minimumFractionDigits = fractionDigits) {
   const parsed = parseMoneyInput(value, fractionDigits);
   if (emptyWhenZero && parsed === 0) return "";
   return parsed.toLocaleString("ru-RU", {
     useGrouping: false,
-    minimumFractionDigits: fractionDigits,
+    minimumFractionDigits,
     maximumFractionDigits: fractionDigits,
   });
 }
@@ -78,6 +79,7 @@ export default function MoneyInput({
   onValueChange,
   fractionDigits = 2,
   emptyWhenZero = true,
+  minimumFractionDigits = fractionDigits,
   onBlur,
   onFocus,
   ...props
@@ -86,21 +88,22 @@ export default function MoneyInput({
   const [isFocused, setIsFocused] = useState(false);
   const displayValue = isFocused
     ? draft
-    : formatMoneyInputValue(value, fractionDigits, emptyWhenZero);
+    : formatMoneyInputValue(value, fractionDigits, emptyWhenZero, minimumFractionDigits);
 
   function handleFocus(event: FocusEvent<HTMLInputElement>) {
     setIsFocused(true);
     if (emptyWhenZero && parseMoneyInput(value, fractionDigits) === 0) {
       setDraft("");
     } else {
-      setDraft(formatMoneyInputValue(value, fractionDigits, emptyWhenZero));
+      setDraft(formatMoneyInputValue(value, fractionDigits, emptyWhenZero, minimumFractionDigits));
     }
+    event.currentTarget.select();
     onFocus?.(event);
   }
 
   function handleBlur(event: FocusEvent<HTMLInputElement>) {
     setIsFocused(false);
-    setDraft(formatMoneyInputValue(draft, fractionDigits, emptyWhenZero));
+    setDraft(formatMoneyInputValue(draft, fractionDigits, emptyWhenZero, minimumFractionDigits));
     onBlur?.(event);
   }
 

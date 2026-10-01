@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ExternalLink, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
+import QuantityInput from "@/components/QuantityInput";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
@@ -331,64 +332,12 @@ function formatMoney(value: number, currency = "руб."): string {
   return `${value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
 
-function parseDecimalInput(value: string): number {
-  return Number(value.replace(",", ".")) || 0;
-}
 
 function formatQuantityInput(value: number): string {
   if (!Number.isFinite(value)) return "";
   return value.toLocaleString("ru-RU", { maximumFractionDigits: 3, useGrouping: false });
 }
 
-function normalizeQuantityInput(value: string): string {
-  const [whole, ...fraction] = value.replace(/\./g, ",").replace(/[^\d,]/g, "").split(",");
-  return fraction.length > 0 ? `${whole},${fraction.join("")}` : whole;
-}
-
-function QuantityInput({
-  value,
-  onValueChange,
-  className,
-}: {
-  value: number;
-  onValueChange: (value: number) => void;
-  className?: string;
-}) {
-  const [draft, setDraft] = useState(formatQuantityInput(value));
-  const [isFocused, setIsFocused] = useState(false);
-  const inputValue = isFocused ? draft : formatQuantityInput(value);
-
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      pattern="[0-9]*[,.]?[0-9]*"
-      value={inputValue}
-      onFocus={() => {
-        setDraft(formatQuantityInput(value));
-        setIsFocused(true);
-      }}
-      onChange={(e) => {
-        const next = normalizeQuantityInput(e.target.value);
-        setDraft(next);
-        onValueChange(parseDecimalInput(next));
-      }}
-      onBlur={() => {
-        setIsFocused(false);
-        const parsed = parseDecimalInput(draft);
-        const hasDecimalPart = draft.includes(",");
-        setDraft(
-          parsed.toLocaleString("ru-RU", {
-            minimumFractionDigits: hasDecimalPart ? 1 : 0,
-            maximumFractionDigits: 3,
-            useGrouping: false,
-          })
-        );
-      }}
-      className={className}
-    />
-  );
-}
 
 function formatVolume(volume?: number): string {
   if (typeof volume !== "number" || Number.isNaN(volume) || volume <= 0) return "—";

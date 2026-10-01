@@ -71427,3 +71427,13 @@ select[size="1"]::-ms-expand {
   .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-barrel-receipt-row { grid-template-columns: minmax(0, 1fr) 96px 40px; gap: 8px; }
   .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-barrel-receipt-remove { width: 40px; }
 }
+
+/* Keep the receipt delete action on its own row when price hints wrap. */
+.eco-receipt-position-card > button { justify-self: end; padding-inline: 14px; }
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > .eco-receipt-position-card-total,
+.eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt > button { grid-column: 1 / -1; }
+@media (max-width: 600px) {
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-barrel-receipt-row {
+    grid-template-columns: minmax(0, 1fr) 40px;
+  }
+}

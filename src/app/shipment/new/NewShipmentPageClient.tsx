@@ -25,6 +25,7 @@ import {
 import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, type EcoBadgeTone } from "@/components/platform/EcoUI";
+import QuantityInput from "@/components/QuantityInput";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { VehicleLookupPanel } from "@/components/shipment/VehicleLookupPanel";
@@ -471,55 +472,6 @@ function formatQuantityInput(value: number): string {
   return value.toLocaleString("ru-RU", { maximumFractionDigits: 3, useGrouping: false });
 }
 
-function normalizeQuantityInput(value: string): string {
-  const [whole, ...fraction] = value.replace(/\./g, ",").replace(/[^\d,]/g, "").split(",");
-  return fraction.length > 0 ? `${whole},${fraction.join("")}` : whole;
-}
-
-function QuantityInput({
-  value,
-  onValueChange,
-  className,
-}: {
-  value: number;
-  onValueChange: (value: number) => void;
-  className?: string;
-}) {
-  const [draft, setDraft] = useState(formatQuantityInput(value));
-  const [isFocused, setIsFocused] = useState(false);
-  const inputValue = isFocused ? draft : formatQuantityInput(value);
-
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      pattern="[0-9]*[,.]?[0-9]*"
-      value={inputValue}
-      onFocus={() => {
-        setDraft(formatQuantityInput(value));
-        setIsFocused(true);
-      }}
-      onChange={(e) => {
-        const next = normalizeQuantityInput(e.target.value);
-        setDraft(next);
-        onValueChange(parseDecimalInput(next));
-      }}
-      onBlur={() => {
-        setIsFocused(false);
-        const parsed = parseDecimalInput(draft);
-        const hasDecimalPart = draft.includes(",");
-        setDraft(
-          parsed.toLocaleString("ru-RU", {
-            minimumFractionDigits: hasDecimalPart ? 1 : 0,
-            maximumFractionDigits: 3,
-            useGrouping: false,
-          })
-        );
-      }}
-      className={className}
-    />
-  );
-}
 
 function localEntityIdFromMeta(meta?: Meta): string {
   const href = meta?.href?.trim() ?? "";

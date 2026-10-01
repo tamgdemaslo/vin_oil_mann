@@ -37,6 +37,7 @@ import {
 import BarrelReceiptFields from "@/components/receipts/BarrelReceiptFields";
 import type { BarrelReceiptInput } from "@/lib/bulk-oil-barrels";
 import { getMotorOilMarkingCodeError } from "@/lib/marking";
+import QuantityInput from "@/components/QuantityInput";
 import MoneyInput from "@/components/MoneyInput";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
@@ -2462,12 +2463,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                             {!isReceipt && <td className="l-mono">{position.article || position.code || "—"}</td>}
                             <td className="l-number">{position.availableKnown ? formatQty(position.available) : "—"}</td>
                             <td>
-                              <input
-                                type="number"
+                              <QuantityInput
                                 min={0}
                                 step={0.001}
                                 value={position.quantity}
-                                onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })}
+                                onValueChange={(quantity) => updatePosition(position.localId, { quantity })}
                                 disabled={readOnly}
                                 readOnly={isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL"}
                                 aria-label={`Количество: ${position.name}`}
@@ -2598,7 +2598,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                         {isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL" && <BarrelReceiptFields barrels={position.barrels ?? []} readOnly={readOnly} onChange={(barrels) => updatePosition(position.localId, { barrels, quantity: barrels.reduce((sum, b) => sum + (Number(b.volumeLiters) || 0), 0) })} />}
                         <label className="is-quantity">
                           Кол-во
-                          <input type="number" min={0} step={0.001} value={position.quantity} disabled={readOnly} readOnly={isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL"} onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })} />
+                          <QuantityInput min={0} step={0.001} value={position.quantity} disabled={readOnly} readOnly={isReceipt && position.markingMode === "BULK_OIL_FROM_MARKED_BARREL"} onValueChange={(quantity) => updatePosition(position.localId, { quantity })} />
                         </label>
                         <label className="is-buy-price">
                           {productPriceLabel}
