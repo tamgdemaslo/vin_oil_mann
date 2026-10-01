@@ -31,6 +31,7 @@ export type ProductMarkingSettings = {
   verificationStatus: string;
   currentVolumeLiters: number | null;
   barrelTrackingEnabled: boolean;
+  warehouseLinked: boolean;
   activeBarrelId: string;
 };
 
@@ -46,6 +47,7 @@ export const DEFAULT_MARKING_SETTINGS: ProductMarkingSettings = {
   verificationStatus: "",
   currentVolumeLiters: null,
   barrelTrackingEnabled: false,
+  warehouseLinked: false,
   activeBarrelId: "",
 };
 
@@ -140,6 +142,7 @@ export function normalizeProductMarkingSettings(value: unknown): ProductMarkingS
     verificationStatus: stringValue(record.verificationStatus),
     currentVolumeLiters: numberOrNull(record.currentVolumeLiters),
     barrelTrackingEnabled: booleanValue(record.barrelTrackingEnabled),
+    warehouseLinked: booleanValue(record.warehouseLinked),
     activeBarrelId: stringValue(record.activeBarrelId),
   };
 }

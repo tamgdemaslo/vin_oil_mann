@@ -1,3 +1,4 @@
+import { lockBarrelProducts, syncBulkOilWarehouseTx } from "@/lib/bulk-oil-barrels";
 import { Prisma } from "@prisma/client";
 import type { User } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -1640,12 +1641,12 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
     });
     const unfinished = lines.find((line) => line.finalQuantity == null || (line.differenceQuantity != null && !line.differenceQuantity.equals(ZERO) && !line.finalAction));
     if (unfinished) return { ok: false as const, error: "Не все строки готовы к проведению" };
-    const movingLines = lines.filter((line) => ledgerMovementForAction(line.finalAction, line.differenceQuantity) && line.productId && line.differenceQuantity);
     await lockInventoryCostKeys(tx, {
       branchId: session.branchId,
       storeId: session.warehouseId,
-      productIds: movingLines.map((line) => line.productId as string),
+      productIds: lines.map((line) => line.productId).filter((id): id is string => Boolean(id)),
     });
+    await lockBarrelProducts(tx, session.branchId, lines.map((line) => line.productId).filter((id): id is string => Boolean(id)));
     const movementCostByLine = new Map<string, number>();
     const unknownCostTechnicalClearanceLineIds = new Set<string>();
 
@@ -1824,6 +1825,11 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
       });
     }
 
+    for (const line of lines) {
+      if (!line.productId || line.finalQuantity == null || line.finalAction === "SKIP") continue;
+      await syncBulkOilWarehouseTx(tx, { branchId: session.branchId, productId: line.productId, storeId: session.warehouseId,
+        documentId: session.id, reason: `Сверка остатка по инвентаризации ${session.number}`, actor: user });
+    }
     await tx.inventoryLock.updateMany({
       where: { inventorySessionId: session.id, releasedAt: null },
       data: { releasedAt: new Date() },
@@ -1861,6 +1867,7 @@ export async function reverseInventorySession(sessionId: string, body: { reason?
       storeId: session.warehouseId,
       productIds: entries.map((entry) => entry.productId).filter((productId): productId is string => Boolean(productId)),
     });
+    await lockBarrelProducts(tx, session.branchId, entries.map((entry) => entry.productId).filter((id): id is string => Boolean(id)));
     for (const entry of entries) {
       if (!entry.productId || !entry.storeId) continue;
       const laterExternalMovement = await tx.inventoryLedgerEntry.findFirst({
@@ -1954,6 +1961,11 @@ export async function reverseInventorySession(sessionId: string, body: { reason?
           documentId: session.id,
         },
       });
+    }
+    for (const entry of entries) {
+      if (!entry.productId || !entry.storeId) continue;
+      await syncBulkOilWarehouseTx(tx, { branchId: session.branchId, productId: entry.productId, storeId: entry.storeId,
+        documentId: session.id, reason: `Отмена инвентаризации: ${reason}`, actor: user });
     }
     await tx.inventorySession.update({
       where: { id: session.id },

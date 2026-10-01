@@ -1,0 +1,54 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
+import { createJiti } from 'jiti';
+const url = new URL(process.env.DATABASE_URL || 'http://invalid');
+assert.ok(['localhost','127.0.0.1'].includes(url.hostname) && url.pathname === '/eco_barrels_test', 'Disposable local eco_barrels_test only');
+const jiti = createJiti(import.meta.url, { alias: { '@': resolve('src') } });
+const { prisma } = await jiti.import('../src/lib/db.ts');
+const lib = await jiti.import('../src/lib/bulk-oil-barrels.ts');
+const inventory = await jiti.import('../src/lib/warehouse-inventory.ts');
+const demands = await jiti.import('../src/lib/local-demand-write.ts');
+const admin = await jiti.import('../src/lib/local-inventory-admin.ts');
+const { runWithRequestTenant } = await jiti.import('../src/lib/request-tenant-store.ts');
+const id = `unified-${randomUUID()}`, branchId=id, productId=`${id}-oil`, storeId=`${id}-store`, organizationId=`${id}-org`;
+const actor={ login:'oil-test', name:'Тест', role:'owner' };
+const tenant={ mode:'branch',branchId,organizationId,allowedBranchIds:[branchId] };
+const code='0104601234567890211234567890123\u001d93abcd';
+const meta=(type,id)=>({meta:{href:`local://entity/${type}/${id}`,type,mediaType:'application/json'}});
+const tx=(fn)=>prisma.$transaction(fn,{timeout:15000});
+const settings=async()=> (await prisma.localProduct.findUnique({where:{id:productId}})).markingSettings;
+const stock=async()=>Number((await prisma.localStockBalance.findFirst({where:{productId,storeId}})).quantity);
+const sync=(t,reason='Тест')=>lib.syncBulkOilWarehouseTx(t,{branchId,productId,storeId,documentId:id,reason,actor});
+let checks=0;
+const check=async(name,fn)=>{await fn();checks++;console.log(`PASS ${name}`);};
+try {
+ await prisma.localOrganization.create({data:{id:organizationId,name:'Test org'}});
+ await prisma.businessGroup.create({data:{id:`${id}-group`,name:'Test group',slug:`${id}-group`}});
+ await prisma.branch.create({data:{id:branchId,businessGroupId:`${id}-group`,legacyOrganizationId:organizationId,name:'Test branch',shortName:'TEST',slug:id}});
+ await prisma.localStore.create({data:{id:storeId,branchId,organizationId,name:'Test store'}});
+ await prisma.localProduct.create({data:{id:productId,branchId,name:'GENESIS Test масло на разлив',uomName:'л',buyPriceCents:10000,markingEnabled:true,markingMode:'BULK_OIL_FROM_MARKED_BARREL',markingStatus:'BULK_OIL_READY',markingSettings:{activeBarrelMarkingCode:code,declaredVolumeLiters:216.5,currentVolumeLiters:102.6,partialWithdrawalEnabled:true,allowRepeatedBarrelCode:true}}});
+ await prisma.localStockBalance.create({data:{branchId,productId,storeId,quantity:55,available:55,buyPriceCents:10000}});
+ await runWithRequestTenant(tenant,async()=>{
+  await check('initial reconciliation 102.6 -> 55 leaves warehouse unchanged',async()=>{await tx(sync);assert.equal(await stock(),55);assert.equal((await settings()).currentVolumeLiters,55);assert.equal((await settings()).warehouseLinked,true);});
+  await tx(async(t)=>{const p=await t.localProduct.findUnique({where:{id:productId}});await lib.enableBarrelTrackingTx(t,branchId,p,storeId,actor);});
+  await check('posted writeoff updates both balances',async()=>{const r=await admin.createLocalStockDocument({type:'writeoff',storeId,applicable:true,adjustmentType:'technical',adjustmentMethod:'WRITE_OFF_QUANTITY',adjustmentReason:'Другое техническое исправление',positions:[{productId,quantity:5}]},actor);assert.equal(r.ok,true,r.error);assert.equal(await stock(),50);assert.equal((await settings()).currentVolumeLiters,50);});
+  let sessionId;
+  const makeInventory=async(quantity,difference,action)=>{
+   const session=await prisma.inventorySession.create({data:{branchId,organizationId,warehouseId:storeId,number:`INV-${randomUUID()}`,status:'REVIEW',approvedAt:new Date()}});
+   await prisma.inventoryLine.create({data:{branchId,inventorySessionId:session.id,warehouseId:storeId,productId,snapshotQuantity:await stock(),finalQuantity:quantity,differenceQuantity:difference,finalAction:action,status:'COUNTED',unitCostSnapshotCents:10000}});
+   return session.id;
+  };
+  await check('surplus inventory increases both, reversal restores both',async()=>{sessionId=await makeInventory(60,10,'SURPLUS_TECHNICAL');let r=await inventory.postInventorySession(sessionId,{},actor);assert.equal(r.ok,true,r.error);assert.equal(await stock(),60);assert.equal((await settings()).currentVolumeLiters,60);r=await inventory.reverseInventorySession(sessionId,{reason:'Тестовая отмена'},actor);assert.equal(r.ok,true,r.error);assert.equal(await stock(),50);assert.equal((await settings()).currentVolumeLiters,50);});
+  await check('inventory with no stock difference repairs stale barrel balance',async()=>{const p=await settings();await prisma.localProduct.update({where:{id:productId},data:{markingSettings:{...p,currentVolumeLiters:52}}});await prisma.localBulkOilBarrel.updateMany({where:{branchId,productId,status:'OPEN'},data:{remainingLiters:52}});const session=await makeInventory(50,0,'NO_ACTION');const r=await inventory.postInventorySession(session,{},actor);assert.equal(r.ok,true,r.error);assert.equal((await settings()).currentVolumeLiters,50);});
+  let demandId;
+  await check('shipment posting debits barrel and warehouse once',async()=>{const r=await demands.createLocalDemand({organization:meta('organization',organizationId),store:meta('store',storeId),name:`SALE-${id}`,applicable:true,positions:[{assortment:meta('product',productId),quantity:4,price:200}]},{branchId,organizationId,actor});assert.equal(r.ok,true,r.error);demandId=r.id;assert.equal(await stock(),46);assert.equal((await settings()).currentVolumeLiters,46);const w=await lib.shipmentBulkOilWithdrawals(prisma,branchId,demandId);assert.equal(w.length,1);assert.equal(w[0].volumeLiters,4);});
+  await check('fiscalization and retry never debit posted stock again',async()=>{for(let i=0;i<2;i++)await tx(t=>lib.consumeBulkOilTx(t,branchId,demandId,[{productId,storeId,volumeLiters:4,markingCode:code}],actor));assert.equal(await stock(),46);assert.equal((await settings()).currentVolumeLiters,46);await assert.rejects(tx(t=>lib.consumeBulkOilTx(t,branchId,demandId,[{productId,storeId,volumeLiters:5,markingCode:code}],actor)),/не совпадают/);});
+  await check('shipment reopening restores both and clears fiscal withdrawal snapshot',async()=>{const r=await demands.reopenLocalDemand(demandId,{reasonCode:'other',comment:'Тест возврата'},actor,branchId,organizationId);assert.equal(r.ok,true,r.error);assert.equal(await stock(),50);assert.equal((await settings()).currentVolumeLiters,50);assert.equal((await lib.shipmentBulkOilWithdrawals(prisma,branchId,demandId)).length,0);});
+  await check('last litres can be fiscalized at zero balance without another debit',async()=>{const r=await demands.createLocalDemand({organization:meta('organization',organizationId),store:meta('store',storeId),name:`LAST-${id}`,applicable:true,positions:[{assortment:meta('product',productId),quantity:50,price:200}]},{branchId,organizationId,actor});assert.equal(r.ok,true,r.error);assert.equal(await stock(),0);assert.equal((await settings()).currentVolumeLiters,0);await tx(t=>lib.consumeBulkOilTx(t,branchId,r.id,[{productId,storeId,volumeLiters:50,markingCode:code}],actor));assert.equal((await settings()).currentVolumeLiters,0);const reopened=await demands.reopenLocalDemand(r.id,{reasonCode:'other',comment:'Тест'},actor,branchId,organizationId);assert.equal(reopened.ok,true,reopened.error);const repost=await demands.updateLocalDemand(demandId,{applicable:true},actor,branchId,organizationId);assert.equal(repost.ok,true,repost.error);assert.equal(await stock(),46);assert.equal((await settings()).currentVolumeLiters,46);});
+  await check('sealed barrels are preserved during open barrel adjustment',async()=>{const sealedCode='0104601234567890211234567890124\u001d93abcd';const r=await admin.createLocalStockDocument({type:'receipt',storeId,applicable:true,positions:[{productId,quantity:170,price:100,barrels:[{markingCode:sealedCode,volumeLiters:170}]}]},actor);assert.equal(r.ok,true,r.error);assert.equal(await stock(),216);assert.equal((await settings()).currentVolumeLiters,46);const inv=await makeInventory(210,-6,'SHORTAGE_TECHNICAL');const posted=await inventory.postInventorySession(inv,{},actor);assert.equal(posted.ok,true,posted.error);assert.equal(await stock(),210);assert.equal((await settings()).currentVolumeLiters,40);const sealed=await prisma.localBulkOilBarrel.findFirst({where:{branchId,markingCode:sealedCode}});assert.equal(Number(sealed.remainingLiters),170);});
+  await check('impossible correction rolls back both warehouse and documents',async()=>{const inv=await makeInventory(100,-110,'SHORTAGE_TECHNICAL');await assert.rejects(inventory.postInventorySession(inv,{},actor),/нельзя отнести/);assert.equal(await stock(),210);assert.equal((await settings()).currentVolumeLiters,40);assert.equal((await prisma.inventorySession.findUnique({where:{id:inv}})).status,'REVIEW');});
+  await check('old posted shipment can be reopened and reposted after reconciliation',async()=>{const old=await settings();await prisma.localProduct.update({where:{id:productId},data:{markingSettings:{...old,warehouseLinked:false}}});const r=await demands.createLocalDemand({organization:meta('organization',organizationId),store:meta('store',storeId),name:`LEGACY-${id}`,applicable:true,positions:[{assortment:meta('product',productId),quantity:2,price:200}]},{branchId,organizationId,actor});assert.equal(r.ok,true,r.error);await tx(sync);let result=await demands.reopenLocalDemand(r.id,{reasonCode:'other',comment:'Переход на единый учёт'},actor,branchId,organizationId);assert.equal(result.ok,true,result.error);assert.equal((await lib.shipmentBulkOilWithdrawals(prisma,branchId,r.id)).length,0);result=await demands.updateLocalDemand(r.id,{applicable:true},actor,branchId,organizationId);assert.equal(result.ok,true,result.error);assert.equal((await lib.shipmentBulkOilWithdrawals(prisma,branchId,r.id))[0].volumeLiters,2);await tx(t=>lib.consumeBulkOilTx(t,branchId,r.id,[{productId,storeId,volumeLiters:2,markingCode:code}],actor));assert.equal(await stock(),208);assert.equal((await settings()).currentVolumeLiters,38);});
+ });
+ console.log(`Unified bulk oil stock: ${checks} checks passed.`);
+} finally { await prisma.$disconnect(); }

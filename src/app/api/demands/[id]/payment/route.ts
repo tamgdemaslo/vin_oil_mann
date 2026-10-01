@@ -5,7 +5,7 @@ import { getAqsiMarkingBypassPassword } from "@/lib/aqsi-integration";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { getCurrentShift } from "@/lib/cashbox";
 import { invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
-import { consumeBulkOilTx, type BulkOilMovement } from "@/lib/bulk-oil-barrels";
+import { consumeBulkOilTx, shipmentBulkOilWithdrawals, type BulkOilMovement } from "@/lib/bulk-oil-barrels";
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { SyncAqsiPendingOrderInput } from "@/lib/aqsi";
@@ -60,6 +60,7 @@ type OrderPosition = {
   productMarkingMode?: string | null;
   productMarkingStatus?: string | null;
   productMarkingSettings?: unknown;
+  stockWithdrawn?: boolean;
 };
 
 type BuildAqsiResult = {
@@ -210,7 +211,7 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody, bypassPassword
       );
     }
 
-    if (bulkOil && settings.currentVolumeLiters != null && quantity > settings.currentVolumeLiters) {
+    if (bulkOil && !row.stockWithdrawn && settings.currentVolumeLiters != null && quantity > settings.currentVolumeLiters) {
       return NextResponse.json(
         {
           error:
@@ -387,6 +388,16 @@ async function trySendLocalDemand(
       productMarkingSettings: position.product?.markingSettings,
     };
   });
+  const withdrawals = await shipmentBulkOilWithdrawals(prisma, getScopedBranchId(), loaded.data.header.id);
+  for (const row of rows) {
+    const settings = normalizeProductMarkingSettings(row.productMarkingSettings);
+    if (!settings.warehouseLinked) continue;
+    const matching = withdrawals.filter((item) => item.productId === row.productId && item.storeId === row.storeId);
+    const totalQuantity = rows.filter((item) => item.productId === row.productId).reduce((sum, item) => sum + item.quantity, 0);
+    if (matching.length !== 1 || Math.abs(matching[0].volumeLiters - totalQuantity) > 0.000001) return NextResponse.json({ error: "Для масла с единым учётом сначала проведите отгрузку с кодом бочки. Остаток повторно не списывается." }, { status: 409 });
+    row.stockWithdrawn = true;
+    row.productMarkingSettings = { ...settings, activeBarrelMarkingCode: matching[0].markingCode };
+  }
   const currentShift = await getCurrentShift();
   const bypassPasswordAccepted = !body.markingBypassPositionIds?.length
     || await hasCorrectBypassPassword(body.markingBypassPassword, currentShift?.aqsiRegisterId);

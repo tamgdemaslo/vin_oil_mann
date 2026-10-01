@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
-import { enableBarrelTrackingTx, listProductBarrels, lockBarrelProducts, switchBarrelTx } from "@/lib/bulk-oil-barrels";
+import { enableBarrelTrackingTx, listProductBarrels, lockBarrelProducts, switchBarrelTx, syncBulkOilWarehouseTx } from "@/lib/bulk-oil-barrels";
 import { canManageWarehouseMarking, createLocalStockDocument, invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
 import { lockInventoryCostKeys } from "@/lib/inventory-costing-db";
 
@@ -28,10 +28,13 @@ export async function POST(request: NextRequest, { params }: Params) {
     try {
       await prisma.$transaction(async (tx) => {
         if (body.action === "enable") {
+          await lockInventoryCostKeys(tx, { branchId, storeId: String(body.storeId ?? ""), productIds: [id] });
           await lockBarrelProducts(tx, branchId, [id]);
           const product = await tx.localProduct.findFirst({ where: { branchId, id } });
           if (!product) throw new Error("Товар не найден.");
           await enableBarrelTrackingTx(tx, branchId, product, String(body.storeId ?? ""), access.context.user);
+          await syncBulkOilWarehouseTx(tx, { branchId, productId: id, storeId: String(body.storeId ?? ""), documentId: `enable:${id}`,
+            reason: "Включение единого складского учёта масла", actor: access.context.user });
         } else if (body.action === "switch") {
           // Inventory cost locks precede product locks, just as in receipt posting.
           const open = await tx.localBulkOilBarrel.findFirst({ where: { branchId, productId: id, status: "OPEN" } });

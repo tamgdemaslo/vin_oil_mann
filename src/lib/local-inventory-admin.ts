@@ -8,7 +8,7 @@ import type { User } from "@/lib/auth";
 import { addExpense, getCurrentShift } from "@/lib/cashbox";
 import { parseServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
-import { cancelReceiptBarrelsTx, lockBarrelProducts, registerReceiptBarrelsTx, receiptBarrelsFromRaw } from "@/lib/bulk-oil-barrels";
+import { cancelReceiptBarrelsTx, lockBarrelProducts, registerReceiptBarrelsTx, receiptBarrelsFromRaw, syncBulkOilWarehouseTx } from "@/lib/bulk-oil-barrels";
 import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
 import { buildCatalogSearchText } from "@/lib/catalog-search";
 import { mergeProductCrossReferences } from "@/lib/product-cross-references";
@@ -2913,7 +2913,7 @@ export async function createLocalAdminProduct(
   const oemParts = mergeProductCrossReferences(cleanText(body.oemParts), [legacyMannName]);
   const cell = cleanText(body.cell);
   const mannCharacteristicName = cleanText(body.mannCharacteristicName);
-  if (body.markingSettings?.barrelTrackingEnabled || body.markingSettings?.activeBarrelId) return { ok: false as const, error: "Сначала создайте товар, затем включите учёт бочек в карточке." };
+  if (body.markingSettings?.warehouseLinked || body.markingSettings?.barrelTrackingEnabled || body.markingSettings?.activeBarrelId) return { ok: false as const, error: "Сначала создайте товар, затем включите учёт бочек в карточке." };
   const marking = normalizeProductMarkingData(body, undefined, uomName, groupPath);
   if (!marking.ok) return { ok: false as const, error: marking.error };
   const markingConfiguredManually = booleanFromInput(body.markingConfiguredManually) === true;
@@ -3172,6 +3172,13 @@ export async function updateLocalAdminProduct(
       return { ok: false as const, error: "Код и остаток бочки управляются отдельным учётом. Обновите карточку; для подключения другой бочки используйте «Сменить бочку»." };
     }
     body = { ...body, markingSettings: { ...submitted, barrelTrackingEnabled: true, activeBarrelId: existingSettings.activeBarrelId } };
+  }
+  if (existingSettings.warehouseLinked) {
+    const submitted = body.markingSettings == null ? existingSettings : normalizeProductMarkingSettings(body.markingSettings);
+    if (submitted.currentVolumeLiters !== existingSettings.currentVolumeLiters) return { ok: false as const, error: "Остаток бочки связан со складом. Измените его через инвентаризацию или складской документ." };
+    body = { ...body, markingSettings: { ...submitted, warehouseLinked: true } };
+  } else if (body.markingSettings) {
+    body = { ...body, markingSettings: { ...body.markingSettings, warehouseLinked: false } };
   }
   const marking = normalizeProductMarkingData(body, current, uomName, groupPath);
   if (!marking.ok) return { ok: false as const, error: marking.error };
@@ -4686,6 +4693,7 @@ async function applyPostedStockDocumentMovements<T extends CostedStockDocumentPo
     warehouseId: input.store.id,
     productIds: input.positions.map((position) => position.product.id),
   });
+  await lockBarrelProducts(tx, input.branchId, input.positions.map((p) => p.product.id));
   if (input.type === "receipt") {
     await registerReceiptBarrelsTx(tx, {
       branchId: input.branchId, documentId: input.documentId, storeId: input.store.id,
@@ -4778,6 +4786,9 @@ async function applyPostedStockDocumentMovements<T extends CostedStockDocumentPo
         },
       });
     }
+
+    await syncBulkOilWarehouseTx(tx, { branchId: input.branchId, productId: position.product.id, storeId: input.store.id,
+      documentId: input.documentId, onlyLinked: true, reason: input.type === "receipt" ? "Приёмка масла" : "Складское списание масла", actor: input.user });
 
     if (input.type === "receipt") {
       const productUpdate: Prisma.LocalProductUpdateInput = {
@@ -5975,6 +5986,8 @@ async function rollbackPostedReceiptStock(
         syncedAt: new Date(),
       },
     });
+    await syncBulkOilWarehouseTx(tx, { branchId: document.branchId, productId: position.productId, storeId: document.store.id,
+      documentId: document.id, reason: `Отмена приёмки: ${action}`, actor: user, onlyLinked: true });
     for (const entry of productEntries) {
       await tx.inventoryLedgerEntry.create({
         data: {

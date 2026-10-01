@@ -212,7 +212,7 @@ export async function switchBarrelTx(tx: Prisma.TransactionClient, input: { bran
   }
   await tx.localBulkOilBarrel.update({ where: { id: next.id, branchId: input.branchId }, data: { status: "OPEN", openedAt: new Date() } });
   await event(tx, input.branchId, next.id, "OPENED", input.actor, { documentId: next.receiptDocumentId ?? undefined });
-  await writeSettings(tx, input.branchId, product, { ...settings, activeBarrelId: next.id, activeBarrelName: next.number, activeBarrelMarkingCode: next.markingCode, activeBarrelGtin: next.gtin, declaredVolumeLiters: next.receivedLiters.toNumber(), currentVolumeLiters: next.remainingLiters.toNumber() }, input.actor);
+  await writeSettings(tx, input.branchId, product, { ...settings, warehouseLinked: settings.warehouseLinked || !settings.activeBarrelId, activeBarrelId: next.id, activeBarrelName: next.number, activeBarrelMarkingCode: next.markingCode, activeBarrelGtin: next.gtin, declaredVolumeLiters: next.receivedLiters.toNumber(), currentVolumeLiters: next.remainingLiters.toNumber() }, input.actor);
 }
 
 /** Executed in the same transaction as the durable AQSI outbox record. */
@@ -232,6 +232,11 @@ export async function consumeBulkOilTx(tx: Prisma.TransactionClient, branchId: s
     if (!product) throw new Error("Товар продажи не найден.");
     const settings = normalizeProductMarkingSettings(product.markingSettings);
     if (!product.markingEnabled || product.markingMode !== "BULK_OIL_FROM_MARKED_BARREL" || !settings.partialWithdrawalEnabled || !settings.allowRepeatedBarrelCode) throw new Error("Настройки разлива изменились. Обновите предчек.");
+    if (settings.warehouseLinked) {
+      const withdrawals = (await shipmentBulkOilWithdrawals(tx, branchId, demandId)).filter((item) => item.productId === movement.productId);
+      if (withdrawals.length !== 1 || withdrawals[0].storeId !== movement.storeId || withdrawals[0].markingCode !== movement.markingCode || Math.abs(withdrawals[0].volumeLiters - movement.volumeLiters) > 0.000001) throw new Error("Объём и код бочки не совпадают с проведённой отгрузкой. Обновите документ.");
+      continue;
+    }
     if (!settings.barrelTrackingEnabled) {
       // Existing installations continue to work until their current drum is adopted.
       if (settings.currentVolumeLiters == null || normalizeMarkingCodeInput(settings.activeBarrelMarkingCode) !== movement.markingCode || movement.volumeLiters > settings.currentVolumeLiters + 0.000001) throw new Error("Изменился код бочки или недостаточно остатка. Обновите предчек.");
@@ -247,6 +252,63 @@ export async function consumeBulkOilTx(tx: Prisma.TransactionClient, branchId: s
     await event(tx, branchId, barrel.id, "SALE", actor, { operationKey, volumeLiters: movement.volumeLiters, documentId: demandId });
     await writeSettings(tx, branchId, product, { ...settings, currentVolumeLiters: remaining }, actor);
   }
+}
+
+/** Reconcile the open container against physical warehouse stock. Sealed drums
+ * remain separate; ambiguity aborts the caller's entire stock transaction. */
+export async function syncBulkOilWarehouseTx(tx: Prisma.TransactionClient, input: {
+  branchId: string; productId: string; storeId: string; documentId: string;
+  reason: string; actor?: Actor; onlyLinked?: boolean;
+}) {
+  await lockBarrelProducts(tx, input.branchId, [input.productId]);
+  const product = await tx.localProduct.findFirst({ where: { id: input.productId, branchId: input.branchId } });
+  if (!product?.markingEnabled || product.markingMode !== "BULK_OIL_FROM_MARKED_BARREL") return null;
+  const settings = normalizeProductMarkingSettings(product.markingSettings);
+  if (input.onlyLinked && !settings.warehouseLinked) return null;
+  const balance = await tx.localStockBalance.findFirst({ where: { branchId: input.branchId, productId: input.productId, storeId: input.storeId } });
+  const stock = balance?.quantity.toNumber() ?? 0;
+  let remaining = stock;
+  let active = null;
+  if (settings.barrelTrackingEnabled) {
+    const barrels = await tx.localBulkOilBarrel.findMany({ where: { branchId: input.branchId, productId: input.productId, storeId: input.storeId, status: { in: ["OPEN", "SEALED"] } } });
+    const open = barrels.filter((b) => b.status === "OPEN");
+    if (open.length > 1) throw new Error(`У товара «${product.name}» несколько открытых бочек. Укажите остаток каждой бочки.`);
+    active = open[0] ?? null;
+    const sealed = barrels.filter((b) => b.status === "SEALED").reduce((sum, b) => sum + b.remainingLiters.toNumber(), 0);
+    remaining = Math.round((stock - sealed) * 1000) / 1000;
+    if (!active) {
+      if (Math.abs(remaining) > 0.000001) throw new Error(`Для корректировки «${product.name}» выберите открытую бочку на этом складе.`);
+      return null;
+    }
+    if (active.id !== settings.activeBarrelId) throw new Error("Открытая бочка не совпадает с карточкой товара.");
+    if (remaining < -0.000001 || remaining > active.receivedLiters.toNumber() + 0.000001) throw new Error(`Остаток «${product.name}» нельзя отнести к открытой бочке: проверьте объёмы запечатанных бочек и приёмки.`);
+    if (!active.remainingLiters.equals(remaining)) {
+      const delta = remaining - active.remainingLiters.toNumber();
+      await tx.localBulkOilBarrel.update({ where: { id: active.id, branchId: input.branchId }, data: { remainingLiters: remaining } });
+      await event(tx, input.branchId, active.id, "WAREHOUSE_SYNC", input.actor, { volumeLiters: delta, documentId: input.documentId, reason: input.reason });
+    }
+  } else {
+    const other = await tx.localStockBalance.findFirst({ where: { branchId: input.branchId, productId: input.productId, storeId: { not: input.storeId }, quantity: { not: 0 } } });
+    if (other) throw new Error(`У товара «${product.name}» остатки на нескольких складах. Сначала распределите масло по бочкам.`);
+    if (remaining < 0 || (settings.declaredVolumeLiters != null && remaining > settings.declaredVolumeLiters + 0.000001)) throw new Error(`Фактический остаток «${product.name}» превышает объём текущей бочки.`);
+  }
+  await writeSettings(tx, input.branchId, product, { ...settings, warehouseLinked: true, currentVolumeLiters: remaining }, input.actor);
+  return { markingCode: active?.markingCode ?? settings.activeBarrelMarkingCode, storeId: input.storeId };
+}
+
+/** Stock posting records the exact container code; fiscalization never debits it twice. */
+export async function shipmentBulkOilWithdrawals(tx: Prisma.TransactionClient | typeof prisma, branchId: string, demandId: string) {
+  const entries = await tx.inventoryLedgerEntry.findMany({ where: { branchId, sourceType: "SHIPMENT", sourceId: demandId } });
+  const totals = new Map<string, { productId: string; storeId: string; markingCode: string; volumeLiters: number }>();
+  for (const entry of entries) {
+    const raw = entry.raw as { bulkOilStock?: { markingCode?: string; storeId?: string } } | null;
+    const snapshot = raw?.bulkOilStock;
+    if (!entry.productId || !snapshot?.markingCode || !entry.storeId) continue;
+    const key = `${entry.productId}:${entry.storeId}:${snapshot.markingCode}`;
+    const previous = totals.get(key);
+    totals.set(key, { productId: entry.productId, storeId: entry.storeId, markingCode: snapshot.markingCode, volumeLiters: Math.round(((previous?.volumeLiters ?? 0) - entry.quantityDelta.toNumber()) * 1000) / 1000 });
+  }
+  return [...totals.values()].filter((value) => Math.abs(value.volumeLiters) > 0.000001);
 }
 
 export function barrelCodesForReceipt(codes: string, volumeLiters: number): BarrelReceiptInput[] {

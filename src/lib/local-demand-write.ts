@@ -1,3 +1,4 @@
+import { lockBarrelProducts, syncBulkOilWarehouseTx, shipmentBulkOilWithdrawals } from "@/lib/bulk-oil-barrels";
 import { resolveServicePositionName } from "@/lib/demand-position-name";
 import { Prisma, type LocalCounterparty } from "@prisma/client";
 import {
@@ -1111,6 +1112,7 @@ async function applyStockMovements(
     });
     if (context) {
       await lockInventoryCostKeys(tx, { branchId: context.branchId, storeId, productIds: changedProductIds });
+      await lockBarrelProducts(tx, context.branchId, changedProductIds);
     }
   }
 
@@ -1209,6 +1211,12 @@ async function applyStockMovements(
     }
 
     if (context) {
+      const previousWithdrawals = deltaApplied < 0 ? (await shipmentBulkOilWithdrawals(tx, context.branchId, context.sourceId)).filter((item) => item.productId === productId && item.storeId === storeId) : [];
+      const linkedStock = await syncBulkOilWarehouseTx(tx, { branchId: context.branchId, productId, storeId,
+        documentId: context.sourceId, reason: `Отгрузка: ${context.movementType}`, onlyLinked: true,
+        actor: { login: context.createdById ?? undefined, name: context.createdByName } });
+      const bulkOilStock = deltaApplied < 0 && previousWithdrawals.length === 0 ? null : linkedStock;
+      if (linkedStock && previousWithdrawals.some((item) => item.markingCode !== linkedStock.markingCode)) throw new Error("Бочка отгрузки уже сменена. Возврат масла требует отдельной корректировки по исходной бочке.");
       await tx.inventoryLedgerEntry.create({
         data: {
           branchId: context.branchId,
@@ -1229,6 +1237,7 @@ async function applyStockMovements(
           createdByName: context.createdByName ?? null,
           raw: toJson({
             ...context.raw,
+            bulkOilStock,
             productName: sourcePosition?.name ?? null,
             oldAppliedQuantity: oldQty,
             newAppliedQuantity: newQty,
