@@ -1260,8 +1260,8 @@ async function applyStockMovements(
   }
 }
 
-async function findLocalDemand(id: string, branchId: string) {
-  return prisma.localDemand.findFirst({
+async function findLocalDemand(id: string, branchId: string, db: Prisma.TransactionClient | typeof prisma = prisma) {
+  return db.localDemand.findFirst({
     where: { branchId, OR: [{ id }, { id: id }] },
     include: { positions: true, counterparty: true, store: true, organization: true },
   });
@@ -1960,7 +1960,53 @@ export async function updateLocalDemand(
   organizationId?: string
 ): Promise<{ ok: true; id: string; name: string; applicable: boolean; description: string } | { ok: false; error: string; notFound?: boolean }> {
   const scope = await resolveDemandBranchScope(branchId, organizationId);
-  const current = await findLocalDemand(id, scope.branchId);
+  let result: Awaited<ReturnType<typeof updateLocalDemandInTx>>;
+  try {
+    result = await prisma.$transaction(
+      (tx) => updateLocalDemandInTx(tx, id, body, actor, scope),
+      { maxWait: 10_000, timeout: 20_000 }
+    );
+  } catch (error) {
+    return { ok: false, error: demandWriteErrorMessage(error, "Не удалось сохранить отгрузку") };
+  }
+  if (!result.ok) return result;
+  const updated = result.demand;
+
+  invalidateDemandCostConsumers();
+  invalidateDemandListCache();
+  await syncActiveDiagnosticVehiclesForShipment(updated.id, {
+    userLogin: actor?.login ?? "system",
+    reason: "shipment-save",
+  }).catch((error) => {
+    console.warn("[shipment] diagnostic vehicle sync after save failed", {
+      shipmentId: updated.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  });
+  return {
+    ok: true,
+    id: updated.id,
+    name: updated.name,
+    applicable: updated.applicable,
+    description: updated.description ?? "",
+  };
+}
+
+async function updateLocalDemandInTx(
+  tx: Prisma.TransactionClient,
+  id: string,
+  body: UpdateDemandBody,
+  actor: ShipmentActor | null | undefined,
+  scope: Awaited<ReturnType<typeof resolveDemandBranchScope>>
+): Promise<
+  | { ok: true; demand: Awaited<ReturnType<typeof prisma.localDemand.update>> }
+  | { ok: false; error: string; notFound?: boolean }
+> {
+  // Lock before reading positions/status. Concurrent DELETE + INSERT saves can
+  // otherwise both recreate the rows, leaving two copies and one header total.
+  await tx.$queryRaw`SELECT "id" FROM "local_demands"
+    WHERE "id" = ${id} AND "branch_id" = ${scope.branchId} FOR UPDATE`;
+  const current = await findLocalDemand(id, scope.branchId, tx);
   if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
   if (current.applicable) {
     return {
@@ -1974,13 +2020,13 @@ export async function updateLocalDemand(
   const organizationLookupId = entityIdFromMeta(body.organization?.meta);
   const [nextStore, nextCounterparty, nextOrganization] = await Promise.all([
     storeLookupId
-      ? prisma.localStore.findFirst({ where: { branchId: scope.branchId, OR: [{ id: storeLookupId }, { id: storeLookupId }] } })
+      ? tx.localStore.findFirst({ where: { branchId: scope.branchId, OR: [{ id: storeLookupId }, { id: storeLookupId }] } })
       : current.store,
     agentLookupId
-      ? prisma.localCounterparty.findFirst({ where: { branchId: scope.branchId, OR: [{ id: agentLookupId }, { id: agentLookupId }] } })
+      ? tx.localCounterparty.findFirst({ where: { branchId: scope.branchId, OR: [{ id: agentLookupId }, { id: agentLookupId }] } })
       : current.counterparty,
     organizationLookupId
-      ? prisma.localOrganization.findFirst({ where: { id: scope.organizationId, isActive: true, OR: [{ id: organizationLookupId }, { id: organizationLookupId }] } })
+      ? tx.localOrganization.findFirst({ where: { id: scope.organizationId, isActive: true, OR: [{ id: organizationLookupId }, { id: organizationLookupId }] } })
       : current.organization,
   ]);
 
@@ -2051,42 +2097,59 @@ export async function updateLocalDemand(
   const storeChanged = Boolean(nextStoreId && nextStoreId !== current.storeId);
   const importedDraftBeingPosted = false;
 
-  let updated: Awaited<ReturnType<typeof prisma.localDemand.update>>;
-  try {
-    updated = await prisma.$transaction(async (tx) => {
-    const hasReopenHistory = nextApplicable
-      ? Boolean(await tx.shipmentRevision.findFirst({
-          where: { shipmentId: current.id, eventType: "REOPENED" },
-          select: { id: true },
-        }))
-      : false;
-    const eventType = nextApplicable ? hasReopenHistory ? "REPOSTED" : "POSTED" : "UPDATED";
-    const postMovementType = eventType === "REPOSTED" ? "SHIPMENT_REPOST" : "SHIPMENT_POST";
-    const costedPositions = nextApplicable
-      ? await freezePostingCostSnapshots(tx, current.branchId, nextStoreId, nextPositions, {
-          preserveExistingSnapshots: eventType === "REPOSTED",
-        })
-      : nextPositions;
-    const effectivePositions = nextApplicable
-      ? await freezeSalesAnalyticsSnapshots(tx, current.branchId, costedPositions, {
-          preserveExistingSnapshots: eventType === "REPOSTED",
-        })
-      : costedPositions;
-    const revisionNumber = await nextShipmentRevisionNumber(tx, current.id);
-    const beforeSnapshot = shipmentSnapshot(current, current.positions);
-    if (!importedDraftBeingPosted) {
-      if (storeChanged) {
-        await applyStockMovements(tx, current.storeId, current.positions, current.applicable, [], false, {
-          branchId: current.branchId,
-          sourceType: "SHIPMENT",
-          sourceId: current.id,
-          organizationId: current.organizationId,
-          movementType: "SHIPMENT_UPDATE",
-          revision: revisionNumber,
-          createdById: actor?.login ?? null,
-          createdByName: actor?.name ?? null,
-        });
-        await applyStockMovements(tx, nextStoreId, [], false, effectivePositions, nextApplicable, nextApplicable
+  const hasReopenHistory = nextApplicable
+    ? Boolean(await tx.shipmentRevision.findFirst({
+        where: { shipmentId: current.id, eventType: "REOPENED" },
+        select: { id: true },
+      }))
+    : false;
+  const eventType = nextApplicable ? hasReopenHistory ? "REPOSTED" : "POSTED" : "UPDATED";
+  const postMovementType = eventType === "REPOSTED" ? "SHIPMENT_REPOST" : "SHIPMENT_POST";
+  const costedPositions = nextApplicable
+    ? await freezePostingCostSnapshots(tx, current.branchId, nextStoreId, nextPositions, {
+        preserveExistingSnapshots: eventType === "REPOSTED",
+      })
+    : nextPositions;
+  const effectivePositions = nextApplicable
+    ? await freezeSalesAnalyticsSnapshots(tx, current.branchId, costedPositions, {
+        preserveExistingSnapshots: eventType === "REPOSTED",
+      })
+    : costedPositions;
+  const revisionNumber = await nextShipmentRevisionNumber(tx, current.id);
+  const beforeSnapshot = shipmentSnapshot(current, current.positions);
+  if (!importedDraftBeingPosted) {
+    if (storeChanged) {
+      await applyStockMovements(tx, current.storeId, current.positions, current.applicable, [], false, {
+        branchId: current.branchId,
+        sourceType: "SHIPMENT",
+        sourceId: current.id,
+        organizationId: current.organizationId,
+        movementType: "SHIPMENT_UPDATE",
+        revision: revisionNumber,
+        createdById: actor?.login ?? null,
+        createdByName: actor?.name ?? null,
+      });
+      await applyStockMovements(tx, nextStoreId, [], false, effectivePositions, nextApplicable, nextApplicable
+        ? {
+            branchId: current.branchId,
+            sourceType: "SHIPMENT",
+            sourceId: current.id,
+            organizationId: current.organizationId,
+            movementType: nextApplicable ? postMovementType : "SHIPMENT_UPDATE",
+            revision: revisionNumber,
+            createdById: actor?.login ?? null,
+            createdByName: actor?.name ?? null,
+          }
+        : undefined);
+    } else {
+      await applyStockMovements(
+        tx,
+        current.storeId,
+        current.positions,
+        current.applicable,
+        effectivePositions,
+        nextApplicable,
+        nextApplicable
           ? {
               branchId: current.branchId,
               sourceType: "SHIPMENT",
@@ -2097,148 +2160,105 @@ export async function updateLocalDemand(
               createdById: actor?.login ?? null,
               createdByName: actor?.name ?? null,
             }
-          : undefined);
-      } else {
-        await applyStockMovements(
-          tx,
-          current.storeId,
-          current.positions,
-          current.applicable,
-          effectivePositions,
-          nextApplicable,
-          nextApplicable
-            ? {
-                branchId: current.branchId,
-                sourceType: "SHIPMENT",
-                sourceId: current.id,
-                organizationId: current.organizationId,
-                movementType: nextApplicable ? postMovementType : "SHIPMENT_UPDATE",
-                revision: revisionNumber,
-                createdById: actor?.login ?? null,
-                createdByName: actor?.name ?? null,
-              }
-            : undefined
-        );
-      }
+          : undefined
+      );
     }
-
-    if (Array.isArray(body.positions)) {
-      await tx.localDemandPosition.deleteMany({ where: { demandId: current.id } });
-      if (effectivePositions.length > 0) {
-        await tx.localDemandPosition.createMany({
-          data: effectivePositions.map((position) => ({
-            branchId: current.branchId,
-            demandId: current.id,
-            productId: position.productId,
-            groupIdSnapshot: position.groupIdSnapshot,
-            assortmentType: position.assortmentType,
-            name: position.name,
-            quantity: position.quantity,
-            priceCentsPerUnit: position.priceCentsPerUnit,
-            discount: position.discount,
-            vat: position.vat,
-            vatEnabled: position.vatEnabled,
-            buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
-            slotName: position.slotName,
-            analyticsMetricCode: position.analyticsMetricCode,
-            analyticsCategoryLabel: position.analyticsCategoryLabel,
-            analyticsMatchMethod: position.analyticsMatchMethod,
-            analyticsMappingVersion: position.analyticsMappingVersion,
-            serviceAggregateType: position.serviceAggregateType,
-            serviceProcedure: position.serviceProcedure,
-            serviceConfiguration: position.serviceConfiguration,
-            analyticsBaseQuantity: position.analyticsBaseQuantity,
-            analyticsBaseUnit: position.analyticsBaseUnit,
-            raw: position.raw,
-          })),
-        });
-      }
-    } else if (nextApplicable) {
-      for (const position of effectivePositions) {
-        if (!position.id) continue;
-        await tx.localDemandPosition.update({
-          where: { id: position.id },
-          data: {
-            buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
-            analyticsMetricCode: position.analyticsMetricCode,
-            analyticsCategoryLabel: position.analyticsCategoryLabel,
-            analyticsMatchMethod: position.analyticsMatchMethod,
-            analyticsMappingVersion: position.analyticsMappingVersion,
-            serviceAggregateType: position.serviceAggregateType,
-            serviceProcedure: position.serviceProcedure,
-            serviceConfiguration: position.serviceConfiguration,
-            analyticsBaseQuantity: position.analyticsBaseQuantity,
-            analyticsBaseUnit: position.analyticsBaseUnit,
-          },
-        });
-      }
-    }
-
-    const nextRawBase = typeof current.raw === "object" && current.raw ? current.raw : {};
-    const updated = await tx.localDemand.update({
-      where: { id: current.id },
-      data: {
-        name: nextName,
-        momentAt: nextMoment.momentAt,
-        documentDate: nextMoment.documentDate,
-        applicable: nextApplicable,
-        description: nextDescription || null,
-        counterpartyId: nextCounterparty?.id ?? current.counterpartyId,
-        agentNameSnapshot: nextCounterparty?.name ?? current.agentNameSnapshot,
-        storeId: nextStore?.id ?? current.storeId,
-        storeNameSnapshot: nextStore?.name ?? current.storeNameSnapshot,
-        organizationId: nextOrganization?.id ?? current.organizationId,
-        organizationName: nextOrganization?.name ?? current.organizationName,
-        attributes: Array.isArray(body.attributes) ? toJson(body.attributes) : current.attributes ?? Prisma.JsonNull,
-        sumCents: sumPositionsCents(effectivePositions),
-        raw: toJson({
-          ...nextRawBase,
-          ...(nextCounterparty
-            ? {
-                agent: { meta: localMeta("counterparty", nextCounterparty.id) },
-                customerMode: isAnonymousRetailCounterparty(nextCounterparty) ? "anonymous_retail" : "identified",
-              }
-            : {}),
-          lastLocalUpdate: new Date().toISOString(),
-          ...(nextApplicable ? { lastPostedAt: new Date().toISOString(), lastPostedBy: actor?.login ?? null } : {}),
-        }),
-        syncedAt: new Date(),
-      },
-    });
-    await createShipmentRevision(tx, {
-      shipmentId: current.id,
-      revisionNumber,
-      eventType,
-      statusBefore: demandStatus(current.applicable),
-      statusAfter: demandStatus(updated.applicable),
-      snapshotBefore: beforeSnapshot,
-      snapshotAfter: shipmentSnapshot(updated, effectivePositions),
-      actor,
-    });
-    return updated;
-    });
-  } catch (error) {
-    return { ok: false, error: demandWriteErrorMessage(error, "Не удалось сохранить отгрузку") };
   }
 
-  invalidateDemandCostConsumers();
-  invalidateDemandListCache();
-  await syncActiveDiagnosticVehiclesForShipment(updated.id, {
-    userLogin: actor?.login ?? "system",
-    reason: "shipment-save",
-  }).catch((error) => {
-    console.warn("[shipment] diagnostic vehicle sync after save failed", {
-      shipmentId: updated.id,
-      message: error instanceof Error ? error.message : String(error),
-    });
+  if (Array.isArray(body.positions)) {
+    await tx.localDemandPosition.deleteMany({ where: { demandId: current.id } });
+    if (effectivePositions.length > 0) {
+      await tx.localDemandPosition.createMany({
+        data: effectivePositions.map((position) => ({
+          branchId: current.branchId,
+          demandId: current.id,
+          productId: position.productId,
+          groupIdSnapshot: position.groupIdSnapshot,
+          assortmentType: position.assortmentType,
+          name: position.name,
+          quantity: position.quantity,
+          priceCentsPerUnit: position.priceCentsPerUnit,
+          discount: position.discount,
+          vat: position.vat,
+          vatEnabled: position.vatEnabled,
+          buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
+          slotName: position.slotName,
+          analyticsMetricCode: position.analyticsMetricCode,
+          analyticsCategoryLabel: position.analyticsCategoryLabel,
+          analyticsMatchMethod: position.analyticsMatchMethod,
+          analyticsMappingVersion: position.analyticsMappingVersion,
+          serviceAggregateType: position.serviceAggregateType,
+          serviceProcedure: position.serviceProcedure,
+          serviceConfiguration: position.serviceConfiguration,
+          analyticsBaseQuantity: position.analyticsBaseQuantity,
+          analyticsBaseUnit: position.analyticsBaseUnit,
+          raw: position.raw,
+        })),
+      });
+    }
+  } else if (nextApplicable) {
+    for (const position of effectivePositions) {
+      if (!position.id) continue;
+      await tx.localDemandPosition.update({
+        where: { id: position.id },
+        data: {
+          buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
+          analyticsMetricCode: position.analyticsMetricCode,
+          analyticsCategoryLabel: position.analyticsCategoryLabel,
+          analyticsMatchMethod: position.analyticsMatchMethod,
+          analyticsMappingVersion: position.analyticsMappingVersion,
+          serviceAggregateType: position.serviceAggregateType,
+          serviceProcedure: position.serviceProcedure,
+          serviceConfiguration: position.serviceConfiguration,
+          analyticsBaseQuantity: position.analyticsBaseQuantity,
+          analyticsBaseUnit: position.analyticsBaseUnit,
+        },
+      });
+    }
+  }
+
+  const nextRawBase = typeof current.raw === "object" && current.raw ? current.raw : {};
+  const updated = await tx.localDemand.update({
+    where: { id: current.id },
+    data: {
+      name: nextName,
+      momentAt: nextMoment.momentAt,
+      documentDate: nextMoment.documentDate,
+      applicable: nextApplicable,
+      description: nextDescription || null,
+      counterpartyId: nextCounterparty?.id ?? current.counterpartyId,
+      agentNameSnapshot: nextCounterparty?.name ?? current.agentNameSnapshot,
+      storeId: nextStore?.id ?? current.storeId,
+      storeNameSnapshot: nextStore?.name ?? current.storeNameSnapshot,
+      organizationId: nextOrganization?.id ?? current.organizationId,
+      organizationName: nextOrganization?.name ?? current.organizationName,
+      attributes: Array.isArray(body.attributes) ? toJson(body.attributes) : current.attributes ?? Prisma.JsonNull,
+      sumCents: sumPositionsCents(effectivePositions),
+      raw: toJson({
+        ...nextRawBase,
+        ...(nextCounterparty
+          ? {
+              agent: { meta: localMeta("counterparty", nextCounterparty.id) },
+              customerMode: isAnonymousRetailCounterparty(nextCounterparty) ? "anonymous_retail" : "identified",
+            }
+          : {}),
+        lastLocalUpdate: new Date().toISOString(),
+        ...(nextApplicable ? { lastPostedAt: new Date().toISOString(), lastPostedBy: actor?.login ?? null } : {}),
+      }),
+      syncedAt: new Date(),
+    },
   });
-  return {
-    ok: true,
-    id: updated.id,
-    name: updated.name,
-    applicable: updated.applicable,
-    description: updated.description ?? "",
-  };
+  await createShipmentRevision(tx, {
+    shipmentId: current.id,
+    revisionNumber,
+    eventType,
+    statusBefore: demandStatus(current.applicable),
+    statusAfter: demandStatus(updated.applicable),
+    snapshotBefore: beforeSnapshot,
+    snapshotAfter: shipmentSnapshot(updated, effectivePositions),
+    actor,
+  });
+  return { ok: true, demand: updated };
 }
 
 function canReopenShipment(actor?: ShipmentActor | null): boolean {
