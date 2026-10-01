@@ -41,6 +41,9 @@ export async function lockBarrelProducts(tx: Prisma.TransactionClient, branchId:
 }
 
 async function writeSettings(tx: Prisma.TransactionClient, branchId: string, product: Product, settings: ProductMarkingSettings, actor?: Actor) {
+  // Match the millilitre precision of the barrel table; legacy card values may
+  // contain floating point tails such as 3.69000000000001.
+  settings = { ...settings, currentVolumeLiters: settings.currentVolumeLiters == null ? null : Math.round(settings.currentVolumeLiters * 1000) / 1000 };
   const markingStatus = deriveProductMarkingStatus({ markingEnabled: true, markingMode: "BULK_OIL_FROM_MARKED_BARREL", uomName: product.uomName, settings });
   await tx.localProduct.update({ where: { id: product.id, branchId }, data: {
     markingSettings: settings as unknown as Prisma.InputJsonValue, markingStatus,
@@ -149,6 +152,14 @@ export async function listProductBarrels(branchId: string, productId: string) {
   };
 }
 
+async function assertBarrelWarehouseStock(tx: Prisma.TransactionClient, branchId: string, productId: string, storeId: string, alreadyClosedLiters = 0) {
+  const barrelStock = await tx.localBulkOilBarrel.aggregate({ where: { branchId, productId, storeId, status: { in: ["OPEN", "SEALED"] } }, _sum: { remainingLiters: true } });
+  const warehouseStock = await tx.localStockBalance.findFirst({ where: { branchId, productId, storeId } });
+  const barrelLiters = Math.round(((barrelStock._sum.remainingLiters?.toNumber() ?? 0) - alreadyClosedLiters) * 1000) / 1000;
+  const warehouseLiters = warehouseStock?.quantity.toNumber() ?? 0;
+  if (Math.abs(barrelLiters - warehouseLiters) > 0.000001) throw new Error(`Сумма остатков бочек (${barrelLiters} л) не совпадает со складским остатком (${warehouseLiters} л). Перед сменой бочки требуется сверка учёта.`);
+}
+
 export async function switchBarrelTx(tx: Prisma.TransactionClient, input: { branchId: string; productId: string; barrelId?: string; scannedCode?: string; expectedActiveId: string; expectedRemainingLiters: number | null; confirmEmpty: boolean; reason: string; alreadyAdjustedDocumentId?: string; actor?: Actor }, writeoff: (barrel: { storeId: string; remainingLiters: number; number: string }) => Promise<string>) {
   await lockBarrelProducts(tx, input.branchId, [input.productId]);
   const product = await tx.localProduct.findFirst({ where: { id: input.productId, branchId: input.branchId } });
@@ -164,7 +175,7 @@ export async function switchBarrelTx(tx: Prisma.TransactionClient, input: { bran
     const old = await tx.localBulkOilBarrel.findFirst({ where: { id: settings.activeBarrelId, branchId: input.branchId, productId: product.id, status: "OPEN" } });
     if (!old) throw new Error("Текущая бочка не найдена. Требуется проверка учёта.");
     const remaining = old.remainingLiters.toNumber();
-    if (remaining !== settings.currentVolumeLiters) throw new Error("Остаток бочки не совпадает с карточкой. Требуется проверка учёта.");
+    if (settings.currentVolumeLiters == null || Math.abs(remaining - settings.currentVolumeLiters) > 0.000001) throw new Error("Остаток бочки не совпадает с карточкой. Требуется проверка учёта.");
     let documentId: string | undefined;
     let discrepancyLiters = remaining;
     let discrepancyReason = input.reason.trim();
@@ -183,12 +194,18 @@ export async function switchBarrelTx(tx: Prisma.TransactionClient, input: { bran
         documentId = adjustment.id;
         const adjustedLiters = adjustment.positions[0]?.quantity.toNumber();
         if (adjustedLiters == null) throw new Error("В корректировке не найдено количество для этого товара.");
+        // The referenced document already debited the warehouse. Before closing
+        // the old record, ensure all other drums still retain their full stock.
+        await assertBarrelWarehouseStock(tx, input.branchId, product.id, old.storeId, remaining);
         discrepancyLiters = Math.round(Math.abs(remaining - adjustedLiters) * 1000) / 1000;
         discrepancyReason = `Корректировка ${adjustment.id} списала ${adjustedLiters} л; в старой записи бочки числилось ${remaining} л. Разница ${discrepancyLiters} л. ${discrepancyReason}`;
       } else {
+        await assertBarrelWarehouseStock(tx, input.branchId, product.id, old.storeId);
         documentId = await writeoff({ storeId: old.storeId, remainingLiters: remaining, number: old.number });
       }
       await event(tx, input.branchId, old.id, "DISCREPANCY", input.actor, { volumeLiters: discrepancyLiters, reason: discrepancyReason, documentId });
+    } else {
+      await assertBarrelWarehouseStock(tx, input.branchId, product.id, old.storeId);
     }
     await tx.localBulkOilBarrel.update({ where: { id: old.id, branchId: input.branchId }, data: { status: "CLOSED", remainingLiters: 0, closedAt: new Date() } });
     await event(tx, input.branchId, old.id, "CLOSED", input.actor, { documentId });

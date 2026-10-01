@@ -36,7 +36,7 @@ try {
   await seed.branch.create({ data: { id: branchId, businessGroupId: `${prefix}-group`, name: "Branch test", shortName: "TEST", slug: branchId } });
   await seed.aqsiCashRegister.create({ data: { id: `${prefix}-register`, branchId, businessGroupId: `${prefix}-group`, organizationId: branchId, name: "Local test queue", credentialsEncrypted: {} } });
   await seed.localStore.create({ data: { id: storeId, branchId, name: "Склад теста" } });
-  await seed.localProduct.create({ data: { id: productId, branchId, name: "Тестовое разливное масло", uomName: "л", markingEnabled: true, markingMode: "BULK_OIL_FROM_MARKED_BARREL", markingStatus: "BULK_OIL_READY", markingSettings: { allowRepeatedBarrelCode: true, partialWithdrawalEnabled: true, declaredVolumeLiters: 208, currentVolumeLiters: 12, activeBarrelMarkingCode: code(1), activeBarrelName: "Старая бочка" } } });
+  await seed.localProduct.create({ data: { id: productId, branchId, name: "Тестовое разливное масло", uomName: "л", markingEnabled: true, markingMode: "BULK_OIL_FROM_MARKED_BARREL", markingStatus: "BULK_OIL_READY", markingSettings: { allowRepeatedBarrelCode: true, partialWithdrawalEnabled: true, declaredVolumeLiters: 208, currentVolumeLiters: 12.00000000000001, activeBarrelMarkingCode: code(1), activeBarrelName: "Старая бочка" } } });
   await seed.localStockBalance.create({ data: { branchId, productId, storeId, quantity: 12, available: 12, buyPriceCents: 10000 } });
   await runWithRequestTenant(tenant, async () => {
     await check("receipt validates code, duplicate scan, volume and litre total", async () => {
@@ -68,6 +68,27 @@ try {
     await check("switch requires empty confirmation and reason when old stock remains", async () => {
       await assert.rejects(switchTo(nextId), /Подтвердите/);
       assert.equal((await list()).settings.activeBarrelMarkingCode, code(1));
+    });
+    await check("real card/barrel mismatch still blocks switching without writeoff", async () => {
+      const before = await product();
+      await seed.localProduct.update({ where: { id: productId }, data: { markingSettings: { ...before.markingSettings, currentVolumeLiters: 12.001 } } });
+      await assert.rejects(switchTo(nextId, true, "Старая бочка пуста"), /не совпадает/);
+      assert.equal((await list()).barrels.find((b) => b.id === nextId).status, "SEALED");
+      assert.equal(await seed.localInventoryDocument.count({ where: { branchId, type: "writeoff" } }), 0);
+      await seed.localProduct.update({ where: { id: productId }, data: { markingSettings: before.markingSettings } });
+    });
+    await check("legacy floating point tail does not block empty confirmation", async () => {
+      const before = await product();
+      await seed.localProduct.update({ where: { id: productId }, data: { markingSettings: { ...before.markingSettings, currentVolumeLiters: 12.00000000000001 } } });
+      await assert.rejects(switchTo(nextId), /Подтвердите/);
+    });
+    await check("legacy warehouse discrepancy cannot consume the new sealed drum", async () => {
+      await seed.localStockBalance.update({ where: { productId_storeId: { productId, storeId } }, data: { quantity: 218.9, available: 218.9 } });
+      await assert.rejects(switchTo(nextId, true, "Старая бочка пуста"), /сверка учёта/);
+      assert.equal((await list()).barrels.find((b) => b.id === nextId).status, "SEALED");
+      assert.equal(await seed.localInventoryDocument.count({ where: { branchId, type: "writeoff" } }), 0);
+      assert.equal((await seed.localStockBalance.findUnique({ where: { productId_storeId: { productId, storeId } } })).quantity.toNumber(), 218.9);
+      await seed.localStockBalance.update({ where: { productId_storeId: { productId, storeId } }, data: { quantity: 220, available: 220 } });
     });
     await check("switch creates real discrepancy writeoff and connects new drum", async () => {
       await switchTo(nextId, true, "Проверка: старая бочка пуста");
@@ -145,9 +166,69 @@ try {
       const current = (await list()).settings.currentVolumeLiters;
       await tx((t) => lib.consumeBulkOilTx(t, branchId, `${prefix}-empty`, movement(current), actor));
       const sealed = (await list()).barrels.find((b) => b.markingCode === code(3));
+      // Direct barrel/outbox calls above omit the warehouse debit normally made
+      // by posted shipments. Match that balance before testing the final switch.
+      await seed.localStockBalance.update({ where: { productId_storeId: { productId, storeId } }, data: { quantity: sealed.remainingLiters, available: sealed.remainingLiters } });
       await switchTo(sealed.id);
       await tx((t) => lib.consumeBulkOilTx(t, branchId, `${prefix}-queue-sale`, movement(2), actor));
       assert.equal((await list()).settings.currentVolumeLiters, 208); assert.equal((await list()).settings.activeBarrelMarkingCode, code(3));
+    });
+    await check("BARDAHL incident: 170 litre receipt is preserved after reconciling legacy stock", async () => {
+      const incidentId = `${prefix}-bardahl`;
+      await seed.localProduct.create({ data: { id: incidentId, branchId, name: "BARDAHL XTS 5W-30", uomName: "л", markingEnabled: true, markingMode: "BULK_OIL_FROM_MARKED_BARREL", markingStatus: "BULK_OIL_READY", markingSettings: { allowRepeatedBarrelCode: true, partialWithdrawalEnabled: true, declaredVolumeLiters: 205, currentVolumeLiters: 3.69000000000001, activeBarrelMarkingCode: code(7) } } });
+      await seed.localStockBalance.create({ data: { branchId, productId: incidentId, storeId, quantity: 2.59, available: 2.59, buyPriceCents: 10000 } });
+      const received = await admin.createLocalStockDocument({ type: "receipt", storeId, positions: [{ productId: incidentId, quantity: 170, price: 100, barrels: [{ markingCode: code(8), volumeLiters: 170 }] }] }, actor);
+      assert.equal(received.ok, true, received.error);
+      const data = await lib.listProductBarrels(branchId, incidentId);
+      const old = data.barrels.find((b) => b.status === "OPEN");
+      const next = data.barrels.find((b) => b.status === "SEALED");
+      assert.equal(data.settings.currentVolumeLiters, 3.69);
+      assert.equal(next.remainingLiters, 170);
+      await seed.localProduct.update({ where: { id: incidentId }, data: { markingSettings: { ...data.settings, currentVolumeLiters: 3.69000000000001 } } });
+      await assert.rejects(tx((t) => lib.switchBarrelTx(t, { branchId, productId: incidentId, barrelId: next.id, expectedActiveId: old.id, expectedRemainingLiters: 3.69000000000001, confirmEmpty: true, reason: "Физически пустая", actor }, async () => { assert.fail("An unreconciled drum must not debit sealed stock"); })), /сверка учёта/);
+      assert.equal((await seed.localStockBalance.findUnique({ where: { productId_storeId: { productId: incidentId, storeId } } })).quantity.toNumber(), 172.59);
+      // Rehearse the explicitly reviewed data reconciliation separately from
+      // switching: no automatic reconciliation is performed by the application.
+      await seed.localBulkOilBarrel.update({ where: { id: old.id }, data: { remainingLiters: 2.59 } });
+      await seed.localProduct.update({ where: { id: incidentId }, data: { markingSettings: { ...data.settings, currentVolumeLiters: 2.59 } } });
+      await tx((t) => lib.switchBarrelTx(t, { branchId, productId: incidentId, barrelId: next.id, expectedActiveId: old.id, expectedRemainingLiters: 2.59, confirmEmpty: true, reason: "Физически пустая", actor }, async (barrel) => {
+        const result = await admin.createLocalStockDocument({ type: "writeoff", storeId, applicable: true, adjustmentType: "technical", adjustmentMethod: "WRITE_OFF_QUANTITY", adjustmentReason: "Ошибка начальных остатков", description: "Проверка закрытия старой бочки", positions: [{ productId: incidentId, quantity: barrel.remainingLiters }] }, actor, { transaction: t });
+        assert.equal(result.ok, true, result.error); return result.document.id;
+      }));
+      const after = await lib.listProductBarrels(branchId, incidentId);
+      assert.equal(after.settings.currentVolumeLiters, 170);
+      assert.equal(after.barrels.find((b) => b.id === old.id).status, "CLOSED");
+      assert.equal(after.barrels.find((b) => b.id === next.id).status, "OPEN");
+      assert.equal((await seed.localStockBalance.findUnique({ where: { productId_storeId: { productId: incidentId, storeId } } })).quantity.toNumber(), 170);
+      assert.equal((await seed.localBulkOilBarrelEvent.findFirst({ where: { branchId, barrelId: old.id, action: "DISCREPANCY" } })).volumeLiters.toNumber(), 2.59);
+    });
+    await check("technical correction closes legacy drum without a second warehouse debit", async () => {
+      const incidentId = `${prefix}-adjusted-bardahl`;
+      await seed.localProduct.create({ data: { id: incidentId, branchId, name: "BARDAHL XTS 5W-30 corrected", uomName: "л", markingEnabled: true, markingMode: "BULK_OIL_FROM_MARKED_BARREL", markingStatus: "BULK_OIL_READY", markingSettings: { allowRepeatedBarrelCode: true, partialWithdrawalEnabled: true, declaredVolumeLiters: 205, currentVolumeLiters: 3.69000000000001, activeBarrelMarkingCode: code(9) } } });
+      await seed.localStockBalance.create({ data: { branchId, productId: incidentId, storeId, quantity: 2.59, available: 2.59, buyPriceCents: 10000 } });
+      const received = await admin.createLocalStockDocument({ type: "receipt", storeId, positions: [{ productId: incidentId, quantity: 170, price: 100, barrels: [{ markingCode: code(10), volumeLiters: 170 }] }] }, actor);
+      assert.equal(received.ok, true, received.error);
+      const before = await lib.listProductBarrels(branchId, incidentId);
+      const old = before.barrels.find((b) => b.status === "OPEN");
+      const next = before.barrels.find((b) => b.status === "SEALED");
+      await seed.localProduct.update({ where: { id: incidentId }, data: { markingSettings: { ...before.settings, currentVolumeLiters: 3.69000000000001 } } });
+      const correction = await admin.createLocalStockDocument({ type: "writeoff", storeId, applicable: true, adjustmentType: "technical", adjustmentMethod: "WRITE_OFF_QUANTITY", adjustmentReason: "Ошибка начальных остатков", positions: [{ productId: incidentId, quantity: 2.59 }] }, actor);
+      assert.equal(correction.ok, true, correction.error);
+      assert.equal(correction.document.affectsManagementProfit, false);
+      const input = { branchId, productId: incidentId, barrelId: next.id, expectedActiveId: old.id, expectedRemainingLiters: 3.69000000000001, confirmEmpty: true, reason: "Ошибка начальных остатков", alreadyAdjustedDocumentId: correction.document.id, actor };
+      const noSecondDebit = async () => { assert.fail("Technical correction must not debit the warehouse twice"); };
+      await seed.localStockBalance.update({ where: { productId_storeId: { productId: incidentId, storeId } }, data: { quantity: 168.9, available: 168.9 } });
+      await assert.rejects(tx((t) => lib.switchBarrelTx(t, input, noSecondDebit)), /сверка учёта/);
+      await seed.localStockBalance.update({ where: { productId_storeId: { productId: incidentId, storeId } }, data: { quantity: 170, available: 170 } });
+      await tx((t) => lib.switchBarrelTx(t, input, noSecondDebit));
+      const after = await lib.listProductBarrels(branchId, incidentId);
+      assert.equal(after.settings.currentVolumeLiters, 170);
+      assert.equal(after.barrels.find((b) => b.id === old.id).status, "CLOSED");
+      assert.equal(after.barrels.find((b) => b.id === next.id).status, "OPEN");
+      assert.equal((await seed.localStockBalance.findUnique({ where: { productId_storeId: { productId: incidentId, storeId } } })).quantity.toNumber(), 170);
+      const discrepancy = await seed.localBulkOilBarrelEvent.findFirst({ where: { branchId, barrelId: old.id, action: "DISCREPANCY" } });
+      assert.equal(discrepancy.volumeLiters.toNumber(), 1.1);
+      assert.equal(discrepancy.documentId, correction.document.id);
     });
   });
   console.log(`Bulk oil barrels: ${checks} checks passed.`);
