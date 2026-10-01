@@ -12,15 +12,20 @@ const raw=value('TIMEWEB_MIGRATION_DATABASE_URL'),token=value('TIMEWEB_CLOUD_TOK
 const url=new URL(raw);assert.equal(url.pathname,'/vin_oil');assert.ok(url.hostname.endsWith('twc1.net')||url.hostname.includes('timeweb'));
 const ca='/private/tmp/inventory-margin-timeweb-ca.crt';
 assert.equal(new X509Certificate(readFileSync(ca)).fingerprint256.replaceAll(':','').toLowerCase(),'17179badb992feb038426ff31ba66ab7fa711f092ca22705bd7251f3011a124d');
-const api=async(path)=>{const r=await fetch(`https://api.timeweb.cloud/api/v1${path}`,{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'},signal:AbortSignal.timeout(20000)});assert.ok(r.ok,`Timeweb HTTP ${r.status}`);return r.json();};
+const api=async(path)=>{
+ for(let attempt=0;attempt<3;attempt++){
+  try {const r=await fetch(`https://api.timeweb.cloud/api/v1${path}`,{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'},signal:AbortSignal.timeout(15000)});assert.ok(r.ok,`Timeweb HTTP ${r.status}`);return await r.json();}
+  catch(error){if(attempt===2)throw error;await new Promise(resolve=>setTimeout(resolve,2000));}
+ }
+};
 const backup=JSON.parse(readFileSync('/private/tmp/unified-oil-backup-20261001.json','utf8'));
 const {backup:verified}=await api(`/dbs/4195453/backups/${backup.id}`);assert.equal(verified.status,'done');assert.ok(verified.size>0);assert.ok(Date.now()-Date.parse(verified.created_at)<4*3600_000);
 if(mode==='--apply') {const release=JSON.parse(readFileSync('/private/tmp/unified-oil-release-manifest.json','utf8'));const {app}=await api('/apps/235547');assert.equal(app.status,'active');assert.equal(app.commit_sha,release.commit,'Deploy unified accounting before enabling flags');}
 const targets=[
- ['cmqqs3ei10063rs0prb7rfim1','branch-main','cmphcywgx00018zks7b15y6dw',170,170,'cmuphgvpn06beox01v8ujxnb0'],
- ['cmqrzv88r00r1rs0ptfvupqdw','branch-main','cmphcywgx00018zks7b15y6dw',205,195,'cmumm737g0019lg012qvz2beq'],
- ['cmphd19v7007m8zks378zo0gz','branch-main','cmphcywgx00018zks7b15y6dw',29,129.3,null],
- ['cmphd3mnh00f58zksi8o3a26o','branch-main','cmphcywgx00018zks7b15y6dw',55,102.6,'cmun0htj400hkl701l0tnwsjy'],
+ ['cmqqs3ei10063rs0prb7rfim1','branch-main','cmphcywgx00018zks7b15y6dw',170,169.8,'cmuphgvpn06beox01v8ujxnb0'],
+ ['cmqrzv88r00r1rs0ptfvupqdw','branch-main','cmphcywgx00018zks7b15y6dw',205,194.8,'cmumm737g0019lg012qvz2beq'],
+ ['cmphd19v7007m8zks378zo0gz','branch-main','cmphcywgx00018zks7b15y6dw',29,129.1,null],
+ ['cmphd3mnh00f58zksi8o3a26o','branch-main','cmphcywgx00018zks7b15y6dw',55,102.4,'cmun0htj400hkl701l0tnwsjy'],
  ['cmphdkc4o01gs8zkskzfqero8','branch-main','cmphcywgx00018zks7b15y6dw',17.16,17.16,'cmun0c31w00fol701ovokrymm'],
  ['cmth1dd8700b9mh0vc9p2tg3o','cmsd9o02w006qmu01u4ij1lhz','cmslptspy003dt40j0osvmccg',58.6,null,null],
 ];
