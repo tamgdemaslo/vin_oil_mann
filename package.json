@@ -85,6 +85,7 @@
     "test:inventory-document-branch-isolation": "node scripts/test-inventory-document-branch-isolation.mjs",
     "test:bulk-oil-barrels": "node scripts/test-bulk-oil-barrels.mjs",
     "test:bulk-oil-unified-stock": "node scripts/test-bulk-oil-unified-stock.mjs",
+    "test:first-barrel-onboarding": "node scripts/test-first-barrel-onboarding.mjs",
     "test:inventory-costing": "node scripts/test-inventory-costing.mjs",
     "test:one-off-product": "node scripts/test-one-off-product.mjs",
     "test:sales-performance": "node scripts/test-sales-performance.mjs",

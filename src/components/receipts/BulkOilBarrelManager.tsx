@@ -1,4 +1,6 @@
 "use client";
+import QuantityInput from "@/components/QuantityInput";
+import { isRecognizedMotorOilMarkingCode } from "@/lib/marking";
 import BarrelCodeInput from "@/components/receipts/BarrelCodeInput";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -17,6 +19,8 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
   const [storeId, setStoreId] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [scannedCode, setScannedCode] = useState("");
+  const [existingCode, setExistingCode] = useState("");
+  const [initialVolume, setInitialVolume] = useState("");
   const [confirmEmpty, setConfirmEmpty] = useState(false);
   const [alreadyAdjusted, setAlreadyAdjusted] = useState(false);
   const [correctionDocumentId, setCorrectionDocumentId] = useState("");
@@ -27,16 +31,21 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
       const response = await fetch(`/api/local-inventory/products/${encodeURIComponent(productId)}/barrels`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Не удалось загрузить бочки.");
-      setData(payload); setConfirmEmpty(false); setAlreadyAdjusted(false); setCorrectionDocumentId(""); setReason("");
+      setData(payload);
+      setInitialVolume((current) => current || String(payload.settings.declaredVolumeLiters ?? ""));
+      setExistingCode((current) => current || payload.settings.activeBarrelMarkingCode || "");
+      setConfirmEmpty(false); setAlreadyAdjusted(false); setCorrectionDocumentId(""); setReason("");
     } catch (e) { setError(e instanceof Error ? e.message : "Не удалось загрузить бочки."); }
     finally { setLoading(false); }
   }, [productId]);
   useEffect(() => { void load(); }, [load]);
-  async function submit(action: "enable" | "switch") {
+  useEffect(() => { if (stores.length === 1) setStoreId((current) => current || stores[0].id); }, [stores]);
+  async function submit(action: "enable" | "switch" | "attach-existing") {
     if (!data) return;
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch(`/api/local-inventory/products/${encodeURIComponent(productId)}/barrels`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, storeId,
+        markingCode: existingCode, volumeLiters: Number(initialVolume.replace(",", ".")),
         barrelId: scannedCode.trim() ? undefined : selectedId, scannedCode,
         expectedActiveId: data.settings.activeBarrelId, expectedRemainingLiters: data.settings.currentVolumeLiters,
         confirmEmpty, reason, alreadyAdjustedDocumentId: alreadyAdjusted ? correctionDocumentId : undefined,
@@ -45,7 +54,7 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
       if (!response.ok) throw new Error(payload.error || "Не удалось сменить бочку.");
       setData(payload); setSelectedId(""); setScannedCode(""); setReason(""); setConfirmEmpty(false); setAlreadyAdjusted(false); setCorrectionDocumentId("");
       await onChanged();
-      setNotice(action === "enable" ? "Отдельный учёт бочек включён. Складской остаток сохранён." : "Бочка подключена. Следующие продажи будут списываться из неё.");
+      setNotice(action === "enable" ? (payload.settings.activeBarrelId ? "Учёт бочек включён. Складской остаток сохранён." : "Учёт бочек включён. Подключите имеющуюся бочку или примите новую.") : action === "attach-existing" ? "Бочка подключена. Остаток взят со склада; повторная приёмка не создавалась." : "Бочка подключена. Следующие продажи будут списываться из неё.");
     } catch (e) { setError(e instanceof Error ? e.message : "Не удалось сменить бочку."); }
     finally { setBusy(false); }
   }
@@ -62,7 +71,15 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
         <label>Склад текущей бочки<select aria-label="Склад текущей бочки" value={storeId} disabled={busy} onChange={(e) => setStoreId(e.target.value)}><option value="">Выберите склад</option>{stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
         <EcoButton variant="primary" type="button" disabled={busy || !storeId} onClick={() => void submit("enable")}>Включить учёт бочек</EcoButton>
       </> : <>
-        <p>{active ? <><b>В разливе: {active.number}</b> · {active.remainingLiters} л · {active.storeName}</> : "Разлив не начат. Выберите принятую бочку."}</p>
+        <p>{active ? <><b>В разливе: {active.number}</b> · {active.remainingLiters} л · {active.storeName}</> : "Разлив не начат. Подключите имеющуюся бочку или выберите принятую."}</p>
+        {!active && <div className="eco-barrel-switch">
+          <h5>Подключить имеющуюся бочку</h5>
+          <p>Если масло уже учтено на складе, отсканируйте код его бочки. Остаток будет взят со склада автоматически.</p>
+          <label>Склад имеющейся бочки<select aria-label="Склад имеющейся бочки" value={storeId} disabled={busy} onChange={(e) => setStoreId(e.target.value)}><option value="">Выберите склад</option>{stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+          <label>Код имеющейся бочки<BarrelCodeInput label="Код имеющейся бочки" value={existingCode} disabled={busy} onCommit={setExistingCode} /></label>
+          <label>Полный объём бочки, л<QuantityInput aria-label="Полный объём бочки, л" value={initialVolume} disabled={busy} onValueChange={(_value, draft) => setInitialVolume(draft)} placeholder="Объём на этикетке" /></label>
+          <EcoButton type="button" variant="primary" disabled={busy || !storeId || !isRecognizedMotorOilMarkingCode(existingCode) || !(Number(initialVolume.replace(",", ".")) > 0)} onClick={() => void submit("attach-existing")}>{busy ? "Подключение…" : "Подключить имеющуюся бочку"}</EcoButton>
+        </div>}
         {sealed.length ? <div className="eco-barrel-switch">
           <h5>{active ? "Сменить бочку" : "Начать разлив"}</h5>
           <label>Новая бочка<select aria-label="Новая бочка" value={selectedId} disabled={busy} onChange={(e) => { setSelectedId(e.target.value); setScannedCode(""); }}><option value="">Выберите принятую бочку</option>{sealed.map((b) => <option key={b.id} value={b.id}>{b.number} · {b.remainingLiters} л · {b.storeName}</option>)}</select></label>
@@ -76,7 +93,7 @@ export default function BulkOilBarrelManager({ productId, stores, onChanged }: {
             <label>Причина расхождения<textarea aria-label="Причина расхождения" rows={2} value={reason} disabled={busy} onChange={(e) => setReason(e.target.value)} placeholder="Например: остаток после проверки, потери при разливе" /></label>
           </>}
           <EcoButton type="button" variant="primary" disabled={busy || (!selectedId && !scannedCode.trim()) || Boolean(active && active.remainingLiters > 0 && (!confirmEmpty || !reason.trim() || (alreadyAdjusted && !correctionDocumentId)))} onClick={() => void submit("switch")}>{busy ? "Сохранение…" : active ? "Закрыть старую и подключить новую" : "Начать разлив"}</EcoButton>
-        </div> : <p>Запечатанных бочек нет. <Link href="/inventory/receipts">Примите новую бочку на склад</Link> и отсканируйте её код в приёмке.</p>}
+        </div> : <p>Для новой поставки: <Link href="/inventory/receipts">примите новую бочку на склад</Link> и отсканируйте её код в приёмке.</p>}
         <div className="eco-barrel-table-wrap"><table><caption>Все бочки этого товара</caption><thead><tr><th>Бочка / приёмка</th><th>Статус</th><th>Остаток</th><th>Склад</th></tr></thead><tbody>{data.barrels.map((b) => <tr key={b.id}><td>{b.number}<small>{new Date(b.receivedAt).toLocaleDateString("ru-RU")}</small></td><td>{statusName[b.status] ?? b.status}</td><td>{b.remainingLiters} / {b.receivedLiters} л</td><td>{b.storeName}</td></tr>)}</tbody></table></div>
       </>}
     </>}

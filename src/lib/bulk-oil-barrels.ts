@@ -88,6 +88,44 @@ export async function enableBarrelTrackingTx(tx: Prisma.TransactionClient, branc
   return next;
 }
 
+export async function enableWarehouseBarrelTrackingTx(tx: Prisma.TransactionClient, branchId: string, product: Product, storeId: string, actor?: Actor) {
+  const settings = await enableBarrelTrackingTx(tx, branchId, product, storeId, actor);
+  if (settings.activeBarrelId) await syncBulkOilWarehouseTx(tx, { branchId, productId: product.id, storeId,
+    documentId: `enable:${product.id}`, reason: "Включение единого складского учёта масла", actor });
+  // No active code yet: expose initial setup instead of requiring an open drum.
+}
+
+/** Attach stock already present after inventory; never create a second receipt. */
+export async function attachExistingBarrelTx(tx: Prisma.TransactionClient, input: {
+  branchId: string; productId: string; storeId: string; markingCode: string; volumeLiters: number; actor?: Actor;
+}) {
+  await lockBarrelProducts(tx, input.branchId, [input.productId]);
+  const product = await tx.localProduct.findFirst({ where: { id: input.productId, branchId: input.branchId } });
+  if (!product?.markingEnabled || product.markingMode !== "BULK_OIL_FROM_MARKED_BARREL") throw new Error("Сохраните товар со сценарием «Масло на разлив из бочки».");
+  const store = await tx.localStore.findFirst({ where: { id: input.storeId, branchId: input.branchId, archived: false } });
+  if (!store) throw new Error("Выберите склад текущего филиала.");
+  const [receipt] = parseBarrelReceipts([{ markingCode: input.markingCode, volumeLiters: input.volumeLiters }], input.volumeLiters);
+  const settings = normalizeProductMarkingSettings(product.markingSettings);
+  if (settings.activeBarrelId || await tx.localBulkOilBarrel.findFirst({ where: { branchId: input.branchId, productId: input.productId, status: "OPEN" } })) throw new Error("У товара уже есть открытая бочка. Используйте смену бочки.");
+  if (await tx.localBulkOilBarrel.findFirst({ where: { branchId: input.branchId, markingCode: receipt.markingCode } })) throw new Error("Этот код бочки уже зарегистрирован. Выберите принятую бочку для начала разлива.");
+  const balance = await tx.localStockBalance.findFirst({ where: { branchId: input.branchId, productId: input.productId, storeId: input.storeId } });
+  const sealed = await tx.localBulkOilBarrel.aggregate({ where: { branchId: input.branchId, productId: input.productId, storeId: input.storeId, status: "SEALED" }, _sum: { remainingLiters: true } });
+  const remaining = Math.round(((balance?.quantity.toNumber() ?? 0) - (sealed._sum.remainingLiters?.toNumber() ?? 0)) * 1000) / 1000;
+  if (remaining <= 0) throw new Error("На выбранном складе нет остатка для подключения имеющейся бочки. Новую поставку оформите через приёмку.");
+  if (remaining > receipt.volumeLiters + 0.000001) throw new Error(`Остаток склада для текущей бочки ${remaining} л превышает её объём ${receipt.volumeLiters} л. Проверьте объём и распределение по бочкам.`);
+  const barrel = await tx.localBulkOilBarrel.create({ data: {
+    branchId: input.branchId, productId: input.productId, storeId: input.storeId,
+    number: settings.activeBarrelName || `Б-${randomUUID().slice(0, 8).toUpperCase()}`,
+    markingCode: receipt.markingCode, gtin: receipt.markingCode.slice(2, 16), status: "OPEN",
+    receivedLiters: receipt.volumeLiters, remainingLiters: remaining, openedAt: new Date(), createdByLogin: input.actor?.login,
+  } });
+  await event(tx, input.branchId, barrel.id, "EXISTING_STOCK_ADOPTED", input.actor, { volumeLiters: remaining, reason: "Подключена имеющаяся бочка по фактическому складскому остатку. Новая приёмка не создавалась; складской остаток не изменён." });
+  await writeSettings(tx, input.branchId, product, { ...settings, barrelTrackingEnabled: true, warehouseLinked: true,
+    allowRepeatedBarrelCode: true, partialWithdrawalEnabled: true, activeBarrelId: barrel.id,
+    activeBarrelMarkingCode: barrel.markingCode, activeBarrelGtin: barrel.gtin, activeBarrelName: barrel.number,
+    declaredVolumeLiters: receipt.volumeLiters, currentVolumeLiters: remaining }, input.actor);
+}
+
 export async function registerReceiptBarrelsTx(tx: Prisma.TransactionClient, input: { branchId: string; documentId: string; storeId: string; positions: Array<{ productId: string; quantity: number; raw: unknown }>; actor?: Actor }) {
   await lockBarrelProducts(tx, input.branchId, input.positions.map((p) => p.productId));
   for (const position of input.positions) {

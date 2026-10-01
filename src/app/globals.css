@@ -71317,7 +71317,7 @@ select[size="1"]::-ms-expand {
 .eco-barrel-manager h4, .eco-barrel-manager h5 { margin: 0; font-size: 14px; font-weight: 700; }
 .eco-barrel-manager p { font-size: 13px; line-height: 1.5; margin: 12px 0; }
 .eco-barrel-manager label, .eco-barrel-receipt-fields label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; min-width: 0; }
-.eco-barrel-manager select, .eco-barrel-manager textarea, .eco-barrel-receipt-fields input, .eco-barrel-receipt-fields textarea { width: 100%; min-width: 0; padding: 8px 10px; color: var(--eco-ink, #0a0a0a); background: #fff; border: 1px solid var(--eco-line-strong, #ccc8bf); border-radius: 6px; font-size: 13px; }
+.eco-barrel-manager input:not([type="checkbox"]), .eco-barrel-manager select, .eco-barrel-manager textarea, .eco-barrel-receipt-fields input, .eco-barrel-receipt-fields textarea { width: 100%; min-width: 0; padding: 8px 10px; color: var(--eco-ink, #0a0a0a); background: #fff; border: 1px solid var(--eco-line-strong, #ccc8bf); border-radius: 6px; font-size: 13px; }
 .eco-barrel-manager textarea, .eco-barrel-receipt-fields textarea { overflow-wrap: anywhere; resize: vertical; }
 .eco-barrel-manager textarea::placeholder, .eco-barrel-receipt-fields textarea::placeholder { color: #536375; }
 .eco-barrel-manager button, .eco-barrel-receipt-fields button { padding: 7px 10px; border: 1px solid var(--eco-line-strong, #ccc8bf); border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
