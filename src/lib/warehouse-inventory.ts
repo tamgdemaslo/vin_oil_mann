@@ -959,6 +959,8 @@ export async function countInventoryLine(
       unitCostCents: line.unitCostSnapshotCents,
     });
 
+    const requiresRecount = outcome.requiresRecount && sequence === 1 && (body.source ?? "MANUAL") !== "MANUAL";
+
     await tx.inventoryCountEntry.create({
       data: {
         inventoryLineId: line.id,
@@ -984,17 +986,17 @@ export async function countInventoryLine(
         countedById: sequence === 1 ? user.login : line.countedById,
         recountedAt: sequence > 1 ? countedAt : line.recountedAt,
         recountedById: sequence > 1 ? user.login : line.recountedById,
-        status: body.confirmZero ? "ZERO_CONFIRMED" : outcome.status,
+        status: body.confirmZero ? "ZERO_CONFIRMED" : outcome.status === "RECOUNT_REQUIRED" && !requiresRecount ? "COUNTED" : outcome.status,
         proposedAction: outcome.proposedAction,
         finalAction: line.finalAction ?? outcome.proposedAction,
-        requiresRecount: outcome.requiresRecount && sequence === 1,
+        requiresRecount,
         comment: cleanText(body.comment) ?? line.comment,
         stockVersion: { increment: 1 },
       },
       include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
     });
     await recalculateSessionSummary(tx, sessionId);
-    const nextSessionStatus = outcome.requiresRecount && sequence === 1 ? "RECOUNT_REQUIRED" : session.status === "RECOUNT_REQUIRED" ? "COUNTING" : session.status;
+    const nextSessionStatus = requiresRecount ? "RECOUNT_REQUIRED" : session.status === "RECOUNT_REQUIRED" ? "COUNTING" : session.status;
     await tx.inventorySession.update({ where: { id: sessionId }, data: { status: nextSessionStatus } });
     await writeAudit(tx, {
       sessionId,

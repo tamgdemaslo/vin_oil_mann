@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  Check,
   CheckCircle2,
   ClipboardList,
   FileDown,
@@ -15,8 +14,6 @@ import {
   Pause,
   Play,
   Plus,
-  RotateCcw,
-  Save,
   ScanLine,
   Search,
   Send,
@@ -449,7 +446,7 @@ function documentAction(session: InventorySession) {
   if (session.status === "PAUSED") return "Продолжить";
   if (session.status === "COUNTING" || session.status === "RECOUNT_REQUIRED") {
     if (session.countMode === "SCAN") return "Завершить сканирование и сверить";
-    return inventoryCountingComplete(session) ? "Завершить подсчёт" : "Продолжить подсчёт";
+    return "Завершить подсчёт";
   }
   if (session.status === "REVIEW" || session.status === "AWAITING_APPROVAL") return "Открыть сверку";
   if (session.status === "POSTED" || session.status === "REVERSED") return "Открыть ведомость";
@@ -523,6 +520,9 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   const [draftSession, setDraftSession] = useState<InventorySession | null>(null);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  const persistedCountValues = useRef<Record<string, number | null>>({});
+  const activeCountSaves = useRef(new Set<Promise<unknown>>());
+  const countSaveByLine = useRef(new Map<string, Promise<unknown>>());
   const [saveState, setSaveState] = useState<SaveState>({});
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -584,6 +584,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     if (countedOnly) params.set("countedOnly", "1");
     params.set("limit", "250");
     const data = await requestJson<LinesResponse>(`/api/inventory/sessions/${sessionId}/lines?${params.toString()}`);
+    for (const line of data.lines) persistedCountValues.current[line.id] = line.finalQuantity;
     setLines(data.lines);
     setInputValues((prev) => {
       const next = { ...prev };
@@ -802,10 +803,32 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   }
 
   async function mutateSession(path: string, body: unknown = {}) {
-    if (!current) return;
+    if (!current || working) return;
     setWorking(true);
     setMessage("");
     try {
+      if (path === "complete-counting") {
+        await Promise.all(activeCountSaves.current);
+        const drafts = Object.entries(inputValues).filter(([id]) => !id.startsWith("comment:"));
+        // Validate all drafts before saving any of them or closing the session.
+        for (const [, value] of drafts) {
+          const normalized = value.trim().replace(/\s/g, "").replace(",", ".");
+          if (!normalized || !Number.isFinite(Number(normalized)) || Number(normalized) < 0) {
+            throw new Error("Введите корректное фактическое количество перед завершением подсчёта");
+          }
+        }
+        for (const [id, value] of drafts) {
+          const quantity = Number(value.trim().replace(/\s/g, "").replace(",", "."));
+          if (persistedCountValues.current[id] === quantity && !lines.find((line) => line.id === id)?.requiresRecount) continue;
+          const data = await requestJson<{ line: InventoryLine }>(`/api/inventory/sessions/${current.id}/lines/${id}/count`, {
+            method: "POST",
+            body: JSON.stringify({ quantity: value, confirmZero: quantity === 0, source: "MANUAL", comment: inputValues[`comment:${id}`] ?? lines.find((line) => line.id === id)?.comment }),
+          });
+          persistedCountValues.current[id] = data.line.finalQuantity;
+          setLines((prev) => prev.map((line) => line.id === id ? data.line : line));
+          setSaveState((prev) => ({ ...prev, [id]: "saved" }));
+        }
+      }
       const data = await requestJson<{ session?: InventorySession; alreadyPosted?: boolean; alreadyReversed?: boolean; removedLines?: number }>(`/api/inventory/sessions/${current.id}/${path}`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -875,12 +898,8 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       return;
     }
     if (current.status === "COUNTING" || current.status === "RECOUNT_REQUIRED") {
-      if (inventoryCountingComplete(current)) {
-        if (current.countMode === "SCAN" && !window.confirm("Завершить сканирование? Все непропиканные позиции будут зафиксированы как фактически 0 и показаны в недостаче.")) return;
-        void mutateSession("complete-counting");
-        return;
-      }
-      document.getElementById("inventory-counting-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (current.countMode === "SCAN" && !window.confirm("Завершить сканирование? Все непропиканные позиции будут зафиксированы как фактически 0 и показаны в недостаче.")) return;
+      void mutateSession("complete-counting");
       return;
     }
     if (current.status === "REVIEW") {
@@ -898,21 +917,37 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     window.open(`/api/inventory/sessions/${current.id}/report?format=html`, "_blank", "noopener,noreferrer");
   }
 
-  async function saveCount(line: InventoryLine, confirmZero = false, source = "MANUAL") {
-    if (!current) return;
-    const value = inputValues[line.id];
+  async function saveCount(line: InventoryLine, confirmZero = false, source = "MANUAL", quantityOverride?: string) {
+    if (!current || working) return;
+    const value = quantityOverride ?? inputValues[line.id];
+    const comment = inputValues[`comment:${line.id}`] ?? line.comment;
+    const previous = countSaveByLine.current.get(line.id);
     setSaveState((prev) => ({ ...prev, [line.id]: "saving" }));
-    try {
+    const operation = (async () => {
+      // Queue whole saves so completion also waits for edits queued behind an earlier request.
+      await previous?.catch(() => undefined);
+      const normalized = value?.trim().replace(/\s/g, "").replace(",", ".");
+      const quantity = confirmZero ? 0 : normalized ? Number(normalized) : NaN;
+      if (!line.requiresRecount && source !== "RECOUNT" && Number.isFinite(quantity) && persistedCountValues.current[line.id] === quantity && comment === line.comment) return;
       const data = await requestJson<{ line: InventoryLine }>(`/api/inventory/sessions/${current.id}/lines/${line.id}/count`, {
         method: "POST",
-        body: JSON.stringify({ quantity: value, confirmZero, source, comment: inputValues[`comment:${line.id}`] ?? line.comment }),
+        body: JSON.stringify({ quantity: value, confirmZero, source, comment }),
       });
+      persistedCountValues.current[line.id] = data.line.finalQuantity;
       setLines((prev) => prev.map((item) => (item.id === line.id ? data.line : item)));
+    })();
+    activeCountSaves.current.add(operation);
+    countSaveByLine.current.set(line.id, operation);
+    try {
+      await operation;
       setSaveState((prev) => ({ ...prev, [line.id]: "saved" }));
       window.setTimeout(() => setSaveState((prev) => ({ ...prev, [line.id]: "idle" })), 1400);
     } catch (error) {
       setSaveState((prev) => ({ ...prev, [line.id]: "error" }));
       setMessage(error instanceof Error ? error.message : "Не удалось сохранить количество");
+    } finally {
+      activeCountSaves.current.delete(operation);
+      if (countSaveByLine.current.get(line.id) === operation) countSaveByLine.current.delete(line.id);
     }
   }
 
@@ -985,6 +1020,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         setLines((prev) => {
           return [data.line!, ...prev.filter((line) => line.id !== data.line!.id)];
         });
+        persistedCountValues.current[data.line.id] = data.line.finalQuantity;
         setInputValues((prev) => ({ ...prev, [data.line!.id]: String(data.line!.finalQuantity ?? "") }));
         setCurrent((prev) => prev ? {
           ...prev,
@@ -1003,6 +1039,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       } else if (data.status === "FOUND" && data.line) {
         playScanFeedback("error");
         setScanFeedback({ token: crypto.randomUUID(), kind: "error", message: `Количество не изменено: ${data.line.name}` });
+        persistedCountValues.current[data.line.id] = data.line.finalQuantity;
         setInputValues((prev) => ({ ...prev, [data.line!.id]: data.line!.finalQuantity == null ? "" : String(data.line!.finalQuantity) }));
         setMessage(`Найдена строка: ${data.line.name}`);
       } else if (data.status === "OUT_OF_SCOPE" && data.product) {
@@ -1049,6 +1086,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       });
       if (data.status === "COUNTED" && data.line) {
         setLines((prev) => [data.line!, ...prev.filter((line) => line.id !== data.line!.id)]);
+        persistedCountValues.current[data.line.id] = data.line.finalQuantity;
         setInputValues((prev) => ({ ...prev, [data.line!.id]: String(data.line!.finalQuantity ?? "") }));
         setCurrent((prev) => prev ? {
           ...prev,
@@ -1088,6 +1126,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
       setLines((prev) => prev.some((line) => line.id === data.line.id)
         ? prev.map((line) => line.id === data.line.id ? data.line : line)
         : [data.line, ...prev]);
+      persistedCountValues.current[data.line.id] = data.line.finalQuantity;
       setInputValues((prev) => ({ ...prev, [data.line.id]: String(data.line.finalQuantity ?? "") }));
       setCurrent((prev) => prev ? {
         ...prev,
@@ -1816,7 +1855,7 @@ function CountingWorkspace(props: {
   inputValues: Record<string, string>;
   setInputValues: (updater: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => void;
   saveState: SaveState;
-  saveCount: (line: InventoryLine, confirmZero?: boolean, source?: string) => Promise<void>;
+  saveCount: (line: InventoryLine, confirmZero?: boolean, source?: string, quantityOverride?: string) => Promise<void>;
   scanBarcode: (barcode: string) => Promise<void>;
   scanProduct: (productId: string) => Promise<void>;
   scanFeedback: ScanVisualFeedback | null;
@@ -2275,9 +2314,25 @@ const InventoryCountRow = memo(function InventoryCountRow({
   paused: boolean;
   working: boolean;
   setInputValues: (updater: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => void;
-  saveCount: (line: InventoryLine, confirmZero?: boolean, source?: string) => Promise<void>;
+  saveCount: (line: InventoryLine, confirmZero?: boolean, source?: string, quantityOverride?: string) => Promise<void>;
   removeLine: (line: InventoryLine) => Promise<void>;
 }) {
+  const saveCallback = useRef(saveCount);
+  const attemptedDraft = useRef<string | null>(null);
+  useEffect(() => { saveCallback.current = saveCount; }, [saveCount]);
+  useEffect(() => {
+    if (paused || working) return;
+    const normalized = inputValue.trim().replace(/\s/g, "").replace(",", ".");
+    if (!normalized || !Number.isFinite(Number(normalized)) || Number(normalized) < 0) return;
+    if (!line.requiresRecount && Number(normalized) === line.finalQuantity && commentValue === (line.comment ?? "")) return;
+    const key = JSON.stringify([line.id, inputValue, commentValue]);
+    if (attemptedDraft.current === key) return;
+    const timer = window.setTimeout(() => {
+      attemptedDraft.current = key;
+      void saveCallback.current(line, Number(normalized) === 0, "MANUAL", inputValue);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [inputValue, commentValue, line, paused, working]);
   return (
     <tr className={`transition-colors duration-500 ${highlighted ? "bg-emerald-100 outline outline-2 outline-inset outline-emerald-400" : ""}`}>
       <td>
@@ -2317,6 +2372,7 @@ const InventoryCountRow = memo(function InventoryCountRow({
         <div className="flex items-center gap-1">
           <EcoInput
             id={`inventory-count-${index}`}
+            onBlur={(event) => void saveCount(line, event.currentTarget.value.trim() !== "" && Number(event.currentTarget.value.trim().replace(/\s/g, "").replace(",", ".")) === 0, "MANUAL", event.currentTarget.value)}
             className="w-28 text-lg font-semibold"
             inputMode="decimal"
             value={inputValue}
@@ -2327,10 +2383,11 @@ const InventoryCountRow = memo(function InventoryCountRow({
                 void saveCount(line).then(() => document.getElementById(`inventory-count-${index + 1}`)?.focus());
               }
             }}
-            disabled={paused}
+            disabled={paused || working}
           />
-          <EcoButton size="sm" onClick={() => setInputValues((prev) => ({ ...prev, [line.id]: String(Math.max(0, Number(prev[line.id] || line.finalQuantity || 0) - 1)) }))}>−</EcoButton>
-          <EcoButton size="sm" onClick={() => setInputValues((prev) => ({ ...prev, [line.id]: String(Number(prev[line.id] || line.finalQuantity || 0) + 1) }))}>+</EcoButton>
+        </div>
+        <div className={`mt-1 text-xs ${saveStatus === "error" ? "text-red-700" : "text-zinc-600"}`} role="status">
+          {saveStatus === "error" ? "Не сохранено — выйдите из поля для повторной попытки" : saveStatus === "saving" ? "Сохранение…" : inputValue.trim() && Number(inputValue.trim().replace(/\s/g, "").replace(",", ".")) === line.finalQuantity ? "Сохранено" : inputValue.trim() ? "Ожидает сохранения" : "Введите количество"}
         </div>
       </td>
       {showAccounting && <td className={line.differenceQuantity && line.differenceQuantity < 0 ? "text-red-700" : line.differenceQuantity && line.differenceQuantity > 0 ? "text-emerald-700" : ""}>{qty(line.differenceQuantity)}<div className="text-xs text-zinc-500">{money(line.differenceCostCents)}</div></td>}
@@ -2343,12 +2400,6 @@ const InventoryCountRow = memo(function InventoryCountRow({
       </td>
       <td>
         <div className="flex flex-wrap gap-1">
-          <EcoButton size="sm" onClick={() => void saveCount(line)} disabled={paused}>
-            {saveStatus === "saving" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : saveStatus === "saved" ? <Check className="h-4 w-4" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
-            {saveStatus === "saving" ? "Сохранение" : saveStatus === "saved" ? "Сохранено" : "Сохранить"}
-          </EcoButton>
-          <EcoButton size="sm" onClick={() => { setInputValues((prev) => ({ ...prev, [line.id]: "0" })); void saveCount(line, true); }} disabled={paused}>Фактически 0</EcoButton>
-          <EcoButton size="sm" onClick={() => void saveCount(line, false, "RECOUNT")} disabled={paused}><RotateCcw className="h-4 w-4" aria-hidden />Пересчёт</EcoButton>
           <EcoButton size="sm" variant="danger" onClick={() => void removeLine(line)} disabled={working || paused}>
             <Trash2 className="h-4 w-4" aria-hidden />Убрать
           </EcoButton>
