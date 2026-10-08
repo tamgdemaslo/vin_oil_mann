@@ -528,7 +528,13 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   const unitCostErrors = useRef(new Set<string>());
   const savedUnitCosts = useRef(new Map<string, number>());
   const countSaveByLine = useRef(new Map<string, Promise<unknown>>());
-  const [saveState, setSaveState] = useState<SaveState>({});
+  const [saveState, renderSaveState] = useState<SaveState>({});
+  const latestSaveState = useRef<SaveState>({});
+  function setSaveState(update: (previous: SaveState) => SaveState) {
+    const next = update(latestSaveState.current);
+    latestSaveState.current = next;
+    renderSaveState(next);
+  }
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -814,7 +820,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     try {
       if (["approve", "submit-review", "post"].includes(path)) {
         await Promise.all(activeCostSaves.current);
-        if (unitCostErrors.current.size > 0) throw new Error("Сначала исправьте ошибки сохранения в строках инвентаризации");
+        if (unitCostErrors.current.size > 0 || Object.values(latestSaveState.current).includes("error")) throw new Error("Сначала исправьте ошибки сохранения в строках инвентаризации");
       }
       if (path === "complete-counting") {
         await Promise.all(activeCountSaves.current);

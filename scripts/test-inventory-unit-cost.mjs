@@ -130,7 +130,17 @@ const guardEnd=client.indexOf('      if (path === "complete-counting")',guardSta
 const guard=transpile('exports.check=async function(){'+client.slice(guardStart,guardEnd)+'};');
 for(const liveError of [false,true]){
  const exports={};
- vm.runInNewContext(guard,{exports,path:'approve',activeCostSaves:{current:new Set()},unitCostErrors:{current:new Set(liveError?['a']:[])},saveState:{a:'error'}});
+ vm.runInNewContext(guard,{exports,path:'approve',activeCostSaves:{current:new Set()},unitCostErrors:{current:new Set(liveError?['a']:[])},latestSaveState:{current:{a:liveError?'error':'saved'}},saveState:{a:'error'}});
  if(liveError)await assert.rejects(exports.check());else await exports.check();
 }
 console.log('Inventory approval: optional empty costs and stale render errors do not block; live failed costs still block.');
+
+const stateStart=client.indexOf('  function setSaveState(update:');
+const stateEnd=client.indexOf('  const [message',stateStart);
+const stateExports={},stateRef={current:{a:'error'}};
+vm.runInNewContext(transpile(client.slice(stateStart,stateEnd)+'exports.update=setSaveState;'),{exports:stateExports,latestSaveState:stateRef,renderSaveState(){}});
+stateExports.update(previous=>({...previous,a:'saved'}));
+assert.equal(stateRef.current.a,'saved','The approval guard sees a successful save before React renders');
+const failureExports={};
+vm.runInNewContext(guard,{exports:failureExports,path:'approve',activeCostSaves:{current:new Set()},unitCostErrors:{current:new Set()},latestSaveState:{current:{a:'error'}}});
+await assert.rejects(failureExports.check(),'Other real row save failures remain blocked');
