@@ -814,7 +814,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     try {
       if (["approve", "submit-review", "post"].includes(path)) {
         await Promise.all(activeCostSaves.current);
-        if (unitCostErrors.current.size > 0 || Object.values(saveState).includes("error")) throw new Error("Сначала исправьте ошибки сохранения в строках инвентаризации");
+        if (unitCostErrors.current.size > 0) throw new Error("Сначала исправьте ошибки сохранения в строках инвентаризации");
       }
       if (path === "complete-counting") {
         await Promise.all(activeCountSaves.current);
@@ -985,6 +985,12 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   async function saveUnitCost(line: InventoryLine, value: string) {
     if (!current || working) return;
     const normalized = value.trim().replace(/\s/g, "").replace(",", ".");
+    // Empty untouched fields are optional when no priced movement is selected.
+    if (!normalized && ((line.differenceQuantity ?? 0) === 0 || line.finalAction === "SKIP")) {
+      unitCostErrors.current.delete(line.id);
+      setSaveState((prev) => ({ ...prev, [line.id]: "idle" }));
+      return;
+    }
     const cents = Math.round(Number(normalized) * 100);
     const previous = costSaveByLine.current.get(line.id);
     setSaveState((prev) => ({ ...prev, [line.id]: "saving" }));

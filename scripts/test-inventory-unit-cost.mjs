@@ -101,14 +101,14 @@ console.log('Inventory posting: entered missing cost, weighted surplus, preserve
 const client=fs.readFileSync('src/app/warehouse/inventory/WarehouseInventoryClient.tsx','utf8');
 const saveStart=client.indexOf('  async function saveUnitCost(');
 const saveEnd=client.indexOf('  async function saveReviewActual(',saveStart);
-async function clientSave(drafts,fail=false){
+async function clientSave(drafts,fail=false,linePatch={}){
  const exports={},requests=[],updates=[],errors={current:new Set()},active={current:new Set()};
  vm.runInNewContext(transpile(client.slice(saveStart,saveEnd)+'\nexports.save=saveUnitCost;'),{
   exports,Error,current:{id:'s'},working:false,costSaveByLine:{current:new Map()},activeCostSaves:active,savedUnitCosts:{current:new Map()},unitCostErrors:errors,
   setSaveState(){},setMessage(){},setReconciliation(){},setCurrent(session){updates.push(session);},
   async requestJson(url,options){requests.push({url,body:JSON.parse(options.body)});if(fail)throw new Error('Offline');return {line:{id:'a'},session:{status:'REVIEW',approvedAt:null}};},
  });
- await Promise.all(drafts.map((draft)=>exports.save({id:'a',unitCostSnapshotCents:null},draft)));
+ await Promise.all(drafts.map((draft)=>exports.save({id:'a',unitCostSnapshotCents:null,differenceQuantity:1,...linePatch},draft)));
  return {requests,updates,errors,active};
 }
 let saved=await clientSave(['1 234,56','1 234,56']);
@@ -118,3 +118,19 @@ assert.equal(saved.updates[0].status,'REVIEW');assert.equal(saved.active.current
 saved=await clientSave(['0']);assert.equal(saved.requests.length,0);assert.equal(saved.errors.current.has('a'),true);
 saved=await clientSave(['500'],true);assert.equal(saved.updates.length,0);assert.equal(saved.errors.current.has('a'),true);
 console.log('Inventory price input: rouble/kopeck conversion, duplicate protection, approval refresh and error tracking passed.');
+
+saved=await clientSave([''],false,{differenceQuantity:0});
+assert.equal(saved.requests.length,0);assert.equal(saved.errors.current.size,0,'An optional empty price must not block approval');
+saved=await clientSave([''],false,{finalAction:'SKIP'});
+assert.equal(saved.errors.current.size,0,'Skipped movement needs no price');
+saved=await clientSave(['']);assert.equal(saved.errors.current.has('a'),true,'Required blank price remains an error');
+saved=await clientSave(['0','500']);assert.equal(saved.errors.current.size,0,'A corrected price clears the live approval blocker');
+const guardStart=client.indexOf('      if (["approve", "submit-review", "post"].includes(path))');
+const guardEnd=client.indexOf('      if (path === "complete-counting")',guardStart);
+const guard=transpile('exports.check=async function(){'+client.slice(guardStart,guardEnd)+'};');
+for(const liveError of [false,true]){
+ const exports={};
+ vm.runInNewContext(guard,{exports,path:'approve',activeCostSaves:{current:new Set()},unitCostErrors:{current:new Set(liveError?['a']:[])},saveState:{a:'error'}});
+ if(liveError)await assert.rejects(exports.check());else await exports.check();
+}
+console.log('Inventory approval: optional empty costs and stale render errors do not block; live failed costs still block.');
