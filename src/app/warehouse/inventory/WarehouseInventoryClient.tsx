@@ -162,6 +162,7 @@ type InventoryLine = {
   finalQuantity: number | null;
   differenceQuantity: number | null;
   unitCostSnapshotCents: number | null;
+  hasEnteredUnitCost?: boolean;
   differenceCostCents: number | null;
   countedAt: string | null;
   status: string;
@@ -942,7 +943,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         body: JSON.stringify({ quantity: value, confirmZero, source, comment }),
       });
       persistedCountValues.current[line.id] = data.line.finalQuantity;
-      setLines((prev) => prev.map((item) => (item.id === line.id ? data.line : item)));
+      setLines((prev) => prev.map((item) => (item.id === line.id ? { ...item, ...data.line } : item)));
     })();
     activeCountSaves.current.add(operation);
     countSaveByLine.current.set(line.id, operation);
@@ -972,7 +973,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
           affectsManagementProfit: patch.affectsManagementProfit ?? line.affectsManagementProfit,
         }),
       });
-      setReconciliation((prev) => prev ? { ...prev, lines: prev.lines.map((item) => (item.id === line.id ? data.line : item)) } : prev);
+      setReconciliation((prev) => prev ? { ...prev, lines: prev.lines.map((item) => (item.id === line.id ? { ...item, ...data.line } : item)) } : prev);
       setSaveState((prev) => ({ ...prev, [line.id]: "saved" }));
       window.setTimeout(() => setSaveState((prev) => ({ ...prev, [line.id]: "idle" })), 1400);
     } catch (error) {
@@ -995,7 +996,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         method: "PATCH", body: JSON.stringify({ unitCostCents: cents }),
       });
       savedUnitCosts.current.set(line.id, cents);
-      setReconciliation((prev) => prev ? { ...prev, session: data.session, lines: prev.lines.map((item) => item.id === line.id ? data.line : item) } : prev);
+      setReconciliation((prev) => prev ? { ...prev, session: data.session, lines: prev.lines.map((item) => item.id === line.id ? { ...item, ...data.line } : item) } : prev);
       setCurrent(data.session);
     })();
     activeCostSaves.current.add(operation);
@@ -1029,7 +1030,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
         method: "PATCH",
         body: JSON.stringify({ quantity: normalized }),
       });
-      setReconciliation((prev) => prev ? { ...prev, session: data.session, lines: prev.lines.map((item) => (item.id === line.id ? data.line : item)) } : prev);
+      setReconciliation((prev) => prev ? { ...prev, session: data.session, lines: prev.lines.map((item) => (item.id === line.id ? { ...item, ...data.line } : item)) } : prev);
       setCurrent(data.session);
       setSaveState((prev) => ({ ...prev, [line.id]: "saved" }));
       setMessage("");
@@ -2613,7 +2614,7 @@ function ReconciliationWorkspace({
                 </td>
                 <td>{qty(line.snapshotReservedQuantity)}</td>
                 <td>
-                  {["REVIEW", "AWAITING_APPROVAL"].includes(current.status) && ((line.differenceQuantity ?? 0) > 0 || !line.unitCostSnapshotCents) ? (
+                  {["REVIEW", "AWAITING_APPROVAL"].includes(current.status) && ((line.differenceQuantity ?? 0) > 0 || !line.unitCostSnapshotCents || line.hasEnteredUnitCost) ? (
                     <InventoryUnitCostInput key={line.id} line={line} save={saveUnitCost} disabled={working} />
                   ) : money(line.unitCostSnapshotCents)}
                   {((line.differenceQuantity ?? 0) !== 0 && !line.unitCostSnapshotCents && action !== "SKIP") && <p className="mt-1 text-xs text-red-700">Укажите цену перед проведением</p>}

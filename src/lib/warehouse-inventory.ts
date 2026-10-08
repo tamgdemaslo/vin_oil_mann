@@ -1316,9 +1316,14 @@ export async function getInventoryReconciliation(sessionId: string) {
     orderBy: [{ createdAt: "desc" }],
     take: 200,
   });
+  const costEdits = await prisma.inventoryAuditLog.findMany({
+    where: { inventorySessionId: sessionId, action: "SET_UNIT_COST" },
+    select: { inventoryLineId: true },
+  });
+  const pricedLineIds = new Set(costEdits.map((entry) => entry.inventoryLineId));
   return {
     session,
-    lines: lines.map(mapLine),
+    lines: lines.map((line) => ({ ...mapLine(line), hasEnteredUnitCost: pricedLineIds.has(line.id) })),
     movements: movements.map((entry) => ({
       id: entry.id,
       movementType: entry.movementType,
@@ -1515,7 +1520,7 @@ export async function updateInventoryLineUnitCost(
       oldValue: { unitCostSnapshotCents: line.unitCostSnapshotCents },
       newValue: { unitCostSnapshotCents: price }, user,
     });
-    return { ok: true as const, data: { line: mapLine(updated), session: mapSession(updatedSession) } };
+    return { ok: true as const, data: { line: { ...mapLine(updated), hasEnteredUnitCost: true }, session: mapSession(updatedSession) } };
   });
 }
 

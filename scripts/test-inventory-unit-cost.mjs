@@ -33,6 +33,7 @@ async function exercise(price,status='AWAITING_APPROVAL',found=true){
 }
 let result=await exercise(123456);
 assert.equal(result.result.ok,true);
+assert.equal(result.result.data.line.hasEnteredUnitCost,true);
 assert.equal(result.writes[0].line.unitCostSnapshotCents,123456);
 assert.equal(result.writes[0].line.differenceCostCents,246912);
 assert.equal(result.writes[1].session.status,'REVIEW');
