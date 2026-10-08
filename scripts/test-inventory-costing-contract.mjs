@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -56,6 +57,8 @@ assert.match(warehouseInventory, /costStatus = unknownCostTechnicalClearanceLine
 assert.match(warehouseInventory, /totalCostSnapshot = movementCostCents == null[\s\S]*?\? null/);
 assert.match(warehouseInventory, /affectsManagementProfit: false/);
 assert.match(warehouseInventoryUi, /function inventoryCountingComplete/);
-assert.match(warehouseInventoryUi, /inventoryCountingComplete\(current\)[\s\S]*?mutateSession\("complete-counting"\)/);
+// Completion must flush draft quantities rather than gate on stale summary counters.
+const countRegression = spawnSync(process.execPath, ["scripts/test-inventory-count-completion.mjs"], { cwd: root, encoding: "utf8" });
+assert.equal(countRegression.status, 0, countRegression.stderr);
 
 console.log("inventory costing integration contract: ok");

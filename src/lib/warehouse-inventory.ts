@@ -1,4 +1,5 @@
 import { lockBarrelProducts, syncBulkOilWarehouseTx } from "@/lib/bulk-oil-barrels";
+import { resolveInventoryAverageCost } from "@/lib/inventory-unit-cost";
 import { Prisma } from "@prisma/client";
 import type { User } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -1473,6 +1474,51 @@ export async function updateInventoryLineActual(
   return result;
 }
 
+export async function updateInventoryLineUnitCost(
+  sessionId: string,
+  lineId: string,
+  body: { unitCostCents?: unknown },
+  user: User,
+) {
+  const price = body.unitCostCents;
+  if (typeof price !== "number" || !Number.isInteger(price) || price <= 0 || price > 2_147_483_647) {
+    return { ok: false as const, error: "Укажите закупочную цену больше нуля с точностью до копейки" };
+  }
+  return prisma.$transaction(async (tx) => {
+    let session = await tx.inventorySession.findUnique({ where: { id: sessionId } });
+    if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM inventory_sessions WHERE id = ${sessionId} AND branch_id = ${session.branchId} FOR UPDATE`);
+    session = await tx.inventorySession.findUnique({ where: { id: sessionId } });
+    if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
+    if (!["REVIEW", "AWAITING_APPROVAL"].includes(session.status)) {
+      return { ok: false as const, error: "Закупочную цену можно указать только до проведения инвентаризации" };
+    }
+    const line = await tx.inventoryLine.findFirst({ where: { id: lineId, inventorySessionId: sessionId } });
+    if (!line || line.status === "EXCLUDED") return { ok: false as const, error: "Строка инвентаризации не найдена", status: 404 };
+    const updated = await tx.inventoryLine.update({
+      where: { id: lineId },
+      data: {
+        unitCostSnapshotCents: price,
+        differenceCostCents: costForDifference(line.differenceQuantity, price),
+        stockVersion: { increment: 1 },
+      },
+      include: { product: true, countEntries: { orderBy: { sequence: "asc" } } },
+    });
+    await recalculateSessionSummary(tx, sessionId);
+    const updatedSession = await tx.inventorySession.update({
+      where: { id: sessionId },
+      data: { status: "REVIEW", approvedAt: null, approvedById: null, version: { increment: 1 } },
+      include: { organization: true, warehouse: true, _count: { select: { lines: true } } },
+    });
+    await writeAudit(tx, {
+      sessionId, lineId, action: "SET_UNIT_COST",
+      oldValue: { unitCostSnapshotCents: line.unitCostSnapshotCents },
+      newValue: { unitCostSnapshotCents: price }, user,
+    });
+    return { ok: true as const, data: { line: mapLine(updated), session: mapSession(updatedSession) } };
+  });
+}
+
 export async function updateInventoryLineResolution(
   sessionId: string,
   lineId: string,
@@ -1625,10 +1671,13 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
   if (user.role !== "owner") return { ok: false as const, error: "Провести инвентаризацию может только владелец" };
   const idempotencyKey = cleanText(body.idempotencyKey) ?? `post:${sessionId}`;
   const result = await prisma.$transaction(async (tx) => {
-    const session = await tx.inventorySession.findUnique({
+    let session = await tx.inventorySession.findUnique({
       where: { id: sessionId },
       include: { warehouse: true, organization: true },
     });
+    if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM inventory_sessions WHERE id = ${sessionId} AND branch_id = ${session.branchId} FOR UPDATE`);
+    session = await tx.inventorySession.findUnique({ where: { id: sessionId }, include: { warehouse: true, organization: true } });
     if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
     if (session.status === "POSTED") return { ok: true as const, data: { alreadyPosted: true } };
     if (session.lastPostIdempotencyKey === idempotencyKey && session.postedAt) {
@@ -1649,6 +1698,12 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
       productIds: lines.map((line) => line.productId).filter((id): id is string => Boolean(id)),
     });
     await lockBarrelProducts(tx, session.branchId, lines.map((line) => line.productId).filter((id): id is string => Boolean(id)));
+    const enteredCosts = await tx.inventoryAuditLog.findMany({
+      where: { inventorySessionId: session.id, action: "SET_UNIT_COST" },
+      orderBy: { createdAt: "asc" },
+    });
+    const enteredCostByLine = new Map(enteredCosts.map((entry) => [entry.inventoryLineId, asRecord(entry.newValueJson).unitCostSnapshotCents]));
+    const resolvedAverageByLine = new Map<string, number | null | undefined>();
     const movementCostByLine = new Map<string, number>();
     const unknownCostTechnicalClearanceLineIds = new Set<string>();
 
@@ -1664,6 +1719,9 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
       if (nextQuantity.lt(currentReserve)) {
         return { ok: false as const, error: `Фактический остаток станет меньше резерва: ${line.product?.name ?? line.id}` };
       }
+      const enteredCost = enteredCostByLine.get(line.id);
+      const averageCost = resolveInventoryAverageCost(current?.buyPriceCents, line.unitCostSnapshotCents, typeof enteredCost === "number" ? enteredCost : null);
+      resolvedAverageByLine.set(line.id, averageCost);
       try {
         if (line.differenceQuantity.gt(0)) {
           if (line.unitCostSnapshotCents == null || line.unitCostSnapshotCents <= 0) {
@@ -1671,7 +1729,7 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
           }
           calculateWeightedAverageCostCents({
             oldQuantity: currentQuantity.toNumber(),
-            oldAverageCostCents: current?.buyPriceCents,
+            oldAverageCostCents: averageCost,
             receivedQuantity: line.differenceQuantity.toNumber(),
             receiptUnitCostCents: line.unitCostSnapshotCents,
             productName: line.product?.name ?? line.id,
@@ -1680,7 +1738,7 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
         } else if (
           line.finalAction === "SHORTAGE_TECHNICAL"
           && nextQuantity.equals(ZERO)
-          && (current?.buyPriceCents == null || current.buyPriceCents <= 0)
+          && (averageCost == null || averageCost <= 0)
         ) {
           // A legacy balance with no reconstructable cost may only be removed in full,
           // as a non-analytical technical correction. The cost remains explicitly
@@ -1689,7 +1747,7 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
         } else {
           movementCostByLine.set(line.id, requireBalanceAverageCost({
             productName: line.product?.name ?? line.id,
-            averageCostCents: current?.buyPriceCents,
+            averageCostCents: averageCost,
           }));
         }
       } catch (error) {
@@ -1747,15 +1805,16 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
       const currentQuantity = current?.quantity ?? ZERO;
       const reserve = current?.reserve ?? ZERO;
       const nextQuantity = currentQuantity.plus(line.differenceQuantity);
+      const averageCost = resolvedAverageByLine.get(line.id);
       const nextAverageCost = line.differenceQuantity.gt(0)
         ? calculateWeightedAverageCostCents({
             oldQuantity: currentQuantity.toNumber(),
-            oldAverageCostCents: current?.buyPriceCents,
+            oldAverageCostCents: averageCost,
             receivedQuantity: line.differenceQuantity.toNumber(),
             receiptUnitCostCents: movementCostCents as number,
             productName: line.product?.name ?? line.id,
           })
-        : current?.buyPriceCents ?? movementCostCents;
+        : averageCost ?? movementCostCents;
       const ledger = await tx.inventoryLedgerEntry.create({
         data: {
           branchId: session.branchId,
@@ -1778,7 +1837,7 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
             finalAction: line.finalAction,
             reasonCode: line.reasonCode,
             costStatus,
-            balanceBefore: { quantity: currentQuantity.toNumber(), reserve: reserve.toNumber(), averageCostCents: current?.buyPriceCents ?? null },
+            balanceBefore: { quantity: currentQuantity.toNumber(), reserve: reserve.toNumber(), averageCostCents: averageCost ?? null, recordedAverageCostCents: current?.buyPriceCents ?? null },
             balanceAfter: { quantity: nextQuantity.toNumber(), reserve: reserve.toNumber(), averageCostCents: nextAverageCost },
           }),
         },

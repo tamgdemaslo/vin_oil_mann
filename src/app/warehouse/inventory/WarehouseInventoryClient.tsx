@@ -522,6 +522,10 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
   const persistedCountValues = useRef<Record<string, number | null>>({});
   const activeCountSaves = useRef(new Set<Promise<unknown>>());
+  const activeCostSaves = useRef(new Set<Promise<unknown>>());
+  const costSaveByLine = useRef(new Map<string, Promise<unknown>>());
+  const unitCostErrors = useRef(new Set<string>());
+  const savedUnitCosts = useRef(new Map<string, number>());
   const countSaveByLine = useRef(new Map<string, Promise<unknown>>());
   const [saveState, setSaveState] = useState<SaveState>({});
   const [message, setMessage] = useState("");
@@ -807,6 +811,10 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     setWorking(true);
     setMessage("");
     try {
+      if (["approve", "submit-review", "post"].includes(path)) {
+        await Promise.all(activeCostSaves.current);
+        if (unitCostErrors.current.size > 0 || Object.values(saveState).includes("error")) throw new Error("Сначала исправьте ошибки сохранения в строках инвентаризации");
+      }
       if (path === "complete-counting") {
         await Promise.all(activeCountSaves.current);
         const drafts = Object.entries(inputValues).filter(([id]) => !id.startsWith("comment:"));
@@ -970,6 +978,40 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     } catch (error) {
       setSaveState((prev) => ({ ...prev, [line.id]: "error" }));
       setMessage(error instanceof Error ? error.message : "Не удалось сохранить решение");
+    }
+  }
+
+  async function saveUnitCost(line: InventoryLine, value: string) {
+    if (!current || working) return;
+    const normalized = value.trim().replace(/\s/g, "").replace(",", ".");
+    const cents = Math.round(Number(normalized) * 100);
+    const previous = costSaveByLine.current.get(line.id);
+    setSaveState((prev) => ({ ...prev, [line.id]: "saving" }));
+    const operation = (async () => {
+      await previous?.catch(() => undefined);
+      if (!normalized || !Number.isFinite(cents) || cents <= 0 || cents > 2_147_483_647) throw new Error("Введите закупочную цену больше нуля");
+      if ((savedUnitCosts.current.get(line.id) ?? line.unitCostSnapshotCents) === cents) return;
+      const data = await requestJson<{ line: InventoryLine; session: InventorySession }>(`/api/inventory/sessions/${current.id}/lines/${line.id}/unit-cost`, {
+        method: "PATCH", body: JSON.stringify({ unitCostCents: cents }),
+      });
+      savedUnitCosts.current.set(line.id, cents);
+      setReconciliation((prev) => prev ? { ...prev, session: data.session, lines: prev.lines.map((item) => item.id === line.id ? data.line : item) } : prev);
+      setCurrent(data.session);
+    })();
+    activeCostSaves.current.add(operation);
+    costSaveByLine.current.set(line.id, operation);
+    try {
+      await operation;
+      unitCostErrors.current.delete(line.id);
+      setSaveState((prev) => ({ ...prev, [line.id]: "saved" }));
+      setMessage("");
+    } catch (error) {
+      unitCostErrors.current.add(line.id);
+      setSaveState((prev) => ({ ...prev, [line.id]: "error" }));
+      setMessage(error instanceof Error ? error.message : "Не удалось сохранить закупочную цену");
+    } finally {
+      activeCostSaves.current.delete(operation);
+      if (costSaveByLine.current.get(line.id) === operation) costSaveByLine.current.delete(line.id);
     }
   }
 
@@ -1316,6 +1358,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
                   saveState={saveState}
                   saveResolution={saveResolution}
                   saveActual={saveReviewActual}
+                  saveUnitCost={saveUnitCost}
                   mutateSession={mutateSession}
                   cancelSession={cancelCurrentSession}
                   working={working}
@@ -2420,12 +2463,35 @@ function actionOptionsForLine(line: InventoryLine) {
   return FINAL_ACTIONS.filter((item) => item.value === "NO_ACTION" || item.value === "CELL_TRANSFER" || item.value === "SKIP");
 }
 
+function InventoryUnitCostInput({ line, save, disabled }: {
+  line: InventoryLine;
+  save: (line: InventoryLine, value: string) => Promise<void>;
+  disabled: boolean;
+}) {
+  const [draft, setDraft] = useState(line.unitCostSnapshotCents ? String(line.unitCostSnapshotCents / 100).replace(".", ",") : "");
+  const callback = useRef(save);
+  const attempted = useRef<string | null>(null);
+  useEffect(() => { callback.current = save; }, [save]);
+  useEffect(() => {
+    if (disabled || !draft.trim()) return;
+    const cents = Math.round(Number(draft.trim().replace(/\s/g, "").replace(",", ".")) * 100);
+    if (cents === line.unitCostSnapshotCents || attempted.current === draft) return;
+    const timer = window.setTimeout(() => { attempted.current = draft; void callback.current(line, draft); }, 400);
+    return () => window.clearTimeout(timer);
+  }, [draft, line, disabled]);
+  return <EcoInput className="w-32" inputMode="decimal" aria-label={`Закупочная цена за единицу: ${line.name}`} placeholder="Введите цену" value={draft} disabled={disabled}
+    onChange={(event) => setDraft(event.target.value)}
+    onBlur={() => void save(line, draft)}
+    onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void save(line, draft); } }} />;
+}
+
 function ReconciliationWorkspace({
   current,
   data,
   saveState,
   saveResolution,
   saveActual,
+  saveUnitCost,
   mutateSession,
   cancelSession,
   working,
@@ -2435,6 +2501,7 @@ function ReconciliationWorkspace({
   saveState: SaveState;
   saveResolution: (line: InventoryLine, patch: Partial<InventoryLine>) => Promise<void>;
   saveActual: (line: InventoryLine, quantity: string) => Promise<void>;
+  saveUnitCost: (line: InventoryLine, value: string) => Promise<void>;
   mutateSession: (path: string, body?: unknown) => Promise<void>;
   cancelSession: () => void;
   working: boolean;
@@ -2498,7 +2565,7 @@ function ReconciliationWorkspace({
             <th>Факт</th>
             <th>Разница</th>
             <th>Резерв</th>
-            <th>Себестоимость</th>
+            <th>Закупочная цена, ₽/ед.</th>
             <th>Действие</th>
             <th>Статус</th>
           </tr>
@@ -2545,7 +2612,12 @@ function ReconciliationWorkspace({
                   <div className="text-xs text-zinc-500">{money(line.differenceCostCents)}</div>
                 </td>
                 <td>{qty(line.snapshotReservedQuantity)}</td>
-                <td>{money(line.unitCostSnapshotCents)}</td>
+                <td>
+                  {["REVIEW", "AWAITING_APPROVAL"].includes(current.status) && ((line.differenceQuantity ?? 0) > 0 || !line.unitCostSnapshotCents) ? (
+                    <InventoryUnitCostInput key={line.id} line={line} save={saveUnitCost} disabled={working} />
+                  ) : money(line.unitCostSnapshotCents)}
+                  {((line.differenceQuantity ?? 0) !== 0 && !line.unitCostSnapshotCents && action !== "SKIP") && <p className="mt-1 text-xs text-red-700">Укажите цену перед проведением</p>}
+                </td>
                 <td>
                   <EcoSelect value={action} onChange={(event) => void saveResolution(line, { finalAction: event.target.value })}>
                     {actionOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}

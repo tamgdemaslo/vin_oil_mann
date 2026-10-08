@@ -26,6 +26,7 @@ import {
   submitInventoryReview,
   updateInventoryLineResolution,
   updateInventoryLineActual,
+  updateInventoryLineUnitCost,
   updateInventorySession,
   validateInventoryImport,
 } from "@/lib/warehouse-inventory";
@@ -251,6 +252,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     if (path.length === 1) return apiResult(await updateInventorySession(sessionId, body as Parameters<typeof updateInventorySession>[1], session.user));
     if (action === "lines" && lineId && leaf === "resolution") {
       return apiResult(await updateInventoryLineResolution(sessionId, lineId, body as Parameters<typeof updateInventoryLineResolution>[2], session.user));
+    }
+    if (action === "lines" && lineId && leaf === "unit-cost") {
+      return apiResult(await updateInventoryLineUnitCost(sessionId, lineId, body as Parameters<typeof updateInventoryLineUnitCost>[2], session.user));
     }
     if (action === "lines" && lineId && leaf === "actual") {
       return apiResult(await updateInventoryLineActual(sessionId, lineId, body as Parameters<typeof updateInventoryLineActual>[2], session.user));
