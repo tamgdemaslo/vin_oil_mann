@@ -2538,76 +2538,117 @@ function RosskoOfferPanel({
 
       {!!rows.length && (
         <div className="eco-restock-offer-list">
-          {rows.map((row) => {
-            const key = offerStockKey(item.productId, row.offer, row.stock);
-            const quantity = offerQty(key, item, row.stock);
-            const count = stockCount(row.stock);
-            const price = stockPrice(row.stock);
-            const inCart = cartQtyByOffer.get(key) ?? 0;
-            const badges = offerBadges(rows, item, row);
-            const shortage = defaultQty(item);
-            const insufficient = count !== null && count < shortage;
-            const qtyError = count !== null && quantity > count;
-            const stateKey = addState[key];
-            return (
-              <article key={key} className={`eco-restock-offer ${inCart ? "is-selected" : ""}`}>
-                <div className="eco-restock-offer__title">
-                  <strong>{row.offer.partnumber}</strong>
-                  <span>{row.offer.brand}{row.stock.city ? ` · ${row.stock.city}` : ""}</span>
-                </div>
-                <div className="eco-restock-offer__facts">
-                  <span>Наличие: <b>{fmtNum(count)}</b></span>
-                  <span>Цена: <b>{fmtMoney(price)} ₽</b></span>
-                  <span>Доставка: <b>{deliveryLabel(row.stock)}</b></span>
-                </div>
-                {!!badges.length && (
-                  <div className="eco-restock-offer__badges">
-                    {badges.map((badge) => <span key={badge}>{badge}</span>)}
-                  </div>
-                )}
-                <div className="eco-restock-offer__buy">
-                  <label>
-                    <span>К заказу</span>
-                    <EcoInput
-                      type="number"
-                      min={1}
-                      max={count ?? undefined}
-                      step={1}
-                      value={quantity}
-                      onChange={(event) => setOfferQty(key, parseInt(event.target.value, 10) || 1)}
-                    />
-                  </label>
-                  <EcoButton
-                    type="button"
-                    size="sm"
-                    variant={inCart ? "secondary" : "primary"}
-                    disabled={(!!stateKey && stateKey === "loading") || qtyError}
-                    onClick={() =>
-                      addToCart({
-                        productId: item.productId,
-                        title: String(item.name ?? ""),
-                        code: String(item.code ?? ""),
-                        partnumber: row.offer.partnumber,
-                        brand: row.offer.brand,
-                        stock: row.stock.id,
-                        count: quantity,
-                        price,
-                        delivery: deliveryLabel(row.stock),
-                        available: count,
-                        city: row.stock.city,
-                        offerName: row.offer.name,
-                      })
-                    }
-                  >
-                    {stateKey === "loading" ? <Loader2 size={14} className="eco-spin" /> : inCart ? <CheckCircle2 size={14} /> : <ShoppingCart size={14} />}
-                    {stateKey === "loading" ? "Добавляем…" : inCart ? `В корзине: ${inCart}` : "В корзину"}
-                  </EcoButton>
-                </div>
-                {insufficient && <p className="eco-restock-offer-warning">Доступно только {fmtNum(count)} из {fmtNum(shortage)}</p>}
-                {qtyError && <p className="eco-restock-offer-warning">Недостаточно наличия</p>}
-              </article>
-            );
-          })}
+          <table className="eco-restock-offers-table" aria-label="Предложения ROSSKO по складам">
+            <colgroup>
+              <col className="eco-restock-offers-col--brand" />
+              <col className="eco-restock-offers-col--article" />
+              <col />
+              <col className="eco-restock-offers-col--delivery" />
+              <col className="eco-restock-offers-col--stock" />
+              <col className="eco-restock-offers-col--price" />
+              <col className="eco-restock-offers-col--order" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">Бренд</th>
+                <th scope="col">Номер</th>
+                <th scope="col">Наименование</th>
+                <th scope="col">Доставим</th>
+                <th scope="col">Остаток</th>
+                <th scope="col">Цена, ₽</th>
+                <th scope="col">К заказу</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const key = offerStockKey(item.productId, row.offer, row.stock);
+                const quantity = offerQty(key, item, row.stock);
+                const count = stockCount(row.stock);
+                const price = stockPrice(row.stock);
+                const inCart = cartQtyByOffer.get(key) ?? 0;
+                const badges = offerBadges(rows, item, row);
+                const shortage = defaultQty(item);
+                const insufficient = count !== null && count < shortage;
+                const qtyError = count !== null && quantity > count;
+                const stateKey = addState[key];
+                const offerName = row.offer.name || item.name || "Товар без названия";
+                const warning = qtyError
+                  ? "Недостаточно наличия"
+                  : insufficient ? `Доступно только ${fmtNum(count)} из ${fmtNum(shortage)}` : "";
+                return (
+                  <tr key={key} className={`eco-restock-offer ${inCart ? "is-selected" : ""}`}>
+                    <td className="eco-restock-offer__brand" data-label="Бренд">
+                      <span title={row.offer.brand || undefined}>{row.offer.brand || "—"}</span>
+                    </td>
+                    <td className="eco-restock-offer__article" data-label="Номер">
+                      <span title={row.offer.partnumber || undefined}>{row.offer.partnumber || "—"}</span>
+                    </td>
+                    <td className="eco-restock-offer__name" data-label="Наименование">
+                      <strong title={offerName}>{offerName}</strong>
+                      {warning ? (
+                        <p className="eco-restock-offer-warning" title={warning}>{warning}</p>
+                      ) : (
+                        <div className="eco-restock-offer__badges" title={badges.join(" · ") || undefined}>
+                          {badges.map((badge) => <span key={badge}>{badge}</span>)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="eco-restock-offer__delivery" data-label="Доставим">
+                      <strong>{deliveryLabel(row.stock)}</strong>
+                      <span title={row.stock.city || undefined}>{row.stock.city || "Склад ROSSKO"}</span>
+                    </td>
+                    <td className="eco-restock-offer__stock" data-label="Остаток">
+                      {fmtNum(count)}{count !== null ? " шт." : ""}
+                    </td>
+                    <td className="eco-restock-offer__price" data-label="Цена, ₽">{fmtMoney(price)}</td>
+                    <td className="eco-restock-offer__order" data-label="К заказу">
+                      <div className="eco-restock-offer__buy">
+                        <EcoInput
+                          type="number"
+                          min={1}
+                          max={count ?? undefined}
+                          step={1}
+                          value={quantity}
+                          onChange={(event) => setOfferQty(key, parseInt(event.target.value, 10) || 1)}
+                          aria-label={`Количество ${row.offer.brand} ${row.offer.partnumber}, склад ${row.stock.id}`}
+                          aria-invalid={qtyError || undefined}
+                        />
+                        <EcoButton
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={(!!stateKey && stateKey === "loading") || qtyError}
+                          aria-label={stateKey === "loading" ? "Добавляем в корзину" : `В корзину: ${row.offer.brand} ${row.offer.partnumber}, склад ${row.stock.id}`}
+                          title={inCart ? `В корзине ${inCart} шт. Добавить ещё` : "Добавить в корзину"}
+                          onClick={() =>
+                            addToCart({
+                              productId: item.productId,
+                              title: String(item.name ?? ""),
+                              code: String(item.code ?? ""),
+                              partnumber: row.offer.partnumber,
+                              brand: row.offer.brand,
+                              stock: row.stock.id,
+                              count: quantity,
+                              price,
+                              delivery: deliveryLabel(row.stock),
+                              available: count,
+                              city: row.stock.city,
+                              offerName: row.offer.name,
+                            })
+                          }
+                        >
+                          {stateKey === "loading" ? <Loader2 size={18} className="eco-spin" /> : inCart ? <CheckCircle2 size={18} /> : <ShoppingCart size={18} />}
+                        </EcoButton>
+                      </div>
+                      <span className="eco-restock-offer__cart-status" aria-live="polite">
+                        {stateKey === "loading" ? "Добавляем…" : inCart ? `В корзине: ${inCart}` : ""}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
