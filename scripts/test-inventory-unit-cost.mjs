@@ -71,7 +71,7 @@ async function post({oldQuantity,oldCost,difference,price,entered=price}){
   inventoryMovementLink:{async create(){}},inventoryLock:{async updateMany(){}},
  };
  vm.runInNewContext(transpile(source.slice(postStart,postEnd)),{
-  exports,Prisma,ZERO:new D(0),prisma:{$transaction:(fn)=>fn(tx)},cleanText:(x)=>x??null,asRecord:(x)=>x??{},resolveInventoryAverageCost:resolve,
+  exports,Prisma,ZERO:new D(0),prisma:{$transaction:(fn,options)=>{assert.equal(options.timeout,120000,'Posting a full inventory needs more than the default five seconds');assert.equal(options.maxWait,10000);return fn(tx);}},cleanText:(x)=>x??null,asRecord:(x)=>x??{},resolveInventoryAverageCost:resolve,
   calculateWeightedAverageCostCents:costing.calculateWeightedAverageCostCents,requireBalanceAverageCost:costing.requireBalanceAverageCost,
   costForDifference:(qty,price)=>Math.round(Math.abs(qty.toNumber())*price),
   ledgerMovementForAction:()=>difference>0?'INVENTORY_SURPLUS':'INVENTORY_SHORTAGE',

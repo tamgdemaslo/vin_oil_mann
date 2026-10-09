@@ -284,7 +284,17 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (action === "refresh-review-scope") return apiResult(await refreshInventoryReviewScope(sessionId, session.user));
     if (action === "submit-review") return apiResult(await submitInventoryReview(sessionId, session.user));
     if (action === "approve") return apiResult(await approveInventorySession(sessionId, session.user));
-    if (action === "post") return apiResult(await postInventorySession(sessionId, body as Parameters<typeof postInventorySession>[1], session.user));
+    if (action === "post") {
+      try {
+        return apiResult(await postInventorySession(sessionId, body as Parameters<typeof postInventorySession>[1], session.user));
+      } catch (error) {
+        const code = error && typeof error === "object" && "code" in error ? String(error.code) : "UNKNOWN";
+        console.error("[inventory.post] failed", { sessionId, code });
+        return apiError(code === "P2028"
+          ? "Проведение не завершилось за отведённое время. Изменения остатков отменены. Повторите проведение."
+          : "Не удалось завершить проведение инвентаризации. Обновите страницу и проверьте состояние документа.", 503);
+      }
+    }
     if (action === "reverse") return apiResult(await reverseInventorySession(sessionId, body as Parameters<typeof reverseInventorySession>[1], session.user));
     if (action === "cancel") return apiResult(await cancelInventorySession(sessionId, body as Parameters<typeof cancelInventorySession>[1], session.user));
     if (action === "add-product") return apiResult(await addInventoryProduct(sessionId, body as Parameters<typeof addInventoryProduct>[1], session.user));

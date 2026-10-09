@@ -1892,7 +1892,7 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
     }
 
     for (const line of lines) {
-      if (!line.productId || line.finalQuantity == null || line.finalAction === "SKIP") continue;
+      if (!line.productId || line.finalQuantity == null || line.finalAction === "SKIP" || !line.product?.markingEnabled || line.product.markingMode !== "BULK_OIL_FROM_MARKED_BARREL") continue;
       await syncBulkOilWarehouseTx(tx, { branchId: session.branchId, productId: line.productId, storeId: session.warehouseId,
         documentId: session.id, reason: `Сверка остатка по инвентаризации ${session.number}`, actor: user });
     }
@@ -1907,7 +1907,7 @@ export async function postInventorySession(sessionId: string, body: { idempotenc
     });
     await writeAudit(tx, { sessionId: session.id, action: "POST", newValue: { idempotencyKey }, user });
     return { ok: true as const, data: { alreadyPosted: false } };
-  });
+  }, { maxWait: 10_000, timeout: 120_000 });
   return result;
 }
 
