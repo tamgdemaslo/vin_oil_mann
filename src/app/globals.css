@@ -26135,8 +26135,14 @@ select.eco-input::-ms-expand,
   align-items: flex-start;
 }
 
+.eco-restock-cart-drawer.eco-restock-offers-drawer {
+  box-sizing: border-box;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1320px, 100vw);
+}
+
 .eco-restock-offers-drawer .eco-restock-cart-head h2 {
-  max-width: 500px;
+  max-width: 75ch;
   font-size: 17px;
   line-height: 1.25;
 }
@@ -26156,15 +26162,6 @@ select.eco-input::-ms-expand,
 
 .eco-restock-offers-drawer .eco-restock-offer-panel__head {
   display: none;
-}
-
-.eco-restock-offers-drawer .eco-restock-offer {
-  grid-template-columns: minmax(120px, 0.8fr) minmax(220px, 1fr);
-}
-
-.eco-restock-offers-drawer .eco-restock-offer__badges,
-.eco-restock-offers-drawer .eco-restock-offer__buy {
-  justify-content: flex-start;
 }
 
 .eco-restock-offer-panel__head {
@@ -26243,107 +26240,281 @@ select.eco-input::-ms-expand,
 }
 
 .eco-restock-offer-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
-.eco-restock-offer {
-  display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(280px, 1.35fr) minmax(120px, 0.9fr) minmax(220px, auto);
-  gap: 12px;
-  align-items: center;
-  padding: 11px 12px;
-  border: 1px solid color-mix(in srgb, var(--eco-line) 86%, #94a3b8);
-  border-radius: 8px;
+.eco-restock-offers-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: var(--eco-ink);
   background: var(--eco-surface);
-}
-
-.eco-restock-offer.is-selected {
-  border-color: color-mix(in srgb, #059669 40%, var(--eco-line));
-  background: color-mix(in srgb, #ecfdf5 68%, var(--eco-surface));
-}
-
-.eco-restock-offer__title strong,
-.eco-restock-offer__title span {
-  display: block;
-}
-
-.eco-restock-offer__title strong {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 13px;
+  line-height: 1.4;
 }
 
-.eco-restock-offer__title span {
-  margin-top: 3px;
+.eco-restock-offers-col--brand { width: 80px; }
+.eco-restock-offers-col--article { width: 136px; }
+.eco-restock-offers-col--delivery { width: 208px; }
+.eco-restock-offers-col--stock { width: 92px; }
+.eco-restock-offers-col--price { width: 132px; }
+.eco-restock-offers-col--order { width: 148px; }
+
+.eco-restock-offers-table th,
+.eco-restock-offers-table td {
+  padding: 16px 12px;
+  border-bottom: 1px solid var(--eco-line);
+  vertical-align: top;
+  text-align: left;
+}
+
+.eco-restock-offers-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-block: 12px;
   color: var(--eco-muted);
-  font-size: 12px;
-}
-
-.eco-restock-offer__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-}
-
-.eco-restock-offer__facts span {
-  color: var(--eco-muted);
+  background: var(--eco-surface);
+  font-weight: 500;
   white-space: nowrap;
 }
 
-.eco-restock-offer__facts b {
-  color: var(--eco-ink);
+.eco-restock-offers-table th:nth-child(5),
+.eco-restock-offers-table th:nth-child(6),
+.eco-restock-offers-table th:nth-child(7) {
+  text-align: right;
+}
+
+.eco-restock-offer {
+  height: 96px;
+  background: var(--eco-surface);
+}
+
+.eco-restock-offer:hover {
+  background: var(--eco-hover);
+}
+
+.eco-restock-offer.is-selected {
+  background: color-mix(in srgb, #ecfdf5 68%, var(--eco-surface));
+}
+
+.eco-restock-offer__brand > span,
+.eco-restock-offer__article > span {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.eco-restock-offer__article {
+  color: var(--eco-info, #2563eb);
+}
+
+.eco-restock-offer__name > strong {
+  display: -webkit-box;
+  min-height: 2.8em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-weight: 500;
+}
+
+.eco-restock-offer__delivery strong,
+.eco-restock-offer__delivery span {
+  display: block;
+}
+
+.eco-restock-offer__delivery strong {
+  overflow-wrap: anywhere;
+  font-weight: 750;
+}
+
+.eco-restock-offer__delivery span {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--eco-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-restock-offers-table .eco-restock-offer__stock,
+.eco-restock-offers-table .eco-restock-offer__price {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.eco-restock-offer__price {
   font-weight: 800;
 }
 
 .eco-restock-offer__badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.eco-restock-offer__badges span {
-  border-radius: 999px;
-  padding: 4px 8px;
-  background: color-mix(in srgb, #f59e0b 16%, var(--eco-soft));
-  color: #854d0e;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.eco-restock-offer__badges span:first-child {
-  background: color-mix(in srgb, #059669 16%, var(--eco-soft));
+  display: block;
+  min-height: 16px;
+  margin-top: 4px;
+  overflow: hidden;
   color: #047857;
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-restock-offer__badges span + span::before {
+  content: "·";
+  margin-inline: 8px;
 }
 
 .eco-restock-offer__buy {
   display: flex;
   justify-content: flex-end;
-  align-items: end;
+  align-items: center;
   gap: 8px;
 }
 
-.eco-restock-offer__buy label {
-  display: grid;
-  gap: 4px;
-  color: var(--eco-muted);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
+.eco-restock-offer__buy .eco-input {
+  box-sizing: border-box;
+  flex: 0 0 72px;
+  width: 72px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0 8px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
-.eco-restock-offer__buy .eco-input {
-  width: 72px;
-  height: 34px;
+.eco-restock-offer__buy .eco-btn {
+  box-sizing: border-box;
+  flex: 0 0 44px;
+  width: 44px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.eco-restock-offer.is-selected .eco-restock-offer__buy .eco-btn {
+  color: #047857;
+}
+
+.eco-restock-offer__cart-status {
+  display: block;
+  min-height: 16px;
+  margin-top: 4px;
+  color: #047857;
+  font-size: 11px;
+  line-height: 16px;
   text-align: right;
 }
 
+.eco-restock-offer__buy :is(input, button):focus-visible {
+  outline: 2px solid var(--eco-focus, #155eef);
+  outline-offset: 2px;
+}
+
 .eco-restock-offer-warning {
-  grid-column: 1 / -1;
-  margin: -2px 0 0;
-  color: #b45309;
-  font-size: 12px;
+  min-height: 16px;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: #92400e;
+  font-size: 11px;
   font-weight: 700;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-restock-offers-drawer .eco-restock-offer-list {
+  overflow: visible;
+}
+
+@media (max-width: 720px) {
+  .eco-restock-offers-table,
+  .eco-restock-offers-table tbody {
+    display: block;
+    min-width: 0;
+  }
+
+  .eco-restock-offers-table colgroup,
+  .eco-restock-offers-table thead {
+    display: none;
+  }
+
+  .eco-restock-offers-table .eco-restock-offer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "brand article"
+      "name name"
+      "delivery delivery"
+      "stock price"
+      "order order";
+    gap: 12px;
+    height: auto;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--eco-line);
+  }
+
+  .eco-restock-offers-table td {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .eco-restock-offer__brand { grid-area: brand; }
+  .eco-restock-offers-table .eco-restock-offer__article { grid-area: article; text-align: right; }
+  .eco-restock-offer__name { grid-area: name; }
+  .eco-restock-offer__delivery { grid-area: delivery; }
+  .eco-restock-offer__stock { grid-area: stock; }
+  .eco-restock-offer__price { grid-area: price; }
+  .eco-restock-offer__order { grid-area: order; }
+
+  .eco-restock-offer__name > strong {
+    display: block;
+    min-height: 0;
+    overflow: visible;
+    font-size: 14px;
+  }
+
+  .eco-restock-offer__badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 0;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .eco-restock-offers-table .eco-restock-offer__stock {
+    text-align: left;
+  }
+
+  .eco-restock-offer__delivery::before,
+  .eco-restock-offer__stock::before,
+  .eco-restock-offer__price::before,
+  .eco-restock-offer__order::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: var(--eco-muted);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .eco-restock-offer__order {
+    position: relative;
+  }
+
+  .eco-restock-offer__order::before {
+    position: absolute;
+    top: 14px;
+    left: 0;
+    margin: 0;
+  }
 }
 
 .eco-restock-cart-backdrop {
@@ -28135,14 +28306,6 @@ select.eco-input::-ms-expand,
     display: flex;
   }
 
-  .eco-restock-offer {
-    grid-template-columns: minmax(160px, 0.9fr) minmax(260px, 1.2fr);
-  }
-
-  .eco-restock-offer__badges,
-  .eco-restock-offer__buy {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 980px) {
@@ -28265,18 +28428,15 @@ select.eco-input::-ms-expand,
     padding: 12px;
   }
 
-  .eco-restock-offer-panel__head,
-  .eco-restock-offer__buy {
+  .eco-restock-offer-panel__head {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .eco-restock-manual-search,
-  .eco-restock-offer {
+  .eco-restock-manual-search {
     grid-template-columns: 1fr;
   }
 
-  .eco-restock-offer__buy .eco-btn,
   .eco-restock-manual-search .eco-btn {
     width: 100%;
   }
