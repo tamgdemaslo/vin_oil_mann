@@ -11453,7 +11453,8 @@ body.antialiased {
   }
 }
 
-/* ============================================================
+/* =====================================================}
+
    Platform prototype parity layer.
    Keeps the production class prefix, but mirrors platform/tokens.css.
    ============================================================ */
@@ -54424,7 +54425,8 @@ html.tgm-print-active .tgm-client-report .qr {
   }
 }
 
-/* ============================================================
+/* =====================================================}
+
    Shipment register — dense operational workspace.
    Keeps filters progressive and makes selection/actions predictable.
    ============================================================ */
@@ -56604,7 +56606,8 @@ html.tgm-print-active .tgm-client-report .qr {
   }
 }
 
-/* ============================================================
+/* =====================================================}
+
    Messenger · unified inbox, floating widget and full page.
    ============================================================ */
 
@@ -71354,18 +71357,18 @@ select[size="1"]::-ms-expand {
 .eco-shipment-new-page .eco-fluid-card__fact { display: grid; grid-template-columns: 48px minmax(0, 1fr) 24px; gap: 7px; align-items: center; min-height: 29px; border-top: 1px solid #eeeae3; }
 .eco-shipment-new-page .eco-fluid-card__fact > span { color: var(--lookup-muted); font-size: 10px; line-height: 1.2; }
 .eco-shipment-new-page .eco-fluid-card__fact > strong { min-width: 0; overflow: hidden; color: var(--lookup-ink); font-size: 12px; font-weight: 550; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
-.eco-shipment-new-page .eco-fluid-popover { position: relative; justify-self: end; }
-.eco-shipment-new-page .eco-fluid-popover > summary { display: grid; width: 24px; height: 24px; cursor: help; list-style: none; place-items: center; border-radius: 6px; color: var(--lookup-muted); }
-.eco-shipment-new-page .eco-fluid-popover > summary::-webkit-details-marker { display: none; }
-.eco-shipment-new-page .eco-fluid-popover > summary:hover,
-.eco-shipment-new-page .eco-fluid-popover > summary:focus-visible,
-.eco-shipment-new-page .eco-fluid-popover[open] > summary { background: #eee9e1; color: #6b3a26; outline: none; }
-.eco-shipment-new-page .eco-fluid-popover > summary:focus-visible { box-shadow: 0 0 0 2px #a94421; }
-.eco-shipment-new-page .eco-fluid-popover__panel { position: absolute; z-index: var(--lookup-z-tooltip); top: calc(100% + 6px); right: 0; display: none; width: min(340px, calc(100vw - 48px)); max-height: min(360px, 60vh); overflow: auto; padding: 12px 14px; border: 1px solid #d9d2c7; border-radius: 10px; background: #fff; box-shadow: 0 4px 8px rgb(41 41 35 / 14%); color: var(--lookup-ink); font-size: 12px; font-weight: 400; line-height: 1.45; text-align: left; }
-.eco-shipment-new-page .eco-fluid-popover:hover > .eco-fluid-popover__panel,
-.eco-shipment-new-page .eco-fluid-popover:focus-within > .eco-fluid-popover__panel,
-.eco-shipment-new-page .eco-fluid-popover[open] > .eco-fluid-popover__panel { display: block; }
-.eco-shipment-new-page .eco-fluid-popover__panel > strong { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 650; }
+.eco-shipment-new-page .eco-fluid-popover { justify-self: end; }
+.eco-shipment-new-page .eco-fluid-popover__trigger { display: grid; width: 24px; height: 24px; padding: 0; cursor: pointer; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--lookup-muted); }
+.eco-shipment-new-page .eco-fluid-popover__trigger:hover,
+.eco-shipment-new-page .eco-fluid-popover__trigger[aria-expanded="true"] { background: #eee9e1; color: #6b3a26; }
+.eco-shipment-new-page .eco-fluid-popover__trigger:focus-visible { outline: 2px solid #a94421; outline-offset: 2px; }
+.eco-fluid-popover__panel[popover] { position: fixed; inset: auto; box-sizing: border-box; margin: 0; width: min(340px, calc(100dvw - 24px)); max-height: min(360px, calc(100dvh - 24px)); overflow: auto; overscroll-behavior: contain; padding: 12px 14px; border: 1px solid #d9d2c7; border-radius: 10px; background: #fff; box-shadow: 0 4px 8px rgb(41 41 35 / 14%); color: #292923; font-size: 12px; font-weight: 400; line-height: 1.45; text-align: left; overflow-wrap: anywhere; }
+.eco-fluid-popover__panel[popover]:not(:popover-open) { display: none; }
+.eco-fluid-popover__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.eco-fluid-popover__heading > strong { font-size: 12px; font-weight: 650; }
+.eco-fluid-popover__heading > button { display: grid; flex: 0 0 28px; width: 28px; height: 28px; padding: 0; place-items: center; border: 0; border-radius: 6px; background: transparent; color: #646157; cursor: pointer; font-size: 22px; }
+.eco-fluid-popover__heading > button:hover { background: #eee9e1; }
+.eco-fluid-popover__heading > button:focus-visible { outline: 2px solid #a94421; outline-offset: 2px; }
 .eco-shipment-new-page .eco-fluid-popover__panel ul { margin: 0; padding-left: 18px; }
 .eco-shipment-new-page .eco-fluid-popover__panel li + li { margin-top: 5px; }
 .eco-shipment-new-page .eco-fluid-popover__panel p { margin: 0; }
@@ -71596,4 +71599,68 @@ select[size="1"]::-ms-expand {
   .eco-receipt-drawer.is-workspace .eco-receipt-position-card.has-barrel-receipt .eco-barrel-receipt-row {
     grid-template-columns: minmax(0, 1fr) 40px;
   }
+}
+
+/* Compact vehicle modification picker, with labelled mobile facts. */
+.eco-shipment-new-page .eco-vehicle-lookup__result { padding: 14px 18px 0; row-gap: 12px; }
+.eco-shipment-new-page .eco-vehicle-lookup__mann-candidates { --mod-columns: minmax(160px, 1.7fr) minmax(95px, .8fr) minmax(90px, .7fr) minmax(100px, 1fr) 88px; padding-top: 12px; }
+.eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > .eco-vehicle-modification-columns { display: grid; grid-template-columns: var(--mod-columns); gap: 12px; padding: 8px 10px; border: 0; background: var(--lookup-surface); }
+.eco-shipment-new-page .eco-vehicle-modification-columns > span { color: var(--lookup-muted); font-size: 12px; }
+.eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > div.eco-vehicle-modification-row { display: grid; grid-template-columns: var(--mod-columns); align-items: center; gap: 4px 12px; padding: 10px; min-height: 54px; }
+.eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > div.eco-vehicle-modification-row > div { display: contents; }
+.eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > div.eco-vehicle-modification-row > div > b { font-size: 14px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.eco-shipment-new-page .eco-vehicle-modification-row .eco-vehicle-candidate-facts,
+.eco-shipment-new-page .eco-vehicle-modification-row .eco-vehicle-candidate-facts > div { display: contents; }
+.eco-shipment-new-page .eco-vehicle-modification-row dt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.eco-shipment-new-page .eco-vehicle-modification-row dd { margin: 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.eco-shipment-new-page .eco-vehicle-modification-notes { grid-column: 1 / -1; grid-row: 2; }
+.eco-shipment-new-page .eco-vehicle-modification-notes:empty { display: none; }
+.eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > div.eco-vehicle-modification-row > button { grid-column: 5; grid-row: 1; justify-self: end; min-height: 34px; padding: 6px 12px; border-radius: 7px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.eco-shipment-new-page .eco-vehicle-modification-row:focus-within,
+.eco-shipment-new-page .eco-vehicle-modification-row:hover { background: var(--lookup-surface); }
+.eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > button { margin: 0; padding: 12px 10px; font-size: 13px; text-align: left; }
+@media (max-width: 900px) {
+  .eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > .eco-vehicle-modification-columns { display: none; }
+  .eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > div.eco-vehicle-modification-row { grid-template-columns: minmax(0, 1fr) auto; gap: 7px 12px; }
+  .eco-shipment-new-page .eco-vehicle-modification-row .eco-vehicle-candidate-facts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0; }
+  .eco-shipment-new-page .eco-vehicle-modification-row .eco-vehicle-candidate-facts > div { display: block; }
+  .eco-shipment-new-page .eco-vehicle-modification-row dt { position: static; width: auto; height: auto; clip-path: none; font-size: 11px; }
+  .eco-shipment-new-page .eco-vehicle-modification-row dd { margin-top: 2px; }
+  .eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > div.eco-vehicle-modification-row > button { grid-column: 2; width: auto; }
+  .eco-shipment-new-page .eco-vehicle-modification-notes { grid-row: auto; }
+}
+@media (max-width: 480px) {
+  .eco-shipment-new-page .eco-vehicle-lookup__result { padding-inline: 12px; }
+  .eco-shipment-new-page .eco-vehicle-lookup__mann-candidates > div.eco-vehicle-modification-row { padding-inline: 0; }
+}
+
+.eco-shipment-new-page .eco-fluid-research--status { padding-block: 12px; }
+.eco-shipment-new-page .eco-fluid-research--status .eco-fluid-research__head { margin-bottom: 0; }
+.eco-shipment-new-page .eco-fluid-research--status .eco-fluid-research__head > p { margin: 0; font-size: 13px; color: var(--lookup-muted); }
+
+/* Stock is the default filter list; other compatible products are disclosed. */
+.eco-shipment-new-page .eco-shipment-mann-order-options { margin-top: 4px; border-top: 1px solid #e3ddd3; }
+.eco-shipment-new-page .eco-shipment-mann-order-options > summary { padding: 11px 0; color: #77361e; cursor: pointer; font-size: 13px; font-weight: 550; line-height: 1.4; }
+.eco-shipment-new-page .eco-shipment-mann-order-options > summary:hover { color: #a94421; }
+.eco-shipment-new-page .eco-shipment-mann-order-options > summary:focus-visible { outline: 2px solid #a94421; outline-offset: 3px; border-radius: 4px; }
+.eco-shipment-new-page .eco-shipment-mann-order-count { margin-left: 8px; color: #646157; font-size: 12px; font-variant-numeric: tabular-nums; }
+.eco-shipment-new-page .eco-shipment-mann-order-hide,
+.eco-shipment-new-page .eco-shipment-mann-order-options[open] .eco-shipment-mann-order-show { display: none; }
+.eco-shipment-new-page .eco-shipment-mann-order-options[open] .eco-shipment-mann-order-hide { display: inline; }
+.eco-shipment-new-page .eco-shipment-mann-stock-empty { margin: 0; padding: 8px 0; color: #646157; font-size: 13px; line-height: 1.4; }
+.eco-shipment-new-page .eco-shipment-mann-filter-main > div > span { color: #646157; font-size: 12px !important; font-weight: 450 !important; }
+.eco-shipment-new-page .eco-shipment-mann-local > b { color: #24653e; font-size: 12px !important; font-weight: 550 !important; }
+.eco-shipment-new-page .eco-shipment-mann-local > span { color: #646157; font-size: 12px !important; font-weight: 400 !important; }
+.eco-shipment-new-page .eco-shipment-mann-choice-option { padding-block: 9px !important; }
+.eco-shipment-new-page .eco-shipment-mann-sku-title strong { font-size: 13px !important; font-weight: 550 !important; line-height: 1.4; }
+.eco-shipment-new-page .eco-shipment-mann-sku-copy > small { color: #646157; font-size: 11px !important; line-height: 1.4; }
+.eco-shipment-new-page .eco-shipment-mann-sku-availability > strong,
+.eco-shipment-new-page .eco-shipment-mann-sku-cell { font-size: 12px !important; font-weight: 550 !important; }
+.eco-shipment-new-page .eco-shipment-mann-sku-price { font-size: 13px !important; font-weight: 650 !important; }
+.eco-shipment-new-page .eco-shipment-mann-add { min-height: 34px !important; font-size: 12px !important; font-weight: 600 !important; }
+@media (max-width: 720px) {
+  .eco-shipment-new-page .eco-shipment-mann-sku-title { flex-wrap: wrap; gap: 4px 8px; }
+  .eco-shipment-new-page .eco-shipment-mann-sku-title strong { white-space: normal; overflow-wrap: anywhere; }
+  .eco-shipment-new-page .eco-shipment-mann-local > span { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
+  .eco-shipment-new-page .eco-shipment-mann-add { padding-inline: 6px !important; }
 }

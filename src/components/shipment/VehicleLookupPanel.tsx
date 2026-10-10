@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, CircleStop, Cog, Droplet, Gauge, GitBranch, Info, Link2, RefreshCw, Settings, Snowflake, type LucideIcon } from "lucide-react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import type { MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
-import { MANN_FLUID_SYSTEMS, MANN_FLUID_LABELS, MANN_FLUID_GROUP_IDS, MANN_FLUID_GROUPS, type MannFluidSystem } from "@/lib/mann-fluid-systems";
+import { MANN_FLUID_SYSTEMS, MANN_FLUID_LABELS, type MannFluidSystem } from "@/lib/mann-fluid-systems";
 import { runFluidResearchGroups } from "@/lib/mann-fluid-research-progress";
 import { mannCapacityLabel as capacityLabel } from "@/lib/mann-capacity-label";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
@@ -137,13 +137,6 @@ function CandidateConditions({ candidate }: { candidate: MannVehicleCandidate })
   </>;
 }
 
-const RESEARCH_COPY = [
-  "Заглядываем в руководство — даже в мелкий шрифт",
-  "Допуски любят точность. Мы тоже",
-  "Собираем полезное, убираем лишнее",
-  "У похожих машин бывают разные требования",
-];
-
 const FLUID_SYSTEM_ICONS: Record<MannFluidSystem, LucideIcon> = {
   ENGINE_OIL: Droplet,
   ENGINE_COOLANT: Snowflake,
@@ -162,13 +155,59 @@ const FLUID_SYSTEM_ICONS: Record<MannFluidSystem, LucideIcon> = {
 type FluidCardTone = "confirmed" | "warning" | "muted" | "progress";
 
 function FluidFactPopover({ label, title, children }: { label: string; title: string; children: ReactNode }) {
-  return <details className="eco-fluid-popover">
-    <summary aria-label={label} title={label}><Info size={15} aria-hidden="true" /></summary>
-    <div className="eco-fluid-popover__panel" role="group" aria-label={title}>
-      <strong>{title}</strong>
+  const id = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 12, top: 12 });
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const placePanel = () => {
+      const trigger = triggerRef.current;
+      const panel = panelRef.current;
+      if (!trigger || !panel) return;
+      const anchor = trigger.getBoundingClientRect();
+      const bounds = panel.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      const leftEdge = (viewport?.offsetLeft ?? 0) + 12;
+      const topEdge = (viewport?.offsetTop ?? 0) + 12;
+      const rightEdge = leftEdge + (viewport?.width ?? window.innerWidth) - 24;
+      const bottomEdge = topEdge + (viewport?.height ?? window.innerHeight) - 24;
+      const below = anchor.bottom + 6;
+      const top = below + bounds.height <= bottomEdge ? below : anchor.top - bounds.height - 6;
+      setPosition({
+        left: Math.max(leftEdge, Math.min(anchor.right - bounds.width, rightEdge - bounds.width)),
+        top: Math.max(topEdge, Math.min(top, bottomEdge - bounds.height)),
+      });
+    };
+    placePanel();
+    window.addEventListener("resize", placePanel);
+    window.addEventListener("scroll", placePanel, true);
+    window.visualViewport?.addEventListener("resize", placePanel);
+    window.visualViewport?.addEventListener("scroll", placePanel);
+    return () => {
+      window.removeEventListener("resize", placePanel);
+      window.removeEventListener("scroll", placePanel, true);
+      window.visualViewport?.removeEventListener("resize", placePanel);
+      window.visualViewport?.removeEventListener("scroll", placePanel);
+    };
+  }, [open]);
+
+  return <div className="eco-fluid-popover">
+    <button ref={triggerRef} type="button" className="eco-fluid-popover__trigger" popoverTarget={id} aria-label={label} aria-expanded={open} title={label}>
+      <Info size={15} aria-hidden="true" />
+    </button>
+    <div ref={panelRef} id={id} popover="auto" className="eco-fluid-popover__panel" role="group" aria-label={title}
+      onToggle={(event) => setOpen(event.newState === "open")}
+      style={{ left: position.left, top: position.top }}>
+      <div className="eco-fluid-popover__heading">
+        <strong>{title}</strong>
+        <button type="button" popoverTarget={id} popoverTargetAction="hide" aria-label="Закрыть справку"><span aria-hidden="true">×</span></button>
+      </div>
       <div>{children}</div>
     </div>
-  </details>;
+  </div>;
 }
 
 function FluidCard({
@@ -209,7 +248,7 @@ function FluidCard({
     <div className="eco-fluid-card__fact">
       <span>Допуск</span>
       <strong title={mainSpecification}>{mainSpecification}</strong>
-      {specifications.length > 1 ? <FluidFactPopover label={`Все допуски: ${label}`} title="Допуски и вязкость">
+      {specifications.length > 0 ? <FluidFactPopover label={`Все допуски: ${label}`} title="Допуски и вязкость">
         <ul>{specifications.map(value => <li key={value}>{value}</li>)}</ul>
       </FluidFactPopover> : null}
     </div>
@@ -225,60 +264,24 @@ function FluidCard({
   </article>;
 }
 
-export function FluidResearchResults({ result, onRetry, profile }: { result: MannFluidResearchResult; onRetry?: () => void; profile?: MannUnifiedTechnicalProfile | null }) {
-  const [tick, setTick] = useState(0);
+export function FluidResearchResults({ result, onRetry }: { result: MannFluidResearchResult; onRetry?: () => void }) {
   const searching = result.status === "searching";
-  useEffect(() => {
-    if (!searching) return;
-    const timer = window.setInterval(() => setTick(value => value + 1), 5000);
-    return () => window.clearInterval(timer);
-  }, [searching]);
-  return <section className="eco-fluid-research" aria-label="Поиск жидкостей" aria-busy={searching}>
+  const failed = result.status === "unavailable" || Object.values(result.groups ?? {}).some(group => group.status === "failed");
+  if (!searching && !failed && !result.unresolved?.length) return null;
+  return <section className="eco-fluid-research eco-fluid-research--status" aria-label="Поиск жидкостей" aria-busy={searching}>
     <div className="eco-fluid-research__head">
-      <div><h3>Жидкости для автомобиля</h3>
-        <p role="status">{result.groups ? result.message : searching ? "Проверяем все агрегаты, ищем допуски и объёмы" : result.status === "complete" ? "Данные технического профиля" : result.status === "needs_context" ? "Выберите модификацию MANN" : result.status === "unavailable" ? result.message : "Предварительные данные · проверьте применимость перед использованием"}</p>
-      </div>
+      <p role="status">{result.message}</p>
       {searching ? <span className="eco-fluid-research__spinner" aria-hidden="true" /> : null}
-      {!searching && (result.status === "unavailable" || Object.values(result.groups ?? {}).some(g => g.status === "failed")) && onRetry ? <button type="button" className="eco-btn" onClick={onRetry}>{result.groups ? "Повторить незавершённые" : "Повторить поиск"}</button> : null}
+      {!searching && failed && onRetry ? <button type="button" className="eco-btn" onClick={onRetry}>{result.groups ? "Повторить незавершённые" : "Повторить поиск"}</button> : null}
     </div>
-    {searching && !result.items.length && !Object.values(result.groups ?? {}).some(g => g.status === "done") ? <>
-      <p className="eco-fluid-research__caption">{tick >= 6 ? "Поиск занимает больше обычного. Фильтры уже можно добавлять." : RESEARCH_COPY[tick % RESEARCH_COPY.length]}</p>
-      <div className="eco-fluid-research__skeleton" aria-hidden="true"><i /><i /><i /></div>
-    </> : <div className="eco-fluid-grid-wrap">
-      <div className="eco-fluid-grid" role="list" aria-label="Предварительные результаты поиска жидкостей">{MANN_FLUID_SYSTEMS.map(systemCode => {
-        const items = result.items.filter(item => item.systemCode === systemCode);
-        const catalog = profile?.items.filter(item => item.systemCode === systemCode) ?? [];
-        const state = result.systems?.find(row => row.systemCode === systemCode);
-        const groupId = MANN_FLUID_GROUP_IDS.find(id => MANN_FLUID_GROUPS[id].systems.includes(systemCode));
-        const groupState = groupId ? result.groups?.[groupId] : undefined;
-        const absent = state?.applicability === "absent" && !items.length && !catalog.length;
-        const specifications = [...new Set([...catalog.flatMap(item => [...item.specifications, ...item.viscosityGrades]), ...items.flatMap(item => item.specification ? item.specification.split(/;\s*/) : [])])];
-        const volumes = [...new Set([...catalog.filter(item => !item.requiresReview).flatMap(item => item.capacities.map(capacityLabel)), ...items.map(item => item.volumeText).filter(Boolean)])];
-        const sources = items.length ? items : state?.sourceUrl ? [state] : [];
-        const status = absent ? "Не предусмотрен" : items.length ? "Требует проверки" : catalog.length ? "Есть данные" : groupState?.status === "failed" ? "Сбой поиска" : groupState?.status === "searching" ? "Ищем" : groupState?.status === "queued" ? "В очереди" : state?.applicability === "present" ? "Данных нет" : "Не подтверждено";
-        const tone: FluidCardTone = catalog.length && !items.length ? "confirmed" : groupState?.status === "searching" || groupState?.status === "queued" ? "progress" : absent || (!items.length && state?.applicability !== "present" && groupState?.status !== "failed") ? "muted" : "warning";
-        return <FluidCard
-          key={systemCode}
-          systemCode={systemCode}
-          label={MANN_FLUID_LABELS[systemCode]}
-          specifications={absent ? [] : specifications}
-          volumes={absent ? [] : volumes}
-          status={status}
-          tone={tone}
-          absent={absent}
-          conditions={(groupState?.status === "failed" || state?.reason) ? <>{groupState?.status === "failed" ? <p>{groupState.message}</p> : null}{state?.reason ? <p>{state.reason}</p> : null}</> : null}
-          sources={sources.length ? sources.map((source, index) => <a key={index} href={source.sourceUrl} target="_blank" rel="noopener noreferrer">{source.sourceTitle}</a>) : null}
-        />;
-      })}</div>
-      <p className="eco-fluid-research__caption">Пустое значение — данные не найдены. «Не предусмотрен» и «не подтверждено» — разные состояния. Данные ИИ требуют проверки.</p>
-      {result.unresolved?.length ? <details><summary>Что осталось уточнить</summary><ul>{result.unresolved.map((reason, index) => <li key={index}>{reason}</li>)}</ul></details> : null}
-    </div>}
+    {result.unresolved?.length ? <details><summary>Что осталось уточнить</summary><ul>{result.unresolved.map((reason, index) => <li key={index}>{reason}</li>)}</ul></details> : null}
   </section>;
 }
 
 export function TechnicalProfile({
   profile,
   researchPendingOrFound = false,
+  research,
   loading,
   error,
   onSelectTransmission,
@@ -291,6 +294,7 @@ export function TechnicalProfile({
 }: {
   profile: MannUnifiedTechnicalProfile | null;
   researchPendingOrFound?: boolean;
+  research?: MannFluidResearchResult | null;
   loading: boolean;
   error: string;
   onSelectTransmission: (transmissionType: MannTransmissionType) => void;
@@ -301,11 +305,20 @@ export function TechnicalProfile({
   confirmedEquipment: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>[];
   onSelectEquipment: (circuit: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>['circuit'], option?: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>) => void;
 }) {
+  const catalogItems = profile?.items.filter(item =>
+    [...item.specifications, ...item.viscosityGrades].some(value => value.trim())
+    || (!item.requiresReview && item.capacities.some(capacity => capacityLabel(capacity).trim()))
+  ) ?? [];
+  const researchItems = research?.items.filter(item => item.specification.trim() || item.volumeText.trim()) ?? [];
+  const researchOnlySystems = MANN_FLUID_SYSTEMS.filter(system =>
+    researchItems.some(item => item.systemCode === system) && !catalogItems.some(item => item.systemCode === system)
+  );
+  const hasFluids = catalogItems.length > 0 || researchOnlySystems.length > 0;
   return (
-    <div className={`eco-vehicle-lookup__profile ${researchPendingOrFound && !profile?.items.length ? "is-research-active" : ""}`} aria-live="polite" aria-busy={loading}>
+    <div className={`eco-vehicle-lookup__profile ${researchPendingOrFound && !hasFluids ? "is-research-active" : ""}`} aria-live="polite" aria-busy={loading}>
       <div className="eco-vehicle-lookup__profile-head">
         <strong>Технические жидкости</strong>
-        {profile?.items.length ? <span className={profile.status === "active" ? "is-active" : "is-preview"}>{profile.status === "active" ? "По проверенным источникам" : "Предварительные данные"}</span> : null}
+        {hasFluids ? <span className={profile?.status === "active" && !researchItems.length ? "is-active" : "is-preview"}>{profile?.status === "active" && !researchItems.length ? "По проверенным источникам" : "Предварительные данные"}</span> : null}
       </div>
       {profile?.transmissionOptions.length ? (
         <fieldset className="eco-vehicle-lookup__transmission-choice">
@@ -394,10 +407,11 @@ export function TechnicalProfile({
         </div>
       ) : error ? (
         <div className="eco-vehicle-lookup__profile-state is-warning">{error}</div>
-      ) : profile?.items.length ? (
+      ) : hasFluids ? (
         <>
-          <div className="eco-fluid-grid" role="list" aria-label="Жидкости из технического каталога">{profile.items.map(item => {
-            const confirmed = item.sourceStatus === "primary_source" && !item.requiresReview && !item.userConfirmedTransmissionModel && !item.userConfirmedEquipment;
+          <div className="eco-fluid-grid" role="list" aria-label="Заполненные жидкости для автомобиля">{catalogItems.map(item => {
+            const additions = researchItems.filter(researchItem => researchItem.systemCode === item.systemCode);
+            const confirmed = !additions.length && item.sourceStatus === "primary_source" && !item.requiresReview && !item.userConfirmedTransmissionModel && !item.userConfirmedEquipment;
             const conditions = <>
               {item.userConfirmedTransmission ? <p>Тип коробки указан вручную.</p> : null}
               {item.userConfirmedTransmissionModel ? <p>Модель коробки указана вручную. Данные предварительные.</p> : null}
@@ -415,15 +429,22 @@ export function TechnicalProfile({
               systemCode={item.systemCode as MannFluidSystem}
               label={item.systemLabel}
               componentModel={item.componentModel}
-              specifications={[...item.specifications, ...item.viscosityGrades]}
-              volumes={item.requiresReview ? [] : item.capacities.map(capacityLabel)}
+              specifications={[...new Set([...item.specifications, ...item.viscosityGrades, ...additions.flatMap(entry => entry.specification.split(/;\s*/))])].filter(value => value.trim())}
+              volumes={[...new Set([...(item.requiresReview ? [] : item.capacities.map(capacityLabel)), ...additions.map(entry => entry.volumeText)])].filter(value => value.trim())}
               status={confirmed ? "По источнику" : "Требует проверки"}
               tone={confirmed ? "confirmed" : "warning"}
               conditions={conditions}
-              sources={sources}
+              sources={<>{sources}{additions.map((entry, index) => <a key={index} href={entry.sourceUrl} target="_blank" rel="noreferrer">{entry.sourceTitle}</a>)}</>}
             />;
+          })}{researchOnlySystems.map(systemCode => {
+            const items = researchItems.filter(item => item.systemCode === systemCode);
+            return <FluidCard key={systemCode} systemCode={systemCode} label={MANN_FLUID_LABELS[systemCode]}
+              specifications={[...new Set(items.flatMap(item => item.specification.split(/;\s*/)))].filter(value => value.trim())}
+              volumes={[...new Set(items.map(item => item.volumeText))].filter(value => value.trim())}
+              status="Требует проверки" tone="warning"
+              sources={items.map((item, index) => <a key={index} href={item.sourceUrl} target="_blank" rel="noreferrer">{item.sourceTitle}</a>)} />;
           })}</div>
-          {profile.notice ? <details className="eco-vehicle-lookup__profile-source"><summary>Подробнее о данных каталога</summary><p>{profile.notice}</p></details> : null}
+          {profile?.notice ? <details className="eco-vehicle-lookup__profile-source"><summary>Подробнее о данных каталога</summary><p>{profile.notice}</p></details> : null}
         </>
       ) : researchPendingOrFound ? null : (
         <div className="eco-vehicle-lookup__profile-state">{profile?.transmissionGearCountOptions?.length && selectedTransmissionGearCount == null ? "Для показа жидкости укажите число передач установленной коробки." : profile?.transmissionComponentOptions?.length ? "Для показа жидкости укажите модель установленной коробки." : profile?.equipmentOptions?.length ? "Для показа жидкости подтвердите установленное оборудование." : "Нет данных с подтверждённой применяемостью. При необходимости уточните месяц выпуска или условия агрегата."}</div>
@@ -992,7 +1013,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             <p id="rear-air-conditioning-help">От этого зависит объём антифриза. Если комплектация неизвестна, оставьте «Не уточнено» — объём не будет выбран автоматически.</p>
           </fieldset>
         ) : null}
-        {fluidResearch ? <FluidResearchResults key={fluidResearch.status} result={fluidResearch} profile={technicalProfile} onRetry={() => {
+        {fluidResearch ? <FluidResearchResults key={fluidResearch.status} result={fluidResearch} onRetry={() => {
           if (!technicalProfileVariantKeys.length) return;
           void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, {
             transmissionModel: selectedTransmissionModel || undefined, transmissionGearCount: selectedTransmissionGearCount,
@@ -1002,6 +1023,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
         }} /> : null}
         <TechnicalProfile
           profile={technicalProfile}
+          research={fluidResearch}
           researchPendingOrFound={fluidResearch?.status === "searching" || Boolean(fluidResearch?.items.length)}
           loading={technicalProfileLoading}
           error={technicalProfileError}
@@ -1193,8 +1215,11 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
                 <strong>Уточните модификацию автомобиля</strong>
                 <span>Это нужно для точного подбора фильтров.</span>
               </div>
+              <div className="eco-vehicle-modification-columns" aria-hidden="true">
+                <span>Модификация</span><span>Двигатель</span><span>Мощность</span><span>Выпуск</span><span />
+              </div>
               {resolution.candidates.map((candidate) => (
-                <div key={candidate.applicationId}>
+                <div key={candidate.applicationId} className="eco-vehicle-modification-row">
                   <div>
                     <b>{candidate.effectiveVehicleText ?? candidate.vehicleText ?? "Модификация"}</b>
                     <dl className="eco-vehicle-candidate-facts">
@@ -1202,7 +1227,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
                       <div><dt>Мощность</dt><dd>{candidate.hp ? `${candidate.hp} л.с.` : candidate.kw ? `${candidate.kw} кВт` : "Не указана"}</dd></div>
                       <div><dt>Выпуск</dt><dd>{candidate.vehicleYears || "Не указан"}</dd></div>
                     </dl>
-                    <CandidateConditions candidate={candidate} />
+                    <div className="eco-vehicle-modification-notes"><CandidateConditions candidate={candidate} /></div>
                   </div>
                   <button
                     type="button"

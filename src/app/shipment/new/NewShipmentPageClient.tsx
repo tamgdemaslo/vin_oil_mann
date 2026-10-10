@@ -6291,10 +6291,21 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                         </div>
                       </article>
                       <div className="eco-shipment-mann-choice-panel" role="region" aria-label={`Подходящие товары для MANN ${filter.mannArticle}`}>
-                        {compatibleProducts.length ? <div className="eco-shipment-mann-columns" aria-hidden="true"><span>Товар</span><span>Наличие</span><span>Ячейка</span><span>Цена</span><span /></div> : null}
+                        {availableProducts.length ? <div className="eco-shipment-mann-columns" aria-hidden="true"><span>Товар</span><span>Наличие</span><span>Ячейка</span><span>Цена</span><span /></div> : null}
                         {renderProductGroup("В наличии", availableProducts)}
-                        {renderProductGroup("Под заказ", orderableProducts)}
-                        {renderProductGroup("Нет на складе", unavailableProducts)}
+                        {!availableProducts.length && compatibleProducts.length > 0 ? <p className="eco-shipment-mann-stock-empty">В наличии нет подходящих фильтров.</p> : null}
+                        {orderableProducts.length + unavailableProducts.length > 0 ? (
+                          <details className="eco-shipment-mann-order-options">
+                            <summary>
+                              <span className="eco-shipment-mann-order-show">{unavailableProducts.length ? "Показать варианты без наличия" : "Показать варианты под заказ"}</span>
+                              <span className="eco-shipment-mann-order-hide">Скрыть дополнительные варианты</span>
+                              <span className="eco-shipment-mann-order-count">{orderableProducts.length + unavailableProducts.length}</span>
+                            </summary>
+                            <div className="eco-shipment-mann-columns" aria-hidden="true"><span>Товар</span><span>Наличие</span><span>Ячейка</span><span>Цена</span><span /></div>
+                            {renderProductGroup("Под заказ", orderableProducts)}
+                            {renderProductGroup("Нет на складе", unavailableProducts)}
+                          </details>
+                        ) : null}
                         {compatibleProducts.length === 0 ? (
                           <div className="eco-shipment-mann-choice-empty">
                             <strong>Подходящий товар ещё не связан с каталогом</strong>
