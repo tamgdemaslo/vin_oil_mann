@@ -10,7 +10,7 @@ const REQUIRED_RUNTIME_CONFIG = [
 
 export function getRequiredRuntimeConfig(): readonly string[] {
   return process.env.CLIENT_SITE_ONLY === "true"
-    ? ["DATABASE_URL", "APP_ORIGIN", "BOOKING_MANAGEMENT_TOKEN_SECRET"]
+    ? ["DATABASE_URL", "APP_ORIGIN", "PUBLIC_CLIENT_VIN_ORIGIN"]
     : REQUIRED_RUNTIME_CONFIG;
 }
 

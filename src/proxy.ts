@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { clientSiteLegacyRedirectEnabled, clientSitePagePath, clientSiteVinBackend, isClientSitePublicPath, isClientSiteRoot, CLIENT_SITE_OLD_PATHS } from "@/lib/client-site-domain";
+import { clientSiteLegacyRedirectEnabled, clientSitePagePath, clientSitePublicBackend, isClientSitePublicPath, isClientSiteRoot, CLIENT_SITE_OLD_PATHS } from "@/lib/client-site-domain";
 
 const ACTIVE_BRANCH_COOKIE = "eco_active_branch";
 const SESSION_COOKIE = "eco_session";
@@ -257,7 +257,7 @@ function clientSiteDomainResponse(request: NextRequest) {
     return NextResponse.redirect(url, 308);
   }
   if (isClientSitePublicPath(pathname, request.method)) {
-    const backend = clientSiteVinBackend(pathname);
+    const backend = clientSitePublicBackend(pathname);
     if (backend) {
       backend.search = request.nextUrl.search;
       return NextResponse.rewrite(backend);

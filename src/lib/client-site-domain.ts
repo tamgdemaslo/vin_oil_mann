@@ -19,9 +19,11 @@ export function isClientSiteRoot(headers: Pick<Headers, "get">) {
   });
 }
 
-export function clientSiteVinBackend(pathname: string) {
+export function clientSitePublicBackend(pathname: string) {
   const origin = process.env.PUBLIC_CLIENT_VIN_ORIGIN;
-  if (!clientSiteOnly() || !origin || !["/api/vin/lookup", "/api/vin/recommendations", "/api/vin/raw-lookup", "/api/public/vin-oil"].includes(pathname)) return null;
+  const delegated = ["/api/vin/lookup", "/api/vin/recommendations", "/api/vin/raw-lookup", "/api/public/vin-oil"].includes(pathname)
+    || /^\/api\/public\/booking(?:\/|$)/.test(pathname);
+  if (!clientSiteOnly() || !origin || !delegated) return null;
   const url = new URL(origin);
   if (url.protocol !== "https:") throw new Error("PUBLIC_CLIENT_VIN_ORIGIN must use HTTPS");
   url.pathname = pathname;
