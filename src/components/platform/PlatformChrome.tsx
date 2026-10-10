@@ -6,8 +6,8 @@ import type { ReactNode } from "react";
 
 const InternalPlatformChrome = dynamic(() => import("./InternalPlatformChrome"));
 
-export default function PlatformChrome({ children }: { children: ReactNode }) {
+export default function PlatformChrome({ children, clientSiteRoot = false }: { children: ReactNode; clientSiteRoot?: boolean }) {
   const pathname = usePathname();
-  if (pathname === "/client-site" || pathname.startsWith("/client-site/")) return children;
+  if (clientSiteRoot || pathname === "/client-site" || pathname.startsWith("/client-site/")) return children;
   return <InternalPlatformChrome>{children}</InternalPlatformChrome>;
 }

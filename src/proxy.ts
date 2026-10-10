@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { clientSiteLegacyRedirectEnabled, clientSitePagePath, clientSiteVinBackend, isClientSitePublicPath, isClientSiteRoot, CLIENT_SITE_OLD_PATHS } from "@/lib/client-site-domain";
 
 const ACTIVE_BRANCH_COOKIE = "eco_active_branch";
 const SESSION_COOKIE = "eco_session";
@@ -228,7 +229,55 @@ function isRscRequest(request: NextRequest) {
   );
 }
 
+function clientSiteDomainResponse(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const readable = ["GET", "HEAD"].includes(request.method);
+  const legacyPath = pathname === "/client-site" || pathname.startsWith("/client-site/");
+  if (!isClientSiteRoot(request.headers)) {
+    if (readable && legacyPath && clientSiteLegacyRedirectEnabled() && process.env.PUBLIC_CLIENT_SITE_ORIGIN) {
+      const url = new URL(process.env.PUBLIC_CLIENT_SITE_ORIGIN);
+      url.pathname = pathname.slice("/client-site".length) || "/";
+      url.search = request.nextUrl.search;
+      return NextResponse.redirect(url, 308);
+    }
+    return null;
+  }
+  if (readable && process.env.PUBLIC_CLIENT_SITE_ORIGIN) {
+    const canonical = new URL(process.env.PUBLIC_CLIENT_SITE_ORIGIN);
+    const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "").split(",")[0].trim().toLowerCase();
+    if (host === `www.${canonical.hostname}`) {
+      canonical.pathname = legacyPath ? pathname.slice("/client-site".length) || "/" : pathname;
+      canonical.search = request.nextUrl.search;
+      return NextResponse.redirect(canonical, 308);
+    }
+  }
+  if (readable && (legacyPath || CLIENT_SITE_OLD_PATHS[pathname])) {
+    const url = request.nextUrl.clone();
+    url.pathname = legacyPath ? pathname.slice("/client-site".length) || "/" : CLIENT_SITE_OLD_PATHS[pathname];
+    return NextResponse.redirect(url, 308);
+  }
+  if (isClientSitePublicPath(pathname, request.method)) {
+    const backend = clientSiteVinBackend(pathname);
+    if (backend) {
+      backend.search = request.nextUrl.search;
+      return NextResponse.rewrite(backend);
+    }
+    return passThroughResponse(request);
+  }
+  const pagePath = readable ? clientSitePagePath(pathname) : null;
+  if (pagePath) {
+    const url = request.nextUrl.clone();
+    url.pathname = pagePath;
+    const response = NextResponse.rewrite(url);
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
+  return new NextResponse("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+}
+
 export function proxy(request: NextRequest) {
+  const domainResponse = clientSiteDomainResponse(request);
+  if (domainResponse) return domainResponse;
   if (isRscRequest(request)) {
     return new NextResponse(null, {
       status: 204,
@@ -255,6 +304,6 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     "/api/:path*",
-    "/((?!api/|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
+    "/((?!api/|_next/static|_next/image|favicon.ico).*)",
   ],
 };

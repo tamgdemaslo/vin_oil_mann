@@ -11,7 +11,7 @@ function httpOrigin(value: string | null | undefined) {
 }
 
 export function bookingAppOrigin(request: NextRequest) {
-  const configured = httpOrigin(process.env.APP_ORIGIN) ?? httpOrigin(process.env.NEXT_PUBLIC_APP_ORIGIN);
+  const configured = httpOrigin(process.env.PUBLIC_BOOKING_ORIGIN) ?? httpOrigin(process.env.APP_ORIGIN) ?? httpOrigin(process.env.NEXT_PUBLIC_APP_ORIGIN);
   if (configured) return configured;
 
   const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();

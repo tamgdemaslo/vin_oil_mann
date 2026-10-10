@@ -1,9 +1,11 @@
+import { headers } from "next/headers";
+import { clientSiteRequestBasePath } from "@/lib/client-site-domain";
 import { cache } from "react";
 import { notFound, permanentRedirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getClientCatalogForPage, publicOilToClientOil } from "@/lib/client-site-api";
 import { getPublicOilById } from "@/lib/public-oil";
-import { breadcrumbs, pageMetadata, productMetadata, productStructuredData, serializeJsonLd, SITE_PAGES } from "@/lib/client-site-seo";
+import { breadcrumbs, clientSiteUrl, pageMetadata, productMetadata, productStructuredData, serializeJsonLd, SITE_PAGES } from "@/lib/client-site-seo";
 import siteData from "@/lib/client-site-data.json";
 import ClientSiteApp from "../ClientSiteApp";
 
@@ -16,7 +18,7 @@ async function resolvePage(segments: string[]) {
   if (section === "product" && segments.length === 2) {
     const card = await product(id);
     if (!card) notFound();
-    if (card.id !== id) permanentRedirect(`/client-site/product/${card.id}`);
+    if (card.id !== id) permanentRedirect(clientSiteUrl(`/product/${card.id}`));
     return { card, title: card.name, description: card.description || "" };
   }
   if (section === "case" && segments.length === 2) {
@@ -36,6 +38,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 export default async function ClientSiteRoute({ params }: Props) {
   const { segments } = await params;
+  const basePath = clientSiteRequestBasePath(await headers());
   const info = await resolvePage(segments);
   const card = "card" in info ? info.card : undefined;
   const oils = card ? [publicOilToClientOil(card)] : segments[0] === "shop" ? await getClientCatalogForPage() : [];
@@ -43,6 +46,6 @@ export default async function ClientSiteRoute({ params }: Props) {
     {card ? <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd([
       productStructuredData(card), breadcrumbs(card.name, `/product/${card.id}`),
     ]) }} /> : null}
-    <ClientSiteApp initialPath={`/${segments.join("/")}`} initialOils={oils} />
+    <ClientSiteApp initialPath={`/${segments.join("/")}`} initialOils={oils} basePath={basePath} />
   </>;
 }
