@@ -13,6 +13,7 @@ const { proxy } = await jiti.import("../src/proxy.ts");
 const domain = await jiti.import("../src/lib/client-site-domain.ts");
 const { default: App } = await jiti.import("../src/app/client-site/ClientSiteApp.tsx");
 const { buildBookingManagementUrl } = await jiti.import("../src/lib/booking/management-url.ts");
+const { getRequiredRuntimeConfig } = await jiti.import("../src/lib/system-release.ts");
 const { inProcessBackgroundWorkersEnabled } = await jiti.import("../src/lib/background-worker-policy.ts");
 
 function request(path, host = "tamgdemaslo.ru", method = "GET", extra = {}) {
@@ -20,6 +21,7 @@ function request(path, host = "tamgdemaslo.ru", method = "GET", extra = {}) {
 }
 
 try {
+  assert.deepEqual(getRequiredRuntimeConfig(), ["DATABASE_URL", "APP_ORIGIN", "MESSENGER_CREDENTIAL_ENCRYPTION_KEY"]);
   assert.equal(proxy(request("/")).headers.get("x-middleware-next"), "1", "Default CRM routing is preserved");
   assert.equal(domain.clientSiteRequestBasePath(new Headers({ host: "tamgdemaslo.ru" })), "/client-site");
   process.env.PUBLIC_CLIENT_SITE_HOSTS = "tamgdemaslo.ru,www.tamgdemaslo.ru";
@@ -69,6 +71,7 @@ try {
 
   process.env.APP_IN_PROCESS_BACKGROUND_WORKERS_ENABLED = "1";
   process.env.CLIENT_SITE_ONLY = "true";
+  assert.deepEqual(getRequiredRuntimeConfig(), ["DATABASE_URL", "APP_ORIGIN", "PUBLIC_CLIENT_VIN_ORIGIN"], "Public app readiness requires its public CRM backend, without granting CRM integration credentials");
   assert.equal(proxy(request("/shop", "preview.twc1.net")).headers.get("x-middleware-rewrite"), "https://preview.twc1.net/client-site/shop");
   assert.equal(proxy(request("/api/auth/login", "preview.twc1.net", "POST")).status, 404);
   process.env.__NEXT_NO_MIDDLEWARE_URL_NORMALIZE = "1";
@@ -76,7 +79,13 @@ try {
   assert.equal(inProcessBackgroundWorkersEnabled(), false, "Dedicated client app never starts CRM workers");
   process.env.PUBLIC_CLIENT_VIN_ORIGIN = "https://www.tamgdemaslocrm.ru";
   assert.equal(proxy(request("/api/vin/lookup", "preview.twc1.net", "POST")).headers.get("x-middleware-rewrite"), "https://www.tamgdemaslocrm.ru/api/vin/lookup");
-  assert.equal(proxy(request("/api/public/booking", "preview.twc1.net", "POST")).headers.get("x-middleware-next"), "1", "Booking runs against the shared database");
+  for (const path of ["/api/public/booking", "/api/public/booking/branches", "/api/public/booking/manage/test/cancel"]) {
+    assert.equal(proxy(request(path, "preview.twc1.net", "POST")).headers.get("x-middleware-rewrite"), `https://www.tamgdemaslocrm.ru${path}`, "Booking uses existing CRM signatures and notification integrations");
+  }
+  assert.equal(proxy(request("/api/public/booking/private/unapproved", "preview.twc1.net", "POST")).status, 404, "Delegation cannot widen the public API whitelist");
+  const delegated = proxy(request("/api/public/booking", "preview.twc1.net", "POST", { origin: "https://preview.twc1.net" }));
+  assert.equal(delegated.headers.get("x-middleware-request-origin"), "https://www.tamgdemaslocrm.ru", "Validated public origin becomes a trusted same-origin CRM hop");
+  assert.equal(proxy(request("/api/public/booking", "preview.twc1.net", "POST", { origin: "https://unrelated.example" })).status, 403, "Cross-site callers are rejected before origin forwarding");
   assert.equal(proxy(request("/api/auth/login", "preview.twc1.net", "POST")).status, 404, "Backend proxy never exposes CRM auth");
   console.log("Client domain: root routing, catalog SSR, canonical URLs, old redirects, booking links and private-route isolation passed");
 } finally {
