@@ -47,7 +47,7 @@ export function isClientSitePublicPath(pathname: string, method: string) {
     if (/^\/api\/(?:oils|cases)\/[^/]+$/.test(pathname)) return true;
     if (pathname === "/booking" || /^\/booking\/manage\/[^/]+$/.test(pathname)) return true;
     if (pathname.startsWith("/_next/static/") || pathname === "/_next/image") return true;
-    if (/^\/(?:assets|products|cases|team|brand|fonts)\/.+\.(?:avif|webp|png|jpe?g|gif|svg|woff2?|mp4|css)$/i.test(pathname)) return true;
+    if (/^\/(?:assets|products|cases|team|brand|fonts|workshop)\/.+\.(?:avif|webp|png|jpe?g|gif|svg|woff2?|mp4|css)$/i.test(pathname)) return true;
   }
   if (!PUBLIC_METHODS.has(method)) return false;
   if (["/api/public/stats", "/api/public/vin-oil", "/api/public/leads", "/api/public/oils", "/api/public/oils/filters", "/api/public/booking"].includes(pathname)) return true;

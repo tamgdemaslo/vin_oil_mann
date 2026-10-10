@@ -35,7 +35,7 @@ try {
   for (const [path, internal] of [["/", "/client-site"], ["/shop?brand=Eurol", "/client-site/shop?brand=Eurol"], ["/product/test-oil", "/client-site/product/test-oil"]]) {
     assert.equal(proxy(request(path)).headers.get("x-middleware-rewrite"), `https://tamgdemaslo.ru${internal}`);
   }
-  for (const path of ["/booking", "/booking/manage/token", "/robots.txt", "/sitemap.xml", "/api/oils", "/api/public/oils/test/image/photo", "/team/ilya.webp", "/brand/logo-wordmark-light.svg", "/fonts/diagnostic/google-fonts.css"]) {
+  for (const path of ["/booking", "/booking/manage/token", "/robots.txt", "/sitemap.xml", "/api/oils", "/api/public/oils/test/image/photo", "/team/ilya.webp", "/workshop/garage-home.webp", "/brand/logo-wordmark-light.svg", "/fonts/diagnostic/google-fonts.css"]) {
     assert.equal(proxy(request(path)).headers.get("x-middleware-next"), "1", `Public route: ${path}`);
   }
   for (const path of ["/api/auth/users", "/api/local-inventory/products", "/api/booking-admin/services", "/api/appointments", "/inventory", "/shipment", "/api/public/unapproved", "/_next/data/build/inventory.json"]) {
