@@ -83,6 +83,9 @@ try {
     assert.equal(proxy(request(path, "preview.twc1.net", "POST")).headers.get("x-middleware-rewrite"), `https://www.tamgdemaslocrm.ru${path}`, "Booking uses existing CRM signatures and notification integrations");
   }
   assert.equal(proxy(request("/api/public/booking/private/unapproved", "preview.twc1.net", "POST")).status, 404, "Delegation cannot widen the public API whitelist");
+  const delegated = proxy(request("/api/public/booking", "preview.twc1.net", "POST", { origin: "https://preview.twc1.net" }));
+  assert.equal(delegated.headers.get("x-middleware-request-origin"), "https://www.tamgdemaslocrm.ru", "Validated public origin becomes a trusted same-origin CRM hop");
+  assert.equal(proxy(request("/api/public/booking", "preview.twc1.net", "POST", { origin: "https://unrelated.example" })).status, 403, "Cross-site callers are rejected before origin forwarding");
   assert.equal(proxy(request("/api/auth/login", "preview.twc1.net", "POST")).status, 404, "Backend proxy never exposes CRM auth");
   console.log("Client domain: root routing, catalog SSR, canonical URLs, old redirects, booking links and private-route isolation passed");
 } finally {

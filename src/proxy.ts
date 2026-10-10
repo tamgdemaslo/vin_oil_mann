@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { rejectDisallowedPublicOrigin } from "@/lib/public-api";
 import { NextRequest, NextResponse } from "next/server";
 import { clientSiteLegacyRedirectEnabled, clientSitePagePath, clientSitePublicBackend, isClientSitePublicPath, isClientSiteRoot, CLIENT_SITE_OLD_PATHS } from "@/lib/client-site-domain";
 
@@ -259,8 +260,14 @@ function clientSiteDomainResponse(request: NextRequest) {
   if (isClientSitePublicPath(pathname, request.method)) {
     const backend = clientSitePublicBackend(pathname);
     if (backend) {
+      const originError = rejectDisallowedPublicOrigin(request);
+      if (originError) return originError;
       backend.search = request.nextUrl.search;
-      return NextResponse.rewrite(backend);
+      const backendHeaders = new Headers(request.headers);
+      // Validate the browser origin above, then make the trusted server hop
+      // same-origin for CRM, whose edge replaces forwarded-host headers.
+      if (backendHeaders.has("origin")) backendHeaders.set("origin", backend.origin);
+      return NextResponse.rewrite(backend, { request: { headers: backendHeaders } });
     }
     return passThroughResponse(request);
   }
