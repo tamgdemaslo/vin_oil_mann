@@ -1623,3 +1623,56 @@ button:disabled {
 @media (max-width: 900px) {
   .branch-call-popover { top: 70px; right: 16px; }
 }
+
+/* VIN selection is a non-interactive preview until it is ready to launch. */
+.vin-development {
+  position: relative;
+  display: grid;
+  min-height: 360px;
+  color: var(--ink);
+  background: var(--paper);
+  isolation: isolate;
+}
+.vin-development__preview,
+.vin-development__notice { grid-area: 1 / 1; padding: 28px; min-width: 0; }
+.vin-development__preview {
+  filter: blur(4px);
+  opacity: .3;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+}
+.vin-development__preview label { display: block; margin-bottom: 10px; font: 10px/1.5 var(--f-mono); }
+.vin-development__preview .btn { width: 100%; margin-top: 22px; }
+.vin-development__notice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  background: rgb(245 242 237 / 80%);
+}
+.vin-development__status {
+  padding: 6px 10px;
+  border: 1px solid var(--rust);
+  color: var(--rust);
+  font: 600 10px/1.4 var(--f-sans);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.vin-development__notice h2 {
+  margin: 20px 0 14px;
+  font: 700 28px/1.15 var(--f-display);
+  letter-spacing: -.02em;
+  text-transform: uppercase;
+}
+.vin-development__notice p { margin: 0 0 24px; font: 14px/1.6 var(--f-sans); color: var(--steel); max-width: 44ch; }
+.vin-development__notice .btn { max-width: 100%; }
+.vin-development__strip { position: absolute; left: 0; right: 0; bottom: -14px; }
+.vin-development-page { background: var(--ink); padding: 56px 0 80px; }
+.vin-development-page__content { width: min(100%, 560px); margin: 0 auto; }
+.vin-development-page__contact { margin-top: 38px; padding: 24px; border: 1px solid var(--line); }
+@media (max-width: 600px) {
+  .vin-development__preview,
+  .vin-development__notice { padding: 24px; }
+}

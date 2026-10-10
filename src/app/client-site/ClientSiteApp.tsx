@@ -1245,10 +1245,44 @@ function Footer() {
 //  pages/home.jsx — Главная
 // ====================================================================
 
+function VinDevelopmentCard() {
+  return (
+    <section className="vin-development" aria-label="Подбор масла по VIN — в разработке">
+      <div className="vin-development__preview" inert aria-hidden="true">
+        <div className="t-eyebrow">Подбор по VIN</div>
+        <div className="t-headline" style={{fontSize: 28, margin: '14px 0 28px'}}>Масло под ваш автомобиль</div>
+        <label>VIN автомобиля · 17 знаков</label>
+        <input className="inp paper mono" placeholder="Введите VIN автомобиля" disabled tabIndex={-1} />
+        <button type="button" className="btn rust lg" disabled tabIndex={-1}>Подобрать масло →</button>
+      </div>
+      <div className="vin-development__notice">
+        <span className="vin-development__status">В разработке</span>
+        <h2>Подбор масла по VIN<br />готовим к запуску.</h2>
+        <p>Автоматический подбор пока недоступен. Позвоните в удобный филиал — поможем выбрать масло для вашего автомобиля.</p>
+        <Link to="/shop" className="btn ghost dark">Посмотреть каталог <span className="arr">→</span></Link>
+      </div>
+      <div className="chequered invert vin-development__strip" aria-hidden="true" />
+    </section>
+  );
+}
+
+function VinDevelopmentPage() {
+  return (
+    <main className="vin-development-page">
+      <div className="container">
+        <div className="vin-development-page__content">
+          <VinDevelopmentCard />
+          <div className="vin-development-page__contact">
+            <div className="t-eyebrow muted" style={{marginBottom: 16}}>Поможем с подбором</div>
+            <BranchPhoneLinks showHours />
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 function HomeHero() {
-  const r = useRoute();
-  const [vin, setVin] = useState('');
-  const submit = () => { r.go('/vin', { vin }); };
   const master = MASTERS.find((m) => m.id === 'maksim') || MASTERS[0];
   const [swapsCount, setSwapsCount] = useState(master.swaps);
 
@@ -1317,42 +1351,7 @@ function HomeHero() {
 
         {/* Right: booking by VIN card */}
         <div className="home-hero__booking" style={{position: 'sticky', top: 110, alignSelf: 'start'}}>
-          <div style={{background: '#F5F2ED', color: '#0a0a0a', padding: '28px 28px 26px', position: 'relative'}}>
-            <div style={{marginBottom: 22}}>
-              <div>
-                <div className="t-eyebrow" style={{color: '#C2410C', marginBottom: 8}}>Запись по VIN</div>
-                <div className="t-headline" style={{fontSize: 28, lineHeight: 1, letterSpacing: '-0.02em'}}>Подберём масло за 12 секунд</div>
-              </div>
-            </div>
-
-            <label style={{display: 'block', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.14em', color: '#858585', textTransform: 'uppercase', marginBottom: 8}}>VIN автомобиля · 17 знаков</label>
-            <input
-              className="inp paper mono"
-              placeholder="WBABA91070AL55203"
-              maxLength={17}
-              value={vin}
-              onChange={e => setVin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-              onKeyDown={e => e.key === 'Enter' && submit()}
-              style={{borderColor: '#0a0a0a', height: 58, fontSize: 16, letterSpacing: '0.14em'}}
-            />
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.1em'}}>
-              <span>{vin.length}/17</span>
-              <span>VIN используется только для подбора</span>
-            </div>
-
-            <button className="btn rust lg" onClick={submit} style={{width: '100%', marginTop: 18, justifyContent: 'space-between'}}>
-              Подобрать масло и слот
-              <span className="arr">→</span>
-            </button>
-
-            <div style={{borderTop: '1px solid var(--line-paper)', marginTop: 22, paddingTop: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#3D3D3D'}}>
-              <span>Цена и наличие показаны по каждой точке</span>
-              <Link to="/shop" style={{color: '#C2410C', fontWeight: 600, textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.1em'}}>Каталог →</Link>
-            </div>
-
-            {/* checker strip at bottom */}
-            <div className="chequered invert" style={{position: 'absolute', left: 0, right: 0, bottom: -14}} />
-          </div>
+          <VinDevelopmentCard />
 
           {/* Quick-call alt */}
           <div className="responsive-grid" style={{marginTop: 28, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, border: '1px solid var(--line)'}}>
@@ -4001,9 +4000,9 @@ function App({ initialPath = '/', initialOils = [], basePath = CLIENT_SITE_BASE_
   else if (seg[0] === 'team') page = <TeamPage />;
   else if (seg[0] === 'services') page = <ServicesPage />;
   else if (seg[0] === 'contacts') page = <ContactsPage />;
+  else if (seg[0] === 'vin') page = <VinDevelopmentPage />;
   else if (catalogStatus === 'loading') page = <CatalogGate title="Загружаем каталог масел" />;
   else if (catalogStatus === 'error') page = <CatalogGate title="Каталог эко-платформы недоступен" text={catalogError} />;
-  else if (seg[0] === 'vin') page = <VinPage />;
   else if (seg[0] === 'shop') page = <ShopPage />;
   else if (seg[0] === 'product') page = <ProductPage catalogVersion={catalogVersion} />;
   else if (seg[0] === 'account') page = <AccountPage />;
