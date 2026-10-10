@@ -1540,3 +1540,22 @@ button:disabled {
     animation: none !important;
   }
 }
+
+/* Popular oils: four equal columns with aligned details and prices. */
+.home-products-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 22px;
+}
+.home-product-link { display: block; min-width: 0; }
+.home-product-card { min-width: 0; }
+.home-product-details { min-height: 84px; }
+.home-product-title { min-height: 44px; }
+.home-product-footer { gap: 16px; }
+.home-product-price { flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 1100px) {
+  .home-products-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .home-products-grid { grid-template-columns: minmax(0, 1fr); }
+}

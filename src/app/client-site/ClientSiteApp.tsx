@@ -1449,7 +1449,7 @@ function ProductsPreview() {
     <section style={{background: '#F5F2ED', color: '#0a0a0a', padding: '90px 0 110px', position: 'relative'}}>
       <div className="container">
         <SectionHead paper eyebrow="Что заливают" title="На что записываются чаще всего." num="04 / 09" right={<Link to="/shop" className="btn ghost dark sm">Весь каталог →</Link>} />
-        <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 22}}>
+        <div className="home-products-grid">
           {picks.map((o, idx) => <OilCardPaper key={o.id} oil={o} idx={idx} />)}
         </div>
       </div>
@@ -1459,8 +1459,8 @@ function ProductsPreview() {
 
 function OilCardPaper({ oil, idx }) {
   return (
-    <Link to={`/product/${oil.id}`}>
-      <div style={{
+    <Link className="home-product-link" to={`/product/${oil.id}`}>
+      <div className="home-product-card" style={{
         background: '#FFFFFF', border: '1px solid #D9D3C5',
         padding: '20px 20px 22px', display: 'flex', flexDirection: 'column', gap: 16,
         position: 'relative', height: '100%', cursor: 'pointer',
@@ -1472,13 +1472,13 @@ function OilCardPaper({ oil, idx }) {
           <OilProductVisual oil={oil} variant="paper" />
         </div>
 
-        <div>
-          <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 20, lineHeight: 1.1, textTransform: 'uppercase', marginBottom: 6}}>{oil.brand} {oil.line}</div>
+        <div className="home-product-details">
+          <div className="home-product-title" style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 20, lineHeight: 1.1, textTransform: 'uppercase', marginBottom: 6}}>{oil.brand} {oil.line}</div>
           <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.06em'}}>{oil.visc} · {oil.volume} · {oil.type}</div>
         </div>
 
-        <div style={{marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 14, borderTop: '1px dashed #D9D3C5'}}>
-          <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, color: '#0a0a0a'}}>{fmtOilPrice(oil)}</span>
+        <div className="home-product-footer" style={{marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 14, borderTop: '1px dashed #D9D3C5'}}>
+          <span className="home-product-price" style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, color: '#0a0a0a'}}>{fmtOilPrice(oil)}</span>
           <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.08em'}}>{offerCountLabel(oil)}</span>
         </div>
       </div>
