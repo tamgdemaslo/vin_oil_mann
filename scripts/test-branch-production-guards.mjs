@@ -44,7 +44,7 @@ async function proxyResult(path, method = "POST", headers = {}) {
 
 assert.deepEqual(proxyConfig.matcher, [
   "/api/:path*",
-  "/((?!api/|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
+  "/((?!api/|_next/static|_next/image|favicon.ico).*)",
 ]);
 assert.deepEqual(
   await proxyResult("/records?_rsc=prefetch", "GET", {

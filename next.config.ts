@@ -6,6 +6,8 @@ const projectRoot = path.resolve(__dirname);
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Keep container loopback origins intact for internal public-page rewrites.
+  skipProxyUrlNormalize: true,
   outputFileTracingIncludes: {
     "/*": ["./assets/price-label-fonts/**/*"],
   },

@@ -125,7 +125,8 @@
     "test:ai-assistant-metrics": "node scripts/test-ai-assistant-metrics.mjs",
     "audit:ai-assistant-runs": "node scripts/audit-ai-assistant-runs.mjs",
     "test:ai-assistant-audit": "node scripts/test-ai-assistant-audit-suite.mjs",
-    "test:barrel-marking-input": "node scripts/test-barrel-marking-input.mjs"
+    "test:barrel-marking-input": "node scripts/test-barrel-marking-input.mjs",
+    "test:client-site-domain": "node scripts/test-client-site-domain.mjs"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",

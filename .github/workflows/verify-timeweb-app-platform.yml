@@ -49,6 +49,9 @@ jobs:
       - name: Enforce Timeweb-only deployment policy
         run: npm run check:timeweb-only
 
+      - name: Verify client domain isolation and SEO
+        run: npm run test:client-site-domain && node scripts/test-client-seo.mjs
+
       - name: Verify AI tool policy
         run: npm run test:ai-tool-loop-policy
 

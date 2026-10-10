@@ -1034,10 +1034,11 @@ function SectionHead({ eyebrow, title, right, paper, num }) {
 const RouterCtx = createContext(null);
 function useRoute() { return useContext(RouterCtx); }
 const CLIENT_SITE_BASE_PATH = '/client-site';
-const clientSiteHref = (to) => to === '/' ? CLIENT_SITE_BASE_PATH : `${CLIENT_SITE_BASE_PATH}${to}`;
+const clientSiteHref = (to, basePath = CLIENT_SITE_BASE_PATH) => to === '/' ? (basePath || '/') : `${basePath}${to}`;
 function Link({ to, children, ...rest }) {
+  const route = useRoute();
   return (
-    <a href={clientSiteHref(to)} {...rest}>{children}</a>
+    <a href={clientSiteHref(to, route?.basePath)} {...rest}>{children}</a>
   );
 }
 
@@ -3773,14 +3774,15 @@ function OfferPage() {
 //  app.jsx — router + mount
 // ====================================================================
 
-function useClientRoute(initialPath) {
+function useClientRoute(initialPath, basePath) {
   const parse = () => {
     if (typeof window === 'undefined') return initialPath;
     const legacyHash = window.location.hash.replace(/^#/, '');
     if (legacyHash.startsWith('/')) return legacyHash;
     const pathname = window.location.pathname;
-    if (pathname === CLIENT_SITE_BASE_PATH) return '/';
-    if (pathname.startsWith(`${CLIENT_SITE_BASE_PATH}/`)) return pathname.slice(CLIENT_SITE_BASE_PATH.length) || '/';
+    if (!basePath) return pathname || '/';
+    if (pathname === basePath) return '/';
+    if (pathname.startsWith(`${basePath}/`)) return pathname.slice(basePath.length) || '/';
     return initialPath || '/';
   };
   const [path, setPath] = useState(initialPath);
@@ -3791,7 +3793,7 @@ function useClientRoute(initialPath) {
       const nextPath = parse() || '/';
       const legacyHash = window.location.hash.replace(/^#/, '');
       if (legacyHash.startsWith('/')) {
-        window.history.replaceState(window.history.state, '', clientSiteHref(nextPath));
+        window.history.replaceState(window.history.state, '', clientSiteHref(nextPath, basePath));
       }
       setPath(nextPath);
       window.scrollTo({ top: 0, behavior: 'auto' });
@@ -3803,14 +3805,14 @@ function useClientRoute(initialPath) {
       window.removeEventListener('popstate', syncFromLocation);
       window.removeEventListener('hashchange', syncFromLocation);
     };
-  }, [initialPath]);
+  }, [initialPath, basePath]);
 
   const go = (to, st = {}) => {
     setState(st);
     if (to === '/vin' && st.vin) {
       try { sessionStorage.setItem('client-site-pending-vin', st.vin); } catch {}
     }
-    window.location.assign(clientSiteHref(to));
+    window.location.assign(clientSiteHref(to, basePath));
   };
 
   // Parse params
@@ -3819,11 +3821,11 @@ function useClientRoute(initialPath) {
   if (segs[0] === 'product' && segs[1]) params.id = segs[1];
   if (segs[0] === 'case' && segs[1]) params.id = segs[1];
 
-  return { path, go, state, params };
+  return { path, go, state, params, basePath };
 }
 
-function App({ initialPath = '/', initialOils = [] }: { initialPath?: string; initialOils?: ClientOil[] }) {
-  const router = useClientRoute(initialPath);
+function App({ initialPath = '/', initialOils = [], basePath = CLIENT_SITE_BASE_PATH }: { initialPath?: string; initialOils?: ClientOil[]; basePath?: string }) {
+  const router = useClientRoute(initialPath, basePath);
   const [OILS, setOils] = useState(initialOils);
   const oilsRef = useRef(initialOils);
   const [catalogVersion, setCatalogVersion] = useState(0);

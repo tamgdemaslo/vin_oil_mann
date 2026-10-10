@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { clientSiteCanonicalBasePath } from "@/lib/client-site-domain";
 import type { PublicOilCard } from "@/lib/public-oil";
 import { buildClientProductContent } from "@/lib/client-product-content";
 
 export const CLIENT_SITE_ORIGIN = (process.env.PUBLIC_CLIENT_SITE_ORIGIN || "https://www.tamgdemaslocrm.ru").replace(/\/+$/, "");
-export const clientSiteUrl = (path = "") => `${CLIENT_SITE_ORIGIN}/client-site${path}`;
+export const clientSiteUrl = (path = "") => `${CLIENT_SITE_ORIGIN}${clientSiteCanonicalBasePath()}${path || (clientSiteCanonicalBasePath() ? "" : "/")}`;
 export const SITE_PAGES: Record<string, { title: string; description: string }> = {
   "": { title: "Замена масла в Калининграде — Там где масло", description: "Замена моторного и трансмиссионного масла в Калининграде. Каталог масел, цены, примеры работ и запись. Дачная, 6В и Юрия Гагарина, 116." },
   shop: { title: "Моторные масла в Калининграде — каталог и цены | Там где масло", description: "Каталог моторных масел: выбор по бренду, вязкости и OEM-спецификациям. Характеристики, фасовки, цены и наличие по филиалам в Калининграде." },

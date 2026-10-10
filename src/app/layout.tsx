@@ -1,3 +1,5 @@
+import { headers } from "next/headers";
+import { isClientSiteRoot } from "@/lib/client-site-domain";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
@@ -16,11 +18,12 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const clientSiteRoot = isClientSiteRoot(await headers());
   return (
     <html lang="ru">
       <body className="antialiased">
@@ -29,7 +32,7 @@ export default function RootLayout({
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: BROWSER_REQUEST_CONTEXT_SCRIPT }}
         />
-        <PlatformChrome>
+        <PlatformChrome clientSiteRoot={clientSiteRoot}>
           {children}
         </PlatformChrome>
       </body>
