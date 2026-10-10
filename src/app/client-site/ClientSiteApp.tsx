@@ -1585,34 +1585,19 @@ function TeamPreview() {
 
 /* Big closing CTA */
 function ClosingCTA() {
-  const r = useRoute();
   return (
-    <section className="closing-cta" style={{background: '#F5F2ED', color: '#0a0a0a', padding: '110px 0', position: 'relative', overflow: 'hidden'}}>
-      <div className="decorative-number" aria-hidden="true" style={{position: 'absolute', top: -60, right: -100, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 520, color: 'rgba(10,10,10,0.05)', lineHeight: 0.8, pointerEvents: 'none', letterSpacing: '-0.04em'}}>76</div>
-      <div className="container closing-cta__grid" style={{position: 'relative', display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 56, alignItems: 'center'}}>
-        <div className="closing-cta__copy">
-          <div className="t-eyebrow" style={{marginBottom: 18}}>Финал</div>
-          <h2 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(48px, 7vw, 96px)', lineHeight: 0.92, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
-            Заезжай.<br />Не разводим<span style={{color: '#C2410C'}}>.</span>
-          </h2>
-          <div style={{marginTop: 24, fontSize: 18, lineHeight: 1.5, maxWidth: 580, color: '#3D3D3D'}}>
-            Сервис уровня дилера. Атмосфера гаража. Свои пацаны на ресепшене. Спокойно, точно и по делу.
-          </div>
-          <div style={{display: 'flex', gap: 16, marginTop: 36}}>
+    <section className="garage-invitation">
+      <div className="garage-invitation__scene">
+        <img src="/workshop/garage-home.webp" alt="Мастер за работой в сервисе «Там где масло»" width={941} height={1672} loading="lazy" decoding="async" />
+      </div>
+      <div className="container garage-invitation__layout">
+        <div className="garage-invitation__copy">
+          <div className="t-eyebrow">Там где масло</div>
+          <h2>Заезжай.<br />Не разводим<span>.</span></h2>
+          <p>Сервис уровня дилера. Атмосфера гаража. Свои пацаны на ресепшене. Спокойно, точно и по делу.</p>
+          <div className="garage-invitation__actions">
             <a href="/booking" className="btn rust lg">Записаться <span className="arr">→</span></a>
-            <Link to="/shop" className="btn ghost dark lg">Каталог масел</Link>
-          </div>
-        </div>
-        <div className="closing-cta__portrait">
-          <div className="closing-cta__photo">
-            <img
-              src="/workshop/garage-home.webp"
-              alt="Мастер в сервисе «Там где масло» рядом с автомобилем"
-              width={941}
-              height={1672}
-              loading="lazy"
-              decoding="async"
-            />
+            <Link to="/shop" className="btn ghost lg">Каталог масел</Link>
           </div>
         </div>
       </div>
