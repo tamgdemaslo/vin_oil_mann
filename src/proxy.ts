@@ -266,7 +266,9 @@ function clientSiteDomainResponse(request: NextRequest) {
   }
   const pagePath = readable ? clientSitePagePath(pathname) : null;
   if (pagePath) {
-    const url = request.nextUrl.clone();
+    // Preserve the server origin: NextURL normalizes loopback hosts to localhost,
+    // which would turn an internal rewrite into an external proxy request.
+    const url = new URL(request.url);
     url.pathname = pagePath;
     const response = NextResponse.rewrite(url);
     response.headers.set("Cache-Control", "private, no-store");

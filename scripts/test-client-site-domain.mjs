@@ -5,7 +5,7 @@ import React from "react";
 import { renderToString } from "react-dom/server";
 import { NextRequest } from "next/server.js";
 
-const keys = ["CLIENT_SITE_ONLY", "PUBLIC_CLIENT_VIN_ORIGIN", "PUBLIC_CLIENT_SITE_HOSTS", "PUBLIC_CLIENT_SITE_ORIGIN", "PUBLIC_CLIENT_SITE_BASE_PATH", "PUBLIC_CLIENT_SITE_REDIRECT_LEGACY", "PUBLIC_BOOKING_ORIGIN", "APP_ORIGIN", "APP_IN_PROCESS_BACKGROUND_WORKERS_ENABLED"];
+const keys = ["__NEXT_NO_MIDDLEWARE_URL_NORMALIZE", "CLIENT_SITE_ONLY", "PUBLIC_CLIENT_VIN_ORIGIN", "PUBLIC_CLIENT_SITE_HOSTS", "PUBLIC_CLIENT_SITE_ORIGIN", "PUBLIC_CLIENT_SITE_BASE_PATH", "PUBLIC_CLIENT_SITE_REDIRECT_LEGACY", "PUBLIC_BOOKING_ORIGIN", "APP_ORIGIN", "APP_IN_PROCESS_BACKGROUND_WORKERS_ENABLED"];
 const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 for (const key of keys) delete process.env[key];
 const jiti = createJiti(import.meta.url, { jsx: true, alias: { "@": resolve("src") } });
@@ -71,6 +71,8 @@ try {
   process.env.CLIENT_SITE_ONLY = "true";
   assert.equal(proxy(request("/shop", "preview.twc1.net")).headers.get("x-middleware-rewrite"), "https://preview.twc1.net/client-site/shop");
   assert.equal(proxy(request("/api/auth/login", "preview.twc1.net", "POST")).status, 404);
+  process.env.__NEXT_NO_MIDDLEWARE_URL_NORMALIZE = "1";
+  assert.equal(proxy(new NextRequest("http://127.0.0.1:3100/", { headers: { host: "tamgdemaslo.ru" } })).headers.get("x-middleware-rewrite"), "http://127.0.0.1:3100/client-site", "Internal rewrite preserves the raw server origin");
   assert.equal(inProcessBackgroundWorkersEnabled(), false, "Dedicated client app never starts CRM workers");
   process.env.PUBLIC_CLIENT_VIN_ORIGIN = "https://www.tamgdemaslocrm.ru";
   assert.equal(proxy(request("/api/vin/lookup", "preview.twc1.net", "POST")).headers.get("x-middleware-rewrite"), "https://www.tamgdemaslocrm.ru/api/vin/lookup");
