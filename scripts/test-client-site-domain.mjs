@@ -13,6 +13,7 @@ const { proxy } = await jiti.import("../src/proxy.ts");
 const domain = await jiti.import("../src/lib/client-site-domain.ts");
 const { default: App } = await jiti.import("../src/app/client-site/ClientSiteApp.tsx");
 const { buildBookingManagementUrl } = await jiti.import("../src/lib/booking/management-url.ts");
+const { getRequiredRuntimeConfig } = await jiti.import("../src/lib/system-release.ts");
 const { inProcessBackgroundWorkersEnabled } = await jiti.import("../src/lib/background-worker-policy.ts");
 
 function request(path, host = "tamgdemaslo.ru", method = "GET", extra = {}) {
@@ -20,6 +21,7 @@ function request(path, host = "tamgdemaslo.ru", method = "GET", extra = {}) {
 }
 
 try {
+  assert.deepEqual(getRequiredRuntimeConfig(), ["DATABASE_URL", "APP_ORIGIN", "MESSENGER_CREDENTIAL_ENCRYPTION_KEY"]);
   assert.equal(proxy(request("/")).headers.get("x-middleware-next"), "1", "Default CRM routing is preserved");
   assert.equal(domain.clientSiteRequestBasePath(new Headers({ host: "tamgdemaslo.ru" })), "/client-site");
   process.env.PUBLIC_CLIENT_SITE_HOSTS = "tamgdemaslo.ru,www.tamgdemaslo.ru";
@@ -69,6 +71,7 @@ try {
 
   process.env.APP_IN_PROCESS_BACKGROUND_WORKERS_ENABLED = "1";
   process.env.CLIENT_SITE_ONLY = "true";
+  assert.deepEqual(getRequiredRuntimeConfig(), ["DATABASE_URL", "APP_ORIGIN", "BOOKING_MANAGEMENT_TOKEN_SECRET"], "Public app readiness requires its booking signature, without granting CRM integration credentials");
   assert.equal(proxy(request("/shop", "preview.twc1.net")).headers.get("x-middleware-rewrite"), "https://preview.twc1.net/client-site/shop");
   assert.equal(proxy(request("/api/auth/login", "preview.twc1.net", "POST")).status, 404);
   process.env.__NEXT_NO_MIDDLEWARE_URL_NORMALIZE = "1";

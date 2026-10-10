@@ -8,6 +8,12 @@ const REQUIRED_RUNTIME_CONFIG = [
   "MESSENGER_CREDENTIAL_ENCRYPTION_KEY",
 ] as const;
 
+export function getRequiredRuntimeConfig(): readonly string[] {
+  return process.env.CLIENT_SITE_ONLY === "true"
+    ? ["DATABASE_URL", "APP_ORIGIN", "BOOKING_MANAGEMENT_TOKEN_SECRET"]
+    : REQUIRED_RUNTIME_CONFIG;
+}
+
 function configured(name: string) {
   return Boolean(process.env[name]?.trim());
 }
@@ -95,7 +101,7 @@ async function timedCheck(run: () => Promise<void>): Promise<ReadinessCheck> {
 }
 
 export async function getReadiness() {
-  const missingConfig = REQUIRED_RUNTIME_CONFIG.filter((name) => !configured(name));
+  const missingConfig = getRequiredRuntimeConfig().filter((name) => !configured(name));
   const checks = {
     config: missingConfig.length
       ? { status: "error" as const, durationMs: 0, error: `Missing: ${missingConfig.join(", ")}` }
