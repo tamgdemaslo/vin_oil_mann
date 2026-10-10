@@ -10,7 +10,6 @@ const REQUEST_VISIBILITY_HEADER = "x-eco-page-visibility";
 const REQUEST_BURST_LIMITS = {
   api: { windowMs: 10_000, limit: 12, blockMs: 30_000 },
   visibleApi: { windowMs: 10_000, limit: 24, blockMs: 10_000 },
-  document: { windowMs: 15_000, limit: 4, blockMs: 30_000 },
 } as const;
 const REQUEST_BURST_BUCKET_LIMIT = 2_000;
 const REQUEST_BURST_BUCKET_TTL_MS = 5 * 60_000;
@@ -88,7 +87,10 @@ function requestBurstKind(request: NextRequest): RequestBurstKind | null {
     if (visible && tabId && /^[a-zA-Z0-9_-]{8,80}$/.test(tabId)) return "visibleApi";
     return "api";
   }
-  return isHtmlDocumentRequest(request) ? "document" : null;
+  // Full-page navigation has no per-tab identity. Counting it across the whole
+  // browser blocks ordinary shipment opens, redirects and restored tabs, and
+  // replaces the application with a raw JSON error. Throttle API reads only.
+  return null;
 }
 
 function requestClientFingerprint(request: NextRequest, kind: RequestBurstKind) {

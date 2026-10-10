@@ -180,17 +180,19 @@ const documentBurstHeaders = {
   accept: "text/html,application/xhtml+xml",
   "sec-fetch-dest": "document",
 };
-for (let index = 0; index < 4; index += 1) {
+for (let index = 0; index < 30; index += 1) {
   assert.deepEqual(await proxyResult(`/shipment/restored-${index}`, "GET", documentBurstHeaders), {
     status: 200,
     next: true,
     body: null,
   });
 }
-const blockedDocumentBurst = await proxyResult("/inventory/restock", "GET", documentBurstHeaders);
-assert.equal(blockedDocumentBurst.status, 429);
-assert.equal(blockedDocumentBurst.next, false);
-assert.equal(blockedDocumentBurst.body?.code, "client_request_burst");
+// Navigating between documents must work even while the same browser has
+// exhausted its API budget; never replace the CRM page with a JSON 429.
+for (const path of ["/shipment", "/shipment/test-shipment", "/shipment/test-shipment/edit", "/inventory/restock", "/"]) {
+  assert.deepEqual(await proxyResult(path, "GET", documentBurstHeaders), { status: 200, next: true, body: null });
+  assert.deepEqual(await proxyResult(path, "GET", { ...burstHeaders, accept: "text/html", "sec-fetch-dest": "document" }), { status: 200, next: true, body: null });
+}
 
 for (const path of ["/api/health/live", "/api/health/ready", "/api/system/version", "/api/auth/users", "/api/auth/session"]) {
   for (let index = 0; index < 30; index += 1) {
