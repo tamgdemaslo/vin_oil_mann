@@ -1566,8 +1566,15 @@ function ClosingCTA() {
           </div>
         </div>
         <div className="closing-cta__portrait">
-          <div style={{aspectRatio: '4/5', border: '1px solid #0a0a0a'}}>
-            <F1Portrait helmet="arrow" label="07" sublabel="Заезжай · KGD · 76" />
+          <div className="closing-cta__photo">
+            <img
+              src="/workshop/garage-home.webp"
+              alt="Мастер в сервисе «Там где масло» рядом с автомобилем"
+              width={941}
+              height={1672}
+              loading="lazy"
+              decoding="async"
+            />
           </div>
         </div>
       </div>
