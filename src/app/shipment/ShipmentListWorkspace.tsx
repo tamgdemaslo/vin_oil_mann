@@ -55,7 +55,6 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 export function ShipmentListWorkspace({ rows, totalCount, totalSumLabel, emptyMessage }: ShipmentListWorkspaceProps) {
   const router = useRouter();
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
-  const refreshedOnMountRef = useRef(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [busyAction, setBusyAction] = useState<"post" | "copy" | "delete" | null>(null);
   const [notice, setNotice] = useState("");
@@ -68,10 +67,9 @@ export function ShipmentListWorkspace({ rows, totalCount, totalSumLabel, emptyMe
   const selectionActive = selectedRows.length > 0;
 
   useEffect(() => {
-    if (!refreshedOnMountRef.current) {
-      refreshedOnMountRef.current = true;
-      router.refresh();
-    }
+    // The journal is rendered dynamically with fresh server data. Refreshing
+    // on mount can fall back to a full navigation when RSC is unavailable,
+    // remounting this component and starting an endless reload cycle.
     const refreshRestoredPage = (event: PageTransitionEvent) => {
       if (event.persisted) router.refresh();
     };
