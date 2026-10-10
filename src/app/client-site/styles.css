@@ -1572,3 +1572,54 @@ button:disabled {
   object-fit: cover;
   object-position: 50% 20%;
 }
+
+/* Branch-specific calls stay available at every header breakpoint. */
+.branch-call-button,
+.branch-call-popover__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: var(--paper);
+  background: transparent;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.branch-call-button:hover,
+.branch-call-popover__close:hover { border-color: var(--rust); color: var(--rust); }
+.branch-call-button:focus-visible,
+.branch-call-popover__close:focus-visible,
+.branch-phone-links__link:focus-visible { outline: 2px solid var(--rust); outline-offset: 4px; }
+.branch-call-popover {
+  position: fixed;
+  inset: 76px max(24px, calc((100vw - 1392px) / 2)) auto auto;
+  margin: 0;
+  width: min(340px, calc(100vw - 32px));
+  padding: 16px 20px 20px;
+  color: var(--paper);
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 30%);
+}
+.branch-call-popover__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  font: 600 16px/1.4 var(--f-sans);
+}
+.branch-call-popover__close { border: 0; }
+.branch-phone-links { display: grid; gap: 16px; }
+.branch-phone-links__branch + .branch-phone-links__branch { border-top: 1px solid var(--line); padding-top: 16px; }
+.branch-phone-links__link { display: flex; flex-direction: column; gap: 6px; min-height: 44px; color: var(--paper); text-decoration: none; }
+.branch-phone-links__link:hover .branch-phone-links__number { color: var(--rust); }
+.branch-phone-links__address { font: 500 12px/1.4 var(--f-sans); color: #b8b8b8; }
+.branch-phone-links__number { font: 700 22px/1.25 var(--f-display); white-space: nowrap; }
+.branch-phone-links__hours { margin-top: 6px; color: #b8b8b8; font: 11px/1.6 var(--f-mono); }
+@media (max-width: 900px) {
+  .branch-call-popover { top: 70px; right: 16px; }
+}

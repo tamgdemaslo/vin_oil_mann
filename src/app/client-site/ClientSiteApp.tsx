@@ -1,7 +1,8 @@
 /* eslint-disable */
 // @ts-nocheck
 "use client";
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useId } from "react";
+import { Phone, X } from "lucide-react";
 import type { ClientOil } from "@/lib/client-site-api";
 
 // ====================================================================
@@ -1113,11 +1114,50 @@ function TopBar() {
           ))}
         </nav>
         <div className="client-topbar__actions" style={{display: 'flex', alignItems: 'center', gap: 12}}>
-          <a className="client-topbar__phone" href="tel:+79950545859">+7 (995) 054-58-59</a>
+          <BranchCallButton />
           <a href="/booking" className="btn sm rust client-topbar__cta">Записаться <span className="arr">→</span></a>
         </div>
       </div>
     </header>
+  );
+}
+
+function BranchPhoneLinks({ showHours = false }) {
+  return (
+    <div className="branch-phone-links">
+      {BRANCHES.map(branch => (
+        <div className="branch-phone-links__branch" key={branch.id}>
+          <a className="branch-phone-links__link" href={branch.phoneHref}>
+            <span className="branch-phone-links__address">{branch.label}</span>
+            <span className="branch-phone-links__number">{branch.phone}</span>
+          </a>
+          {showHours && <div className="branch-phone-links__hours">{branch.hours}<br />{branch.daysOff}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BranchCallButton() {
+  const id = useId();
+  const popoverRef = useRef(null);
+  const route = useRoute();
+  useEffect(() => { popoverRef.current?.hidePopover(); }, [route.path]);
+  return (
+    <>
+      <button type="button" className="branch-call-button" popoverTarget={id} aria-label="Позвонить — выбрать филиал" title="Позвонить в филиал">
+        <Phone size={20} strokeWidth={1.8} aria-hidden="true" />
+      </button>
+      <div ref={popoverRef} id={id} popover="auto" role="dialog" aria-label="В какой филиал позвонить" className="branch-call-popover">
+        <div className="branch-call-popover__heading">
+          <span>Куда позвонить?</span>
+          <button type="button" className="branch-call-popover__close" popoverTarget={id} popoverTargetAction="hide" aria-label="Закрыть выбор филиала">
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+        <BranchPhoneLinks />
+      </div>
+    </>
   );
 }
 
@@ -1318,8 +1358,7 @@ function HomeHero() {
           <div className="responsive-grid" style={{marginTop: 28, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, border: '1px solid var(--line)'}}>
             <div style={{padding: '18px 20px', background: '#0a0a0a'}}>
               <div className="t-eyebrow muted" style={{marginBottom: 8}}>Связь</div>
-              <a href="tel:+79950545859" style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 20, color: '#F5F2ED', textDecoration: 'none'}}>+7 (995) 054-58-59</a>
-              <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', marginTop: 4, letterSpacing: '0.1em'}}>пн - выходной, вт-пт 09:00-19:00, сб-вск 10:00-17:00</div>
+              <BranchPhoneLinks showHours />
             </div>
             <div style={{padding: '18px 20px', background: '#0a0a0a'}}>
               <div className="t-eyebrow muted" style={{marginBottom: 8}}>Telegram</div>
@@ -1806,8 +1845,7 @@ function VinPage() {
             <aside style={{border: '1px solid var(--line)', padding: 28, background: '#0e0e0e'}}>
               <div className="t-eyebrow" style={{marginBottom: 14}}>Без VIN</div>
               <div className="t-headline" style={{fontSize: 22, marginBottom: 18}}>Просто позвони</div>
-              <a href="tel:+79950545859" style={{display: 'block', fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 36, lineHeight: 1, color: '#F5F2ED', marginBottom: 8, textDecoration: 'none'}}>+7 (995)<br />054-58-59</a>
-              <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.1em', marginBottom: 24}}>пн - выходной, вт-пт 09:00-19:00, сб-вск 10:00-17:00</div>
+              <div style={{marginBottom: 24}}><BranchPhoneLinks showHours /></div>
               <div style={{borderTop: '1px solid var(--line)', paddingTop: 22}}>
                 <div className="t-eyebrow muted" style={{marginBottom: 10}}>Или в Telegram</div>
                 <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, color: '#F5F2ED'}}>@tamgdemaslo</div>
