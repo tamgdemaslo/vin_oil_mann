@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
   output: "standalone",
   // Keep container loopback origins intact for internal public-page rewrites.
   skipProxyUrlNormalize: true,
+  experimental: {
+    cpus: 1,
+    webpackBuildWorker: true,
+    webpackMemoryOptimizations: true,
+  },
   outputFileTracingIncludes: {
     "/*": ["./assets/price-label-fonts/**/*"],
   },
