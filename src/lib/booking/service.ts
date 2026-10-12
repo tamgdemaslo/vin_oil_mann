@@ -133,7 +133,7 @@ function requiredServiceFields(services: Array<{ requiredFieldsJson: Prisma.Json
     if (service.requiresVin) fields.add("vin");
     if (Array.isArray(service.requiredFieldsJson)) {
       for (const value of service.requiredFieldsJson) {
-        if (typeof value === "string") fields.add(value);
+        if (typeof value === "string" && value !== "year") fields.add(value);
       }
     }
   }
@@ -141,8 +141,8 @@ function requiredServiceFields(services: Array<{ requiredFieldsJson: Prisma.Json
 }
 
 function normalizeYear(value: number | string | null | undefined) {
-  if (value == null || value === "") return null;
-  const year = Number.parseInt(String(value), 10);
+  if (value == null || String(value).trim() === "") return null;
+  const year = Number(String(value).trim());
   const maximum = new Date().getUTCFullYear() + 1;
   if (!Number.isInteger(year) || year < 1900 || year > maximum) {
     throw new BookingError("Некорректный год автомобиля", "booking_vehicle_year_invalid");
@@ -512,9 +512,6 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
     }
     if (requiredFields.has("plate") && !bookingVehicle.plate) {
       throw new BookingError("Для выбранной услуги нужен госномер", "booking_plate_required");
-    }
-    if (requiredFields.has("year") && !bookingVehicle.year) {
-      throw new BookingError("Для выбранной услуги нужен год автомобиля", "booking_vehicle_year_required");
     }
     const requiresConfirmation = services.some((service) => service.requiresConfirmation) || needsVehicleClarification;
     const branch = await tx.branch.findUnique({ where: { id: input.branchId } });
@@ -943,7 +940,6 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
     if (loaded.services.some((service) => service.requiresVin) && !vehicle.vin) throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
     if (requiredFields.has("email") && !nextEmail) throw new BookingError("Для выбранной услуги нужен email", "booking_email_required");
     if (requiredFields.has("plate") && !vehicle.plate) throw new BookingError("Для выбранной услуги нужен госномер", "booking_plate_required");
-    if (requiredFields.has("year") && !vehicle.year) throw new BookingError("Для выбранной услуги нужен год автомобиля", "booking_vehicle_year_required");
 
     await tx.localCounterparty.update({
       where: { branchId_id: { branchId: current.branchId, id: client.id } },

@@ -2028,10 +2028,6 @@ export default function RecordsPageClient() {
         setFormError("Для выбранных работ нужен госномер");
         return;
       }
-      if (requiredFields.has("year") && !form.vehicleYear.trim()) {
-        setFormError("Для выбранных работ нужен год автомобиля");
-        return;
-      }
       const manualSeanceLength = form.datetimeEnd ? calculateSeanceLengthSeconds(form.datetime, form.datetimeEnd) : null;
       if (form.datetimeEnd && manualSeanceLength == null) {
         setFormError("Окончание записи должно быть позже начала");
@@ -2622,7 +2618,6 @@ export default function RecordsPageClient() {
   const formRequiresVin = selectedFormServices.some((service) => service.requires_vin) || requiredFormFields.has("vin");
   const formRequiresEmail = requiredFormFields.has("email");
   const formRequiresPlate = requiredFormFields.has("plate");
-  const formRequiresYear = requiredFormFields.has("year");
   const selectedFormMaster = staff.find((item) => String(item.id) === form.staffId) ?? null;
   const eligibleFormMasters = staff.filter((item) => item.bookable !== false && selectedFormServices.every((service) => item.membership_id ? service.master_membership_ids?.includes(item.membership_id) === true : false));
   const selectedClientPhoneKey = normalizePhone(form.clientPhone);
@@ -3507,7 +3502,7 @@ export default function RecordsPageClient() {
                 </div> : null}
                 {!form.selectedVehicleId ? <div className="eco-records-form-grid">
                   <label><span>Марка и модель *</span><input value={form.vehicleModel} onChange={(event) => setFormValue("vehicleModel", event.target.value)} placeholder="Mitsubishi ASX" /></label>
-                  <label><span>Год{formRequiresYear ? " *" : ""}</span><input inputMode="numeric" value={form.vehicleYear} onChange={(event) => setFormValue("vehicleYear", event.target.value)} placeholder="2020" /></label>
+                  <label><span>Год (необязательно)</span><input inputMode="numeric" value={form.vehicleYear} onChange={(event) => setFormValue("vehicleYear", event.target.value)} placeholder="2020" /></label>
                   <label><span>Госномер{formRequiresPlate ? " *" : ""}</span><input value={form.vehiclePlate} onChange={(event) => setFormValue("vehiclePlate", event.target.value)} placeholder="А123ВС39" /></label>
                   <label><span>VIN{formRequiresVin ? " *" : ""}</span><input value={form.vehicleVin} onChange={(event) => setFormValue("vehicleVin", event.target.value)} placeholder="17 символов" /></label>
                 </div> : null}

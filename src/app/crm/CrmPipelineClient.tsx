@@ -16,6 +16,7 @@ import {
   Link2,
   MessageSquare,
   PackageCheck,
+  Pencil,
   Phone,
   Plus,
   ReceiptText,
@@ -1128,6 +1129,11 @@ export default function CrmPipelineClient({
 
       {selectedDeal && (
         <CaseDrawer
+          key={selectedDeal.id}
+          onSave={async (values) => {
+            await patchDeal(selectedDeal.id, values);
+            await loadPipeline();
+          }}
           deal={selectedDeal}
           stage={selectedStage}
           stages={stages}
@@ -1212,7 +1218,7 @@ function DealCard({
       draggable={!inactive}
       onClick={onToggle}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
+        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
           event.preventDefault();
           onToggle();
         }
@@ -1226,6 +1232,9 @@ function DealCard({
         <span className="l-mono">{shortId(deal.id)}</span>
         <div className="eco-deal-card__top-actions">
           <EcoBadge tone={statusMeta.tone}>{statusMeta.shortLabel}</EcoBadge>
+          <button type="button" className="eco-deal-card__chevron" title="Редактировать дело" aria-label="Редактировать дело" onClick={(event) => { event.stopPropagation(); onOpen(); }}>
+            <Pencil size={14} />
+          </button>
           <button type="button" className="eco-deal-card__chevron" aria-label={expanded ? "Свернуть дело" : "Раскрыть дело"} onClick={(event) => { event.stopPropagation(); onToggle(); }}>
             <ChevronDown size={14} />
           </button>
@@ -1647,7 +1656,9 @@ function CaseDrawer({
   onAction,
   onReminder,
   onCloseCase,
+  onSave,
 }: {
+  onSave: (values: Record<string, unknown>) => Promise<void>;
   deal: Deal;
   stage?: Stage | null;
   stages: Stage[];
@@ -1659,6 +1670,30 @@ function CaseDrawer({
   onReminder: (value: string | null) => void;
   onCloseCase: (reason: string) => void;
 }) {
+  const [editing, setEditing] = useState(true);
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [draft, setDraft] = useState(() => ({ nextAction: deal.nextAction ?? "", dueAt: caseDueAt(deal) ? dateInputValue(new Date(caseDueAt(deal)!)) : "", notes: deal.notes ?? "" }));
+  function startEditing() {
+    const dueAt = caseDueAt(deal);
+    setDraft({ nextAction: deal.nextAction ?? "", dueAt: dueAt ? dateInputValue(new Date(dueAt)) : "", notes: deal.notes ?? "" });
+    setSaveError(null);
+    setEditing(true);
+  }
+  async function saveDetails(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingDetails(true);
+    setSaveError(null);
+    try {
+      const dueAt = draft.dueAt ? new Date(draft.dueAt).toISOString() : null;
+      await onSave({ nextAction: draft.nextAction.trim() || null, nextActionAt: dueAt, nextContactAt: dueAt, snoozeUntil: null, notes: draft.notes.trim() || null });
+      setEditing(false);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Не удалось сохранить изменения");
+    } finally {
+      setSavingDetails(false);
+    }
+  }
   const clientType = CLIENT_TYPE_META[resolveClientType(deal)];
   const status = caseStatusOf(deal, stage);
   const statusMeta = CLIENT_CASE_STATUS_META[status];
@@ -1667,7 +1702,7 @@ function CaseDrawer({
   const clientSearch = linkedClientSearch(deal);
 
   return (
-    <div className="eco-crm-drawer-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="eco-crm-drawer-backdrop" role="presentation" onMouseDown={() => { if (!savingDetails) onClose(); }}>
       <aside className="eco-crm-drawer" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
         <header className="eco-crm-drawer__header">
           <div>
@@ -1681,7 +1716,7 @@ function CaseDrawer({
               </EcoBadge>
             </div>
           </div>
-          <button type="button" className="eco-icon-btn" onClick={onClose} aria-label="Закрыть">
+          <button type="button" className="eco-icon-btn" onClick={onClose} disabled={savingDetails} aria-label="Закрыть">
             <X size={17} />
           </button>
         </header>
@@ -1778,6 +1813,19 @@ function CaseDrawer({
               <ClipboardList size={16} />
               Что нужно сделать
             </h3>
+            {editing ? (
+              <form onSubmit={saveDetails} className="eco-client-form-grid">
+                <label className="eco-client-field"><span>Следующее действие</span><input className="eco-input" value={draft.nextAction} disabled={savingDetails} onChange={(event) => setDraft((current) => ({ ...current, nextAction: event.target.value }))} autoFocus /></label>
+                <label className="eco-client-field"><span>Срок</span><input className="eco-input" type="datetime-local" value={draft.dueAt} disabled={savingDetails} onChange={(event) => setDraft((current) => ({ ...current, dueAt: event.target.value }))} /><small>Можно оставить без срока</small></label>
+                <label className="eco-client-field is-full"><span>Комментарий</span><textarea className="eco-input" rows={4} value={draft.notes} disabled={savingDetails} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
+                {saveError && <p role="alert">{saveError}</p>}
+                <div className="eco-crm-reminder-actions">
+                  <button type="submit" disabled={savingDetails}>{savingDetails ? "Сохраняем…" : "Сохранить"}</button>
+                  <button type="button" disabled={savingDetails} onClick={() => setEditing(false)}>Отмена</button>
+                </div>
+              </form>
+            ) : (<>
+            <div className="eco-crm-reminder-actions"><button type="button" disabled={moving} onClick={startEditing}><Pencil size={14} /> Редактировать</button></div>
             <InfoLine label="Следующее действие" value={deal.nextAction || defaultNextActionForCaseStatus(status, stage?.name) || "Уточнить"} />
             <InfoLine label="Когда всплывёт" value={formatDateTime(caseDueAt(deal))} />
             <div className="eco-crm-reminder-actions">
@@ -1799,6 +1847,7 @@ function CaseDrawer({
               <MessageSquare size={15} />
               <p>{deal.notes || "Комментариев пока нет"}</p>
             </div>
+            </>)}
           </section>
 
           <section className="eco-client-info-block">

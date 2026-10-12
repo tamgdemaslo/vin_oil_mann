@@ -109,7 +109,7 @@ function structuredVehicle(payload: JsonObject) {
     make: text(vehicle.make),
     model: text(vehicle.model),
     generation: text(vehicle.generation),
-    year: number(vehicle.year),
+    year: vehicle.year == null || String(vehicle.year).trim() === "" ? null : vehicle.year as number | string,
     plate: text(vehicle.plate),
     vin: text(vehicle.vin),
   };

@@ -16,7 +16,7 @@ function serviceData(body: Record<string, unknown>) {
     ? body.requiredFields
     : Array.isArray(body.requiredFieldsJson) ? body.requiredFieldsJson : [];
   const requiredFieldsJson = [...new Set(requiredFieldsSource.map(String))]
-    .filter((field) => ["email", "plate", "year", "vin"].includes(field))
+    .filter((field) => ["email", "plate", "vin"].includes(field))
     .slice(0, 20);
   return {
     name,

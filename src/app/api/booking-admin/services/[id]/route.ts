@@ -33,7 +33,7 @@ export async function PATCH(request: NextRequest, context: Context) {
         requiresConfirmation: typeof body.requiresConfirmation === "boolean" ? body.requiresConfirmation : undefined,
         requiredFieldsJson: Array.isArray(body.requiredFields) || Array.isArray(body.requiredFieldsJson)
           ? [...new Set((Array.isArray(body.requiredFields) ? body.requiredFields : body.requiredFieldsJson as unknown[]).map(String))]
-              .filter((field) => ["email", "plate", "year", "vin"].includes(field))
+              .filter((field) => ["email", "plate", "vin"].includes(field))
               .slice(0, 20)
           : undefined,
         sortOrder: Number.isFinite(Number(body.sortOrder)) ? Math.trunc(Number(body.sortOrder)) : undefined,

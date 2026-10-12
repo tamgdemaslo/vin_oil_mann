@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import ts from "typescript";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 
@@ -356,6 +357,21 @@ assert.match(schema, /legacyExternalId\s+String\?/);
 assert.match(schema, /@@unique\(\[branchId, legacyExternalId\]\)/);
 
 const service = source("src/lib/booking/service.ts");
+function extractBookingFunction(code, name, bindings = {}) {
+  const start = code.indexOf(`function ${name}(`);
+  const functionSource = code.slice(start, code.indexOf("\n}", start) + 2);
+  const javascript = ts.transpile(functionSource, { target: ts.ScriptTarget.ES2022 });
+  return new Function(...Object.keys(bindings), `${javascript}; return ${name};`)(...Object.values(bindings));
+}
+const normalizeYear = extractBookingFunction(service, "normalizeYear", { BookingError: Error });
+for (const value of [null, undefined, "", "   "]) assert.equal(normalizeYear(value), null);
+assert.equal(normalizeYear("2020"), 2020);
+for (const value of [0, "2020abc", "2020.5", "abc", 1899]) assert.throws(() => normalizeYear(value), /Некорректный год/);
+const requiredServiceFields = extractBookingFunction(service, "requiredServiceFields");
+assert.deepEqual([...requiredServiceFields([{ requiresVin: true, requiredFieldsJson: ["year", "plate"] }])], ["vin", "plate"]);
+const structuredVehicle = extractBookingFunction(source("src/app/api/booking-journal/route.ts"), "structuredVehicle", { object: (value) => value ?? {}, text: (value) => value == null ? null : String(value) });
+for (const value of [null, undefined, "", "   "]) assert.equal(structuredVehicle({ vehicle: { make: "Ford", year: value } }).year, null);
+assert.equal(structuredVehicle({ vehicle: { year: "2020" } }).year, "2020");
 assert.match(service, /pg_advisory_xact_lock/);
 assert.match(service, /TransactionIsolationLevel\.Serializable/);
 assert.match(service, /startsAt: \{ lt: input\.endsAt \}/);

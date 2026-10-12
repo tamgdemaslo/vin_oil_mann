@@ -125,7 +125,7 @@ function timezoneLabel(timezone: string) {
   return "Местное время филиала";
 }
 function requirementLabels(service: Service) {
-  const fields = new Set(service.requiredFields ?? []); if (service.requiresVin) fields.add("vin");
+  const fields = new Set((service.requiredFields ?? []).filter((field) => field !== "year")); if (service.requiresVin) fields.add("vin");
   const names: Record<string, string> = { vin: "VIN", plate: "госномер", year: "год автомобиля", email: "email" };
   return [...fields].map((field) => names[field] ?? field);
 }
@@ -183,7 +183,7 @@ export default function BookingClient() {
   const requiresVin = selectedServices.some((service) => service.requiresVin || service.requiredFields.includes("vin"));
   const requiresConfirmation = selectedServices.some((service) => service.requiresConfirmation) || (requiresVin && needsVinHelp);
   const requiredFields = useMemo(() => {
-    const fields = new Set(selectedServices.flatMap((service) => service.requiredFields ?? []));
+    const fields = new Set(selectedServices.flatMap((service) => service.requiredFields ?? []).filter((field) => field !== "year"));
     if (requiresVin) fields.add("vin"); return fields;
   }, [requiresVin, selectedServices]);
   const fixedLaborTotals = selectedServices.reduce<Record<string, number>>((totals, service) => {
