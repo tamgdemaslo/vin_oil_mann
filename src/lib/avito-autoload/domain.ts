@@ -171,7 +171,7 @@ export function avitoFeedStats(listings: AvitoListing[], settings: AvitoSettings
     selected: selected.length, included: includedIds.size,
     outOfStock: selected.filter((listing) => !listing.archived && !avitoStockAllowed(listing.source, listing.values.volume, settings)).length,
     invalid: eligible.filter((listing) => listing.issues.some((issue) => issue.severity === "error")).length,
-    warnings: eligible.filter((listing) => listing.issues.some((issue) => issue.severity === "warning")).length,
+    warnings: listings.filter((listing) => listing.included && listing.issues.some((issue) => issue.severity === "warning")).length,
     withdrawals: previousIds.filter((id) => !includedIds.has(id)).length,
   };
 }

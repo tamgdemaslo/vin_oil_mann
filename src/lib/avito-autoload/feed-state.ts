@@ -5,7 +5,7 @@ export function avitoFeedBlocker(enabled: boolean, hasReviewedFeed: boolean) {
   };
   if (!hasReviewedFeed) return {
     code: "AVITO_FEED_NOT_REVIEWED",
-    message: "Первый файл ещё не сформирован. Откройте «Склад → Авито», выберите товары, исправьте ошибки и нажмите «Сформировать файл».",
+    message: "Первый файл ещё не сформирован. Откройте «Склад → Авито», выберите товары и нажмите «Сформировать файл». Товары с ошибками будут пропущены.",
   };
   return null;
 }

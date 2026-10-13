@@ -269,12 +269,11 @@ export async function prepareAvitoFeed(profile: StoredAvitoProfile, scope: Avito
   if (avitoSettingsIssues(profile.settings).length) throw new AvitoAutoloadError("Исправьте адрес и контактные настройки");
   const [listings, previous] = await Promise.all([loadListings(scope, profile.settings, true), readAvitoValue<AvitoSnapshot>(scope, "snapshot")]);
   const stats = avitoFeedStats(listings, profile.settings, previous?.adIds);
-  if (stats.invalid) throw new AvitoAutoloadError(`Исправьте ${stats.invalid} объявлений с ошибками. Они не будут молча исключены из файла`, 422, "AVITO_INVALID_LISTINGS", { stats });
   // Automatic withdrawal is allowed only for an explicit stock rule or an
   // already-reviewed empty snapshot. Changing the selection to zero needs review.
   const automaticStockWithdrawal = Boolean(automatic && previous && profile.settings.onlyInStock && listings.some((listing) => listing.enabled) && listings.every((listing) => listing.archived || !avitoStockAllowed(listing.source, listing.values.volume, profile.settings)));
   if (!stats.included && !allowEmpty && !automaticStockWithdrawal && !(automatic && previous?.adIds.length === 0)) {
-    throw new AvitoAutoloadError(previous?.adIds.length ? "Файл станет пустым и снимет прежние объявления. Подтвердите пустую выгрузку" : "Выберите хотя бы один товар с доступным остатком", 422, "AVITO_EMPTY_FEED", { stats });
+    throw new AvitoAutoloadError(previous?.adIds.length ? "Файл станет пустым и снимет прежние объявления. Подтвердите пустую выгрузку" : "Для первой выгрузки нужен хотя бы один товар без ошибок с доступным остатком. Товары с ошибками пропускаются", 422, "AVITO_EMPTY_FEED", { stats });
   }
   if (allowEmpty && !previous) throw new AvitoAutoloadError("Для первой выгрузки нужен хотя бы один товар");
   const csv = buildAvitoCsv(listings, profile.settings, (id) => `${profile.settings.publicBaseUrl}/api/avito-autoload/feeds/${profile.feedToken}/photos/${encodeURIComponent(id)}`);
@@ -291,7 +290,7 @@ export async function generateAvitoExport(allowEmpty = false) {
   const result = await prepareAvitoFeed(profile, scope, allowEmpty);
   const exportRow = await prisma.$transaction(async (db) => {
     await writeAvitoValue(scope, "snapshot", result.snapshot, db);
-    return avitoAudit(scope, "feed_generated", "ok", `Подготовлена выгрузка: ${result.stats.included} объявлений`, {
+    return avitoAudit(scope, "feed_generated", "ok", `Подготовлена выгрузка: ${result.stats.included} объявлений; пропущено с ошибками: ${result.stats.invalid}`, {
       stats: result.stats, csvGzip: gzipSync(result.csv).toString("base64"), catalogVersion: "2026-10-12",
     }, db);
   });

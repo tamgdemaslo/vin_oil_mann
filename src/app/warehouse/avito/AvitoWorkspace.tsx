@@ -104,7 +104,7 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
     setBusy(action); setError(""); setNotice(""); setDownloadUrl(null);
     try {
       const result = await request<ActionResult>("/api/avito-autoload", { operation: action, ...payload });
-      setNotice(result.message ?? (result.downloadUrl ? `Файл готов: ${result.stats?.included ?? 0} объявлений` : "Изменения сохранены"));
+      setNotice(result.message ?? (result.downloadUrl ? `Файл готов: ${result.stats?.included ?? 0} объявлений${result.stats?.invalid ? `; пропущено с ошибками: ${result.stats.invalid}` : ""}` : "Изменения сохранены"));
       setDownloadUrl(result.downloadUrl ?? null);
       await refreshCurrent.current();
       return true;
@@ -130,7 +130,7 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
       </div>
       <div className={styles.headerActions}>
         <EcoButton type="button" disabled={Boolean(busy) || loading} onClick={() => { setBusy("refresh"); setError(""); refresh().catch((failure) => setError(errorMessage(failure))).finally(() => setBusy(null)); }}><RefreshCw size={15} className={busy === "refresh" ? styles.spinning : ""} /> Обновить</EcoButton>
-        {editable && <EcoButton variant="primary" type="button" disabled={!data || loading || Boolean(busy) || data.stats.invalid > 0} onClick={() => setReviewOpen(true)} title={data?.stats.invalid ? "Исправьте ошибки выбранных объявлений" : undefined}><FileCheck2 size={16} /> Сформировать файл</EcoButton>}
+        {editable && <EcoButton variant="primary" type="button" disabled={!data || loading || Boolean(busy)} onClick={() => setReviewOpen(true)}><FileCheck2 size={16} /> Сформировать файл</EcoButton>}
       </div>
     </header>
 
@@ -144,7 +144,7 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
         <div className={styles.summary}>
           <span><strong>{data.stats.selected}</strong> выбрано для Авито</span>
           <span><strong>{data.stats.included}</strong> попадут в файл</span>
-          <button type="button" onClick={() => { setView("errors"); resetPage(); }} className={data.stats.invalid ? styles.summaryError : ""}><strong>{data.stats.invalid}</strong> с ошибками</button>
+          <button type="button" onClick={() => { setView("errors"); resetPage(); }} className={data.stats.invalid ? styles.summaryError : ""}><strong>{data.stats.invalid}</strong> пропускаются из-за ошибок</button>
           <span><strong>{data.stats.outOfStock}</strong> без доступного остатка</span>
           <small>Последний файл: {dateLabel(data.settings.lastExportAt)}</small>
         </div>
@@ -278,7 +278,7 @@ function ListingEditor({ listing, settings, canEdit, busy, error, onClose, onSav
 function History({ items, busy, canEdit, hasKeys, onReports }: { items: AvitoHistoryItem[]; busy: boolean; canEdit: boolean; hasKeys: boolean; onReports: () => Promise<boolean> }) {
   return <>
     <div className={styles.historyHeader}><div><h2>История загрузок</h2><p>Формирование файлов, запросы Авито и результаты обработки.</p></div>{canEdit && <EcoButton disabled={busy || !hasKeys} onClick={() => void onReports()}><RefreshCw size={15} /> Получить отчёт Авито</EcoButton>}</div>
-    {!items.length ? <div className={styles.empty}><FileCheck2 size={24} /><h2>Загрузок пока нет</h2><p>Сформируйте первый файл. Здесь появятся его состав и результат обработки Авито.</p></div> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>Время</th><th>Событие</th><th>Результат</th><th>Файл</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{dateLabel(item.createdAt)}</td><td><strong>{historyLabels[item.action] ?? item.action}</strong><small>{item.message}</small></td><td><EcoBadge tone={item.status === "error" ? "danger" : item.status === "pending" ? "warning" : "success"}>{item.status === "error" ? "Ошибка" : item.status === "pending" ? "Обрабатывается" : "Выполнено"}</EcoBadge>{item.stats && <small>{item.stats.included} объявлений · {item.stats.withdrawals} исключений</small>}{item.reportId && <small>Отчёт №{item.reportId}</small>}</td><td>{item.downloadUrl && <a className="eco-btn eco-btn--sm" href={item.downloadUrl}><Download size={15} /> Скачать CSV</a>}</td></tr>)}</tbody></table></div>}
+    {!items.length ? <div className={styles.empty}><FileCheck2 size={24} /><h2>Загрузок пока нет</h2><p>Сформируйте первый файл. Здесь появятся его состав и результат обработки Авито.</p></div> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>Время</th><th>Событие</th><th>Результат</th><th>Файл</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{dateLabel(item.createdAt)}</td><td><strong>{historyLabels[item.action] ?? item.action}</strong><small>{item.message}</small></td><td><EcoBadge tone={item.status === "error" ? "danger" : item.status === "pending" ? "warning" : "success"}>{item.status === "error" ? "Ошибка" : item.status === "pending" ? "Обрабатывается" : "Выполнено"}</EcoBadge>{item.stats && <small>{item.stats.included} объявлений · {item.stats.invalid ?? 0} пропущено с ошибками · {item.stats.withdrawals} исключений</small>}{item.reportId && <small>Отчёт №{item.reportId}</small>}</td><td>{item.downloadUrl && <a className="eco-btn eco-btn--sm" href={item.downloadUrl}><Download size={15} /> Скачать CSV</a>}</td></tr>)}</tbody></table></div>}
   </>;
 }
 
@@ -289,11 +289,12 @@ function ExportReview({ stats, hasPrevious, busy, error, onClose, onConfirm }: {
   return <dialog ref={dialog} className={styles.review} aria-labelledby="avito-review-title" onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
     <header><h2 id="avito-review-title">Проверка перед выгрузкой</h2><button type="button" className={styles.iconButton} disabled={busy} aria-label="Закрыть проверку выгрузки" onClick={onClose}><X size={20} /></button></header>
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    <dl><dt>Добавить или обновить в файле</dt><dd>{stats.included}</dd><dt>Исключить из предыдущего файла</dt><dd>{stats.withdrawals}</dd><dt>Не включать по остатку</dt><dd>{stats.outOfStock}</dd></dl>
+    <dl><dt>Добавить или обновить в файле</dt><dd>{stats.included}</dd><dt>Пропустить из-за ошибок</dt><dd>{stats.invalid}</dd><dt>Исключить из предыдущего файла</dt><dd>{stats.withdrawals}</dd><dt>Не включать по остатку</dt><dd>{stats.outOfStock}</dd></dl>
     <p>Формирование файла сохраняет проверенный состав выгрузки. Если автовыгрузка включена, Авито сможет получить обновлённые данные по ссылке.</p>
+    {stats.invalid > 0 && <p className={styles.issueWarning}><TriangleAlert size={16} /> Товары с ошибками не попадут в файл. После исправления они автоматически войдут в следующую выгрузку. Если пропущенное объявление уже размещено, Авито снимет его после обработки файла.</p>}
     {stats.warnings > 0 && <p className={styles.issueWarning}><TriangleAlert size={16} /> {stats.warnings} объявлений с предупреждениями. Допуски и публикацию дополнительно проверит Авито.</p>}
     {stats.included === 0 && hasPrevious && <label className={styles.checkField}><input type="checkbox" checked={allowEmpty} disabled={busy} onChange={(event) => setAllowEmpty(event.target.checked)} /><span>Подтверждаю пустой файл: прежние объявления будут сняты после обработки Авито.</span></label>}
-    {stats.included === 0 && !hasPrevious && <p className={styles.fieldError}>Для первой выгрузки выберите хотя бы один товар с доступным остатком.</p>}
-    <footer><EcoButton disabled={busy} onClick={onClose}>Отмена</EcoButton><EcoButton variant="primary" disabled={busy || stats.invalid > 0 || stats.included === 0 && (!hasPrevious || !allowEmpty)} onClick={() => void onConfirm(allowEmpty)}>{busy ? <Loader2 size={16} className={styles.spinning} /> : <FileCheck2 size={16} />} Сформировать CSV</EcoButton></footer>
+    {stats.included === 0 && !hasPrevious && <p className={styles.fieldError}>Для первой выгрузки нужен хотя бы один товар без ошибок с доступным остатком.</p>}
+    <footer><EcoButton disabled={busy} onClick={onClose}>Отмена</EcoButton><EcoButton variant="primary" disabled={busy || stats.included === 0 && (!hasPrevious || !allowEmpty)} onClick={() => void onConfirm(allowEmpty)}>{busy ? <Loader2 size={16} className={styles.spinning} /> : <FileCheck2 size={16} />} Сформировать CSV</EcoButton></footer>
   </dialog>;
 }
