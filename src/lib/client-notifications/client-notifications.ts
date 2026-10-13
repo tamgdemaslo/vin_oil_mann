@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { appendBookingManagementLink } from "./booking-management-message";
 import type { NextRequest } from "next/server";
 import { ANONYMOUS_RETAIL_SYSTEM_ROLE } from "@/lib/anonymous-retail-counterparty";
 import {
@@ -2497,7 +2498,12 @@ function notificationDelivery(
   renderedMessage: string
 ): { ok: true; delivery: NotificationDeliveryPayload } | { ok: false; errorMessage: string; renderedMessage: string } {
   if (job.eventType !== "diagnostic_sent") {
-    return deliveryFromHtml(job.eventType, renderedMessage);
+    const variables = asRecord(payload.variables);
+    return deliveryFromHtml(job.eventType, appendBookingManagementLink(
+      job.eventType,
+      renderedMessage,
+      stringValue(variables.bookingUrl) || stringValue(payload.bookingUrl),
+    ));
   }
   const reportUrl = diagnosticReportLinkFromPayload(payload);
   const compactMessage = reportUrl ? stripDiagnosticReportLink(renderedMessage, reportUrl) : renderedMessage;
