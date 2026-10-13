@@ -2011,48 +2011,48 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     };
   }, [performAutosave]);
 
-  const positionAssortmentHrefs = useMemo(
-    () => positions.filter((position) => !isNonstockProduct(position)).map((p) => p.assortmentMeta?.href).filter(Boolean).sort() as string[],
-    [positions]
-  );
-
-  useEffect(() => {
-    if (!selectedStore || positionAssortmentHrefs.length === 0) {
-      setStockByAssortment({});
-      return;
-    }
-    let cancelled = false;
-    const storeId = selectedStore.id ? `&storeId=${encodeURIComponent(selectedStore.id)}` : "";
-    fetch(
-      `/api/stock?storeName=${encodeURIComponent(selectedStore.name)}&assortmentHrefs=${encodeURIComponent(positionAssortmentHrefs.join(","))}${storeId}`
-    )
-      .then((r) => safeJson<StockJson>(r, {}))
-      .then((data) => {
-        if (!cancelled && data.stockByAssortment) setStockByAssortment(data.stockByAssortment);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedStore, positionAssortmentHrefs]);
+  // A primitive key stays equal when only quantities/prices change. Deduplicate
+  // products so duplicate document lines do not trigger redundant reads.
+  const positionAssortmentKey = [...new Set(positions
+    .filter((position) => !isNonstockProduct(position))
+    .map((position) => position.assortmentMeta?.href)
+    .filter((href): href is string => Boolean(href)))].sort().join(",");
+  const stockStoreId = selectedStore?.id ?? "";
+  const stockStoreName = selectedStore?.name ?? "";
 
   useEffect(() => {
     if (!authChecked) return;
-    if (positionAssortmentHrefs.length === 0) {
+    if ((!stockStoreId && !stockStoreName) || !positionAssortmentKey) {
+      setStockByAssortment({});
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ storeName: stockStoreName, assortmentHrefs: positionAssortmentKey });
+    if (stockStoreId) params.set("storeId", stockStoreId);
+    fetch(`/api/stock?${params}`, { signal: controller.signal })
+      .then((r) => safeJson<StockJson>(r, {}))
+      .then((data) => {
+        if (!controller.signal.aborted && data.stockByAssortment) setStockByAssortment(data.stockByAssortment);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [authChecked, stockStoreId, stockStoreName, positionAssortmentKey]);
+
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!positionAssortmentKey) {
       setCellByAssortment({});
       return;
     }
-    let cancelled = false;
-    fetch(`/api/local-inventory/product-cells?hrefs=${encodeURIComponent(positionAssortmentHrefs.join(","))}`)
+    const controller = new AbortController();
+    fetch(`/api/local-inventory/product-cells?hrefs=${encodeURIComponent(positionAssortmentKey)}`, { signal: controller.signal })
       .then((r) => safeJson<Record<string, number | string>>(r, {}))
       .then((data) => {
-        if (!cancelled && typeof data === "object" && data !== null) setCellByAssortment(data as Record<string, number | string>);
+        if (!controller.signal.aborted && typeof data === "object" && data !== null) setCellByAssortment(data as Record<string, number | string>);
       })
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [authChecked, positionAssortmentHrefs]);
+    return () => controller.abort();
+  }, [authChecked, positionAssortmentKey]);
 
   useEffect(() => {
     if (!authChecked || !nonstockProductOpen) return;

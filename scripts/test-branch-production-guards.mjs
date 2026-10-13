@@ -131,6 +131,12 @@ for (let index = 0; index < 24; index += 1) {
 const blockedVisibleTab = await proxyResult("/api/cash?visible=blocked", "GET", visibleTabHeaders);
 assert.equal(blockedVisibleTab.status, 429);
 assert.equal(blockedVisibleTab.body?.code, "client_request_burst");
+// Exhausting cash/search reads must not lock the document or background APIs.
+for (const path of ["/api/demands/test-shipment", "/api/stock", "/api/messenger/summary", "/api/client-vehicles"]) {
+  assert.deepEqual(await proxyResult(path, "GET", visibleTabHeaders), { status: 200, next: true, body: null });
+}
+assert.equal((await proxyResult("/api/cash", "GET", { ...visibleTabHeaders, "x-eco-tab-id": "another-visible-tab" })).status, 200);
+
 
 // The hidden/profile bucket is already blocked above, but a business write
 // must still reach the normal branch guard instead of becoming an ambiguous
@@ -150,8 +156,8 @@ assert.equal(secondBlockedApiBurst.status, 429);
 assert.equal(secondBlockedApiBurst.body?.code, "client_request_burst");
 burstNow += 30_001;
 const stillBlockedApiBurst = await proxyResult("/api/cash?second-wave=still-blocked", "GET", burstHeaders);
-assert.equal(stillBlockedApiBurst.status, 429);
-assert.equal(stillBlockedApiBurst.body?.code, "client_request_burst");
+assert.equal(stillBlockedApiBurst.status, 200);
+assert.equal(stillBlockedApiBurst.next, true);
 Date.now = originalDateNow;
 
 assert.deepEqual(

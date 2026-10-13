@@ -13,7 +13,6 @@ const REQUEST_BURST_LIMITS = {
 } as const;
 const REQUEST_BURST_BUCKET_LIMIT = 2_000;
 const REQUEST_BURST_BUCKET_TTL_MS = 5 * 60_000;
-const REQUEST_BURST_MAX_BLOCK_MS = 10 * 60_000;
 const REQUEST_BURST_STRIKE_RESET_MS = 10 * 60_000;
 const REQUEST_BURST_EXEMPT_PATHS = new Set([
   "/api/health/live",
@@ -99,10 +98,14 @@ function requestClientFingerprint(request: NextRequest, kind: RequestBurstKind) 
   const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const address = forwardedFor || request.headers.get("x-real-ip") || "unknown";
   const userAgent = request.headers.get("user-agent") || "unknown";
-  const tabId = kind === "visibleApi" ? request.headers.get(REQUEST_TAB_ID_HEADER) ?? "unknown" : "profile";
+  const suppliedTabId = request.headers.get(REQUEST_TAB_ID_HEADER);
+  const tabId = suppliedTabId && /^[a-zA-Z0-9_-]{8,80}$/.test(suppliedTabId) ? suppliedTabId : "profile";
+  // A stock/search burst must not lock unrelated shipment, cash or messenger
+  // reads. Query variations still share the same endpoint budget.
+  const endpoint = request.nextUrl.pathname;
   return crypto
     .createHash("sha256")
-    .update(`${kind}\0${session}\0${address}\0${userAgent}\0${tabId}`, "utf8")
+    .update(`${kind}\0${session}\0${address}\0${userAgent}\0${tabId}\0${endpoint}`, "utf8")
     .digest("hex")
     .slice(0, 16);
 }
@@ -166,7 +169,7 @@ function requestBurstResponse(request: NextRequest) {
     bucket.count += 1;
     if (bucket.count > limits.limit) {
       bucket.strikes += 1;
-      appliedBlockMs = Math.min(limits.blockMs * 2 ** (bucket.strikes - 1), REQUEST_BURST_MAX_BLOCK_MS);
+      appliedBlockMs = limits.blockMs;
       bucket.blockedUntil = now + appliedBlockMs;
       startedBlock = true;
     }
