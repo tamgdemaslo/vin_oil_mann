@@ -6020,6 +6020,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             <VehicleLookupPanel
               organizationId={selectedOrg?.id}
               warehouseId={selectedStore?.id}
+              onChooseQuoteWarehouse={() => setDocumentParamsOpen(true)}
               initialVin={vin}
               quoteFiltersLoading={!!mannLoading}
               quoteFilters={mannSortedFilters.filter(filter => ["oil", "air", "cabin"].includes(filter.filterType)).map(filter => ({

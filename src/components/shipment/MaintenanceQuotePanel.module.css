@@ -45,3 +45,6 @@
 .searchPopup button { display: block; width: 100%; text-align: left; border: 0; padding: 8px 10px; background: transparent; color: inherit; font: inherit; cursor: pointer; overflow-wrap: anywhere; }
 .searchPopup button:hover, .searchPopup .activeOption { background: var(--eco-hover, #f4f1ea); }
 .searchPopup p { margin: 0; padding: 8px 10px; border-top: 1px solid var(--eco-line, #e5e2da); color: #525252; font-size: 12px; }
+
+.warehousePrompt { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px; background: var(--eco-hover, #f4f1ea); border-radius: 4px; }
+.warehousePrompt p { flex: 1; min-width: min(100%, 240px); margin: 0; font-size: 13px; }

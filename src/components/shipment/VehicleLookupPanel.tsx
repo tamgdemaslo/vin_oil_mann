@@ -26,6 +26,7 @@ export type VehicleLookupManualContext = {
 };
 
 type Props = {
+  onChooseQuoteWarehouse?: () => void;
   quoteFilters?: QuoteFilterGroup[];
   quoteFiltersLoading?: boolean;
   organizationId?: string | null;
@@ -458,7 +459,7 @@ export function TechnicalProfile({
   );
 }
 
-export function VehicleLookupPanel({ quoteFilters, quoteFiltersLoading, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
+export function VehicleLookupPanel({ onChooseQuoteWarehouse, quoteFilters, quoteFiltersLoading, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
   const [tab, setTab] = useState<LookupTab>("vin");
   const [input, setInput] = useState(initialVin ?? "");
   const [loading, setLoading] = useState(false);
@@ -1059,13 +1060,14 @@ export function VehicleLookupPanel({ quoteFilters, quoteFiltersLoading, organiza
           }}
         />
         <MaintenanceQuotePanel
-          key={`${appliedVehicle.vin ?? appliedVehicle.licensePlate ?? vehicleTitle(appliedVehicle)}:${technicalProfileVariantKeys.join(",")}:${warehouseId ?? ""}`}
+          key={`${appliedVehicle.vin ?? appliedVehicle.licensePlate ?? vehicleTitle(appliedVehicle)}:${technicalProfileVariantKeys.join(",")}`}
           vehicleTitle={`${vehicleTitle(appliedVehicle)} · ${vehicleDetails(appliedVehicle)}`}
           warehouseId={warehouseId}
           profile={technicalProfile}
           research={fluidResearch}
           filters={quoteFilters}
           filtersLoading={quoteFiltersLoading}
+          onChooseWarehouse={onChooseQuoteWarehouse}
         />
       </section>
     );

@@ -7,7 +7,7 @@ export type QuoteStockProduct = {
   id: string; name: string; article: string; price: number; available: number;
   unit: string; litresPerUnit: number | null; sae: string; oem: string;
 };
-export type QuoteExtra = { id: string; name: string; quantity: number; price: number };
+export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string };
 export function matchesQuoteOil(product: { groupPath?: string | null; entityType?: string; sae?: string | null; oem?: string | null; acea?: string | null; apiSpec?: string | null; ilsac?: string | null }, specification: string, viscosity: string) {
   if (resolveProductFluidAttributeProfile(product) !== "ENGINE_OIL") return false;
   const required = buildRequirementsNorm({ oem: specification, acea: specification, api: specification, ilsac: specification, sae: viscosity });
