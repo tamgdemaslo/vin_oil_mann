@@ -1,6 +1,7 @@
 import catalogs from "./catalogs.generated.json";
 import { resolveProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 import { isLiterSaleUnit } from "@/lib/product-marking";
+import { AVITO_CONTENT_DEFAULTS, avitoContentVariables, avitoTemplateIssues, renderAvitoTemplate, shortenAvitoTitle } from "./content";
 import type { AvitoFeedStats, AvitoIssue, AvitoListing, AvitoOilType, AvitoOverrides, AvitoProductSource, AvitoRemoteStatus, AvitoSettings } from "./types";
 
 export const AVITO_CATALOG_VERSION = catalogs.version;
@@ -8,9 +9,17 @@ export const AVITO_MAX_ADS = 50_000;
 export const AVITO_TYPE_LABELS: Record<AvitoOilType, string> = { motor: "Моторные масла", transmission: "Трансмиссионные масла" };
 export const AVITO_CONTACT_METHODS = ["По телефону и в сообщениях", "По телефону", "В сообщениях"] as const;
 export const AVITO_DEFAULT_SETTINGS: AvitoSettings = {
-  name: "Авито", enabled: false, publicBaseUrl: "", address: "", sellerAddressId: "", contactPerson: "", phone: "",
+  name: "Авито", enabled: false, publicBaseUrl: "", address: "", addressSource: "branch", sellerAddressId: "", contactPerson: "", phone: "",
   contactMethod: "По телефону и в сообщениях", storeIds: [], onlyInStock: true, stockBuffer: 0, listingFee: "Package",
+  ...AVITO_CONTENT_DEFAULTS,
 };
+
+export function normalizeAvitoSettings(saved: Partial<AvitoSettings>): AvitoSettings {
+  return { ...AVITO_DEFAULT_SETTINGS, ...saved,
+    addressSource: saved.addressSource ?? (saved.address?.trim() ? "manual" : "branch"),
+    categoryDescriptionTemplates: { ...AVITO_CONTENT_DEFAULTS.categoryDescriptionTemplates, ...saved.categoryDescriptionTemplates },
+  };
+}
 
 export function avitoCatalog(type: AvitoOilType) { return catalogs.types[type]; }
 
@@ -45,27 +54,16 @@ export function splitAvitoStandards(value: string | null | undefined): string[] 
 
 function inherited(override: string | undefined, value: string | null | undefined) { return override === undefined ? value?.trim() ?? "" : override.trim(); }
 
-function defaultDescription(source: AvitoProductSource, type: AvitoOilType) {
-  const lines = [source.name];
-  if (source.brand) lines.push(`Производитель: ${source.brand}`);
-  if (source.sae) lines.push(`SAE: ${source.sae}`);
-  if (source.packageVolume) lines.push(`Объём: ${source.packageVolume}`);
-  if (type === "motor" && (source.acea || source.aceaExtra)) lines.push(`ACEA: ${[source.acea, source.aceaExtra].filter(Boolean).join("; ")}`);
-  if (type === "transmission" && source.atf) lines.push(`ATF: ${source.atf}`);
-  if (source.apiSpec) lines.push(`API: ${source.apiSpec}`);
-  const oem = type === "motor" ? source.oem : source.oemAtf;
-  if (oem) lines.push(`Допуски производителя: ${oem}`);
-  if (source.article) lines.push(`Артикул: ${source.article}`);
-  return lines.join("\n");
-}
-
 export function avitoSettingsIssues(settings: AvitoSettings): AvitoIssue[] {
   const issues: AvitoIssue[] = [];
-  if (!settings.address.trim() && !settings.sellerAddressId.trim()) issues.push({ field: "address", message: "Укажите адрес из профиля Авито или его идентификатор", severity: "error" });
+  if (!settings.address.trim() && !settings.sellerAddressId.trim()) issues.push({ field: "address", message: "Укажите адрес филиала в настройках Авито", severity: "error" });
   if (settings.address.length > 256) issues.push({ field: "address", message: "Адрес длиннее 256 символов", severity: "error" });
   if (settings.sellerAddressId && !/^\d{1,30}$/.test(settings.sellerAddressId)) issues.push({ field: "sellerAddressId", message: "Идентификатор адреса должен содержать только цифры", severity: "error" });
   if (settings.contactPerson.length > 40) issues.push({ field: "contactPerson", message: "Имя контактного лица длиннее 40 символов", severity: "error" });
   if (settings.phone && !/^\+?[\d()\s-]{6,40}$/.test(settings.phone)) issues.push({ field: "phone", message: "Укажите один российский номер телефона", severity: "error" });
+  for (const [field, template, title] of [["titleTemplate", settings.titleTemplate, true], ["descriptionTemplate", settings.descriptionTemplate, false], ["motorTemplate", settings.categoryDescriptionTemplates.motor, false], ["transmissionTemplate", settings.categoryDescriptionTemplates.transmission, false]] as const) {
+    for (const message of avitoTemplateIssues(template, title)) issues.push({ field, message, severity: "error" });
+  }
   return issues;
 }
 
@@ -78,6 +76,7 @@ export function avitoStockAllowed(source: AvitoProductSource, volume: string, se
 }
 
 export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOverrides, settings: AvitoSettings, adId: string, remote: AvitoRemoteStatus | null = null): AvitoListing {
+  settings = normalizeAvitoSettings(settings);
   const inferred = inferAvitoOilType(source);
   const type = overrides.type ?? inferred ?? "motor";
   const sameFamily = inferred === type;
@@ -88,8 +87,7 @@ export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOv
   const rawVolume = inherited(overrides.volume, bulk ? "" : source.packageVolume);
   const values: AvitoListing["values"] = {
     type,
-    title: inherited(overrides.title, source.name),
-    description: inherited(overrides.description, source.description || defaultDescription(source, type)),
+    title: "", description: "",
     priceRubles: overrides.priceRubles === undefined ? (!bulk && source.salePriceCents % 100 === 0 ? source.salePriceCents / 100 : null) : overrides.priceRubles,
     brand: matchAvitoDictionary(type, "Brand", rawBrand) ?? rawBrand,
     sae: matchAvitoDictionary(type, "SAE", rawSae) ?? rawSae,
@@ -103,9 +101,18 @@ export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOv
     multiItem: overrides.multiItem ?? false,
     multiName: overrides.multiName ?? "",
   };
+  let variables = avitoContentVariables(source, settings, values, type);
+  const generatedTitle = renderAvitoTemplate(settings.titleTemplate, variables);
+  values.title = overrides.title === undefined
+    ? settings.autoShortenTitles ? shortenAvitoTitle(generatedTitle, settings.titleRemovePhrases) : generatedTitle
+    : overrides.title.trim();
+  variables = avitoContentVariables(source, settings, values, type);
+  const descriptionTemplate = settings.categoryDescriptionTemplates[type].trim() || settings.descriptionTemplate;
+  values.description = inherited(overrides.description, renderAvitoTemplate(descriptionTemplate, variables));
   const issues: AvitoIssue[] = [...avitoSettingsIssues(settings)];
   const error = (field: string, message: string) => issues.push({ field, message, severity: "error" });
   const warning = (field: string, message: string) => issues.push({ field, message, severity: "warning" });
+  if (overrides.title === undefined && values.title !== generatedTitle) warning("title", "Заголовок автоматически сокращён до 50 символов. Проверьте предпросмотр");
   if (!inferred && !overrides.type) error("type", "Выберите тип масла для Авито");
   if (source.entityType !== "product") error("type", "В этом разделе выгружаются только товары");
   if (bulk) {

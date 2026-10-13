@@ -3,7 +3,8 @@ import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { prisma } from "@/lib/db";
 import { AVITO_DEFAULT_SETTINGS, AVITO_MAX_ADS, avitoFeedStats, avitoSettingsIssues, avitoStockAllowed, buildAvitoCsv, buildAvitoListing, inferAvitoOilType } from "./domain";
-import { AVITO_CHANNEL, avitoAdId, avitoAudit, avitoScope, decodeAvitoValue, newAvitoFeedToken, readAvitoValue, writeAvitoValue, type AvitoSnapshot, type StoredAvitoProfile, type AvitoScope } from "./storage";
+import { AVITO_CHANNEL, avitoAdId, avitoAudit, avitoScope, decodeAvitoValue, newAvitoFeedToken, readAvitoValue, writeAvitoValue, resolveAvitoProfile, type AvitoSnapshot, type StoredAvitoProfile, type AvitoScope } from "./storage";
+import { avitoBranchAddress } from "./content";
 import { AvitoAutoloadError, avitoOverridesSchema, type avitoCredentialsSaveSchema, type avitoListingSaveSchema, type avitoSelectionSchema, type avitoSettingsSaveSchema } from "./schemas";
 import { AvitoAutoloadClient } from "./avito-client";
 import type { AvitoFeedStats, AvitoHistoryItem, AvitoIntegrationData, AvitoListing, AvitoOverrides, AvitoProductSource, AvitoRemoteStatus, AvitoSettings, AvitoSettingsView, AvitoWorkspaceData } from "./types";
@@ -17,7 +18,13 @@ const productSelect = {
 
 const never = { status: "never" as const, checkedAt: null, message: null, accountId: null };
 
-export async function getAvitoProfile(scope = avitoScope()) { return readAvitoValue<StoredAvitoProfile>(scope, "profile"); }
+export async function getAvitoProfile(scope = avitoScope()) {
+  const profile = await readAvitoValue<StoredAvitoProfile>(scope, "profile");
+  if (!profile) return null;
+  const branch = await prisma.branch.findFirst({ where: { id: scope.branchId, businessGroupId: scope.businessGroupId, status: "active" }, select: { id: true, legacyOrganizationId: true, address: true, name: true, shortName: true } });
+  if (!branch || (branch.legacyOrganizationId ?? branch.id) !== scope.organizationId) throw new AvitoAutoloadError("Филиал подключения Авито недоступен", 404);
+  return resolveAvitoProfile(profile, branch);
+}
 
 export function avitoFeedUrl(profile: StoredAvitoProfile) {
   return profile.settings.publicBaseUrl ? `${profile.settings.publicBaseUrl}/api/avito-autoload/feeds/${profile.feedToken}/feed.csv` : null;
@@ -41,7 +48,7 @@ async function settingsView(scope: AvitoScope, profile: StoredAvitoProfile | nul
   ]);
   const settings = { ...AVITO_DEFAULT_SETTINGS, ...defaults, ...profile?.settings };
   return {
-    ...settings, configured: Boolean(profile && settings.publicBaseUrl && !avitoSettingsIssues(settings).length), clientIdConfigured: Boolean(clientId), clientSecretConfigured: Boolean(clientSecret),
+    ...settings, branchAddress: defaults.address ?? "", configured: Boolean(profile && settings.publicBaseUrl && !avitoSettingsIssues(settings).length), clientIdConfigured: Boolean(clientId), clientSecretConfigured: Boolean(clientSecret),
     feedUrl: canEdit && profile ? avitoFeedUrl(profile) : null, connection: profile?.connection ?? never, lastExportAt: snapshot?.createdAt ?? null,
   };
 }
@@ -51,7 +58,7 @@ export async function getAvitoIntegration(options: { branchName: string; canEdit
   const scope = avitoScope();
   const profile = await getAvitoProfile(scope);
   const [settings, stores, snapshot] = await Promise.all([
-    settingsView(scope, profile, options.canEdit, { name: `Авито — ${options.branchName}`, address: options.address ?? "", phone: options.phone ?? "" }),
+    settingsView(scope, profile, options.canEdit, { name: `Авито — ${options.branchName}`, address: avitoBranchAddress(options.address, options.branchName), phone: options.phone ?? "" }),
     prisma.localStore.findMany({ where: { branchId: scope.branchId, archived: false }, select: { id: true, name: true }, orderBy: [{ isMain: "desc" }, { name: "asc" }] }),
     readAvitoValue<AvitoSnapshot>(scope, "snapshot"),
   ]);
@@ -68,7 +75,7 @@ export async function saveAvitoCredentials(input: z.infer<typeof avitoCredential
     if (!(input.clientId || existingId) || !(input.clientSecret || existingSecret)) throw new AvitoAutoloadError("Для первого подключения нужны оба поля: Client ID и Client Secret");
     const profile: StoredAvitoProfile = current
       ? { ...current, connection: never }
-      : { version: 1, settings: { ...AVITO_DEFAULT_SETTINGS, name: `Авито — ${defaults.branchName}`, address: defaults.address ?? "", phone: defaults.phone ?? "", publicBaseUrl: normalizeOrigin(input.publicBaseUrl ?? "") }, feedToken: newAvitoFeedToken(scope), connection: never };
+      : { version: 1, settings: { ...AVITO_DEFAULT_SETTINGS, name: `Авито — ${defaults.branchName}`, address: avitoBranchAddress(defaults.address, defaults.branchName), phone: defaults.phone ?? "", publicBaseUrl: normalizeOrigin(input.publicBaseUrl ?? "") }, feedToken: newAvitoFeedToken(scope), connection: never };
     if (input.clientId) await writeAvitoValue(scope, "client_id", input.clientId, db);
     if (input.clientSecret) await writeAvitoValue(scope, "client_secret", input.clientSecret, db);
     await writeAvitoValue(scope, "profile", profile, db);
@@ -136,7 +143,7 @@ async function history(scope: AvitoScope): Promise<AvitoHistoryItem[]> {
 export async function getAvitoWorkspace(options: { branchName: string; canEdit: boolean; canEditSecrets: boolean; address?: string; phone?: string; search?: string; offset?: number; type?: string; view?: string }): Promise<AvitoWorkspaceData> {
   const scope = avitoScope();
   const profile = await getAvitoProfile(scope);
-  const view = await settingsView(scope, profile, options.canEdit, { address: options.address ?? "", phone: options.phone ?? "", name: `Авито — ${options.branchName}` });
+  const view = await settingsView(scope, profile, options.canEdit, { address: avitoBranchAddress(options.address, options.branchName), phone: options.phone ?? "", name: `Авито — ${options.branchName}` });
   const [all, stores, items, snapshot] = await Promise.all([
     loadListings(scope, view),
     prisma.localStore.findMany({ where: { branchId: scope.branchId, archived: false }, select: { id: true, name: true }, orderBy: [{ isMain: "desc" }, { name: "asc" }] }),
@@ -166,7 +173,15 @@ export async function saveAvitoSettings(input: z.infer<typeof avitoSettingsSaveS
   const scope = avitoScope();
   const current = await getAvitoProfile(scope);
   const settings = { ...input.settings, publicBaseUrl: normalizeOrigin(input.settings.publicBaseUrl), storeIds: [...new Set(input.settings.storeIds)] };
-  if (settings.enabled && (!settings.publicBaseUrl || avitoSettingsIssues(settings).length)) throw new AvitoAutoloadError("Перед включением укажите публичный адрес платформы и адрес объявления");
+  if (settings.addressSource === "branch") {
+    const branch = await prisma.branch.findFirst({ where: { id: scope.branchId, businessGroupId: scope.businessGroupId, status: "active" }, select: { id: true, legacyOrganizationId: true, address: true, name: true, shortName: true } });
+    if (!branch || (branch.legacyOrganizationId ?? branch.id) !== scope.organizationId) throw new AvitoAutoloadError("Филиал подключения Авито недоступен", 404);
+    settings.address = avitoBranchAddress(branch.address, branch.shortName || branch.name);
+  }
+  const issues = avitoSettingsIssues(settings);
+  const contentIssue = issues.find((issue) => !["address", "sellerAddressId", "phone", "contactPerson"].includes(issue.field));
+  if (contentIssue) throw new AvitoAutoloadError(contentIssue.message);
+  if (settings.enabled && (!settings.publicBaseUrl || issues.length)) throw new AvitoAutoloadError("Перед включением укажите публичный адрес платформы и адрес объявления");
   if (settings.storeIds.length) {
     const count = await prisma.localStore.count({ where: { branchId: scope.branchId, archived: false, id: { in: settings.storeIds } } });
     if (count !== settings.storeIds.length) throw new AvitoAutoloadError("Выберите действующие склады текущего филиала");

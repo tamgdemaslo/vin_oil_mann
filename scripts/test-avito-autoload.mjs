@@ -23,6 +23,11 @@ let stockFailure = false;
 let branchActive = true;
 let tenant;
 let productReads = 0;
+const branches = new Map([
+  ["branch-A", { id: "branch-A", legacyOrganizationId: "org-A", name: "Дачная 6В", shortName: "Дачная", address: "Калининград, ул. Дачная, 1" }],
+  ["branch-B", { id: "branch-B", legacyOrganizationId: "org-B", name: "Гагарина 116", shortName: "Гагарина", address: "Калининград, ул. Юрия Гагарина, 116" }],
+  ["branch-new", { id: "branch-new", legacyOrganizationId: "org-new", name: "Новый филиал", shortName: "", address: "Калининград, ул. Тестовая, 1" }],
+]);
 const db = {
   integrationCredential: {
     findFirst: async ({ where }) => {
@@ -36,7 +41,7 @@ const db = {
       records.set(where.id, row); return row;
     },
   },
-  branch: { findFirst: async ({ where }) => branchActive && where.id === "branch-A" ? { id: "branch-A", legacyOrganizationId: "org-A" } : null },
+  branch: { findFirst: async ({ where }) => branchActive ? branches.get(where.id) ?? null : null },
   localProduct: {
     findMany: async ({ where }) => {
       productReads++;
@@ -69,6 +74,7 @@ globalThis.__ecoAvitoTestDb = db;
 const jiti = createJiti(import.meta.url, { alias: { "@/lib/db": resolve(temp, "db.mjs"), "@/lib/branch-api": resolve(temp, "branch-api.mjs"), "@": resolve(root, "src") }, moduleCache: false });
 try {
   const domain = await jiti.import("../src/lib/avito-autoload/domain.ts");
+  const content = await jiti.import("../src/lib/avito-autoload/content.ts");
   const access = await jiti.import("../src/lib/avito-autoload/access.ts");
   const storage = await jiti.import("../src/lib/avito-autoload/storage.ts");
   const service = await jiti.import("../src/lib/avito-autoload/service.ts");
@@ -93,6 +99,35 @@ try {
   assert.equal(listing({ salePriceCents: 499099 }).included, false, "kopecks must not silently round");
   assert.equal(listing({ salePriceCents: 499099 }, { priceRubles: 5000 }).values.priceRubles, 5000);
   assert.equal(listing({}, { title: "x".repeat(51) }).included, false);
+  const longName = "Моторное масло Shell Helix Ultra Professional AV-L 5W-30 5 л";
+  const short = listing({ name: longName });
+  assert.equal(short.values.title, "Shell Helix Ultra Professional AV-L 5W-30 5 л");
+  assert.ok([...short.values.title].length <= 50);
+  assert.ok(!short.issues.some((issue) => issue.field === "title" && issue.severity === "error"));
+  assert.equal(short.name, longName, "automatic title never changes the product name");
+  assert.equal(listing({ name: longName }, {}, { ...settings, autoShortenTitles: false }).included, false);
+  assert.equal(listing({ name: longName }, { title: "Мой заголовок" }).values.title, "Мой заголовок");
+  assert.equal(content.shortenAvitoTitle("😀".repeat(70), []), "😀".repeat(50), "truncate Unicode by code points");
+  assert.equal(content.shortenAvitoTitle("Моторное масло ABC 5W-40", ["моторное масло"]), "Моторное масло ABC 5W-40", "short titles stay intact");
+  assert.ok([...content.shortenAvitoTitle("Очень длинное название модели масла для объявления с подробностями", [])].length <= 50);
+  assert.deepEqual(content.avitoTemplateIssues("{описание}", true), ["Неизвестная переменная {описание}"]);
+  assert.deepEqual(content.avitoTemplateIssues("{название} {нет_такой}"), ["Неизвестная переменная {нет_такой}"]);
+  assert.ok(content.avitoTemplateIssues("{название").length);
+  const templatedSettings = { ...settings, titleTemplate: "{бренд} {вязкость} {объём}", descriptionTemplate: "Наш сервис\n{описание}\nЗаголовок: {заголовок}\nАдрес: {адрес}\nЦена: {цена}", categoryDescriptionTemplates: { motor: "Моторные\n{описание}\n{адрес}", transmission: "" } };
+  const descriptionSource = "Описание именно этого товара {адрес}";
+  const templated = listing({ description: descriptionSource }, {}, templatedSettings);
+  assert.equal(templated.values.title, "Shell 5W-40 4 л");
+  assert.equal(templated.values.description, `Моторные\n${descriptionSource}\n${settings.address}`, "category takes priority; product description is substituted once");
+  const general = listing({ description: descriptionSource, groupPath: "Масла/Трансмиссионные масла", sae: "75W-90", apiSpec: "GL-4", oemAtf: null }, {}, templatedSettings);
+  assert.ok(general.values.description.startsWith(`Наш сервис\n${descriptionSource}`));
+  assert.ok(general.values.description.includes("Shell 75W-90 4 л"));
+  assert.equal(listing({ description: descriptionSource }, { description: "Отдельное объявление" }, templatedSettings).values.description, "Отдельное объявление");
+  assert.equal(listing({ description: "x".repeat(7400) }, {}, { ...settings, descriptionTemplate: "y".repeat(200) + "{описание}" }).included, false, "validate expanded descriptions; never silently truncate them");
+  assert.equal(domain.normalizeAvitoSettings({ address: "Ранее заданный адрес" }).addressSource, "manual");
+  assert.equal(domain.normalizeAvitoSettings({ address: "" }).addressSource, "branch");
+  assert.equal(content.avitoBranchAddress(null, "Дачная 6В"), "Калининград, ул. Дачная, 6В");
+  assert.equal(content.avitoBranchAddress(null, "Гагарина 116"), "Калининград, ул. Юрия Гагарина, 116");
+  assert.equal(content.avitoBranchAddress(null, "Дачная 10"), "", "do not assign another branch address");
   assert.equal(listing({}, { description: "" }).included, false, "explicit blank does not silently inherit source");
   assert.equal(listing({ available: 1 }, {}, { ...settings, stockBuffer: 1 }).included, false);
   assert.equal(listing({ available: .2 }, {}, { ...settings, stockBuffer: .1 }).included, true, "fractional stock stays exact");
@@ -158,11 +193,27 @@ try {
     await storage.writeAvitoValue(scope, "profile", profile);
     assert.ok(!JSON.stringify([...records.values()]).includes("Калининград"), "settings and token are encrypted at rest");
     assert.equal(await storage.withAvitoPublicProfile(token, async (_p, s) => s.branchId), "branch-A");
+    const legacySettings = { ...settings, address: "" };
+    delete legacySettings.addressSource; delete legacySettings.titleTemplate; delete legacySettings.titleRemovePhrases; delete legacySettings.autoShortenTitles; delete legacySettings.descriptionTemplate; delete legacySettings.categoryDescriptionTemplates;
+    await storage.writeAvitoValue(scope, "profile", { ...profile, settings: legacySettings });
+    assert.equal((await service.getAvitoProfile(scope)).settings.address, branches.get("branch-A").address, "legacy empty settings inherit this branch address");
+    assert.equal(await storage.withAvitoPublicProfile(token, async (p) => p.settings.address), branches.get("branch-A").address, "public feed uses the same effective address as UI");
+    await storage.writeAvitoValue(scope, "profile", profile);
     assert.equal(await storage.withAvitoPublicProfile(storage.newAvitoFeedToken(scope), async () => "unexpected"), null, "unregistered rotated token is rejected");
     branchActive = false;
     assert.equal(await storage.withAvitoPublicProfile(token, async () => "unexpected"), null);
     branchActive = true;
     products = [{ ...source, branchId: "branch-A", updatedAt: new Date(source.updatedAt), photos: [] }, { ...source, id: "foreign-product", branchId: "branch-B", updatedAt: new Date(source.updatedAt), photos: [] }];
+    await service.saveAvitoSettings({ settings: templatedSettings });
+    const templateExport = await service.generateAvitoExport();
+    const templateCsv = (await service.downloadAvitoExport(templateExport.id)).toString("utf8");
+    assert.ok(templateCsv.includes('"Shell 5W-40 4 л"'), "saved templates reach the actual CSV export");
+    assert.ok(templateCsv.includes("Моторные\n"));
+    assert.equal(products[0].name, source.name, "template saves never mutate product cards");
+    const automaticTemplateFeed = await feedRoute.GET(new Request("https://crm.example.ru/feed.csv"), { params: Promise.resolve({ token }) });
+    assert.equal(automaticTemplateFeed.status, 200);
+    assert.ok((await automaticTemplateFeed.text()).includes("Моторные\n"), "Avito receives the same templates as manual export");
+    await service.saveAvitoSettings({ settings });
     const exported = await service.generateAvitoExport();
     assert.equal(exported.stats.included, 1, "foreign branch never enters feed");
     const original = await service.downloadAvitoExport(exported.id);
@@ -210,6 +261,7 @@ try {
       assert.equal(productReads, beforeReads, "connection settings do not need the product catalog");
       assert.ok(!statusText.includes("api-route-test-secret") && !statusText.includes("api-route-test-id"), "integration status never returns plaintext keys");
       const previousProfile = await service.getAvitoProfile(scope);
+      assert.equal((await integrationPost({ operation: "settings", settings: { ...settings, titleTemplate: "{нет_такой}" } })).status, 422, "unknown placeholders cannot be saved");
       assert.equal((await integrationPost({ operation: "credentials", clientSecret: "replacement-secret" })).status, 200);
       const replacedProfile = await service.getAvitoProfile(scope);
       assert.deepEqual(replacedProfile.settings, previousProfile.settings, "changing keys preserves feed settings");
@@ -243,6 +295,7 @@ try {
     assert.equal(filteredWorkspace.total, 10, "filters apply to the full catalog before pagination");
     assert.equal(filteredWorkspace.products.length, 10);
     assert.equal((await service.getAvitoWorkspace({ branchName: "Test", canEdit: true, canEditSecrets: true, offset: 250 })).products.length, 20);
+    const originalDescriptionTemplate = (await service.getAvitoProfile(scope)).settings.descriptionTemplate;
     await tenant.runWithRequestTenant({ ...scope, branchId: "branch-new", organizationId: "org-new", mode: "branch", allowedBranchIds: ["branch-new"] }, async () => {
       const newScope = storage.avitoScope();
       await assert.rejects(service.saveAvitoCredentials({ clientId: "new-only-id" }, { branchName: "Новый филиал" }), /оба поля/);
@@ -251,11 +304,15 @@ try {
       const firstProfile = await service.getAvitoProfile(newScope);
       assert.equal(firstProfile.settings.enabled, false, "connecting credentials never publishes or enables the feed");
       assert.equal(firstProfile.settings.publicBaseUrl, "https://crm.example.ru");
+      assert.equal(firstProfile.settings.address, branches.get("branch-new").address);
+      await service.saveAvitoSettings({ settings: { ...firstProfile.settings, descriptionTemplate: "Текст нового филиала\n{описание}\n{адрес}" } });
+      assert.notEqual(originalDescriptionTemplate, (await service.getAvitoProfile(newScope)).settings.descriptionTemplate, "templates remain isolated per account/branch");
       assert.notEqual(firstProfile.feedToken, token, "a new branch gets its own feed token");
       assert.equal(await storage.readAvitoValue(scope, "client_id"), "api-route-test-id", "new branch cannot replace another branch keys");
     });
+    assert.equal((await service.getAvitoProfile(scope)).settings.descriptionTemplate, originalDescriptionTemplate, "saving another branch never changes this branch template");
   });
-  console.log("Avito autoload: domain, CSV, permissions, tenant isolation, encrypted tokens, export history, feed failure guards and API contract tests passed");
+  console.log("Avito autoload: content templates, automatic titles, branch addresses, CSV, permissions, tenant isolation, encrypted tokens, export history, feed failure guards and API contract tests passed");
 } finally {
   delete globalThis.__ecoAvitoTestDb;
   delete globalThis.__ecoAvitoTestContext;

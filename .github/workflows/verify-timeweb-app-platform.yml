@@ -58,6 +58,9 @@ jobs:
       - name: Verify branch operational integrations
         run: npm run test:branch-operational-integrations
 
+      - name: Verify Avito autoload and content templates
+        run: npm run test:avito-autoload
+
       - name: Verify branch isolation
         run: npm run test:branch-isolation
 

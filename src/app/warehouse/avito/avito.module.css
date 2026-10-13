@@ -128,6 +128,15 @@
 .settingsForm legend { padding: 0; font-size: 17px; font-weight: 700; margin-bottom: 7px; }
 .settingsForm fieldset > .help { margin: 0 0 20px; }
 .settingsForm .checkField { font-size: 13px; }
+.variableButtons { display: flex; flex-wrap: wrap; gap: 7px; margin: -4px 0 18px; }
+.variableButtons button { border: 1px solid var(--eco-line-strong); border-radius: 4px; background: var(--eco-surface); color: var(--eco-ink-2); font-size: 12px; padding: 5px 8px; }
+.variableButtons button:hover { background: var(--eco-hover); color: var(--eco-rust-hover); }
+.templatePreview { margin-top: 25px; border-top: 1px solid var(--eco-line); padding-top: 20px; min-width: 0; }
+.templatePreviewHeader { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.templatePreviewHeader h3 { font-size: 15px; margin: 0 auto 0 0; }
+.templatePreviewHeader select { width: auto; max-width: 100%; }
+.templatePreview h4 { font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; margin: 15px 0; }
+.templatePreview .descriptionPreview { margin: 10px 0 16px; max-height: 400px; overflow-y: auto; }
 .storeList { display: flex; flex-wrap: wrap; gap: 5px 24px; margin-bottom: 14px; }
 .storeList > .checkField { margin: 0 0 12px; }
 .settingsSave { display: flex; align-items: center; flex-wrap: wrap; gap: 15px; }

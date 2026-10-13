@@ -3,8 +3,10 @@ import IntegrationsClient from "./IntegrationsClient";
 import { requireBranchContext } from "@/lib/branch-context";
 import { canManageBranchIntegrationSecrets, canViewBranchIntegrationSettings } from "@/lib/integration-access";
 import { prisma } from "@/lib/db";
+import { requireAuthenticatedSession } from "@/lib/app-access";
 
 export default async function CabinetIntegrationsPage() {
+  await requireAuthenticatedSession("/cabinet/integrations");
   const branch = await requireBranchContext({ allowAll: false, requireActive: false });
   if (!canViewBranchIntegrationSettings(branch)) redirect("/cabinet");
   const [organizationConfigured, employeeCount] = await Promise.all([

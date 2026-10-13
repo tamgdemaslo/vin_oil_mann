@@ -26,6 +26,7 @@ export type AvitoSettings = {
   enabled: boolean;
   publicBaseUrl: string;
   address: string;
+  addressSource: "branch" | "manual";
   sellerAddressId: string;
   contactPerson: string;
   phone: string;
@@ -34,6 +35,11 @@ export type AvitoSettings = {
   onlyInStock: boolean;
   stockBuffer: number;
   listingFee: "Package" | "PackageBBL" | "BBL";
+  titleTemplate: string;
+  titleRemovePhrases: string[];
+  autoShortenTitles: boolean;
+  descriptionTemplate: string;
+  categoryDescriptionTemplates: Record<AvitoOilType, string>;
 };
 
 export type AvitoConnection = {
@@ -44,6 +50,7 @@ export type AvitoConnection = {
 };
 
 export type AvitoSettingsView = AvitoSettings & {
+  branchAddress: string;
   configured: boolean;
   clientIdConfigured: boolean;
   clientSecretConfigured: boolean;

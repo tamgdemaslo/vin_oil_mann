@@ -4,11 +4,19 @@ import { prisma } from "@/lib/db";
 import { getRequestTenant, getScopedBranchId, runWithRequestTenant } from "@/lib/request-tenant-store";
 import { assertIntegrationEncryptionConfigured, decryptIntegrationSecret, encryptIntegrationSecret } from "@/lib/messenger/messenger-crypto";
 import type { AvitoConnection, AvitoSettings } from "./types";
+import { normalizeAvitoSettings } from "./domain";
+import { avitoBranchAddress } from "./content";
 
 export const AVITO_CHANNEL = "avito_autoload";
 export type AvitoScope = { branchId: string; organizationId: string; businessGroupId: string; userId: string | null };
 export type StoredAvitoProfile = { version: 1; settings: AvitoSettings; feedToken: string; connection: AvitoConnection };
 export type AvitoSnapshot = { createdAt: string; adIds: string[]; productIds: string[]; photoIds: string[] };
+
+export function resolveAvitoProfile(profile: StoredAvitoProfile, branch: { address: string | null; name: string; shortName: string }) {
+  const settings = normalizeAvitoSettings(profile.settings);
+  if (settings.addressSource === "branch") settings.address = avitoBranchAddress(branch.address, branch.shortName || branch.name);
+  return { ...profile, settings };
+}
 
 export function avitoScope(): AvitoScope {
   const tenant = getRequestTenant();
@@ -78,9 +86,9 @@ export async function withAvitoPublicProfile<T>(token: string, operation: (profi
   return runWithRequestTenant({ ...scope, mode: "branch", allowedBranchIds: [scope.branchId] }, async () => {
     const [profile, branch] = await Promise.all([
       readAvitoValue<StoredAvitoProfile>(scope, "profile"),
-      prisma.branch.findFirst({ where: { id: scope.branchId, businessGroupId: scope.businessGroupId, status: "active" }, select: { id: true, legacyOrganizationId: true } }),
+      prisma.branch.findFirst({ where: { id: scope.branchId, businessGroupId: scope.businessGroupId, status: "active" }, select: { id: true, legacyOrganizationId: true, address: true, name: true, shortName: true } }),
     ]);
     if (!profile || profile.feedToken !== token || !branch || (branch.legacyOrganizationId ?? branch.id) !== scope.organizationId) return null;
-    return operation(profile, scope);
+    return operation(resolveAvitoProfile(profile, branch), scope);
   });
 }

@@ -1,11 +1,18 @@
 import { z } from "zod";
+import { AVITO_CONTENT_DEFAULTS } from "./content";
 
 export const avitoSettingsSchema = z.object({
   name: z.string().trim().min(1).max(100), enabled: z.boolean(), publicBaseUrl: z.string().trim().max(300),
   address: z.string().trim().max(256), sellerAddressId: z.string().trim().max(30), contactPerson: z.string().trim().max(40), phone: z.string().trim().max(40),
+  addressSource: z.enum(["branch", "manual"]).default("manual"),
   contactMethod: z.enum(["По телефону и в сообщениях", "По телефону", "В сообщениях"]),
   storeIds: z.array(z.string().min(1).max(200)).max(200), onlyInStock: z.boolean(), stockBuffer: z.number().finite().min(0).max(1_000_000),
   listingFee: z.enum(["Package", "PackageBBL", "BBL"]),
+  titleTemplate: z.string().trim().min(1).max(500).default(AVITO_CONTENT_DEFAULTS.titleTemplate),
+  titleRemovePhrases: z.array(z.string().trim().min(1).max(100)).max(50).default(AVITO_CONTENT_DEFAULTS.titleRemovePhrases),
+  autoShortenTitles: z.boolean().default(true),
+  descriptionTemplate: z.string().trim().min(1).max(7500).default(AVITO_CONTENT_DEFAULTS.descriptionTemplate),
+  categoryDescriptionTemplates: z.object({ motor: z.string().trim().max(7500), transmission: z.string().trim().max(7500) }).strict().default(AVITO_CONTENT_DEFAULTS.categoryDescriptionTemplates),
 }).strict();
 
 export const avitoSettingsSaveSchema = z.object({
