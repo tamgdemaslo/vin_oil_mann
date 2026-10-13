@@ -5,6 +5,7 @@ import type { MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-p
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
 import { quoteRequirementChoices, quoteClientText, quoteExtraCents, quoteOilAmount, quoteRub, type QuoteFilterGroup, type QuoteExtra, type QuoteStockProduct } from "@/lib/maintenance-quote";
 import { getProductAttributeDictionary } from "@/lib/product-attribute-values";
+import { QuoteSearchField } from "./QuoteSearchField";
 import styles from "./MaintenanceQuotePanel.module.css";
 
 type Props = { vehicleTitle: string; warehouseId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; filters?: QuoteFilterGroup[]; filtersLoading?: boolean };
@@ -16,16 +17,13 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
   const [specificationDraft, setSpecification] = useState<string | null>(null);
   const [viscosityDraft, setViscosity] = useState<string | null>(null);
   const [volumeDraft, setVolume] = useState<string | null>(null);
-  const [manualSpecification, setManualSpecification] = useState(false);
-  const [manualViscosity, setManualViscosity] = useState(false);
-  const [manualVolume, setManualVolume] = useState(false);
   const [filterSelection, setFilterSelection] = useState<Record<string, string>>({});
   const specification = specificationDraft ?? (choices.specifications.length === 1 ? choices.specifications[0] : "");
   const viscosity = viscosityDraft ?? (choices.viscosities.length === 1 ? choices.viscosities[0] : "");
   const volume = volumeDraft ?? choices.automaticVolume;
-  const referenceSpecifications = [...new Set([specification, ...getProductAttributeDictionary("engineOem"), ...getProductAttributeDictionary("acea"), ...getProductAttributeDictionary("engineApi"), ...getProductAttributeDictionary("ilsac")].filter(value => value && !choices.specifications.includes(value)))];
-  const referenceViscosities = [...new Set([viscosity, ...getProductAttributeDictionary("engineSae")].filter(value => value && !choices.viscosities.includes(value)))];
-  const referenceVolumes = [...new Set([volume, ...Array.from({length: 25}, (_, index) => String(2 + index * 0.5))].filter(value => value && !choices.volumes.map(String).includes(value)))];
+  const referenceSpecifications = [...new Set([...getProductAttributeDictionary("engineOem"), ...getProductAttributeDictionary("acea"), ...getProductAttributeDictionary("engineApi"), ...getProductAttributeDictionary("ilsac")].filter(value => value && !choices.specifications.includes(value)))];
+  const referenceViscosities = [...new Set([...getProductAttributeDictionary("engineSae")].filter(value => value && !choices.viscosities.includes(value)))];
+  const referenceVolumes = [...new Set([...Array.from({length: 25}, (_, index) => String(2 + index * 0.5))].filter(value => value && !choices.volumes.map(String).includes(value)))];
   const [products, setProducts] = useState<QuoteStockProduct[]>([]);
   const [selected, setSelected] = useState<QuoteStockProduct[]>([]);
   const [extras, setExtras] = useState<QuoteExtra[]>([]);
@@ -98,9 +96,9 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
     {open ? <div className={styles.body}>
       {!warehouseId ? <p role="status">Выберите склад в документе, чтобы увидеть наличие и цены.</p> : null}
       <div className={styles.fields}>
-        <label>Допуск / стандарт<select value={manualSpecification ? "manual" : specification} onChange={event => { invalidate(); if (event.target.value === "manual") { setManualSpecification(true); setSpecification(""); } else { setManualSpecification(false); setSpecification(event.target.value); } }}><option value="">Выберите допуск</option>{choices.specifications.length ? <optgroup label="По выбранному автомобилю">{choices.specifications.map(value => <option key={value} value={value}>{value}</option>)}</optgroup> : null}<optgroup label="Справочник допусков и стандартов">{referenceSpecifications.map(value => <option key={value} value={value}>{value}</option>)}</optgroup><option value="manual">Другой допуск — указать вручную</option></select>{manualSpecification ? <input aria-label="Другой допуск" value={specification} onChange={event => { invalidate(); setSpecification(event.target.value); }} /> : null}</label>
-        <label>Вязкость<select value={manualViscosity ? "manual" : viscosity} onChange={event => { invalidate(); if (event.target.value === "manual") { setManualViscosity(true); setViscosity(""); } else { setManualViscosity(false); setViscosity(event.target.value); } }}><option value="">Выберите вязкость</option>{choices.viscosities.length ? <optgroup label="По выбранному автомобилю">{choices.viscosities.map(value => <option key={value} value={value}>{value}</option>)}</optgroup> : null}<optgroup label="Справочник вязкости">{referenceViscosities.map(value => <option key={value} value={value}>{value}</option>)}</optgroup><option value="manual">Другая вязкость</option></select>{manualViscosity ? <input aria-label="Другая вязкость" value={viscosity} onChange={event => { invalidate(); setViscosity(event.target.value); }} /> : null}</label>
-        <label>Объём замены, л<select value={manualVolume ? "manual" : volume} onChange={event => { if (event.target.value === "manual") { setManualVolume(true); setVolume(""); } else { setManualVolume(false); setVolume(event.target.value); } }}><option value="">Выберите объём с фильтром</option>{choices.volumes.length ? <optgroup label="Объёмы из карточки — проверьте условия">{choices.volumes.map(value => <option key={value} value={String(value)}>{value} л</option>)}</optgroup> : null}<optgroup label="Указать объём для расчёта">{referenceVolumes.map(value => <option key={value} value={value}>{value} л</option>)}</optgroup><option value="manual">Другой объём</option></select>{manualVolume ? <input aria-label="Другой объём, л" inputMode="decimal" value={volume} onChange={event => setVolume(event.target.value)} /> : null}</label>
+        <QuoteSearchField label="Допуск / стандарт" value={specification} options={[...choices.specifications, ...referenceSpecifications]} onChange={value => { invalidate(); setSpecification(value); }} />
+        <QuoteSearchField label="Вязкость" value={viscosity} options={[...choices.viscosities, ...referenceViscosities]} onChange={value => { invalidate(); setViscosity(value); }} />
+        <QuoteSearchField label="Объём замены, л" value={volume} options={[...choices.volumes.map(String), ...referenceVolumes]} onChange={setVolume} inputMode="decimal" />
       </div>
       <p className={styles.note}>Данные автомобиля подставляются после загрузки. Если вариантов несколько, выберите подходящий. Объём — с фильтром; значения из общего справочника нужно сверить с требованиями автомобиля.</p>
       <button type="button" className="eco-btn eco-btn--primary" disabled={!warehouseId || !specification.trim() || loading} onClick={() => void findOils()}>{loading ? "Проверяем наличие…" : "Подобрать масла из наличия"}</button>

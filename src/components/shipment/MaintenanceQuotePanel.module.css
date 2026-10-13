@@ -36,3 +36,12 @@
 .filterRow label { flex: 1; min-width: min(100%, 240px); }
 .filterRow p { flex-basis: 100%; margin: 0; }
 @media (max-width: 700px) { .filterRow label { flex-basis: 100%; } }
+.panel { font-size: 13px; font-weight: 400; line-height: 1.45; }
+.panel strong { font-size: 14px; font-weight: 600; }
+.panel button { font-size: 13px; font-weight: 500; }
+.panel input, .panel select, .panel textarea { font-size: 13px; font-weight: 400; }
+.searchField { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.searchPopup { position: fixed; z-index: var(--eco-z-floating-control, 140); overflow-y: auto; border: 1px solid var(--eco-line-strong, #c8c2b3); border-radius: 4px; background: var(--eco-surface, #fff); color: var(--eco-ink, #0a0a0a); font-family: inherit; font-size: 13px; font-weight: 400; line-height: 1.4; }
+.searchPopup button { display: block; width: 100%; text-align: left; border: 0; padding: 8px 10px; background: transparent; color: inherit; font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.searchPopup button:hover, .searchPopup .activeOption { background: var(--eco-hover, #f4f1ea); }
+.searchPopup p { margin: 0; padding: 8px 10px; border-top: 1px solid var(--eco-line, #e5e2da); color: #525252; font-size: 12px; }
