@@ -10,6 +10,7 @@
     "build": "prisma generate && next build --webpack && node scripts/prepare-standalone-runtime.mjs",
     "start": "sh deploy/timeweb/start-app.sh",
     "lint": "eslint",
+    "test:avito-autoload": "node scripts/test-avito-autoload.mjs",
     "test:lookup": "node scripts/test-lookup.mjs",
     "test:catalog-search": "node scripts/test-catalog-search.mjs",
     "test:rossko-api": "node scripts/test-rossko-api-2-1-contract.mjs",

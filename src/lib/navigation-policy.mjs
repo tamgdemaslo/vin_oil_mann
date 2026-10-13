@@ -111,6 +111,7 @@ export function resolveNavigationForUser({
 
   if (canViewWarehouse) {
     const warehouseItems = [branchOnly("/inventory/products", "Товары", "Карточки и доступные остатки.")];
+    warehouseItems.push(branchOnly("/warehouse/avito", "Авито", "Подготовка объявлений, автовыгрузка и отчёты."));
     if (effectiveRole !== "mechanic") {
       warehouseItems.push(branchOnly("/inventory/cells", "Ячейки", "Места хранения товаров по складам."));
       warehouseItems.push(branchOnly("/inventory/receipts", "Приёмка товара", "Поступления на склад."));

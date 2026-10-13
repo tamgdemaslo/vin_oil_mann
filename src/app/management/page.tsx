@@ -73,6 +73,7 @@ export default async function ManagementPage() {
   ];
 
   const integrations: ManagementCard[] = canManageIntegrations ? [
+    { href: "/cabinet/integrations#avito", label: "Товары · Авито", description: "Подключение API и автовыгрузка товаров.", icon: PackageSearch },
     { href: "/cabinet/integrations#finance", label: "Финансы · T-Bank", description: "Банковское подключение и платежи.", icon: Landmark },
     { href: "/inventory/integrations/mann-pdf", label: "Поставщики и каталоги · MANN", description: "Импорт каталога применимости фильтров.", icon: PackageSearch },
     { href: "/cabinet/ai-assistant", label: "ИИ и внешние API", description: "Настройки ИИ-помощника и правил расчёта.", icon: Bot },

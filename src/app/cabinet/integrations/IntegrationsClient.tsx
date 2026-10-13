@@ -7,6 +7,7 @@ import { EcoBadge, EcoButton, EcoCard, EcoInput, EcoKpi, EcoSelect, EcoStatusDot
 import { formatServiceDateTime } from "@/lib/date-time";
 import { safeReadJson } from "@/lib/http-json";
 import OperationalIntegrationsPanel from "./OperationalIntegrationsPanel";
+import AvitoIntegrationPanel from "./AvitoIntegrationPanel";
 
 type TBankStatus = {
   configured: boolean;
@@ -153,11 +154,13 @@ function StatusRows({ rows }: { rows: Array<[string, string | number]> }) {
 }
 
 export default function IntegrationsClient({
+  branchId,
   branchName,
   canEditSecrets,
   organizationConfigured,
   employeesConfigured,
 }: {
+  branchId: string;
   branchName: string;
   canEditSecrets: boolean;
   organizationConfigured: boolean;
@@ -174,6 +177,7 @@ export default function IntegrationsClient({
   const [running, setRunning] = useState<"tbank-save" | "tbank-test" | "rossko-save" | "rossko-test" | "rossko-disconnect" | "rossko-markup" | null>(null);
   const [rosskoMarkupRules, setRosskoMarkupRules] = useState<RosskoStatus["markupRules"]>([]);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
+  const [avitoRefreshVersion, setAvitoRefreshVersion] = useState(0);
 
   async function loadStatus() {
     setLoading(true);
@@ -451,11 +455,12 @@ export default function IntegrationsClient({
           <p className="eco-page-subtitle">Рабочие подключения принадлежат выбранному филиалу. Новый филиал начинает без скопированных секретов и сессий.</p>
         </div>
         <div className="eco-page-actions">
+          <a href="#avito" className="eco-btn eco-btn--ghost">Авито · товары</a>
           <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--ghost">
             <MessageSquareText size={16} />
             Каналы связи
           </Link>
-          <EcoButton type="button" variant="secondary" onClick={() => void loadStatus()} disabled={loading}>
+          <EcoButton type="button" variant="secondary" onClick={() => { setAvitoRefreshVersion((current) => current + 1); void loadStatus(); }} disabled={loading}>
             <RefreshCw size={16} />
             {loading ? "Обновляем..." : "Обновить статус"}
           </EcoButton>
@@ -481,6 +486,8 @@ export default function IntegrationsClient({
           </div>
         </EcoCard>
       )}
+
+      <AvitoIntegrationPanel key={branchId} branchName={branchName} canEditSecrets={canEditSecrets} refreshVersion={avitoRefreshVersion} />
 
       <OperationalIntegrationsPanel
         branchName={branchName}

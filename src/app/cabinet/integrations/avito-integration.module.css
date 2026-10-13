@@ -1,0 +1,31 @@
+.panel { margin: 28px 0; padding: 24px; border: 1px solid var(--eco-line); border-radius: 6px; background: var(--eco-surface); scroll-margin-top: 90px; }
+.header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 22px; }
+.header h2 { font-size: 21px; font-weight: 750; margin: 0 0 8px; color: var(--eco-ink); }
+.header p { margin: 0; max-width: 70ch; color: var(--eco-ink-3); font-size: 13px; line-height: 1.6; }
+.header > span { flex-shrink: 0; }
+.credentials fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
+.credentials legend, .workflow h3 { font-size: 15px; font-weight: 700; color: var(--eco-ink); margin: 0 0 8px; padding: 0; }
+.help { font-size: 12px; line-height: 1.65; color: var(--eco-ink-3); max-width: 75ch; margin: 8px 0 16px; }
+.keyFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; max-width: 860px; }
+.keyFields label { display: grid; gap: 8px; min-width: 0; }
+.keyFields label > span { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; font-weight: 650; color: var(--eco-ink-2); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 17px; }
+.error, .notice { padding: 13px 16px; margin-bottom: 18px; border-radius: 5px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.error { color: #8f2424; border: 1px solid #efbcb7; background: #fff0ef; }
+.notice { color: #175a2c; border: 1px solid #b9d8c0; background: #edf7ef; }
+.connectionMeta { display: flex; flex-wrap: wrap; gap: 7px 18px; margin-top: 16px; color: var(--eco-ink-3); font-size: 12px; line-height: 1.6; }
+.workflow { border-top: 1px solid var(--eco-line); padding-top: 23px; margin-top: 23px; }
+.workflow ul { display: grid; gap: 14px; padding: 0; list-style: none; margin: 18px 0; font-size: 13px; }
+.workflow li { display: flex; align-items: flex-start; gap: 9px; flex-wrap: wrap; }
+.workflow li > svg { color: #256139; flex-shrink: 0; margin-top: 1px; }
+.workflow li > a { display: inline-flex; gap: 5px; align-items: center; color: var(--eco-rust-hover); margin-left: 8px; }
+.settings { border-top: 1px solid var(--eco-line); margin-top: 23px; padding-top: 19px; }
+.settings summary { font-weight: 650; font-size: 14px; cursor: pointer; color: var(--eco-ink-2); }
+.settings[open] > summary { margin-bottom: 26px; }
+.settings summary:focus-visible, .panel a:focus-visible { outline: 2px solid var(--eco-rust); outline-offset: 3px; }
+.skeleton { display: grid; gap: 12px; }
+.skeleton > div { height: 38px; max-width: 860px; background: var(--eco-surface-sunk); border-radius: 4px; }
+.spinning { animation: avito-integration-spin 1s linear infinite; }
+@keyframes avito-integration-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinning { animation: none; } }
+@media (max-width: 650px) { .panel { padding: 18px; } .header { flex-direction: column; gap: 12px; } .keyFields { grid-template-columns: minmax(0, 1fr); gap: 15px; } .workflow li > a { margin-left: 26px; } .connectionMeta { flex-direction: column; } }

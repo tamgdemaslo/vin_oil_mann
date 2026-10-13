@@ -46,6 +46,7 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/shipment", title: () => `Отгрузки | ${APP_SUFFIX}` },
 
   { match: (pathname) => pathname === "/inventory/products", title: () => `Товары | Склад` },
+  { match: (pathname) => pathname === "/warehouse/avito", title: () => `Авито | Склад` },
   { match: (pathname) => pathname === "/inventory/cells", title: () => `Ячейки | Склад` },
   { match: (pathname) => pathname === "/warehouse/inventory", title: () => `Инвентаризация | Склад` },
   { match: (pathname) => pathname === "/inventory/receipts", title: () => `Приемка | Склад` },

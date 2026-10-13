@@ -13,6 +13,7 @@ export default async function CabinetIntegrationsPage() {
   ]);
 
   return <IntegrationsClient
+    branchId={branch.branchId!}
     branchName={branch.branch?.shortName || branch.branch?.name || "Текущий филиал"}
     canEditSecrets={canManageBranchIntegrationSecrets(branch)}
     organizationConfigured={organizationConfigured}
