@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
-import { quoteRequirementChoices, quoteClientText, quoteExtraCents, quoteOilAmount, quoteRub, type QuoteFilterGroup, type QuoteExtra, type QuoteStockProduct } from "@/lib/maintenance-quote";
+import { groupQuoteOils, quoteVariantAmount, quoteRequirementChoices, quoteClientText, quoteExtraCents, quoteRub, type QuoteFilterGroup, type QuoteExtra, type QuoteStockProduct } from "@/lib/maintenance-quote";
 import { getProductAttributeDictionary } from "@/lib/product-attribute-values";
 import { QuoteSearchField } from "./QuoteSearchField";
 import styles from "./MaintenanceQuotePanel.module.css";
@@ -85,8 +85,9 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
     } finally { if (!controller.signal.aborted) setLoading(false); }
   }
   const litres = number(volume);
+  const selectedVariants = groupQuoteOils(selected);
   const validExtras = extras.every(row => row.name.trim() && Number.isFinite(row.quantity) && row.quantity > 0 && Number.isFinite(row.price) && row.price >= 0);
-  const ready = selected.every(oil => Number.isFinite(oil.price) && oil.price > 0) && selected.length > 0 && litres > 0 && litres <= 100 && Number.isFinite(litres) && validExtras && selected.every(oil => quoteOilAmount(oil, litres));
+  const ready = selected.every(oil => Number.isFinite(oil.price) && oil.price > 0) && selected.length > 0 && litres > 0 && litres <= 100 && Number.isFinite(litres) && validExtras && selectedVariants.every(variant => quoteVariantAmount(variant, litres));
   const text = ready ? quoteClientText(vehicleTitle, [specification, viscosity].filter(Boolean).join(" · "), litres, selected, extras) : "";
   useEffect(() => { setCopied(false); setCopyError(""); }, [text]);
   const extraTotal = quoteExtraCents(extras);
@@ -108,10 +109,13 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
       <button type="button" className="eco-btn eco-btn--primary" disabled={!warehouseId || !specification.trim() || loading} onClick={() => void findOils()}>{loading ? "Проверяем наличие…" : "Подобрать масла из наличия"}</button>
       {error ? <p role="alert">{error}</p> : null}
       {searched && !products.length ? <p role="status">Совпадений по указанному допуску и вязкости нет. Проверьте требования и технические характеристики товаров на складе.</p> : null}
-      {products.length ? <div className={styles.options} aria-label="Варианты масла">{products.map(oil => {
-        const amount = quoteOilAmount(oil, litres);
-        const chosen = selected.some(item => item.id === oil.id);
-        return <div key={oil.id} className={styles.option}><div><strong>{oil.name}</strong><p>{oil.article} · Остаток {oil.available} {oil.unit} · {quoteRub(Math.round(oil.price * 100))} / {oil.unit}</p><p>{oil.sae} · {oil.oem}</p>{oil.price <= 0 ? <p>Цена продажи не указана — заполните карточку товара.</p> : null}{!oil.litresPerUnit ? <p>Не указан объём фасовки — заполните карточку товара.</p> : amount ? <p>{amount.quantity} {oil.unit} ({amount.suppliedLitres} л) — <b>{quoteRub(amount.cents)}</b>{!amount.enough ? " · Недостаточно на складе" : ""}</p> : null}</div><button type="button" className="eco-btn" disabled={!amount || !amount.enough || oil.price <= 0} aria-pressed={chosen} onClick={() => setSelected(rows => chosen ? rows.filter(item => item.id !== oil.id) : [...rows, oil])}>{chosen ? "Убрать вариант" : "Добавить вариант"}</button></div>;
+      {products.length ? <div className={styles.options} aria-label="Варианты масла">{groupQuoteOils(products).map(variant => {
+        const amount = quoteVariantAmount(variant, litres);
+        const chosen = selectedVariants.some(item => item.key === variant.key);
+        return <div key={variant.key} className={styles.option}><div><strong>{variant.name}</strong>
+          {variant.products.map(oil => <p key={oil.id}>Фасовка {oil.litresPerUnit ?? "?"} л · остаток {oil.available} {oil.unit} · {quoteRub(Math.round(oil.price * 100))} / {oil.unit}</p>)}
+          {amount ? <p>Комплект: {amount.lines.map(line=>`${line.quantity} × ${line.product.litresPerUnit} л`).join(" + ")} — <b>{quoteRub(amount.cents)}</b>{!amount.enough ? " · Недостаточно на складе" : ""}</p> : <p>Уточните объём, фасовку и цену.</p>}
+        </div><button type="button" className="eco-btn" disabled={!chosen && (!amount || !amount.enough)} aria-pressed={chosen} onClick={() => setSelected(rows => chosen ? rows.filter(item => !variant.products.some(product=>product.id===item.id)) : [...rows, ...variant.products.filter(item=>item.price>0 && item.litresPerUnit)])}>{chosen ? "Убрать вариант" : "Добавить вариант"}</button></div>;
       })}</div> : null}
       <div className={styles.heading}><strong>Расходники и работа</strong><button type="button" className="eco-btn" onClick={() => setExtras(rows => [...rows, { id: crypto.randomUUID(), name: "", quantity: 1, price: 0 }])}>Добавить строку вручную</button></div>
       <div className={styles.filterPicker} aria-label="Фильтры из подбора MANN">
@@ -121,15 +125,22 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
           const rowId = `mann:${group.key}`;
           const existingRow = extras.find(row => row.id === rowId);
           const selectedId = filterSelection[group.key] ?? (existingRow && !existingRow.stockStoreId ? "reference" : "");
-          const product = group.products.find(item => item.id === selectedId);
-          const added = Boolean(existingRow);
           return <div key={group.key} className={styles.filterRow}>
-            <label>{group.label} · MANN {group.article}<select aria-label={`Товар для ${group.label} MANN ${group.article}`} value={selectedId} disabled={added || filtersLoading} onChange={event => setFilterSelection(values => ({...values, [group.key]: event.target.value}))}>
+            <label>{group.label} · MANN {group.article}<select aria-label={`Товар для ${group.label} MANN ${group.article}`} value={selectedId} disabled={filtersLoading} onChange={event => {
+              const value=event.target.value;
+              setFilterSelection(values => ({...values, [group.key]: value}));
+              const chosen=group.products.find(item=>item.id===value);
+              setExtras(rows => {
+                const others=rows.filter(row=>row.id!==rowId);
+                if (!value || (value!=="reference" && (!warehouseId || !chosen))) return others;
+                return [...others,{id:rowId,name:chosen ? `${chosen.name}${chosen.available<1 ? " (под заказ)" : ""}` : `${group.label} MANN ${group.article}`,quantity:1,price:chosen && chosen.price>0 ? chosen.price : NaN,...(chosen && warehouseId ? {stockStoreId:warehouseId} : {})}];
+              });
+            }}>
               <option value="">Выберите подходящий товар</option>
               {(warehouseId ? group.products : []).map(item => <option key={item.id} value={item.id} disabled={item.available < 1 && !item.orderable}>{item.name} · {quoteRub(Math.round(item.price * 100))} · {item.available >= 1 ? `в наличии ${item.available} шт.` : item.orderable ? "под заказ" : "нет в наличии"}</option>)}
               <option value="reference">MANN {group.article} — указать цену</option>
             </select></label>
-            <button type="button" className="eco-btn" disabled={!selectedId || (selectedId !== "reference" && (!warehouseId || !product)) || added || filtersLoading} onClick={() => setExtras(rows => [...rows, {id: rowId, name: product ? `${product.name}${product.available < 1 ? " (под заказ)" : ""}` : `${group.label} MANN ${group.article}`, quantity: 1, price: product && product.price > 0 ? product.price : NaN, ...(product && warehouseId ? {stockStoreId: warehouseId} : {})}])}>{added ? "В расчёте" : "Добавить фильтр"}</button>
+            {existingRow ? <><label className={styles.filterPrice}>Цена фильтра, ₽<input aria-label={`Цена ${group.label} MANN ${group.article}, ₽`} type="number" min="0" step="0.01" placeholder="Укажите цену" value={Number.isFinite(existingRow.price) ? existingRow.price : ""} onChange={event=>updateExtra(rowId,{price:event.target.value ? Number(event.target.value) : NaN})} /></label><button type="button" className="eco-btn" onClick={()=>{setExtras(rows=>rows.filter(row=>row.id!==rowId));setFilterSelection(values=>({...values,[group.key]:""}));}}>Убрать фильтр</button><small className={styles.filterAdded}>Добавлен в расчёт{!Number.isFinite(existingRow.price) ? " — укажите цену рядом" : ""}</small></> : null}
             {group.condition ? <p className={styles.note}>Условие MANN: {group.condition}</p> : null}
           </div>;
         })}
@@ -140,9 +151,13 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
       {extraProducts.map(product => <div key={product.id} className={styles.option}><span>{product.name} · {product.article} · {quoteRub(Math.round(product.price * 100))}</span><button type="button" className="eco-btn" onClick={() => { setExtras(rows => [...rows, { id: crypto.randomUUID(), name: product.name, quantity: 1, price: product.price, stockStoreId: warehouseId ?? undefined }]); setSearch(""); setExtraProducts([]); }}>Добавить</button></div>)}
       <p className={styles.note}>Применяемость фильтра проверьте по подбору автомобиля. Все строки ниже входят в каждый вариант.</p>
       {extras.map(row => <div key={row.id} className={styles.extra}><label>Наименование<input value={row.name} onChange={event => updateExtra(row.id, { name: event.target.value })} placeholder="Масляный фильтр / замена масла" /></label><label>Количество<input type="number" min="0.001" step="0.001" value={Number.isFinite(row.quantity) ? row.quantity : ""} onChange={event => updateExtra(row.id, { quantity: event.target.value ? Number(event.target.value) : NaN })} /></label><label>Цена, ₽<input type="number" min="0" step="0.01" value={Number.isFinite(row.price) ? row.price : ""} onChange={event => updateExtra(row.id, { price: event.target.value ? Number(event.target.value) : NaN })} /></label><button type="button" className="eco-btn" aria-label={`Удалить строку ${row.name || "без названия"}`} onClick={() => setExtras(rows => rows.filter(item => item.id !== row.id))}>Удалить</button></div>)}
-      {selected.length ? <div className={styles.totals}>{selected.map((oil, index) => {
-        const amount = quoteOilAmount(oil, litres);
-        return <p key={oil.id}><span>Вариант {index + 1}: {oil.name}</span><label>Цена масла за {oil.unit}, ₽<input type="number" min="0.01" step="0.01" value={Number.isFinite(oil.price) ? oil.price : ""} onChange={event => setSelected(rows => rows.map(row => row.id === oil.id ? { ...row, price: event.target.value ? Number(event.target.value) : NaN } : row))} /></label><strong>{amount && validExtras ? quoteRub(amount.cents + extraTotal) : "Уточните количество и цены"}</strong>{amount && !amount.enough ? <small>Недостаточно масла на складе — предложение будет помечено «под заказ».</small> : null}</p>;
+      {selectedVariants.length ? <div className={styles.totals}>{selectedVariants.map((variant, index) => {
+        const amount = quoteVariantAmount(variant, litres);
+        return <div key={variant.key} className={styles.variantTotal}><span>Вариант {index + 1}: {variant.name}</span>
+          {variant.products.map(oil=><label key={oil.id}>Цена {oil.litresPerUnit} л / {oil.unit}, ₽<input aria-label={`Цена ${oil.name}, ₽`} type="number" min="0.01" step="0.01" value={Number.isFinite(oil.price) ? oil.price : ""} onChange={event => setSelected(rows => rows.map(row => row.id === oil.id ? { ...row, price: event.target.value ? Number(event.target.value) : NaN } : row))} /></label>)}
+          <strong>{amount && validExtras ? quoteRub(amount.cents + extraTotal) : "Уточните количество и цены"}</strong>
+          {amount ? <small>Комплект: {amount.lines.map(line=>`${line.quantity} × ${line.product.litresPerUnit} л`).join(" + ")}{!amount.enough ? " · недостаточно на складе" : ""}</small> : null}
+        </div>;
       })}</div> : null}
       {text ? <label className={styles.preview}>Предложение клиенту<textarea readOnly rows={Math.min(18, text.split("\n").length)} value={text} /></label> : null}
       <button type="button" className="eco-btn eco-btn--primary" disabled={!ready} onClick={async () => {

@@ -32,3 +32,15 @@ assert.equal(quoteRequirementChoices({items:[{...engine,requiresReview:true}]}, 
 assert.equal(quoteRequirementChoices({items:[{...engine,capacities:[{qualifier:'RANGE',minLiters:4,maxLiters:5}]}]}, null).automaticVolume, '');
 assert.deepEqual(quoteRequirementChoices({items:[{...engine,capacities:[{qualifier:'RANGE',minLiters:4,maxLiters:5}]}]}, null).volumes, [4,5]);
 console.log('maintenance requirement choices: ok');
+const {groupQuoteOils,quoteVariantAmount}=await jiti.import('../src/lib/maintenance-quote.ts');
+const ngn4={...packed,id:'ngn4',name:'NGN 5W-20 A-Line SP/ILSAC GF-6, моторное масло, 4 л.',sae:'5W-20',price:4300,available:1};
+const ngn1={...ngn4,id:'ngn1',name:'NGN 5W-20 A-Line SP/ILSAC GF-6, моторное масло, 1 л.',litresPerUnit:1,price:1200,available:5};
+const variants=groupQuoteOils([ngn4,ngn1]);assert.equal(variants.length,1);
+const kit=quoteVariantAmount(variants[0],5);assert.equal(kit.cents,550000);assert.equal(kit.suppliedLitres,5);assert.equal(kit.enough,true);
+assert.deepEqual(kit.lines.map(line=>[line.product.id,line.quantity]),[['ngn4',1],['ngn1',1]]);
+const scarce=quoteVariantAmount(groupQuoteOils([{...ngn4,available:0},{...ngn1,available:5}])[0],5);assert.equal(scarce.cents,600000);
+assert.equal(quoteVariantAmount(groupQuoteOils([{...ngn4,available:0},{...ngn1,available:0}])[0],5).enough,false);
+assert.equal(groupQuoteOils([ngn4,{...ngn1,name:ngn1.name.replace('A-Line','Future')}]).length,2);
+const combined=quoteClientText('KIA K5','GF-6A',5,[ngn4,ngn1],[{id:'filter',name:'Фильтр',quantity:1,price:1370}]);
+assert.match(combined,/6\s870/);assert.doesNotMatch(combined,/Вариант 2/);
+console.log('oil package combinations: ok');

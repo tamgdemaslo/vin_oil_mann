@@ -33,11 +33,69 @@ export function quoteExtraCents(extras: QuoteExtra[]) {
   return extras.reduce((sum, row) => sum + Math.round(row.quantity * Math.round(row.price * 100)), 0);
 }
 export const quoteRub = (cents: number) => new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 2 }).format(cents / 100);
+export type QuoteOilVariant = { key: string; name: string; products: QuoteStockProduct[] };
+export function groupQuoteOils(oils: QuoteStockProduct[]): QuoteOilVariant[] {
+  const groups = new Map<string, QuoteOilVariant>();
+  for (const oil of oils) {
+    // Remove only package sizes, preserving formulation names and text in parentheses.
+    const name = oil.name.replace(/(?:^|[\s,;(])\d+(?:[.,]\d+)?\s*(?:литров|литра|литр|л|l)\.?(?=[\s,;)]|$)/gi, " ").replace(/моторное\s+масло/gi, "").replace(/[\s,;.]+$/g, "").replace(/\s+/g, " ").trim();
+    const norm = buildRequirementsNorm({sae:oil.sae,oem:oil.oem});
+    const key = [name.toLocaleLowerCase("ru-RU").replace(/[^\p{L}\p{N}]/gu,""), norm.sae.sort().join(","), norm.oem.sort().join(","), isLiterSaleUnit(oil.unit) ? "bulk" : "pack"].join("|");
+    const group = groups.get(key) ?? {key,name,products:[]};
+    if (!group.products.some(item => item.id === oil.id)) group.products.push(oil);
+    groups.set(key,group);
+  }
+  return [...groups.values()];
+}
+export function quoteVariantAmount(variant: QuoteOilVariant, litres: number) {
+  if (!(litres > 0) || litres > 100 || !Number.isFinite(litres)) return null;
+  if (variant.products.every(item => isLiterSaleUnit(item.unit))) {
+    const sorted = variant.products.filter(item => item.price > 0).sort((a,b)=>a.price-b.price);
+    const oil = sorted.find(item => item.available >= litres) ?? sorted[0];
+    if (!oil) return null;
+    const amount = quoteOilAmount(oil,litres);
+    return amount ? {...amount,lines:[{product:oil,quantity:amount.quantity,cents:amount.cents}]} : null;
+  }
+  const products = variant.products.filter(item => item.litresPerUnit && item.litresPerUnit > 0 && item.price > 0 && Number.isFinite(item.price));
+  if (!products.length) return null;
+  const sizes = products.map(item=>Math.round(item.litresPerUnit! * 1000));
+  if (sizes.some(size=>size < 1)) return null;
+  const gcd = (a:number,b:number):number => b ? gcd(b,a%b) : a;
+  const step = sizes.reduce(gcd);
+  const target = Math.ceil(litres * 1000 / step - 0.000001);
+  const units = sizes.map(size=>size / step);
+  const cap = target + Math.max(...units) - 1;
+  if (cap > 200000) return null;
+  const solve = (bounded:boolean) => {
+    const states: Array<{cents:number;counts:number[]} | undefined> = Array(cap+1);
+    states[0] = {cents:0,counts:products.map(()=>0)};
+    products.forEach((product,index)=>{
+      let remaining = Math.min(bounded ? Math.floor(product.available) : Math.ceil(cap/units[index]), Math.ceil(cap/units[index]));
+      for (let batch=1; remaining>0; batch*=2) {
+        const count = Math.min(batch,remaining); remaining-=count;
+        const size = count*units[index], cost = count*Math.round(product.price*100);
+        for (let amount=cap;amount>=size;amount--) {
+          const previous=states[amount-size]; if(!previous) continue;
+          const cents=previous.cents+cost;
+          if (!states[amount] || cents<states[amount]!.cents) {
+            const counts=[...previous.counts]; counts[index]+=count; states[amount]={cents,counts};
+          }
+        }
+      }
+    });
+    for (let amount=target;amount<=cap;amount++) if(states[amount]) return {state:states[amount]!,suppliedLitres:amount*step/1000};
+    return null;
+  };
+  const inStock=solve(true), solution=inStock ?? solve(false);
+  if (!solution) return null;
+  const lines=products.flatMap((product,index)=>solution.state.counts[index] ? [{product,quantity:solution.state.counts[index],cents:solution.state.counts[index]*Math.round(product.price*100)}] : []);
+  return {quantity:lines.reduce((sum,line)=>sum+line.quantity,0),suppliedLitres:solution.suppliedLitres,cents:solution.state.cents,enough:Boolean(inStock),lines};
+}
 export function quoteClientText(vehicle: string, specification: string, litres: number, oils: QuoteStockProduct[], extras: QuoteExtra[]) {
-  return [`Расчёт ТО: ${vehicle}`, `Моторное масло: ${specification}; объём замены ${litres} л.`, ...oils.flatMap((oil, index) => {
-    const amount = quoteOilAmount(oil, litres);
+  return [`Расчёт ТО: ${vehicle}`, `Моторное масло: ${specification}; объём замены ${litres} л.`, ...groupQuoteOils(oils).flatMap((variant, index) => {
+    const amount = quoteVariantAmount(variant, litres);
     if (!amount) return [];
-    return ["", `Вариант ${index + 1} — ${oil.name}`, `Масло: ${amount.quantity} ${oil.unit || "шт."} × ${quoteRub(Math.round(oil.price * 100))} = ${quoteRub(amount.cents)}`, ...(amount.suppliedLitres > litres + 0.001 ? [`В упаковках: ${amount.suppliedLitres} л.`] : []), ...extras.map(row => `${row.name}: ${row.quantity} × ${quoteRub(Math.round(row.price * 100))} = ${quoteRub(Math.round(row.quantity * Math.round(row.price * 100)))}`), `Итого: ${quoteRub(amount.cents + quoteExtraCents(extras))}`, amount.enough ? "Масло в наличии." : "Масло — под заказ, требуется уточнить срок."];
+    return ["", `Вариант ${index + 1} — ${variant.name}`, ...amount.lines.map(line=>`Масло${isLiterSaleUnit(line.product.unit) ? "" : ` (фасовка ${line.product.litresPerUnit} л)`}: ${line.quantity} ${line.product.unit || "шт."} × ${quoteRub(Math.round(line.product.price * 100))} = ${quoteRub(line.cents)}`), ...(amount.suppliedLitres > litres + 0.001 ? [`В упаковках: ${amount.suppliedLitres} л.`] : []), ...extras.map(row => `${row.name}: ${row.quantity} × ${quoteRub(Math.round(row.price * 100))} = ${quoteRub(Math.round(row.quantity * Math.round(row.price * 100)))}`), `Итого: ${quoteRub(amount.cents + quoteExtraCents(extras))}`, amount.enough ? "Масло в наличии." : "Масло — под заказ, требуется уточнить срок."];
   }), "", "Предварительный расчёт. Наличие и цены уточняются при записи."].join("\n");
 }
 
