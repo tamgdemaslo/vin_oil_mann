@@ -1,5 +1,4 @@
 import catalogs from "./catalogs.generated.json";
-import { resolveProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 import { isLiterSaleUnit } from "@/lib/product-marking";
 import { AVITO_CONTENT_DEFAULTS, avitoContentVariables, avitoTemplateIssues, renderAvitoTemplate, shortenAvitoTitle } from "./content";
 import type { AvitoFeedStats, AvitoIssue, AvitoListing, AvitoOilType, AvitoOverrides, AvitoProductSource, AvitoRemoteStatus, AvitoSettings } from "./types";
@@ -23,9 +22,23 @@ export function normalizeAvitoSettings(saved: Partial<AvitoSettings>): AvitoSett
 
 export function avitoCatalog(type: AvitoOilType) { return catalogs.types[type]; }
 
-export function inferAvitoOilType(source: Pick<AvitoProductSource, "entityType" | "groupPath" | "groupCode">): AvitoOilType | null {
-  const profile = resolveProductFluidAttributeProfile(source);
-  return profile === "ENGINE_OIL" ? "motor" : profile === "TRANSMISSION_FLUID" ? "transmission" : null;
+/** Membership comes from the catalog group, never the item's name or Avito flag. */
+export function inferAvitoOilType(source: Pick<AvitoProductSource, "entityType" | "groupPath" | "groupCode" | "group">): AvitoOilType | null {
+  if (source.entityType !== "product" || source.group && source.group.kind !== "product") return null;
+  const parts = (source.group?.name ?? source.groupPath ?? "").split(/[\\/>]+/u).map((part) => part.normalize("NFKC").toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/[^\p{L}\p{N}]+/gu, " ").trim());
+  const group = parts.join(" ");
+  if (/(?:фильтр|filter|поддон|проклад|уплотн|кольц|датчик|болт|ремкомплект|свеч|пробк)/u.test(group)) return null;
+  const fluid = /(?:^| )(?:масло|масла|масел|oil|oils|жидкость|жидкости|fluid|fluids|lubricant|atf)(?: |$)/u.test(group);
+  if (!fluid) return null;
+  for (const part of parts.reverse()) {
+    if (/(?:^| )(?:трансмис\p{L}*|transmission\p{L}*|gear|atf|cvt|dct|dsg|акпп|мкпп|кпп|вариатор\p{L}*|редуктор\p{L}*|дифференциал\p{L}*|раздаточн\p{L}*)(?: |$)/u.test(part)) return "transmission";
+    if (/(?:^| )(?:моторн\p{L}*|motor|engine|двигател\p{L}*)(?: |$)/u.test(part)) return "motor";
+  }
+  return null;
+}
+
+export function avitoListingGroupKey(source: Pick<AvitoProductSource, "groupPath" | "group">) {
+  return source.group ? `id:${source.group.id}` : `path:${source.groupPath?.trim() ?? ""}`;
 }
 
 function normalized(value: string) {
@@ -78,7 +91,7 @@ export function avitoStockAllowed(source: AvitoProductSource, volume: string, se
 export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOverrides, settings: AvitoSettings, adId: string, remote: AvitoRemoteStatus | null = null): AvitoListing {
   settings = normalizeAvitoSettings(settings);
   const inferred = inferAvitoOilType(source);
-  const type = overrides.type ?? inferred ?? "motor";
+  const type = inferred ?? overrides.type ?? "motor";
   const sameFamily = inferred === type;
   const catalog = avitoCatalog(type);
   const rawBrand = inherited(overrides.brand, source.brand);
@@ -113,7 +126,7 @@ export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOv
   const error = (field: string, message: string) => issues.push({ field, message, severity: "error" });
   const warning = (field: string, message: string) => issues.push({ field, message, severity: "warning" });
   if (overrides.title === undefined && values.title !== generatedTitle) warning("title", "Заголовок автоматически сокращён до 50 символов. Проверьте предпросмотр");
-  if (!inferred && !overrides.type) error("type", "Выберите тип масла для Авито");
+  if (!inferred) error("type", "Для этого раздела выберите в карточке товара группу моторных или трансмиссионных масел");
   if (source.entityType !== "product") error("type", "В этом разделе выгружаются только товары");
   if (bulk) {
     if (overrides.volume === undefined) error("volume", "Для масла на розлив выберите объём продажи. Объём бочки не используется автоматически");

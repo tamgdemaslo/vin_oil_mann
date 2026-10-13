@@ -1,4 +1,6 @@
 export type AvitoOilType = "motor" | "transmission";
+export type AvitoSort = "name_asc" | "name_desc" | "errors_first" | "no_photos_first" | "ready_first" | "price_asc" | "price_desc" | "stock_asc" | "stock_desc";
+export type AvitoPhotoFilter = "all" | "without" | "with";
 export type AvitoIssue = { field: string; message: string; severity: "error" | "warning" };
 export type AvitoPhoto = { id: string; url: string; name: string; contentType: string; size: number };
 
@@ -73,6 +75,7 @@ export type AvitoProductSource = {
   name: string;
   article: string | null;
   groupPath: string | null;
+  group?: { id: string; name: string; kind: string } | null;
   groupCode?: string | null;
   entityType: string;
   uomName?: string | null;
@@ -141,6 +144,7 @@ export type AvitoWorkspaceData = {
   canEditSecrets: boolean;
   settings: AvitoSettingsView;
   products: AvitoListing[];
+  groups: { key: string; name: string; type: AvitoOilType }[];
   stores: { id: string; name: string }[];
   history: AvitoHistoryItem[];
   stats: AvitoFeedStats;

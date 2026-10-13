@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { isLiterSaleUnit } from "@/lib/product-marking";
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronLeft, ChevronRight, Download, ExternalLink, FileCheck2, ImagePlus, Loader2, RefreshCw, Save, Search, Settings2, TriangleAlert, X } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import { AVITO_TYPE_LABELS, avitoCatalog, avitoRemoteLabel, buildAvitoListing } from "@/lib/avito-autoload/domain";
-import type { AvitoFeedStats, AvitoHistoryItem, AvitoListing, AvitoOverrides, AvitoSettings, AvitoWorkspaceData } from "@/lib/avito-autoload/types";
+import type { AvitoFeedStats, AvitoHistoryItem, AvitoListing, AvitoOverrides, AvitoPhotoFilter, AvitoSettings, AvitoSort, AvitoWorkspaceData } from "@/lib/avito-autoload/types";
 import AvitoSettingsForm from "@/components/integrations/AvitoSettingsForm";
 import styles from "./avito.module.css";
 
@@ -63,16 +63,28 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
   const [offset, setOffset] = useState(0);
   const [view, setView] = useState<View>("all");
   const [type, setType] = useState("all");
+  const [group, setGroup] = useState("");
+  const [photos, setPhotos] = useState<AvitoPhotoFilter>("all");
+  const [sort, setSort] = useState<AvitoSort>("name_asc");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const opener = useRef<HTMLButtonElement | null>(null);
+  const readVersion = useRef(0);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
-    const next = await request<AvitoWorkspaceData>(`/api/avito-autoload?search=${encodeURIComponent(search)}&offset=${offset}&type=${type}&view=${view}`, undefined, signal);
-    setData(next);
-    return next;
-  }, [search, offset, type, view]);
+    const version = ++readVersion.current;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ search, offset: String(offset), type, view, group, photos, sort });
+      const next = await request<AvitoWorkspaceData>(`/api/avito-autoload?${params}`, undefined, signal);
+      if (version === readVersion.current && !signal?.aborted) setData(next);
+      return next;
+    } finally { if (version === readVersion.current && !signal?.aborted) setLoading(false); }
+  }, [search, offset, type, view, group, photos, sort]);
+
+  const refreshCurrent = useRef(refresh);
+  useEffect(() => { refreshCurrent.current = refresh; }, [refresh]);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchDraft), 300);
@@ -81,7 +93,7 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
 
   useEffect(() => {
     const controller = new AbortController();
-    refresh(controller.signal).then(() => { setLoading(false); setError(""); }).catch((failure) => {
+    refresh(controller.signal).then(() => { if (!controller.signal.aborted) setError(""); }).catch((failure) => {
       if (!controller.signal.aborted) { setError(errorMessage(failure)); setLoading(false); }
     });
     return () => controller.abort();
@@ -94,18 +106,16 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
       const result = await request<ActionResult>("/api/avito-autoload", { operation: action, ...payload });
       setNotice(result.message ?? (result.downloadUrl ? `Файл готов: ${result.stats?.included ?? 0} объявлений` : "Изменения сохранены"));
       setDownloadUrl(result.downloadUrl ?? null);
-      await refresh();
+      await refreshCurrent.current();
       return true;
     } catch (failure) { setError(errorMessage(failure)); return false; }
     finally { setBusy(null); }
   };
 
-  const filtered = useMemo(() => (data?.products ?? []).filter((item) => {
-    if (type !== "all" && item.type !== type) return false;
-    const invalid = item.issues.some((issue) => issue.severity === "error");
-    return view === "all" || view === "selected" && item.enabled || view === "errors" && invalid
-      || view === "ready" && !invalid && !item.archived || view === "published" && ["active", "old"].includes(item.remote?.status ?? "");
-  }), [data, type, view]);
+  const filtered = data?.products ?? [];
+  const hasFilters = Boolean(search || type !== "all" || group || view !== "all" || photos !== "all");
+  const resetPage = () => { setOffset(0); setSelected(new Set()); setEditingId(null); };
+  const resetFilters = () => { setSearchDraft(""); setSearch(""); setType("all"); setGroup(""); setView("all"); setPhotos("all"); resetPage(); };
   const editing = data?.products.find((item) => item.id === editingId) ?? null;
   const editable = data?.canEdit ?? canEdit;
   const tabButton = (value: Tab, label: string) => <button type="button" role="tab" aria-selected={tab === value} aria-controls={`avito-${value}`} id={`avito-tab-${value}`} className={tab === value ? styles.activeTab : ""} onClick={() => { setTab(value); setEditingId(null); }} key={value}>{label}</button>;
@@ -120,7 +130,7 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
       </div>
       <div className={styles.headerActions}>
         <EcoButton type="button" disabled={Boolean(busy) || loading} onClick={() => { setBusy("refresh"); setError(""); refresh().catch((failure) => setError(errorMessage(failure))).finally(() => setBusy(null)); }}><RefreshCw size={15} className={busy === "refresh" ? styles.spinning : ""} /> Обновить</EcoButton>
-        {editable && <EcoButton variant="primary" type="button" disabled={!data || Boolean(busy) || data.stats.invalid > 0} onClick={() => setReviewOpen(true)} title={data?.stats.invalid ? "Исправьте ошибки выбранных объявлений" : undefined}><FileCheck2 size={16} /> Сформировать файл</EcoButton>}
+        {editable && <EcoButton variant="primary" type="button" disabled={!data || loading || Boolean(busy) || data.stats.invalid > 0} onClick={() => setReviewOpen(true)} title={data?.stats.invalid ? "Исправьте ошибки выбранных объявлений" : undefined}><FileCheck2 size={16} /> Сформировать файл</EcoButton>}
       </div>
     </header>
 
@@ -134,41 +144,46 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
         <div className={styles.summary}>
           <span><strong>{data.stats.selected}</strong> выбрано для Авито</span>
           <span><strong>{data.stats.included}</strong> попадут в файл</span>
-          <button type="button" onClick={() => { setView("errors"); setOffset(0); setSelected(new Set()); }} className={data.stats.invalid ? styles.summaryError : ""}><strong>{data.stats.invalid}</strong> с ошибками</button>
+          <button type="button" onClick={() => { setView("errors"); resetPage(); }} className={data.stats.invalid ? styles.summaryError : ""}><strong>{data.stats.invalid}</strong> с ошибками</button>
           <span><strong>{data.stats.outOfStock}</strong> без доступного остатка</span>
           <small>Последний файл: {dateLabel(data.settings.lastExportAt)}</small>
         </div>
         {!data.settings.configured && editable && <div className={styles.setupHint}><Settings2 size={18} /><span>Для первой выгрузки укажите адрес продажи и публичный адрес платформы.</span><button type="button" onClick={() => setTab("settings")}>Открыть настройки <ArrowRight size={15} /></button></div>}
         <div className={styles.filters}>
-          <label className={styles.search}><Search size={17} /><input aria-label="Поиск товаров Авито" placeholder="Товар, артикул или производитель" value={searchDraft} onChange={(event) => { setSearchDraft(event.target.value); setOffset(0); setSelected(new Set()); }} /></label>
-          <EcoSelect aria-label="Тип масла" value={type} onChange={(event) => { setType(event.target.value); setOffset(0); setSelected(new Set()); }}><option value="all">Все масла</option><option value="motor">Моторные</option><option value="transmission">Трансмиссионные</option></EcoSelect>
-          <EcoSelect aria-label="Состояние объявлений" value={view} onChange={(event) => { setView(event.target.value as View); setOffset(0); setSelected(new Set()); }}><option value="all">Все товары</option><option value="selected">Выбраны для Авито</option><option value="errors">Есть ошибки</option><option value="ready">Данные заполнены</option><option value="published">Опубликованы</option></EcoSelect>
+          <label className={styles.search}><Search size={17} /><input disabled={Boolean(busy)} aria-label="Поиск товаров Авито" placeholder="Товар, артикул или производитель" value={searchDraft} onChange={(event) => { setSearchDraft(event.target.value); resetPage(); }} /></label>
+          <label className={styles.filterField}><span>Категория Авито</span><EcoSelect disabled={Boolean(busy)} value={type} onChange={(event) => { setType(event.target.value); setGroup(""); resetPage(); }}><option value="all">Все масла</option><option value="motor">Моторные</option><option value="transmission">Трансмиссионные</option></EcoSelect></label>
+          <label className={styles.filterField}><span>Товарная группа</span><EcoSelect disabled={Boolean(busy)} value={group} onChange={(event) => { setGroup(event.target.value); resetPage(); }}><option value="">Все группы</option>{(data.groups ?? []).filter((item) => type === "all" || item.type === type).map((item) => <option key={item.key} value={item.key}>{item.name}</option>)}</EcoSelect></label>
+          <label className={styles.filterField}><span>Состояние</span><EcoSelect disabled={Boolean(busy)} value={view} onChange={(event) => { setView(event.target.value as View); resetPage(); }}><option value="all">Все товары</option><option value="selected">Выбраны для Авито</option><option value="errors">Есть ошибки</option><option value="ready">Данные заполнены</option><option value="published">Опубликованы</option></EcoSelect></label>
+          <label className={styles.filterField}><span>Фотографии</span><EcoSelect disabled={Boolean(busy)} value={photos} onChange={(event) => { setPhotos(event.target.value as AvitoPhotoFilter); resetPage(); }}><option value="all">Все товары</option><option value="without">Без фото</option><option value="with">С фото</option></EcoSelect></label>
+          <label className={styles.filterField}><span>Сортировка</span><EcoSelect disabled={Boolean(busy)} value={sort} onChange={(event) => { setSort(event.target.value as AvitoSort); resetPage(); }}><option value="name_asc">Название: А → Я</option><option value="name_desc">Название: Я → А</option><option value="errors_first">Сначала с ошибками</option><option value="no_photos_first">Сначала без фото</option><option value="ready_first">Сначала готовые к выгрузке</option><option value="price_asc">Цена: по возрастанию</option><option value="price_desc">Цена: по убыванию</option><option value="stock_asc">Остаток: по возрастанию</option><option value="stock_desc">Остаток: по убыванию</option></EcoSelect></label>
+          {hasFilters && <button type="button" className={styles.textButton} disabled={Boolean(busy)} onClick={resetFilters}>Сбросить фильтры</button>}
         </div>
+        {loading && <p className={styles.help} role="status">Обновляем список товаров…</p>}
         {selected.size > 0 && editable && <div className={styles.bulk}><span>Выбрано для действия: <strong>{selected.size}</strong></span><EcoButton size="sm" disabled={Boolean(busy)} onClick={async () => { if (await perform("selection", { ids: [...selected], enabled: true })) setSelected(new Set()); }}>Включить в выгрузку</EcoButton><EcoButton size="sm" disabled={Boolean(busy)} onClick={async () => { if (await perform("selection", { ids: [...selected], enabled: false })) setSelected(new Set()); }}>Исключить</EcoButton><button type="button" className={styles.textButton} onClick={() => setSelected(new Set())}>Сбросить выбор</button></div>}
-        <div className={`${styles.layout} ${editing ? styles.withInspector : ""}`}>
+        <div className={`${styles.layout} ${editing ? styles.withInspector : ""}`} aria-busy={loading}>
           <div className={styles.tablePane}>
             <div className={styles.tableScroll}>
               <table className={styles.table}>
-                <thead><tr>{editable && <th className={styles.checkColumn}><input type="checkbox" aria-label="Выбрать все показанные товары" checked={filtered.length > 0 && filtered.every((item) => selected.has(item.id))} ref={(node) => { if (node) node.indeterminate = filtered.some((item) => selected.has(item.id)) && !filtered.every((item) => selected.has(item.id)); }} onChange={(event) => setSelected(event.target.checked ? new Set(filtered.map((item) => item.id)) : new Set())} /></th>}<th>Товар</th><th className={styles.numeric}>Цена Авито</th><th className={styles.numeric}>Доступно</th><th>Подготовка</th><th>На Авито</th></tr></thead>
+                <thead><tr>{editable && <th className={styles.checkColumn}><input type="checkbox" disabled={loading || Boolean(busy)} aria-label="Выбрать все показанные товары" checked={filtered.length > 0 && filtered.every((item) => selected.has(item.id))} ref={(node) => { if (node) node.indeterminate = filtered.some((item) => selected.has(item.id)) && !filtered.every((item) => selected.has(item.id)); }} onChange={(event) => setSelected(event.target.checked ? new Set(filtered.map((item) => item.id)) : new Set())} /></th>}<th>Товар</th><th className={styles.numeric}>Цена Авито</th><th className={styles.numeric}>Доступно</th><th>Подготовка</th><th>На Авито</th></tr></thead>
                 <tbody>{filtered.map((item) => {
                   const errors = item.issues.filter((issue) => issue.severity === "error");
                   const warnings = item.issues.filter((issue) => issue.severity === "warning");
                   return <tr key={item.id} className={editingId === item.id ? styles.currentRow : ""}>
-                    {editable && <td><input type="checkbox" aria-label={`Выбрать ${item.name}`} checked={selected.has(item.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(item.id); else next.delete(item.id); return next; })} /></td>}
-                    <td><button type="button" className={styles.productButton} onClick={(event) => { opener.current = event.currentTarget; setEditingId(item.id); }}>
+                    {editable && <td><input type="checkbox" disabled={loading || Boolean(busy)} aria-label={`Выбрать ${item.name}`} checked={selected.has(item.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(item.id); else next.delete(item.id); return next; })} /></td>}
+                    <td><button type="button" className={styles.productButton} disabled={loading} onClick={(event) => { opener.current = event.currentTarget; setEditingId(item.id); }}>
                       {item.photos[0] && <Image src={item.photos[0].url} alt="" width={40} height={40} unoptimized />}
                       <span><strong>{item.name}</strong>{item.values.title !== item.name && <small>Авито: {item.values.title}</small>}<small>{item.article ?? "Без артикула"} · {item.type === "motor" ? "Моторное" : "Трансмиссионное"}</small><em className={item.enabled ? styles.includedLabel : ""}>{item.archived ? "Архивный товар" : item.enabled ? "Выбран для Авито" : "Не выбран для Авито"}</em></span>
                     </button></td>
                     <td className={styles.numeric}>{money(item.values.priceRubles)}{item.overrides.priceRubles != null && <small>Отдельная цена</small>}</td>
                     <td className={styles.numeric}><span className={item.available <= data.settings.stockBuffer ? styles.zeroStock : ""}>{amount(item.available)}</span></td>
-                    <td><button type="button" className={styles.statusButton} onClick={() => setEditingId(item.id)}><EcoBadge tone={errors.length ? "danger" : item.archived || !item.included && item.enabled ? "neutral" : "success"}>{errors.length ? errorCount(errors.length) : item.archived ? "В архиве" : item.enabled && !item.included ? "Исключён по остатку" : "Данные заполнены"}</EcoBadge>{errors[0] ? <small>{errors[0].message}</small> : warnings.length ? <small>{warnings.some((issue) => issue.field === "photos") ? "Фото не добавлены" : "Допуски проверит Авито"}</small> : null}</button></td>
+                    <td><button type="button" className={styles.statusButton} disabled={loading} onClick={() => setEditingId(item.id)}><EcoBadge tone={errors.length ? "danger" : item.archived || !item.included && item.enabled ? "neutral" : "success"}>{errors.length ? errorCount(errors.length) : item.archived ? "В архиве" : item.enabled && !item.included ? "Исключён по остатку" : "Данные заполнены"}</EcoBadge>{errors[0] ? <small>{errors[0].message}</small> : warnings.length ? <small>{warnings.some((issue) => issue.field === "photos") ? "Фото не добавлены" : "Допуски проверит Авито"}</small> : null}</button></td>
                     <td><EcoBadge tone={["active", "old"].includes(item.remote?.status ?? "") ? "success" : ["error", "rejected", "blocked"].includes(item.remote?.status ?? "") ? "danger" : "neutral"}>{avitoRemoteLabel(item.remote?.status)}</EcoBadge>{item.remote && <small>{dateLabel(item.remote.checkedAt)}</small>}{item.remote?.url && <a className={styles.adLink} href={item.remote.url} target="_blank" rel="noopener noreferrer">Объявление <ExternalLink size={12} /></a>}</td>
                   </tr>;
                 })}</tbody>
               </table>
             </div>
-            {!filtered.length && <div className={styles.empty}><Search size={23} /><h2>{data.total ? "Нет товаров по выбранным фильтрам" : "Масла пока не найдены"}</h2><p>{data.total ? "Измените тип масла или состояние объявления." : search ? "Попробуйте другой запрос." : "Товары появятся здесь после добавления в группы моторных или трансмиссионных масел."}</p>{data.total ? <EcoButton onClick={() => { setView("all"); setType("all"); }}>Сбросить фильтры</EcoButton> : <Link href="/inventory/products" className="eco-btn">Открыть товары</Link>}</div>}
-            <footer className={styles.pagination}><span>Показано {filtered.length} · всего по поиску {data.total}</span><div><EcoButton size="sm" disabled={offset === 0 || Boolean(busy)} aria-label="Предыдущая страница" onClick={() => { setOffset(Math.max(0, offset - data.limit)); setSelected(new Set()); setEditingId(null); }}><ChevronLeft size={16} /></EcoButton><span>{Math.floor(offset / data.limit) + 1}</span><EcoButton size="sm" disabled={offset + data.limit >= data.total || Boolean(busy)} aria-label="Следующая страница" onClick={() => { setOffset(offset + data.limit); setSelected(new Set()); setEditingId(null); }}><ChevronRight size={16} /></EcoButton></div></footer>
+            {!filtered.length && !loading && <div className={styles.empty}><Search size={23} /><h2>{hasFilters ? "Нет товаров по выбранным фильтрам" : "Масла пока не найдены"}</h2><p>{hasFilters ? "Измените группу, состояние объявления или фильтр фотографий." : "Товары появятся здесь после добавления в группы моторных или трансмиссионных масел."}</p>{hasFilters ? <EcoButton onClick={resetFilters}>Сбросить фильтры</EcoButton> : <Link href="/inventory/products" className="eco-btn">Открыть товары</Link>}</div>}
+            <footer className={styles.pagination}><span>Показано {filtered.length} · всего по поиску {data.total}</span><div><EcoButton size="sm" disabled={offset === 0 || loading || Boolean(busy)} aria-label="Предыдущая страница" onClick={() => { setOffset(Math.max(0, offset - data.limit)); setSelected(new Set()); setEditingId(null); }}><ChevronLeft size={16} /></EcoButton><span>{Math.floor(offset / data.limit) + 1}</span><EcoButton size="sm" disabled={offset + data.limit >= data.total || loading || Boolean(busy)} aria-label="Следующая страница" onClick={() => { setOffset(offset + data.limit); setSelected(new Set()); setEditingId(null); }}><ChevronRight size={16} /></EcoButton></div></footer>
           </div>
           {editing && <ListingEditor key={editing.id} listing={editing} settings={data.settings} canEdit={editable} busy={Boolean(busy)} error={error} onClose={closeEditor} onSave={async (enabled, overrides) => { if (await perform("listing", { id: editing.id, enabled, overrides, sourceUpdatedAt: editing.sourceUpdatedAt })) closeEditor(); }} />}
         </div>
@@ -220,7 +235,7 @@ function ListingEditor({ listing, settings, canEdit, busy, error, onClose, onSav
         <p className={styles.help}>Заголовок и описание собираются по шаблонам филиала. Здесь можно задать отдельный текст для этого объявления.</p>
         {isLiterSaleUnit(listing.source.uomName) && <p className={styles.issueWarning}>Масло продаётся на розлив. Укажите объём продажи и полную цену за этот объём; складской остаток учитывается в литрах.</p>}
         <label className={styles.checkField}><input type="checkbox" checked={enabled} disabled={!canEdit || busy || listing.archived} onChange={(event) => setEnabled(event.target.checked)} /><span>Включить товар в выгрузку</span></label>
-        <label className={styles.field}><span>Тип масла</span><EcoSelect disabled={!canEdit || busy} value={live.type} onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value as AvitoOverrides["type"], acea: "", atf: "", api: "", oem: "", sae: "" }))}><option value="motor">Моторные масла</option><option value="transmission">Трансмиссионные масла</option></EcoSelect></label>
+        <label className={styles.field}><span>Категория Авито</span><EcoInput readOnly value={AVITO_TYPE_LABELS[live.type]} /><small>Определяется по группе товара: {listing.source.group?.name ?? listing.source.groupPath}. Чтобы изменить категорию, измените группу в карточке товара.</small></label>
         {input("title", "Заголовок")}
         <div className={styles.counter}>{[...live.values.title].length} / 50 символов</div>
         <p className={styles.help}>{draft.title === undefined ? "По шаблону филиала." : "Отдельный заголовок этого объявления."} {canEdit && draft.title !== undefined && <button type="button" className={styles.textButton} disabled={busy} onClick={() => setDraft((current) => { const next = { ...current }; delete next.title; return next; })}>Использовать шаблон</button>}</p>

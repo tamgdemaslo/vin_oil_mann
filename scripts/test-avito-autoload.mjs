@@ -23,6 +23,7 @@ let stockFailure = false;
 let branchActive = true;
 let tenant;
 let productReads = 0;
+const stockByProduct = new Map();
 const branches = new Map([
   ["branch-A", { id: "branch-A", legacyOrganizationId: "org-A", name: "Дачная 6В", shortName: "Дачная", address: "Калининград, ул. Дачная, 1" }],
   ["branch-B", { id: "branch-B", legacyOrganizationId: "org-B", name: "Гагарина 116", shortName: "Гагарина", address: "Калининград, ул. Юрия Гагарина, 116" }],
@@ -59,7 +60,7 @@ const db = {
     assert.equal(where.branchId, tenant.getScopedBranchId());
     assert.equal(where.store.branchId, where.branchId);
     if (stockFailure) throw new Error("simulated database outage");
-    return products.filter((p) => p.branchId === where.branchId).map((p) => ({ productId: p.id, available: stock }));
+    return products.filter((p) => p.branchId === where.branchId).map((p) => ({ productId: p.id, available: stockByProduct.get(p.id) ?? stock }));
   } },
   localProductPhoto: { count: async () => 0 },
   localStore: { findMany: async () => [] },
@@ -91,6 +92,16 @@ try {
   const valid = listing();
   assert.equal(valid.included, true);
   assert.equal(valid.values.multiItem, false);
+  for (const groupPath of ["Масляные фильтры АКПП", "Фильтры и поддоны АКПП / CVT", "Топливные фильтры", "Масла/Фильтры/АКПП", "Уплотнительные кольца и прокладки", "Тормозная жидкость", "АКПП"]) {
+    assert.equal(domain.inferAvitoOilType({ ...source, groupPath, groupCode: "TRANSMISSION_FLUID" }), null, `non-oil group must not become transmission fluid: ${groupPath}`);
+    assert.equal(listing({ groupPath, avito: true }, { type: "transmission" }).included, false, "neither Avito selection nor an old category override changes membership");
+  }
+  for (const groupPath of ["Масло в канистрах моторное/Масло в канистрах моторное", "Масло моторное в бочках на розлив", "Масла/Трансмиссионные масла/Моторные масла"]) assert.equal(domain.inferAvitoOilType({ ...source, groupPath }), "motor");
+  for (const groupPath of ["Масло в канистрах трансмисионное", "Масло трансмиссионное в бочках на розлив", "Масла/АКПП и CVT", "ATF", "CVT Fluid"]) assert.equal(domain.inferAvitoOilType({ ...source, groupPath }), "transmission");
+  assert.equal(domain.inferAvitoOilType({ ...source, group: { id: "filter-group", name: "Масляные фильтры АКПП", kind: "product" } }), null, "linked catalog group wins over stale groupPath");
+  assert.equal(domain.inferAvitoOilType({ ...source, groupPath: "Масляные фильтры АКПП", group: { id: "oil-group", name: "Моторные масла", kind: "product" } }), "motor");
+  assert.equal(domain.inferAvitoOilType({ ...source, group: { id: "service-group", name: "Моторные масла", kind: "service" } }), null);
+  assert.equal(listing({}, { type: "transmission" }).type, "motor", "actual group determines the Avito category");
   assert.equal(valid.issues.filter((i) => i.severity === "error").length, 0, "missing photos is a warning, not a publication blocker");
   assert.equal(domain.matchAvitoDictionary("motor", "Volume", "4000 мл"), "4 л");
   assert.equal(domain.matchAvitoDictionary("motor", "SAE", "5w — 40"), "5W-40");
@@ -203,12 +214,14 @@ try {
     branchActive = false;
     assert.equal(await storage.withAvitoPublicProfile(token, async () => "unexpected"), null);
     branchActive = true;
-    products = [{ ...source, branchId: "branch-A", updatedAt: new Date(source.updatedAt), photos: [] }, { ...source, id: "foreign-product", branchId: "branch-B", updatedAt: new Date(source.updatedAt), photos: [] }];
+    products = [{ ...source, branchId: "branch-A", updatedAt: new Date(source.updatedAt), photos: [] }, { ...source, id: "foreign-product", branchId: "branch-B", updatedAt: new Date(source.updatedAt), photos: [] }, { ...source, id: "filter-A", name: "Фильтр масляный АКПП Dencerman A220042", branchId: "branch-A", group: { id: "filter-group", name: "Масляные фильтры АКПП", kind: "product" }, updatedAt: new Date(source.updatedAt), photos: [] }];
+    await assert.rejects(service.saveAvitoListing({ id: "filter-A", enabled: true, sourceUpdatedAt: source.updatedAt, overrides: { type: "transmission" } }), /групп/);
     await service.saveAvitoSettings({ settings: templatedSettings });
     const templateExport = await service.generateAvitoExport();
     const templateCsv = (await service.downloadAvitoExport(templateExport.id)).toString("utf8");
     assert.ok(templateCsv.includes('"Shell 5W-40 4 л"'), "saved templates reach the actual CSV export");
     assert.ok(templateCsv.includes("Моторные\n"));
+    assert.ok(!templateCsv.includes("Dencerman"), "unsupported selected groups never enter the oil CSV");
     assert.equal(products[0].name, source.name, "template saves never mutate product cards");
     const automaticTemplateFeed = await feedRoute.GET(new Request("https://crm.example.ru/feed.csv"), { params: Promise.resolve({ token }) });
     assert.equal(automaticTemplateFeed.status, 200);
@@ -295,6 +308,43 @@ try {
     assert.equal(filteredWorkspace.total, 10, "filters apply to the full catalog before pagination");
     assert.equal(filteredWorkspace.products.length, 10);
     assert.equal((await service.getAvitoWorkspace({ branchName: "Test", canEdit: true, canEditSecrets: true, offset: 250 })).products.length, 20);
+    for (let i = 0; i < products.length; i++) {
+      products[i].salePriceCents = (i + 1) * 10000;
+      products[i].photos = i < 260 ? [{ id: `photo-${i}`, fileName: "Avito.jpg", contentType: "image/jpeg", sizeBytes: 500 }] : [];
+    }
+    products[0].avito = false;
+    products[268].brand = "Unsupported manufacturer";
+    products[269].brand = "Unsupported manufacturer"; products[269].sae = "Wrong SAE";
+    stockByProduct.set("page-268", 7); stockByProduct.set("page-2", -1);
+    await storage.writeAvitoValue(scope, "listing:page-259", { photoIds: [] });
+    const workspace = (extra = {}) => service.getAvitoWorkspace({ branchName: "Test", canEdit: true, canEditSecrets: true, ...extra });
+    assert.equal((await workspace()).total, 270, "unselected oils remain in their actual group");
+    const photoMissing = await workspace({ photos: "without" });
+    assert.equal(photoMissing.total, 11, "photo filtering sees beyond the first 250 products and honors chosen photos");
+    assert.ok(photoMissing.products.every((item) => item.photos.length === 0));
+    assert.equal((await workspace({ photos: "with" })).total, 259);
+    const combined = await workspace({ type: "transmission", view: "errors", photos: "without" });
+    assert.equal(combined.total, 2, "error, oil category and photo filters combine");
+    assert.equal((await workspace({ sort: "errors_first" })).products[0].id, "page-269", "errors on later pages sort to the front");
+    assert.equal((await workspace({ sort: "no_photos_first" })).products[0].id, "page-259");
+    assert.equal((await workspace({ sort: "ready_first" })).products[0].included, true);
+    assert.equal((await workspace({ sort: "price_desc" })).products[0].id, "page-269");
+    assert.equal((await workspace({ sort: "price_asc" })).products[0].id, "page-0");
+    assert.equal((await workspace({ sort: "stock_desc" })).products[0].id, "page-268");
+    assert.equal((await workspace({ sort: "stock_asc" })).products[0].id, "page-2");
+    assert.equal((await workspace({ sort: "name_desc" })).products[0].id, "page-269");
+    assert.equal((await workspace({ sort: "name_asc" })).products[2].id, "page-2", "names use numeric Russian collation");
+    const descendingNext = await workspace({ sort: "price_desc", offset: 250 });
+    assert.equal(descendingNext.products[0].id, "page-19", "pagination applies after sorting the complete catalog");
+    const realGroups = (await workspace()).groups;
+    assert.equal(realGroups.length, 2);
+    assert.equal((await workspace({ group: realGroups.find((item) => item.type === "transmission").key })).total, 10);
+    assert.equal((await workspace({ group: "id:foreign-branch-group" })).total, 0);
+    const apiFiltered = await apiRoute.GET(new Request("https://crm.example.ru/api/avito-autoload?photos=without&view=errors&sort=errors_first&type=transmission"));
+    assert.equal(apiFiltered.status, 200);
+    const apiFilteredData = await apiFiltered.json();
+    assert.equal(apiFilteredData.total, 2); assert.equal(apiFilteredData.products[0].id, "page-269", "HTTP route forwards photo filtering and sort order");
+    stockByProduct.clear();
     const originalDescriptionTemplate = (await service.getAvitoProfile(scope)).settings.descriptionTemplate;
     await tenant.runWithRequestTenant({ ...scope, branchId: "branch-new", organizationId: "org-new", mode: "branch", allowedBranchIds: ["branch-new"] }, async () => {
       const newScope = storage.avitoScope();
@@ -312,7 +362,7 @@ try {
     });
     assert.equal((await service.getAvitoProfile(scope)).settings.descriptionTemplate, originalDescriptionTemplate, "saving another branch never changes this branch template");
   });
-  console.log("Avito autoload: content templates, automatic titles, branch addresses, CSV, permissions, tenant isolation, encrypted tokens, export history, feed failure guards and API contract tests passed");
+  console.log("Avito autoload: catalog groups, whole-catalog sorting and filters, content templates, automatic titles, branch addresses, CSV, permissions, tenant isolation, encrypted tokens, export history, feed failure guards and API contract tests passed");
 } finally {
   delete globalThis.__ecoAvitoTestDb;
   delete globalThis.__ecoAvitoTestContext;

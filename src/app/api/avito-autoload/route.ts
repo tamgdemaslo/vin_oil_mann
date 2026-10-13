@@ -20,6 +20,7 @@ export async function GET(request: Request) {
       canEdit: canEditAvito(access.context), canEditSecrets: canManageBranchIntegrationSecrets(access.context),
       search: (params.get("search") ?? "").slice(0, 200), offset: Math.max(0, Math.min(50_000, Number(params.get("offset")) || 0)),
       type: params.get("type") ?? "all", view: params.get("view") ?? "all",
+      photos: params.get("photos") ?? "all", sort: params.get("sort") ?? "name_asc", group: (params.get("group") ?? "").slice(0, 1000),
     }));
     return NextResponse.json(data, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { return avitoApiError(error); }

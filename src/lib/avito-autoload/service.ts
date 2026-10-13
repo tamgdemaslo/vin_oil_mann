@@ -2,7 +2,7 @@ import { gzipSync, gunzipSync } from "node:zlib";
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { prisma } from "@/lib/db";
-import { AVITO_DEFAULT_SETTINGS, AVITO_MAX_ADS, avitoFeedStats, avitoSettingsIssues, avitoStockAllowed, buildAvitoCsv, buildAvitoListing, inferAvitoOilType } from "./domain";
+import { AVITO_DEFAULT_SETTINGS, AVITO_MAX_ADS, avitoFeedStats, avitoSettingsIssues, avitoStockAllowed, buildAvitoCsv, buildAvitoListing, inferAvitoOilType, avitoListingGroupKey } from "./domain";
 import { AVITO_CHANNEL, avitoAdId, avitoAudit, avitoScope, decodeAvitoValue, newAvitoFeedToken, readAvitoValue, writeAvitoValue, resolveAvitoProfile, type AvitoSnapshot, type StoredAvitoProfile, type AvitoScope } from "./storage";
 import { avitoBranchAddress } from "./content";
 import { AvitoAutoloadError, avitoOverridesSchema, type avitoCredentialsSaveSchema, type avitoListingSaveSchema, type avitoSelectionSchema, type avitoSettingsSaveSchema } from "./schemas";
@@ -12,6 +12,7 @@ import type { AvitoFeedStats, AvitoHistoryItem, AvitoIntegrationData, AvitoListi
 const MAX_CSV_BYTES = 50 * 1024 * 1024;
 const productSelect = {
   id: true, name: true, article: true, groupPath: true, entityType: true, uomName: true, brand: true, sae: true, packageVolume: true,
+  group: { select: { id: true, name: true, kind: true } },
   acea: true, aceaExtra: true, apiSpec: true, atf: true, oem: true, oemAtf: true, description: true, salePriceCents: true, archived: true, avito: true, updatedAt: true,
   photos: { where: { purpose: "AVITO" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, fileName: true, contentType: true, sizeBytes: true } },
 } satisfies Prisma.LocalProductSelect;
@@ -87,7 +88,10 @@ async function loadListings(scope: AvitoScope, settings: AvitoSettings, selected
   const where: Prisma.LocalProductWhereInput = {
     branchId: scope.branchId, entityType: "product", ...(ids ? { id: { in: ids } } : {}),
     ...(selectedOnly ? { avito: true } : { OR: [
-      { avito: true }, { archived: false, OR: ["масл", "oil", "трансмис", "atf", "cvt", "dct"].map((value) => ({ groupPath: { contains: value, mode: "insensitive" as const } })) },
+      { avito: true }, { archived: false, OR: ["масло", "масла", "масел", "oil", "atf", "fluid", "жидкость"].flatMap((value) => [
+        { group: { is: { kind: "product", name: { contains: value, mode: "insensitive" as const } } } },
+        { groupId: null, groupPath: { contains: value, mode: "insensitive" as const } },
+      ]) },
     ] }),
   };
   const [products, credentialRows] = await Promise.all([
@@ -115,7 +119,7 @@ async function loadListings(scope: AvitoScope, settings: AvitoSettings, selected
   for (const product of products) {
     const saved = credentials.get(`listing:${product.id}`);
     const overrides = saved ? avitoOverridesSchema.parse(saved) : {};
-    if (!inferAvitoOilType(product) && !overrides.type && !product.avito) continue;
+    if (!inferAvitoOilType(product)) continue;
     const source: AvitoProductSource = {
       ...product, available: available.get(product.id) ?? 0, updatedAt: product.updatedAt.toISOString(),
       photos: product.photos.map((photo) => ({ id: photo.id, name: photo.fileName ?? "Фотография", contentType: photo.contentType, size: photo.sizeBytes, url: `/api/local-inventory/products/${encodeURIComponent(product.id)}/photos/${encodeURIComponent(photo.id)}` })),
@@ -140,7 +144,27 @@ async function history(scope: AvitoScope): Promise<AvitoHistoryItem[]> {
   });
 }
 
-export async function getAvitoWorkspace(options: { branchName: string; canEdit: boolean; canEditSecrets: boolean; address?: string; phone?: string; search?: string; offset?: number; type?: string; view?: string }): Promise<AvitoWorkspaceData> {
+const avitoNameCollator = new Intl.Collator("ru-RU", { numeric: true, sensitivity: "base" });
+const listingErrors = (listing: AvitoListing) => listing.issues.filter((issue) => issue.severity === "error").length;
+
+function compareListings(a: AvitoListing, b: AvitoListing, sort: string) {
+  const name = avitoNameCollator.compare(a.name, b.name) || a.id.localeCompare(b.id);
+  switch (sort) {
+    case "name_desc": return -name;
+    case "errors_first": return listingErrors(b) - listingErrors(a) || name;
+    case "no_photos_first": return Number(b.photos.length === 0) - Number(a.photos.length === 0) || name;
+    case "ready_first": return Number(b.included) - Number(a.included) || name;
+    case "stock_asc": return a.available - b.available || name;
+    case "stock_desc": return b.available - a.available || name;
+    case "price_asc": case "price_desc": {
+      if (a.values.priceRubles === null || b.values.priceRubles === null) return Number(a.values.priceRubles === null) - Number(b.values.priceRubles === null) || name;
+      return (a.values.priceRubles - b.values.priceRubles) * (sort === "price_desc" ? -1 : 1) || name;
+    }
+    default: return name;
+  }
+}
+
+export async function getAvitoWorkspace(options: { branchName: string; canEdit: boolean; canEditSecrets: boolean; address?: string; phone?: string; search?: string; offset?: number; type?: string; view?: string; photos?: string; sort?: string; group?: string }): Promise<AvitoWorkspaceData> {
   const scope = avitoScope();
   const profile = await getAvitoProfile(scope);
   const view = await settingsView(scope, profile, options.canEdit, { address: avitoBranchAddress(options.address, options.branchName), phone: options.phone ?? "", name: `Авито — ${options.branchName}` });
@@ -150,9 +174,12 @@ export async function getAvitoWorkspace(options: { branchName: string; canEdit: 
     history(scope), readAvitoValue<AvitoSnapshot>(scope, "snapshot"),
   ]);
   const query = options.search?.trim().toLocaleLowerCase("ru-RU") ?? "";
+  const groups = [...new Map(all.map((listing) => [avitoListingGroupKey(listing.source), { key: avitoListingGroupKey(listing.source), name: listing.source.group?.name ?? listing.source.groupPath ?? "", type: listing.type }])).values()].sort((a, b) => avitoNameCollator.compare(a.name, b.name) || a.key.localeCompare(b.key));
   const filtered = all.filter((listing) => {
     if (query && ![listing.name, listing.article, listing.values.brand].some((value) => value?.toLocaleLowerCase("ru-RU").includes(query))) return false;
     if (["motor", "transmission"].includes(options.type ?? "") && listing.type !== options.type) return false;
+    if (options.group && avitoListingGroupKey(listing.source) !== options.group) return false;
+    if (options.photos === "without" && listing.photos.length > 0 || options.photos === "with" && listing.photos.length === 0) return false;
     const invalid = listing.issues.some((issue) => issue.severity === "error");
     switch (options.view) {
       case "selected": return listing.enabled;
@@ -162,10 +189,11 @@ export async function getAvitoWorkspace(options: { branchName: string; canEdit: 
       default: return true;
     }
   });
+  filtered.sort((a, b) => compareListings(a, b, options.sort ?? "name_asc"));
   const offset = Math.max(0, options.offset ?? 0);
   return {
     branchName: options.branchName, canEdit: options.canEdit, canEditSecrets: options.canEditSecrets, settings: view,
-    products: filtered.slice(offset, offset + 250), stores, history: items, stats: avitoFeedStats(all, view, snapshot?.adIds), total: filtered.length, limit: 250,
+    products: filtered.slice(offset, offset + 250), groups, stores, history: items, stats: avitoFeedStats(all, view, snapshot?.adIds), total: filtered.length, limit: 250,
   };
 }
 
@@ -202,10 +230,11 @@ export async function saveAvitoSettings(input: z.infer<typeof avitoSettingsSaveS
 export async function saveAvitoListing(input: z.infer<typeof avitoListingSaveSchema>) {
   const scope = avitoScope();
   await prisma.$transaction(async (db) => {
-    const product = await db.localProduct.findFirst({ where: { branchId: scope.branchId, id: input.id, entityType: "product" }, select: { id: true, archived: true, updatedAt: true } });
+    const product = await db.localProduct.findFirst({ where: { branchId: scope.branchId, id: input.id, entityType: "product" }, select: { id: true, entityType: true, groupPath: true, group: { select: { id: true, name: true, kind: true } }, archived: true, updatedAt: true } });
     if (!product) throw new AvitoAutoloadError("Товар не найден в текущем филиале", 404);
     if (product.archived && input.enabled) throw new AvitoAutoloadError("Архивный товар нельзя включить в выгрузку");
     if (product.updatedAt.toISOString() !== input.sourceUpdatedAt) throw new AvitoAutoloadError("Товар изменился после открытия редактора. Обновите список и повторите сохранение", 409, "AVITO_PRODUCT_CHANGED");
+    if (input.enabled && !inferAvitoOilType(product)) throw new AvitoAutoloadError("В этом разделе можно включить только товары из групп моторных или трансмиссионных масел");
     if (input.overrides.photoIds?.length) {
       const count = await db.localProductPhoto.count({ where: { branchId: scope.branchId, productId: input.id, purpose: "AVITO", id: { in: [...new Set(input.overrides.photoIds)] } } });
       if (count !== input.overrides.photoIds.length) throw new AvitoAutoloadError("Выберите фотографии Авито этого товара");
@@ -227,7 +256,7 @@ export async function selectAvitoProducts(input: z.infer<typeof avitoSelectionSc
   const profile = await getAvitoProfile(scope);
   const products = await loadListings(scope, profile?.settings ?? AVITO_DEFAULT_SETTINGS, false, ids);
   if (products.length !== ids.length || input.enabled && products.some((product) => product.archived || product.issues.some((issue) => issue.field === "type" && issue.severity === "error"))) {
-    throw new AvitoAutoloadError("Включать можно только действующие масла текущего филиала с выбранным типом");
+    throw new AvitoAutoloadError("Включать можно только действующие товары из групп моторных или трансмиссионных масел текущего филиала");
   }
   await prisma.$transaction(async (db) => {
     await db.localProduct.updateMany({ where: { branchId: scope.branchId, id: { in: ids }, entityType: "product" }, data: { avito: input.enabled } });
