@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowRight, Copy, ExternalLink, Loader2, RefreshCw, Save } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import { AVITO_CATALOG_VERSION, AVITO_DEFAULT_SETTINGS } from "@/lib/avito-autoload/domain";
+import { avitoFeedBlocker } from "@/lib/avito-autoload/feed-state";
 import type { AvitoSettings, AvitoSettingsView } from "@/lib/avito-autoload/types";
 import styles from "@/app/warehouse/avito/avito.module.css";
 import AvitoContentSettings from "./AvitoContentSettings";
@@ -28,6 +29,7 @@ export default function AvitoSettingsForm({ settings, stores, canEditSecrets, bu
   const [clientSecret, setClientSecret] = useState("");
   const dirty = JSON.stringify(draft) !== JSON.stringify(settingsOnly(settings)) || Boolean(clientId || clientSecret);
   const hasKeys = settings.clientIdConfigured && settings.clientSecretConfigured;
+  const feedBlocker = avitoFeedBlocker(settings.enabled, Boolean(settings.lastExportAt));
   const update = <K extends keyof AvitoSettings>(key: K, value: AvitoSettings[K]) => setDraft((current) => ({ ...current, [key]: value }));
 
   return <div className={styles.settingsLayout}>
@@ -63,8 +65,10 @@ export default function AvitoSettingsForm({ settings, stores, canEditSecrets, bu
       {settings.connection.accountId && <small>Аккаунт Авито №{settings.connection.accountId}</small>}
       <EcoButton type="button" disabled={busy || dirty || !hasKeys} onClick={() => void onApi("test")}><RefreshCw size={15} /> Проверить подключение</EcoButton>
       <h3>Ссылка для автозагрузки</h3>
+      <EcoBadge tone={feedBlocker ? "warning" : "neutral"}>{feedBlocker ? "Файл не выдаётся" : "Выдача файла включена"}</EcoBadge>
+      {feedBlocker && <p role="status">{feedBlocker.message}</p>}
       {settings.feedUrl ? <><textarea className={styles.feedUrl} readOnly rows={4} aria-label="Ссылка для автозагрузки" value={settings.feedUrl} onFocus={(event) => event.target.select()} /><EcoButton size="sm" onClick={async () => { try { await navigator.clipboard.writeText(settings.feedUrl!); onCopyNotice("Ссылка скопирована"); } catch { onCopyNotice("Выделите ссылку и скопируйте её вручную"); } }}><Copy size={15} /> Скопировать ссылку</EcoButton></> : <p>Ссылка появится после сохранения публичного адреса платформы.</p>}
-      <p className={styles.help}>Ссылка предоставляет доступ к выгружаемым товарам и выбранным фотографиям. Добавьте её в свой профиль автозагрузки Авито.</p>
+      <p className={styles.help}>Ссылка предоставляет доступ к выгружаемым товарам и выбранным фотографиям.{!feedBlocker && " Добавьте её в свой профиль автозагрузки Авито."}</p>
       <EcoButton type="button" disabled={busy || dirty || !hasKeys || !settings.enabled || !settings.lastExportAt} onClick={() => void onApi("connect")}><ExternalLink size={15} /> Подключить файл к Авито</EcoButton>
       <EcoButton type="button" disabled={busy || dirty || !hasKeys || !settings.enabled || !settings.lastExportAt} onClick={() => void onApi("upload")}><ArrowRight size={15} /> Запросить обработку файла</EcoButton>
       {dirty && <p className={styles.help}>Сначала сохраните изменения настроек.</p>}

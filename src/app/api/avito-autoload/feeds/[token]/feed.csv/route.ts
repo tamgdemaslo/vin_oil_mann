@@ -1,39 +1,45 @@
 import { withAvitoPublicProfile, readAvitoValue, writeAvitoValue, avitoAudit, type AvitoSnapshot } from "@/lib/avito-autoload/storage";
 import { prepareAvitoFeed } from "@/lib/avito-autoload/service";
+import { avitoFeedBlocker } from "@/lib/avito-autoload/feed-state";
+import { AvitoAutoloadError } from "@/lib/avito-autoload/schemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const headers = { "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
+const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
 
-export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
-  const { token } = await params;
+async function serveFeed(token: string, head = false) {
+  const failure = (code: string, message: string, status = 503) => new Response(head ? null : `${code}\n${message}\n`, {
+    status, headers: { ...headers, "Content-Type": "text/plain; charset=utf-8", "X-Avito-Feed-Status": code, ...(status === 503 ? { "Retry-After": "300" } : {}) },
+  });
   try {
     const result = await withAvitoPublicProfile(token, async (profile, scope) => {
-      const snapshot = await readAvitoValue<AvitoSnapshot>(scope, "snapshot");
-      if (!profile.settings.enabled || !snapshot) return new Response("Feed is paused or has not been reviewed", { status: 503, headers: { ...headers, "Retry-After": "300" } });
       try {
+        const snapshot = await readAvitoValue<AvitoSnapshot>(scope, "snapshot");
+        const blocker = avitoFeedBlocker(profile.settings.enabled, Boolean(snapshot));
+        if (blocker) throw new AvitoAutoloadError(blocker.message, 503, blocker.code);
         const feed = await prepareAvitoFeed(profile, scope, false, true);
-        await writeAvitoValue(scope, "snapshot", feed.snapshot);
-        await avitoAudit(scope, "feed_fetched", "ok", `Авито получил файл: ${feed.stats.included} объявлений`, { stats: feed.stats });
-        return new Response(feed.csv, { headers });
-      } catch {
+        if (!head) {
+          await writeAvitoValue(scope, "snapshot", feed.snapshot);
+          await avitoAudit(scope, "feed_fetched", "ok", `Файл выдан по ссылке: ${feed.stats.included} объявлений`, { stats: feed.stats });
+        }
+        return new Response(head ? null : feed.csv, { headers: { ...headers, "Content-Type": "text/csv; charset=utf-8", "X-Avito-Feed-Status": "ready" } });
+      } catch (error) {
         // Never turn failed validation, database reads or an incomplete selection
         // into an empty file that would withdraw existing ads.
-        await avitoAudit(scope, "feed_failed", "error", "Автовыгрузка остановлена: файл не прошёл проверку").catch(() => undefined);
-        return new Response("Feed temporarily unavailable", { status: 503, headers: { ...headers, "Retry-After": "300" } });
+        const code = error instanceof AvitoAutoloadError ? error.code : "AVITO_FEED_UNAVAILABLE";
+        const message = error instanceof AvitoAutoloadError ? error.message : "Не удалось сформировать файл. Повторите позже; если ошибка сохраняется, обратитесь к администратору платформы.";
+        if (!head) await avitoAudit(scope, "feed_failed", "error", message, { errorCode: code }).catch(() => undefined);
+        return failure(code, message);
       }
     });
-    return result ?? new Response("Not found", { status: 404, headers });
-  } catch { return new Response("Feed temporarily unavailable", { status: 503, headers: { ...headers, "Retry-After": "300" } }); }
+    return result ?? failure("AVITO_FEED_NOT_FOUND", "Ссылка недействительна. Скопируйте текущую ссылку в настройках Авито в платформе.", 404);
+  } catch { return failure("AVITO_FEED_UNAVAILABLE", "Файл временно недоступен. Повторите позже."); }
+}
+
+export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
+  return serveFeed((await params).token);
 }
 
 export async function HEAD(_request: Request, { params }: { params: Promise<{ token: string }> }) {
-  try {
-    const { token } = await params;
-    const result = await withAvitoPublicProfile(token, async (profile, scope) => {
-      const snapshot = await readAvitoValue<AvitoSnapshot>(scope, "snapshot");
-      return new Response(null, { status: profile.settings.enabled && snapshot ? 200 : 503, headers });
-    });
-    return result ?? new Response(null, { status: 404, headers });
-  } catch { return new Response(null, { status: 503, headers }); }
+  return serveFeed((await params).token, true);
 }

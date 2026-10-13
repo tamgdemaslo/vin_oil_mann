@@ -43,7 +43,7 @@ function errorMessage(error: unknown) { return error instanceof Error ? error.me
 
 const historyLabels: Record<string, string> = {
   settings_saved: "Настройки", listing_saved: "Объявление", selection_saved: "Выбор товаров", feed_generated: "Файл сформирован",
-  feed_fetched: "Файл получен Авито", feed_failed: "Выгрузка остановлена", connection_checked: "Подключение проверено",
+  feed_fetched: "Файл выдан по ссылке", feed_failed: "Выгрузка остановлена", connection_checked: "Подключение проверено",
   feed_connected: "Файл подключён", upload_requested: "Загрузка запрошена", report_received: "Отчёт Авито",
   test_failed: "Ошибка подключения", connect_failed: "Ошибка подключения файла", upload_failed: "Ошибка запуска", reports_failed: "Ошибка получения отчёта",
 };
