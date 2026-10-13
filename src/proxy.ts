@@ -57,7 +57,9 @@ function isHtmlDocumentRequest(request: NextRequest) {
 }
 
 function passThroughResponse(request: NextRequest) {
-  const response = NextResponse.next();
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-eco-page-path", request.nextUrl.pathname);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
   if (!request.nextUrl.pathname.startsWith("/api/") && isHtmlDocumentRequest(request)) {
     // HTML must always belong to the current deployment. Hashed JS/CSS/image
     // assets stay outside the proxy matcher and retain their immutable cache.

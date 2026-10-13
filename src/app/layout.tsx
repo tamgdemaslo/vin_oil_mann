@@ -1,3 +1,4 @@
+import { getRouteTitle } from "@/lib/route-title";
 import { headers } from "next/headers";
 import { isClientSiteRoot } from "@/lib/client-site-domain";
 import type { Metadata, Viewport } from "next";
@@ -6,11 +7,14 @@ import "./globals.css";
 import PlatformChrome from "@/components/platform/PlatformChrome";
 import { BROWSER_REQUEST_CONTEXT_SCRIPT } from "@/lib/browser-request-context";
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  const requestHeaders = await headers();
+  return {
   robots: { index: false, follow: false },
-  title: "Главная | ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ",
+  title: isClientSiteRoot(requestHeaders) ? "Там где масло. — Калининград" : getRouteTitle(requestHeaders.get("x-eco-page-path") ?? "/"),
   description: "Личный кабинет ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ: отгрузки, касса, выплаты и организации",
-};
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",
