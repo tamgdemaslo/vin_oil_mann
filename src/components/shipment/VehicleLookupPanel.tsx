@@ -14,6 +14,8 @@ import { isVehicleDestinationMarket, type VehicleDestinationMarket } from "@/lib
 import { MaintenanceQuotePanel } from "./MaintenanceQuotePanel";
 import { mannEquipmentChoiceKey } from "@/lib/mann-equipment-scope";
 
+import type { QuoteFilterGroup } from "@/lib/maintenance-quote";
+
 type LookupTab = "vin" | "plate" | "manual";
 type LookupFeedbackTone = "neutral" | "success" | "warning";
 
@@ -24,6 +26,8 @@ export type VehicleLookupManualContext = {
 };
 
 type Props = {
+  quoteFilters?: QuoteFilterGroup[];
+  quoteFiltersLoading?: boolean;
   organizationId?: string | null;
   warehouseId?: string | null;
   initialVin?: string;
@@ -454,7 +458,7 @@ export function TechnicalProfile({
   );
 }
 
-export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
+export function VehicleLookupPanel({ quoteFilters, quoteFiltersLoading, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
   const [tab, setTab] = useState<LookupTab>("vin");
   const [input, setInput] = useState(initialVin ?? "");
   const [loading, setLoading] = useState(false);
@@ -1060,6 +1064,8 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
           warehouseId={warehouseId}
           profile={technicalProfile}
           research={fluidResearch}
+          filters={quoteFilters}
+          filtersLoading={quoteFiltersLoading}
         />
       </section>
     );

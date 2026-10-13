@@ -40,3 +40,21 @@ export function quoteClientText(vehicle: string, specification: string, litres: 
     return ["", `Вариант ${index + 1} — ${oil.name}`, `Масло: ${amount.quantity} ${oil.unit || "шт."} × ${quoteRub(Math.round(oil.price * 100))} = ${quoteRub(amount.cents)}`, ...(amount.suppliedLitres > litres + 0.001 ? [`В упаковках: ${amount.suppliedLitres} л.`] : []), ...extras.map(row => `${row.name}: ${row.quantity} × ${quoteRub(Math.round(row.price * 100))} = ${quoteRub(Math.round(row.quantity * Math.round(row.price * 100)))}`), `Итого: ${quoteRub(amount.cents + quoteExtraCents(extras))}`, amount.enough ? "Масло в наличии." : "Масло — под заказ, требуется уточнить срок."];
   }), "", "Предварительный расчёт. Наличие и цены уточняются при записи."].join("\n");
 }
+
+export type QuoteFilterGroup = {
+  key: string; label: string; article: string; condition?: string | null;
+  products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean }[];
+};
+
+export function quoteRequirementChoices(profile: import("@/lib/mann-unified-technical-profile").MannUnifiedTechnicalProfile | null, research: import("@/lib/mann-fluid-research").MannFluidResearchResult | null) {
+  const engines = profile?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
+  const discoveries = research?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
+  const raw = [...engines.flatMap(item => item.specifications), ...discoveries.map(item => item.specification)].join("; ");
+  const norm = buildRequirementsNorm({ oem: raw, acea: raw, api: raw, ilsac: raw, sae: [...engines.flatMap(item => item.viscosityGrades), raw].join("; ") });
+  const specifications = [...new Set(norm.oem.length ? norm.oem : [...norm.acea, ...norm.api, ...norm.ilsac])];
+  const viscosities = [...new Set(norm.sae)];
+  const capacities = engines.flatMap(item => item.capacities.map(capacity => ({ capacity, trusted: !item.requiresReview && item.sourceStatus === "primary_source" && (!capacity.qualifier || capacity.qualifier === "EXACT") })));
+  const volumes = [...new Set(capacities.flatMap(({capacity}) => [capacity.nominalLiters, capacity.minLiters, capacity.maxLiters]).filter((value): value is number => !!value && value > 0))];
+  const trustedVolumes = [...new Set(capacities.filter(item => item.trusted).map(item => item.capacity.nominalLiters).filter((value): value is number => !!value))];
+  return { specifications, viscosities, volumes, automaticVolume: trustedVolumes.length === 1 && volumes.length === 1 ? String(trustedVolumes[0]) : "" };
+}

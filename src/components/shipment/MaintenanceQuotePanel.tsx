@@ -1,27 +1,31 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
-import { quoteClientText, quoteExtraCents, quoteOilAmount, quoteRub, type QuoteExtra, type QuoteStockProduct } from "@/lib/maintenance-quote";
+import { quoteRequirementChoices, quoteClientText, quoteExtraCents, quoteOilAmount, quoteRub, type QuoteFilterGroup, type QuoteExtra, type QuoteStockProduct } from "@/lib/maintenance-quote";
+import { getProductAttributeDictionary } from "@/lib/product-attribute-values";
 import styles from "./MaintenanceQuotePanel.module.css";
 
-type Props = { vehicleTitle: string; warehouseId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null };
+type Props = { vehicleTitle: string; warehouseId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; filters?: QuoteFilterGroup[]; filtersLoading?: boolean };
 const number = (value: string) => Number(value.replace(",", "."));
 
-export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, research }: Props) {
-  const specificationListId = useId();
-  const engines = profile?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
-  const discoveries = research?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
-  const specifications = [...new Set([...engines.flatMap(item => item.specifications), ...discoveries.map(item => item.specification)].filter(Boolean))];
-  const viscosities = [...new Set(engines.flatMap(item => item.viscosityGrades))];
-  const capacities = engines.filter(item => !item.requiresReview).flatMap(item => item.capacities).filter(capacity => capacity.qualifier === "EXACT" && capacity.nominalLiters);
-  const uniqueVolumes = [...new Set(capacities.map(capacity => capacity.nominalLiters!))];
-  const volumeHint = uniqueVolumes.length === 1 ? String(uniqueVolumes[0]) : "";
+export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, research, filters = [], filtersLoading = false }: Props) {
+  const choices = quoteRequirementChoices(profile, research);
   const [open, setOpen] = useState(false);
-  const [specification, setSpecification] = useState("");
-  const [viscosity, setViscosity] = useState("");
-  const [volume, setVolume] = useState("");
+  const [specificationDraft, setSpecification] = useState<string | null>(null);
+  const [viscosityDraft, setViscosity] = useState<string | null>(null);
+  const [volumeDraft, setVolume] = useState<string | null>(null);
+  const [manualSpecification, setManualSpecification] = useState(false);
+  const [manualViscosity, setManualViscosity] = useState(false);
+  const [manualVolume, setManualVolume] = useState(false);
+  const [filterSelection, setFilterSelection] = useState<Record<string, string>>({});
+  const specification = specificationDraft ?? (choices.specifications.length === 1 ? choices.specifications[0] : "");
+  const viscosity = viscosityDraft ?? (choices.viscosities.length === 1 ? choices.viscosities[0] : "");
+  const volume = volumeDraft ?? choices.automaticVolume;
+  const referenceSpecifications = [...new Set([specification, ...getProductAttributeDictionary("engineOem"), ...getProductAttributeDictionary("acea"), ...getProductAttributeDictionary("engineApi"), ...getProductAttributeDictionary("ilsac")].filter(value => value && !choices.specifications.includes(value)))];
+  const referenceViscosities = [...new Set([viscosity, ...getProductAttributeDictionary("engineSae")].filter(value => value && !choices.viscosities.includes(value)))];
+  const referenceVolumes = [...new Set([volume, ...Array.from({length: 25}, (_, index) => String(2 + index * 0.5))].filter(value => value && !choices.volumes.map(String).includes(value)))];
   const [products, setProducts] = useState<QuoteStockProduct[]>([]);
   const [selected, setSelected] = useState<QuoteStockProduct[]>([]);
   const [extras, setExtras] = useState<QuoteExtra[]>([]);
@@ -34,8 +38,15 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
   const [extraError, setExtraError] = useState("");
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
+  const requirementsKey = `${specification}|${viscosity}`;
+  const previousRequirements = useRef(requirementsKey);
   const requestRef = useRef<AbortController | null>(null);
   useEffect(() => () => requestRef.current?.abort(), []);
+  useEffect(() => {
+    if (previousRequirements.current === requirementsKey) return;
+    previousRequirements.current = requirementsKey;
+    requestRef.current?.abort(); setProducts([]); setSelected([]); setSearched(false); setLoading(false); setError("");
+  }, [requirementsKey]);
   useEffect(() => {
     if (!open || !warehouseId || search.trim().length < 2) return;
     const controller = new AbortController();
@@ -82,17 +93,16 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
   }
   return <section className={styles.panel} aria-label="Расчёт ТО">
     <div className={styles.heading}><div><strong>Расчёт ТО</strong><p>Выберите масло из наличия и подготовьте предложение клиенту.</p></div><button type="button" className="eco-btn" aria-expanded={open} onClick={() => {
-      if (!open) { if (!specification) setSpecification(specifications[0] ?? ""); if (!viscosity && viscosities.length === 1) setViscosity(viscosities[0]); if (!volume) setVolume(volumeHint); }
       setOpen(!open);
     }}>{open ? "Свернуть расчёт" : "Рассчитать ТО"}</button></div>
     {open ? <div className={styles.body}>
       {!warehouseId ? <p role="status">Выберите склад в документе, чтобы увидеть наличие и цены.</p> : null}
       <div className={styles.fields}>
-        <label>Допуск / стандарт<input list={specificationListId} value={specification} onChange={event => { invalidate(); setSpecification(event.target.value); }} placeholder="Например, VW 504.00" /><datalist id={specificationListId}>{specifications.map(value => <option key={value} value={value} />)}</datalist></label>
-        <label>Вязкость<input value={viscosity} onChange={event => { invalidate(); setViscosity(event.target.value); }} placeholder="Например, 5W-30" /></label>
-        <label>Объём замены, л<input inputMode="decimal" value={volume} onChange={event => setVolume(event.target.value)} placeholder="Укажите объём с фильтром" /></label>
+        <label>Допуск / стандарт<select value={manualSpecification ? "manual" : specification} onChange={event => { invalidate(); if (event.target.value === "manual") { setManualSpecification(true); setSpecification(""); } else { setManualSpecification(false); setSpecification(event.target.value); } }}><option value="">Выберите допуск</option>{choices.specifications.length ? <optgroup label="По выбранному автомобилю">{choices.specifications.map(value => <option key={value} value={value}>{value}</option>)}</optgroup> : null}<optgroup label="Справочник допусков и стандартов">{referenceSpecifications.map(value => <option key={value} value={value}>{value}</option>)}</optgroup><option value="manual">Другой допуск — указать вручную</option></select>{manualSpecification ? <input aria-label="Другой допуск" value={specification} onChange={event => { invalidate(); setSpecification(event.target.value); }} /> : null}</label>
+        <label>Вязкость<select value={manualViscosity ? "manual" : viscosity} onChange={event => { invalidate(); if (event.target.value === "manual") { setManualViscosity(true); setViscosity(""); } else { setManualViscosity(false); setViscosity(event.target.value); } }}><option value="">Выберите вязкость</option>{choices.viscosities.length ? <optgroup label="По выбранному автомобилю">{choices.viscosities.map(value => <option key={value} value={value}>{value}</option>)}</optgroup> : null}<optgroup label="Справочник вязкости">{referenceViscosities.map(value => <option key={value} value={value}>{value}</option>)}</optgroup><option value="manual">Другая вязкость</option></select>{manualViscosity ? <input aria-label="Другая вязкость" value={viscosity} onChange={event => { invalidate(); setViscosity(event.target.value); }} /> : null}</label>
+        <label>Объём замены, л<select value={manualVolume ? "manual" : volume} onChange={event => { if (event.target.value === "manual") { setManualVolume(true); setVolume(""); } else { setManualVolume(false); setVolume(event.target.value); } }}><option value="">Выберите объём с фильтром</option>{choices.volumes.length ? <optgroup label="Объёмы из карточки — проверьте условия">{choices.volumes.map(value => <option key={value} value={String(value)}>{value} л</option>)}</optgroup> : null}<optgroup label="Указать объём для расчёта">{referenceVolumes.map(value => <option key={value} value={value}>{value} л</option>)}</optgroup><option value="manual">Другой объём</option></select>{manualVolume ? <input aria-label="Другой объём, л" inputMode="decimal" value={volume} onChange={event => setVolume(event.target.value)} /> : null}</label>
       </div>
-      <p className={styles.note}>Проверьте допуск и сервисный объём с фильтром. Диапазоны и предварительные объёмы нужно указать вручную. Для поиска достаточно одного требуемого допуска; вязкость уточняет выбор.</p>
+      <p className={styles.note}>Данные автомобиля подставляются после загрузки. Если вариантов несколько, выберите подходящий. Объём — с фильтром; значения из общего справочника нужно сверить с требованиями автомобиля.</p>
       <button type="button" className="eco-btn eco-btn--primary" disabled={!warehouseId || !specification.trim() || loading} onClick={() => void findOils()}>{loading ? "Проверяем наличие…" : "Подобрать масла из наличия"}</button>
       {error ? <p role="alert">{error}</p> : null}
       {searched && !products.length ? <p role="status">Совпадений по указанному допуску и вязкости нет. Проверьте требования и технические характеристики товаров на складе.</p> : null}
@@ -102,6 +112,25 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
         return <div key={oil.id} className={styles.option}><div><strong>{oil.name}</strong><p>{oil.article} · Остаток {oil.available} {oil.unit} · {quoteRub(Math.round(oil.price * 100))} / {oil.unit}</p><p>{oil.sae} · {oil.oem}</p>{oil.price <= 0 ? <p>Цена продажи не указана — заполните карточку товара.</p> : null}{!oil.litresPerUnit ? <p>Не указан объём фасовки — заполните карточку товара.</p> : amount ? <p>{amount.quantity} {oil.unit} ({amount.suppliedLitres} л) — <b>{quoteRub(amount.cents)}</b>{!amount.enough ? " · Недостаточно на складе" : ""}</p> : null}</div><button type="button" className="eco-btn" disabled={!amount || !amount.enough || oil.price <= 0} aria-pressed={chosen} onClick={() => setSelected(rows => chosen ? rows.filter(item => item.id !== oil.id) : [...rows, oil])}>{chosen ? "Убрать вариант" : "Добавить вариант"}</button></div>;
       })}</div> : null}
       <div className={styles.heading}><strong>Расходники и работа</strong><button type="button" className="eco-btn" onClick={() => setExtras(rows => [...rows, { id: crypto.randomUUID(), name: "", quantity: 1, price: 0 }])}>Добавить строку вручную</button></div>
+      <div className={styles.filterPicker} aria-label="Фильтры из подбора MANN">
+        <strong>Фильтры для выбранного автомобиля</strong>
+        {filtersLoading ? <p role="status">Загружаем подбор MANN…</p> : !filters.length ? <p className={styles.note}>После выбора модификации здесь появятся масляный, воздушный и салонный фильтры из MANN.</p> : null}
+        {filters.map(group => {
+          const selectedId = filterSelection[group.key] ?? "";
+          const product = group.products.find(item => item.id === selectedId);
+          const rowId = `mann:${group.key}`;
+          const added = extras.some(row => row.id === rowId);
+          return <div key={group.key} className={styles.filterRow}>
+            <label>{group.label} · MANN {group.article}<select aria-label={`Товар для ${group.label} MANN ${group.article}`} value={selectedId} disabled={!warehouseId || added || filtersLoading} onChange={event => setFilterSelection(values => ({...values, [group.key]: event.target.value}))}>
+              <option value="">Выберите подходящий товар</option>
+              {group.products.map(item => <option key={item.id} value={item.id} disabled={item.available < 1 && !item.orderable}>{item.name} · {quoteRub(Math.round(item.price * 100))} · {item.available >= 1 ? `в наличии ${item.available} шт.` : item.orderable ? "под заказ" : "нет в наличии"}</option>)}
+              <option value="reference">MANN {group.article} — указать цену</option>
+            </select></label>
+            <button type="button" className="eco-btn" disabled={!warehouseId || !selectedId || (!product && selectedId !== "reference") || added || filtersLoading} onClick={() => setExtras(rows => [...rows, {id: rowId, name: product ? `${product.name}${product.available < 1 ? " (под заказ)" : ""}` : `${group.label} MANN ${group.article}`, quantity: 1, price: product && product.price > 0 ? product.price : NaN}])}>{added ? "В расчёте" : "Добавить фильтр"}</button>
+            {group.condition ? <p className={styles.note}>Условие MANN: {group.condition}</p> : null}
+          </div>;
+        })}
+      </div>
       <label className={styles.search}>Найти фильтр, расходник или услугу на складе<input value={search} onChange={event => { setSearch(event.target.value); setExtraProducts([]); setExtraLoading(false); setExtraError(""); }} placeholder="Название или артикул, минимум 2 символа" disabled={!warehouseId} /></label>
       {extraLoading ? <p role="status">Ищем товары и услуги…</p> : null}
       {extraError ? <p role="alert">{extraError}</p> : null}

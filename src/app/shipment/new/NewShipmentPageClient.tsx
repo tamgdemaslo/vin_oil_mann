@@ -6021,6 +6021,16 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               organizationId={selectedOrg?.id}
               warehouseId={selectedStore?.id}
               initialVin={vin}
+              quoteFiltersLoading={!!mannLoading}
+              quoteFilters={mannSortedFilters.filter(filter => ["oil", "air", "cabin"].includes(filter.filterType)).map(filter => ({
+                key: `${filter.filterType}:${filter.mannArticleNormalized}`,
+                label: getMannFilterTypeLabel(filter.filterType),
+                article: filter.mannArticle,
+                condition: filter.condition,
+                products: (mannMatches[filter.mannArticleNormalized]?.compatibleProducts ?? mannMatches[filter.mannArticleNormalized]?.localMatches ?? []).map(product => ({
+                  id: product.id, name: product.name, article: product.article, price: product.price, available: product.available, orderable: product.orderable,
+                })),
+              }))}
               onUseVehicle={applyIdentifiedVehicle}
               onConfirmMannCandidate={confirmMannCandidate}
               onConfirmTransmission={confirmVehicleTransmission}
