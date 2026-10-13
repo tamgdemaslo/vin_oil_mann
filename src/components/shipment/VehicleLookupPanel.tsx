@@ -11,6 +11,7 @@ import { mannCapacityLabel as capacityLabel } from "@/lib/mann-capacity-label";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
 import { canConfirmVehicleDestinationMarket, unsupportedVehicleMarketLabels, mannTechnicalContextFromVehicle, type MannTechnicalContextDetails } from "@/lib/mann-technical-request-context";
 import { isVehicleDestinationMarket, type VehicleDestinationMarket } from "@/lib/vehicle-market";
+import { MaintenanceQuotePanel } from "./MaintenanceQuotePanel";
 import { mannEquipmentChoiceKey } from "@/lib/mann-equipment-scope";
 
 type LookupTab = "vin" | "plate" | "manual";
@@ -1052,6 +1053,13 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             onConfirmTransmission?.(appliedVehicle, transmissionType, technicalProfileVariantKeys);
             void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, transmissionType, { confirmedEngineCode, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
+        />
+        <MaintenanceQuotePanel
+          key={`${appliedVehicle.vin ?? appliedVehicle.licensePlate ?? vehicleTitle(appliedVehicle)}:${technicalProfileVariantKeys.join(",")}:${warehouseId ?? ""}`}
+          vehicleTitle={`${vehicleTitle(appliedVehicle)} · ${vehicleDetails(appliedVehicle)}`}
+          warehouseId={warehouseId}
+          profile={technicalProfile}
+          research={fluidResearch}
         />
       </section>
     );
