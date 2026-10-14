@@ -5,6 +5,24 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import XLSX from "xlsx";
+import sax from "sax";
+
+function parseXml(xml) {
+  const parser = sax.parser(true, { trim: false });
+  const stack = [];
+  let root;
+  parser.onopentag = ({ name, attributes }) => {
+    const node = { name, attributes, text: "", children: [] };
+    if (stack.length) stack.at(-1).children.push(node); else root = node;
+    stack.push(node);
+  };
+  parser.ontext = parser.oncdata = (text) => { if (stack.length) stack.at(-1).text += text; };
+  parser.onclosetag = () => stack.pop();
+  parser.onerror = (error) => { throw error; };
+  parser.write(xml).close();
+  return root;
+}
+const xmlField = (node, name) => node.children.find((child) => child.name === name);
 
 // Real domain, crypto, tenant scope and public route; an in-memory DB and mocked
 // HTTP keep this suite independent of local secrets, production and Avito.
@@ -83,6 +101,9 @@ try {
   tenant = await jiti.import("../src/lib/request-tenant-store.ts");
   globalThis.__ecoAvitoTestTenant = tenant;
   const feedRoute = await jiti.import("../src/app/api/avito-autoload/feeds/[token]/feed.csv/route.ts");
+  const xmlRoute = await jiti.import("../src/app/api/avito-autoload/feeds/[token]/feed.xml/route.ts");
+  const { buildAvitoXml } = await jiti.import("../src/lib/avito-autoload/xml.ts");
+  const downloadRoute = await jiti.import("../src/app/api/avito-autoload/exports/[exportId]/route.ts");
   const apiRoute = await jiti.import("../src/app/api/avito-autoload/route.ts");
   const integrationRoute = await jiti.import("../src/app/api/integrations/avito/route.ts");
   const settings = { ...domain.AVITO_DEFAULT_SETTINGS, enabled: true, address: "Калининград, ул. Дачная, 1", publicBaseUrl: "https://crm.example.ru" };
@@ -163,6 +184,32 @@ try {
   assert.equal(table[1][20], "VW 504.00/507.00");
   assert.equal(table[1][24], "Нет");
   assert.equal(table[1][27], "Free");
+  const special = listing({ photos: [{ id: "photo&1", url: "", name: "Фото", contentType: "image/jpeg", size: 1 }] }, { title: 'Масло & <Shell> "4 л"', description: 'Текст & <html> ]]>\nМасло 🛢', acea: "A3/B4; C3", oem: "VW 504.00/507.00; MB 229.5", multiItem: true, multiName: "Shell4L" });
+  assert.equal(special.included, true);
+  const transmissionXmlListing = listing({ groupPath: "Трансмиссионные масла", sae: "75W-90", atf: "Dexron III", apiSpec: "GL-4", oemAtf: "ZF TE-ML 14C" });
+  transmissionXmlListing.adId = storage.avitoAdId(scope, "transmission-A");
+  const xml = buildAvitoXml([special, transmissionXmlListing, listing({ brand: "Bad" })], settings, (id) => `https://crm.example.ru/${id}?size=1&v=2`);
+  const xmlRoot = parseXml(xml);
+  assert.equal(xmlRoot.name, "Ads");
+  assert.deepEqual(xmlRoot.attributes, { formatVersion: "3", target: "Avito.ru" });
+  assert.equal(xmlRoot.children.length, 2, "invalid listings are also skipped in XML");
+  const [motorAd, transmissionAd] = xmlRoot.children;
+  assert.equal(xmlField(motorAd, "Id").text, table[1][0], "XML preserves the CSV identifier");
+  assert.equal(xmlField(motorAd, "Title").text, special.values.title);
+  assert.equal(xmlField(motorAd, "Description").text, special.values.description, "CDATA boundaries, markup and Unicode survive XML parsing");
+  assert.deepEqual(xmlField(motorAd, "ACEA").children.map((child) => child.text), ["A3/B4", "C3"]);
+  assert.equal(xmlField(motorAd, "OEMOil").children[0].text, "VW 504.00/507.00");
+  assert.equal(xmlField(motorAd, "VendorCode").text, source.article);
+  assert.equal(xmlField(motorAd, "MultiName").text, "Shell4L");
+  assert.equal(xmlField(motorAd, "Images").children[0].attributes.url, "https://crm.example.ru/photo&1?size=1&v=2");
+  assert.equal(xmlField(transmissionAd, "ACEA"), undefined);
+  assert.equal(xmlField(transmissionAd, "ATF").children[0].text, "Dexron III");
+  const addressAd = parseXml(buildAvitoXml([valid], { ...settings, sellerAddressId: "123" }, () => "")).children[0];
+  assert.equal(xmlField(addressAd, "SellerAddressID").text, "123");
+  assert.equal(xmlField(addressAd, "Address"), undefined);
+  assert.throws(() => buildAvitoXml([valid, valid], settings, () => ""), /уникальный/);
+  assert.throws(() => buildAvitoXml([{ ...valid, adId: "" }], settings, () => ""), /непустой/);
+  for (const description of ["Bad\u0001text", "Bad\uD800text"]) assert.equal(listing({}, { description }).included, false, "invalid XML characters are listing errors, not whole-feed failures");
   assert.equal(domain.avitoFeedStats([valid, listing({ available: 0, brand: "Invalid" })], settings).invalid, 0, "ineligible stock rows do not block valid feed");
   assert.equal(access.canEditAvito({ groupRole: null, branchRole: "mechanic", permissions: [] }), false);
   assert.equal(access.canViewAvito({ groupRole: null, branchRole: "mechanic", permissions: [] }), true);
@@ -170,19 +217,20 @@ try {
   assert.throws(() => storage.avitoScope(), /Branch context/);
 
   const requests = [];
-  const providerProfile = { feeds_data: [{ feed_name: "Existing", feed_url: "https://other.example.ru/feed.xml" }], schedule: [{ weekdays: [1], time_slots: [9] }], allow_pay_over_limit: false, uploadMode: "full" };
+  const providerProfile = { feeds_data: [{ feed_name: "Existing", feed_url: "https://other.example.ru/feed.xml" }, { feed_name: "Manually added", feed_url: "https://crm.example.ru/feed.csv" }], schedule: [{ weekdays: [1], time_slots: [9] }], allow_pay_over_limit: false, uploadMode: "full" };
   const client = new AvitoAutoloadClient("test-client-A", "test-secret-A", async (url, init) => {
     requests.push({ url, init });
     if (url.endsWith("/token")) return Response.json({ access_token: "mock-token", expires_in: 3600 });
     if (init.method === "GET") return Response.json(providerProfile);
     return new Response(null, { status: 204 });
   });
-  await client.connectFeed("https://crm.example.ru/feed.csv", "Eco");
+  await client.connectFeed("https://crm.example.ru/feed.xml", "Eco", "https://crm.example.ru/feed.csv");
   await client.upload();
   const payload = JSON.parse(requests.find((r) => r.url.endsWith("/autoload/v2/profile") && r.init.method === "POST").init.body);
   assert.deepEqual(payload.schedule, providerProfile.schedule);
   assert.equal(payload.allow_pay_over_limit, false);
   assert.equal(payload.feeds_data.length, 2, "other feed must survive connecting ours");
+  assert.ok(!payload.feeds_data.some((feed) => feed.feed_url.endsWith(".csv")), "the same branch's old CSV is replaced even if manually named");
   assert.equal(requests.filter((r) => r.url.endsWith("/token")).length, 1);
   const pages = [];
   const paginated = new AvitoAutoloadClient("test-pages", "test-pages-secret", async (url) => {
@@ -204,6 +252,11 @@ try {
     await storage.writeAvitoValue(scope, "profile", profile);
     const publicGet = () => feedRoute.GET(new Request("https://crm.example.ru/feed.csv"), { params: Promise.resolve({ token }) });
     const publicHead = () => feedRoute.HEAD(new Request("https://crm.example.ru/feed.csv", { method: "HEAD" }), { params: Promise.resolve({ token }) });
+    const publicXml = () => xmlRoute.GET(new Request("https://crm.example.ru/feed.xml"), { params: Promise.resolve({ token }) });
+    const publicXmlHead = () => xmlRoute.HEAD(new Request("https://crm.example.ru/feed.xml", { method: "HEAD" }), { params: Promise.resolve({ token }) });
+    assert.ok(service.avitoFeedUrl(profile).endsWith("/feed.xml"));
+    assert.ok(service.avitoFeedUrl(profile, "csv").endsWith("/feed.csv"));
+    assert.equal((await publicXml()).headers.get("X-Avito-Feed-Status"), "AVITO_FEED_NOT_REVIEWED");
     const notReviewed = await publicGet();
     assert.equal(notReviewed.status, 503, "a public link alone cannot publish an unreviewed first feed");
     assert.equal(notReviewed.headers.get("X-Avito-Feed-Status"), "AVITO_FEED_NOT_REVIEWED");
@@ -220,6 +273,7 @@ try {
     assert.equal(pausedHead.status, 503);
     assert.equal(pausedHead.headers.get("X-Avito-Feed-Status"), "AVITO_FEED_PAUSED");
     assert.equal(await pausedHead.text(), "");
+    assert.equal((await publicXmlHead()).headers.get("X-Avito-Feed-Status"), "AVITO_FEED_PAUSED");
     await storage.writeAvitoValue(scope, "profile", profile);
     assert.ok(!JSON.stringify([...records.values()]).includes("Калининград"), "settings and token are encrypted at rest");
     assert.equal(await storage.withAvitoPublicProfile(token, async (_p, s) => s.branchId), "branch-A");
@@ -260,8 +314,14 @@ try {
     const exported = await service.generateAvitoExport();
     assert.equal(exported.stats.included, 1, "foreign branch never enters feed");
     const original = await service.downloadAvitoExport(exported.id);
+    const originalXml = await service.downloadAvitoExport(exported.id, "xml");
+    assert.equal(xmlField(parseXml(originalXml.toString("utf8")).children[0], "Id").text, storage.avitoAdId(scope, source.id));
     products[0].salePriceCents = 555000;
     assert.deepEqual(await service.downloadAvitoExport(exported.id), original, "history downloads the original file, not today's prices");
+    assert.deepEqual(await service.downloadAvitoExport(exported.id, "xml"), originalXml, "XML history is also immutable");
+    audit.push({ ...audit.find((row) => row.id === exported.id), id: "legacy-csv", metadataJson: { csvGzip: audit.find((row) => row.id === exported.id).metadataJson.csvGzip } });
+    assert.deepEqual(await service.downloadAvitoExport("legacy-csv"), original);
+    await assert.rejects(service.downloadAvitoExport("legacy-csv", "xml"), (error) => error.status === 404 && /старой выгрузке/.test(error.message));
     const request = () => feedRoute.GET(new Request("https://crm.example.ru/feed.csv"), { params: Promise.resolve({ token }) });
     assert.equal((await request()).status, 200);
     const snapshotBeforeHead = await storage.readAvitoValue(scope, "snapshot");
@@ -272,12 +332,15 @@ try {
     assert.equal(await readyHead.text(), "");
     assert.deepEqual(await storage.readAvitoValue(scope, "snapshot"), snapshotBeforeHead, "HEAD never modifies the reviewed/exported snapshot");
     assert.equal(audit.length, auditCountBeforeHead, "HEAD does not pretend that Avito downloaded a CSV");
+    assert.equal((await publicXmlHead()).status, 200);
+    assert.equal(audit.length, auditCountBeforeHead, "XML HEAD never writes audit or snapshots");
     products[0].brand = "Unsupported manufacturer";
     const invalidFeed = await request();
     assert.equal(invalidFeed.status, 503, "an entirely invalid selection cannot silently replace a nonempty feed with an empty CSV");
     assert.equal(invalidFeed.headers.get("X-Avito-Feed-Status"), "AVITO_EMPTY_FEED");
     assert.match(await invalidFeed.text(), /Файл станет пустым/);
     assert.equal((await publicHead()).status, 503, "HEAD observes the same empty-feed protection as GET");
+    assert.equal((await publicXml()).status, 503);
     products.push({ ...products[0], id: "healthy-selected", brand: source.brand });
     const mixed = await service.prepareAvitoFeed(profile, scope, false, true);
     assert.equal(mixed.stats.included, 1);
@@ -298,6 +361,12 @@ try {
     assert.equal(audit.at(-1).metadataJson.stats.invalid, 1, "download history reports skipped items");
     assert.equal(products[0].avito, true);
     assert.equal(products[0].brand, "Unsupported manufacturer", "export must not edit bad product data");
+    const mixedXmlResponse = await publicXml();
+    assert.equal(mixedXmlResponse.status, 200);
+    assert.match(mixedXmlResponse.headers.get("Content-Type"), /^application\/xml/);
+    assert.equal(mixedXmlResponse.headers.get("X-Avito-Skipped-Invalid"), "1");
+    assert.equal(await mixedXmlResponse.text(), (await service.downloadAvitoExport(mixedExport.id, "xml")).toString("utf8"));
+    assert.equal((await xmlRoute.GET(new Request("https://crm.example.ru/feed.xml"), { params: Promise.resolve({ token: "invalid" }) })).status, 404);
     products.pop();
     products[0].brand = source.brand;
     const repaired = await service.prepareAvitoFeed(profile, scope, false, true);
@@ -310,6 +379,7 @@ try {
     assert.equal(unavailable.headers.get("X-Avito-Feed-Status"), "AVITO_FEED_UNAVAILABLE");
     assert.ok(!(await unavailable.text()).includes("simulated database outage"), "public diagnostics never expose internal exception text");
     assert.equal((await publicHead()).status, 503);
+    assert.equal((await publicXml()).headers.get("X-Avito-Feed-Status"), "AVITO_FEED_UNAVAILABLE");
     stockFailure = false; stock = 0;
     assert.equal((await request()).status, 200, "explicit stock policy can withdraw the last sold-out ad");
     stock = 3;
@@ -322,7 +392,14 @@ try {
     await assert.rejects(service.saveAvitoListing({ id: "foreign-product", enabled: true, sourceUpdatedAt: source.updatedAt, overrides: {} }), (e) => e.status === 404);
     await assert.rejects(service.saveAvitoListing({ id: source.id, enabled: true, sourceUpdatedAt: source.updatedAt, overrides: { photoIds: ["foreign-photo"] } }), /фотографии/);
     await assert.rejects(tenant.runWithRequestTenant({ ...scope, branchId: "branch-B", organizationId: "org-B", mode: "branch", allowedBranchIds: ["branch-B"] }, () => service.downloadAvitoExport(exported.id)), (e) => e.status === 404);
+    await assert.rejects(tenant.runWithRequestTenant({ ...scope, branchId: "branch-B", organizationId: "org-B", mode: "branch", allowedBranchIds: ["branch-B"] }, () => service.downloadAvitoExport(exported.id, "xml")), (e) => e.status === 404);
     globalThis.__ecoAvitoTestContext = { ...scope, groupRole: "group_owner", branchRole: null, permissions: [], isGroupOwner: true, branch: { name: "Test", shortName: "", address: "Калининград, ул. Дачная, 1", phone: "" } };
+    const xmlDownload = await downloadRoute.GET(new Request(`https://crm.example.ru${exported.xmlDownloadUrl}`), { params: Promise.resolve({ exportId: exported.id }) });
+    assert.equal(xmlDownload.status, 200);
+    assert.match(xmlDownload.headers.get("Content-Type"), /^application\/xml/);
+    assert.match(xmlDownload.headers.get("Content-Disposition"), /\.xml"$/);
+    assert.deepEqual(Buffer.from(await xmlDownload.arrayBuffer()), originalXml);
+    assert.equal((await downloadRoute.GET(new Request("https://crm.example.ru/download?format=bad"), { params: Promise.resolve({ exportId: exported.id }) })).status, 400);
     await storage.writeAvitoValue(scope, "client_id", "api-route-test-id");
     await storage.writeAvitoValue(scope, "client_secret", "api-route-test-secret");
     const originalFetch = globalThis.fetch;
@@ -440,7 +517,7 @@ try {
     });
     assert.equal((await service.getAvitoProfile(scope)).settings.descriptionTemplate, originalDescriptionTemplate, "saving another branch never changes this branch template");
   });
-  console.log("Avito autoload: catalog groups, whole-catalog sorting and filters, content templates, automatic titles, branch addresses, CSV, permissions, tenant isolation, encrypted tokens, export history, feed failure guards and API contract tests passed");
+  console.log("Avito autoload: catalog groups, whole-catalog sorting and filters, content templates, automatic titles, branch addresses, XML v3 and CSV, permissions, tenant isolation, encrypted tokens, export history, feed failure guards and API contract tests passed");
 } finally {
   delete globalThis.__ecoAvitoTestDb;
   delete globalThis.__ecoAvitoTestContext;

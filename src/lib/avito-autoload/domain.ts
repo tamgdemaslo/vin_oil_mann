@@ -1,6 +1,7 @@
 import catalogs from "./catalogs.generated.json";
 import { isLiterSaleUnit } from "@/lib/product-marking";
 import { AVITO_CONTENT_DEFAULTS, avitoContentVariables, avitoTemplateIssues, renderAvitoTemplate, shortenAvitoTitle } from "./content";
+import { hasInvalidXmlCharacters } from "./xml-text";
 import type { AvitoFeedStats, AvitoIssue, AvitoListing, AvitoOilType, AvitoOverrides, AvitoProductSource, AvitoRemoteStatus, AvitoSettings } from "./types";
 
 export const AVITO_CATALOG_VERSION = catalogs.version;
@@ -69,6 +70,9 @@ function inherited(override: string | undefined, value: string | null | undefine
 
 export function avitoSettingsIssues(settings: AvitoSettings): AvitoIssue[] {
   const issues: AvitoIssue[] = [];
+  for (const field of ["address", "contactPerson", "phone"] as const) {
+    if (hasInvalidXmlCharacters(settings[field])) issues.push({ field, message: "Уберите непечатаемые символы из адреса и контактов", severity: "error" });
+  }
   if (!settings.address.trim() && !settings.sellerAddressId.trim()) issues.push({ field: "address", message: "Укажите адрес филиала в настройках Авито", severity: "error" });
   if (settings.address.length > 256) issues.push({ field: "address", message: "Адрес длиннее 256 символов", severity: "error" });
   if (settings.sellerAddressId && !/^\d{1,30}$/.test(settings.sellerAddressId)) issues.push({ field: "sellerAddressId", message: "Идентификатор адреса должен содержать только цифры", severity: "error" });
@@ -147,6 +151,7 @@ export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOv
   if (source.article && !/^[A-Za-z0-9-]{1,50}$/.test(source.article)) warning("article", "Артикул не соответствует формату Авито и не попадёт в отдельное поле «Номер»");
   if (values.multiItem && !/^[\p{L}\p{N}]{1,100}$/u.test(values.multiName)) error("multiName", "Задайте общее название вариантов: только буквы и цифры, без пробелов");
   for (const field of ["title", "description", "brand", "oem", "api", "atf", "acea"] as const) {
+    if (hasInvalidXmlCharacters(values[field])) error(field, "Уберите непечатаемые символы из текста объявления");
     if (/^\s*[=+@-]\s*[A-Za-z_]+\s*\(/.test(values[field])) error(field, "Уберите формулу из текстового поля");
   }
   const allPhotos = source.photos;

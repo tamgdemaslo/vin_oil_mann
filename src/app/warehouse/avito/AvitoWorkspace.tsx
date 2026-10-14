@@ -13,7 +13,7 @@ import styles from "./avito.module.css";
 
 type Tab = "products" | "settings" | "history";
 type View = "all" | "selected" | "errors" | "ready" | "published";
-type ActionResult = { message?: string; downloadUrl?: string; stats?: AvitoFeedStats };
+type ActionResult = { message?: string; downloadUrl?: string; xmlDownloadUrl?: string; stats?: AvitoFeedStats };
 
 class RequestError extends Error {
   constructor(message: string, readonly code?: string) { super(message); }
@@ -55,6 +55,7 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [xmlDownloadUrl, setXmlDownloadUrl] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -101,11 +102,12 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
 
   const perform = async (action: string, payload: Record<string, unknown> = {}): Promise<boolean> => {
     if (busy) return false;
-    setBusy(action); setError(""); setNotice(""); setDownloadUrl(null);
+    setBusy(action); setError(""); setNotice(""); setDownloadUrl(null); setXmlDownloadUrl(null);
     try {
       const result = await request<ActionResult>("/api/avito-autoload", { operation: action, ...payload });
       setNotice(result.message ?? (result.downloadUrl ? `Файл готов: ${result.stats?.included ?? 0} объявлений${result.stats?.invalid ? `; пропущено с ошибками: ${result.stats.invalid}` : ""}` : "Изменения сохранены"));
       setDownloadUrl(result.downloadUrl ?? null);
+      setXmlDownloadUrl(result.xmlDownloadUrl ?? null);
       await refreshCurrent.current();
       return true;
     } catch (failure) { setError(errorMessage(failure)); return false; }
@@ -135,7 +137,7 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
     </header>
 
     {error && <div role="alert" className={styles.error}><TriangleAlert size={18} /><span>{error}</span><button type="button" aria-label="Закрыть сообщение об ошибке" onClick={() => setError("")}><X size={17} /></button></div>}
-    {notice && <div role="status" className={styles.notice}><CheckCircle2 size={18} /><span>{notice}</span>{downloadUrl && <a href={downloadUrl}><Download size={15} /> Скачать CSV</a>}<button type="button" aria-label="Закрыть сообщение" onClick={() => setNotice("")}><X size={17} /></button></div>}
+    {notice && <div role="status" className={styles.notice}><CheckCircle2 size={18} /><span>{notice}</span><div className={styles.downloadLinks}>{xmlDownloadUrl && <a href={xmlDownloadUrl}><Download size={15} /> Скачать XML</a>}{downloadUrl && <a href={downloadUrl}><Download size={15} /> Скачать CSV</a>}</div><button type="button" aria-label="Закрыть сообщение" onClick={() => setNotice("")}><X size={17} /></button></div>}
 
     <nav className={styles.tabs} role="tablist" aria-label="Разделы Авито">{tabButton("products", "Товары")}{editable && tabButton("settings", "Настройки")}{tabButton("history", "История загрузок")}</nav>
 
@@ -278,7 +280,7 @@ function ListingEditor({ listing, settings, canEdit, busy, error, onClose, onSav
 function History({ items, busy, canEdit, hasKeys, onReports }: { items: AvitoHistoryItem[]; busy: boolean; canEdit: boolean; hasKeys: boolean; onReports: () => Promise<boolean> }) {
   return <>
     <div className={styles.historyHeader}><div><h2>История загрузок</h2><p>Формирование файлов, запросы Авито и результаты обработки.</p></div>{canEdit && <EcoButton disabled={busy || !hasKeys} onClick={() => void onReports()}><RefreshCw size={15} /> Получить отчёт Авито</EcoButton>}</div>
-    {!items.length ? <div className={styles.empty}><FileCheck2 size={24} /><h2>Загрузок пока нет</h2><p>Сформируйте первый файл. Здесь появятся его состав и результат обработки Авито.</p></div> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>Время</th><th>Событие</th><th>Результат</th><th>Файл</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{dateLabel(item.createdAt)}</td><td><strong>{historyLabels[item.action] ?? item.action}</strong><small>{item.message}</small></td><td><EcoBadge tone={item.status === "error" ? "danger" : item.status === "pending" ? "warning" : "success"}>{item.status === "error" ? "Ошибка" : item.status === "pending" ? "Обрабатывается" : "Выполнено"}</EcoBadge>{item.stats && <small>{item.stats.included} объявлений · {item.stats.invalid ?? 0} пропущено с ошибками · {item.stats.withdrawals} исключений</small>}{item.reportId && <small>Отчёт №{item.reportId}</small>}</td><td>{item.downloadUrl && <a className="eco-btn eco-btn--sm" href={item.downloadUrl}><Download size={15} /> Скачать CSV</a>}</td></tr>)}</tbody></table></div>}
+    {!items.length ? <div className={styles.empty}><FileCheck2 size={24} /><h2>Загрузок пока нет</h2><p>Сформируйте первый файл. Здесь появятся его состав и результат обработки Авито.</p></div> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>Время</th><th>Событие</th><th>Результат</th><th>Файл</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{dateLabel(item.createdAt)}</td><td><strong>{historyLabels[item.action] ?? item.action}</strong><small>{item.message}</small></td><td><EcoBadge tone={item.status === "error" ? "danger" : item.status === "pending" ? "warning" : "success"}>{item.status === "error" ? "Ошибка" : item.status === "pending" ? "Обрабатывается" : "Выполнено"}</EcoBadge>{item.stats && <small>{item.stats.included} объявлений · {item.stats.invalid ?? 0} пропущено с ошибками · {item.stats.withdrawals} исключений</small>}{item.reportId && <small>Отчёт №{item.reportId}</small>}</td><td><div className={styles.downloadLinks}>{item.xmlDownloadUrl && <a className="eco-btn eco-btn--sm" href={item.xmlDownloadUrl}><Download size={15} /> XML</a>}{item.downloadUrl && <a className="eco-btn eco-btn--sm" href={item.downloadUrl}><Download size={15} /> CSV</a>}</div></td></tr>)}</tbody></table></div>}
   </>;
 }
 
@@ -290,11 +292,11 @@ function ExportReview({ stats, hasPrevious, busy, error, onClose, onConfirm }: {
     <header><h2 id="avito-review-title">Проверка перед выгрузкой</h2><button type="button" className={styles.iconButton} disabled={busy} aria-label="Закрыть проверку выгрузки" onClick={onClose}><X size={20} /></button></header>
     {error && <p role="alert" className={styles.error}>{error}</p>}
     <dl><dt>Добавить или обновить в файле</dt><dd>{stats.included}</dd><dt>Пропустить из-за ошибок</dt><dd>{stats.invalid}</dd><dt>Исключить из предыдущего файла</dt><dd>{stats.withdrawals}</dd><dt>Не включать по остатку</dt><dd>{stats.outOfStock}</dd></dl>
-    <p>Формирование файла сохраняет проверенный состав выгрузки. Если автовыгрузка включена, Авито сможет получить обновлённые данные по ссылке.</p>
+    <p>Для Авито формируется XML; CSV можно скачать таблицей. Формирование сохраняет проверенный состав выгрузки. Если автовыгрузка включена, Авито сможет получить обновлённые данные по ссылке.</p>
     {stats.invalid > 0 && <p className={styles.issueWarning}><TriangleAlert size={16} /> Товары с ошибками не попадут в файл. После исправления они автоматически войдут в следующую выгрузку. Если пропущенное объявление уже размещено, Авито снимет его после обработки файла.</p>}
     {stats.warnings > 0 && <p className={styles.issueWarning}><TriangleAlert size={16} /> {stats.warnings} объявлений с предупреждениями. Допуски и публикацию дополнительно проверит Авито.</p>}
     {stats.included === 0 && hasPrevious && <label className={styles.checkField}><input type="checkbox" checked={allowEmpty} disabled={busy} onChange={(event) => setAllowEmpty(event.target.checked)} /><span>Подтверждаю пустой файл: прежние объявления будут сняты после обработки Авито.</span></label>}
     {stats.included === 0 && !hasPrevious && <p className={styles.fieldError}>Для первой выгрузки нужен хотя бы один товар без ошибок с доступным остатком.</p>}
-    <footer><EcoButton disabled={busy} onClick={onClose}>Отмена</EcoButton><EcoButton variant="primary" disabled={busy || stats.included === 0 && (!hasPrevious || !allowEmpty)} onClick={() => void onConfirm(allowEmpty)}>{busy ? <Loader2 size={16} className={styles.spinning} /> : <FileCheck2 size={16} />} Сформировать CSV</EcoButton></footer>
+    <footer><EcoButton disabled={busy} onClick={onClose}>Отмена</EcoButton><EcoButton variant="primary" disabled={busy || stats.included === 0 && (!hasPrevious || !allowEmpty)} onClick={() => void onConfirm(allowEmpty)}>{busy ? <Loader2 size={16} className={styles.spinning} /> : <FileCheck2 size={16} />} Сформировать файл</EcoButton></footer>
   </dialog>;
 }

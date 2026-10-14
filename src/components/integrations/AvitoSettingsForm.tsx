@@ -64,10 +64,10 @@ export default function AvitoSettingsForm({ settings, stores, canEditSecrets, bu
       {settings.connection.checkedAt && <small>Проверено {dateLabel(settings.connection.checkedAt)}</small>}
       {settings.connection.accountId && <small>Аккаунт Авито №{settings.connection.accountId}</small>}
       <EcoButton type="button" disabled={busy || dirty || !hasKeys} onClick={() => void onApi("test")}><RefreshCw size={15} /> Проверить подключение</EcoButton>
-      <h3>Ссылка для автозагрузки</h3>
+      <h3>Ссылка XML для автозагрузки</h3><p className={styles.help}>Для Авито используйте XML. Если ранее добавили ссылку с окончанием feed.csv, замените её этой ссылкой. ID товаров сохраняются.</p>
       <EcoBadge tone={feedBlocker ? "warning" : "neutral"}>{feedBlocker ? "Файл не выдаётся" : "Выдача файла включена"}</EcoBadge>
       {feedBlocker && <p role="status">{feedBlocker.message}</p>}
-      {settings.feedUrl ? <><textarea className={styles.feedUrl} readOnly rows={4} aria-label="Ссылка для автозагрузки" value={settings.feedUrl} onFocus={(event) => event.target.select()} /><EcoButton size="sm" onClick={async () => { try { await navigator.clipboard.writeText(settings.feedUrl!); onCopyNotice("Ссылка скопирована"); } catch { onCopyNotice("Выделите ссылку и скопируйте её вручную"); } }}><Copy size={15} /> Скопировать ссылку</EcoButton></> : <p>Ссылка появится после сохранения публичного адреса платформы.</p>}
+      {settings.feedUrl ? <><textarea className={styles.feedUrl} readOnly rows={4} aria-label="Ссылка XML для автозагрузки" value={settings.feedUrl} onFocus={(event) => event.target.select()} /><EcoButton size="sm" onClick={async () => { try { await navigator.clipboard.writeText(settings.feedUrl!); onCopyNotice("Ссылка скопирована"); } catch { onCopyNotice("Выделите ссылку и скопируйте её вручную"); } }}><Copy size={15} /> Скопировать ссылку</EcoButton></> : <p>Ссылка появится после сохранения публичного адреса платформы.</p>}
       <p className={styles.help}>Ссылка предоставляет доступ к выгружаемым товарам и выбранным фотографиям.{!feedBlocker && " Добавьте её в свой профиль автозагрузки Авито."}</p>
       <EcoButton type="button" disabled={busy || dirty || !hasKeys || !settings.enabled || !settings.lastExportAt} onClick={() => void onApi("connect")}><ExternalLink size={15} /> Подключить файл к Авито</EcoButton>
       <EcoButton type="button" disabled={busy || dirty || !hasKeys || !settings.enabled || !settings.lastExportAt} onClick={() => void onApi("upload")}><ArrowRight size={15} /> Запросить обработку файла</EcoButton>

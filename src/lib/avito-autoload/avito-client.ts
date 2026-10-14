@@ -59,10 +59,10 @@ export class AvitoAutoloadClient {
   account() { return this.call("/core/v1/accounts/self"); }
   upload() { return this.call("/autoload/v1/upload", "POST"); }
 
-  async connectFeed(feedUrl: string, feedName: string) {
+  async connectFeed(feedUrl: string, feedName: string, replacedFeedUrl?: string) {
     const current = await this.profile();
     const existing = Array.isArray(current.feeds_data) ? current.feeds_data.filter((value): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value))) : [];
-    const feeds = existing.filter((feed) => feed.feed_name !== feedName && feed.feed_url !== feedUrl);
+    const feeds = existing.filter((feed) => feed.feed_name !== feedName && feed.feed_url !== feedUrl && (!replacedFeedUrl || feed.feed_url !== replacedFeedUrl));
     feeds.push({ feed_name: feedName, feed_url: feedUrl });
     // Keep paid-placement limits, schedule and other provider-owned settings.
     // A missing schedule must be set in Avito rather than silently enabling every slot.

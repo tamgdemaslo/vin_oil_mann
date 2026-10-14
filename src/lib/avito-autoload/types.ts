@@ -1,4 +1,5 @@
 export type AvitoOilType = "motor" | "transmission";
+export type AvitoFeedFormat = "csv" | "xml";
 export type AvitoSort = "name_asc" | "name_desc" | "errors_first" | "no_photos_first" | "ready_first" | "price_asc" | "price_desc" | "stock_asc" | "stock_desc";
 export type AvitoPhotoFilter = "all" | "without" | "with";
 export type AvitoIssue = { field: string; message: string; severity: "error" | "warning" };
@@ -135,6 +136,7 @@ export type AvitoHistoryItem = {
   createdAt: string;
   stats: AvitoFeedStats | null;
   downloadUrl: string | null;
+  xmlDownloadUrl?: string | null;
   reportId: string | null;
 };
 

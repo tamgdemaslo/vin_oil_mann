@@ -7,9 +7,11 @@ import { AVITO_CHANNEL, avitoAdId, avitoAudit, avitoScope, decodeAvitoValue, new
 import { avitoBranchAddress } from "./content";
 import { AvitoAutoloadError, avitoOverridesSchema, type avitoCredentialsSaveSchema, type avitoListingSaveSchema, type avitoSelectionSchema, type avitoSettingsSaveSchema } from "./schemas";
 import { AvitoAutoloadClient } from "./avito-client";
+import { buildAvitoXml } from "./xml";
+import type { AvitoFeedFormat } from "./types";
 import type { AvitoFeedStats, AvitoHistoryItem, AvitoIntegrationData, AvitoListing, AvitoOverrides, AvitoProductSource, AvitoRemoteStatus, AvitoSettings, AvitoSettingsView, AvitoWorkspaceData } from "./types";
 
-const MAX_CSV_BYTES = 50 * 1024 * 1024;
+const MAX_FEED_BYTES = 50 * 1024 * 1024;
 const productSelect = {
   id: true, name: true, article: true, groupPath: true, entityType: true, uomName: true, brand: true, sae: true, packageVolume: true,
   group: { select: { id: true, name: true, kind: true } },
@@ -27,8 +29,8 @@ export async function getAvitoProfile(scope = avitoScope()) {
   return resolveAvitoProfile(profile, branch);
 }
 
-export function avitoFeedUrl(profile: StoredAvitoProfile) {
-  return profile.settings.publicBaseUrl ? `${profile.settings.publicBaseUrl}/api/avito-autoload/feeds/${profile.feedToken}/feed.csv` : null;
+export function avitoFeedUrl(profile: StoredAvitoProfile, format: AvitoFeedFormat = "xml") {
+  return profile.settings.publicBaseUrl ? `${profile.settings.publicBaseUrl}/api/avito-autoload/feeds/${profile.feedToken}/feed.${format}` : null;
 }
 
 function normalizeOrigin(value: string) {
@@ -139,6 +141,7 @@ async function history(scope: AvitoScope): Promise<AvitoHistoryItem[]> {
     return {
       id: row.id, action: row.action, status: row.status, message: row.message, createdAt: row.createdAt.toISOString(),
       stats: meta.stats as AvitoFeedStats | undefined ?? null, downloadUrl: typeof meta.csvGzip === "string" ? `/api/avito-autoload/exports/${row.id}` : null,
+      xmlDownloadUrl: typeof meta.xmlGzip === "string" ? `/api/avito-autoload/exports/${row.id}?format=xml` : null,
       reportId: typeof meta.reportId === "string" ? meta.reportId : null,
     };
   });
@@ -276,11 +279,13 @@ export async function prepareAvitoFeed(profile: StoredAvitoProfile, scope: Avito
     throw new AvitoAutoloadError(previous?.adIds.length ? "Файл станет пустым и снимет прежние объявления. Подтвердите пустую выгрузку" : "Для первой выгрузки нужен хотя бы один товар без ошибок с доступным остатком. Товары с ошибками пропускаются", 422, "AVITO_EMPTY_FEED", { stats });
   }
   if (allowEmpty && !previous) throw new AvitoAutoloadError("Для первой выгрузки нужен хотя бы один товар");
-  const csv = buildAvitoCsv(listings, profile.settings, (id) => `${profile.settings.publicBaseUrl}/api/avito-autoload/feeds/${profile.feedToken}/photos/${encodeURIComponent(id)}`);
-  if (Buffer.byteLength(csv, "utf8") > MAX_CSV_BYTES) throw new AvitoAutoloadError("Файл превышает 50 МБ. Уменьшите число товаров или объём описаний");
+  const photoUrl = (id: string) => `${profile.settings.publicBaseUrl}/api/avito-autoload/feeds/${profile.feedToken}/photos/${encodeURIComponent(id)}`;
+  const csv = buildAvitoCsv(listings, profile.settings, photoUrl);
+  const xml = buildAvitoXml(listings, profile.settings, photoUrl);
+  if ([csv, xml].some((body) => Buffer.byteLength(body, "utf8") > MAX_FEED_BYTES)) throw new AvitoAutoloadError("Файл превышает 50 МБ. Уменьшите число товаров или объём описаний");
   const included = listings.filter((listing) => listing.included);
   const snapshot: AvitoSnapshot = { createdAt: new Date().toISOString(), adIds: included.map((listing) => listing.adId), productIds: included.map((listing) => listing.id), photoIds: [...new Set(included.flatMap((listing) => listing.photos.map((photo) => photo.id)))] };
-  return { csv, stats, snapshot };
+  return { csv, xml, stats, snapshot };
 }
 
 export async function generateAvitoExport(allowEmpty = false) {
@@ -291,18 +296,19 @@ export async function generateAvitoExport(allowEmpty = false) {
   const exportRow = await prisma.$transaction(async (db) => {
     await writeAvitoValue(scope, "snapshot", result.snapshot, db);
     return avitoAudit(scope, "feed_generated", "ok", `Подготовлена выгрузка: ${result.stats.included} объявлений; пропущено с ошибками: ${result.stats.invalid}`, {
-      stats: result.stats, csvGzip: gzipSync(result.csv).toString("base64"), catalogVersion: "2026-10-12",
+      stats: result.stats, csvGzip: gzipSync(result.csv).toString("base64"), xmlGzip: gzipSync(result.xml).toString("base64"), catalogVersion: "2026-10-12",
     }, db);
   });
-  return { id: exportRow.id, stats: result.stats, downloadUrl: `/api/avito-autoload/exports/${exportRow.id}` };
+  return { id: exportRow.id, stats: result.stats, downloadUrl: `/api/avito-autoload/exports/${exportRow.id}`, xmlDownloadUrl: `/api/avito-autoload/exports/${exportRow.id}?format=xml` };
 }
 
-export async function downloadAvitoExport(id: string) {
+export async function downloadAvitoExport(id: string, format: AvitoFeedFormat = "csv") {
   const scope = avitoScope();
   const row = await prisma.integrationAuditLog.findFirst({ where: { id, branchId: scope.branchId, organizationId: scope.organizationId, channel: AVITO_CHANNEL, action: "feed_generated" }, select: { metadataJson: true } });
   const meta = row?.metadataJson && typeof row.metadataJson === "object" && !Array.isArray(row.metadataJson) ? row.metadataJson as Record<string, unknown> : {};
-  if (typeof meta.csvGzip !== "string") throw new AvitoAutoloadError("Выгрузка не найдена", 404);
-  return gunzipSync(Buffer.from(meta.csvGzip, "base64"), { maxOutputLength: MAX_CSV_BYTES });
+  const compressed = meta[`${format}Gzip`];
+  if (typeof compressed !== "string") throw new AvitoAutoloadError(format === "xml" && typeof meta.csvGzip === "string" ? "В этой старой выгрузке нет XML. Сформируйте новый файл" : "Выгрузка не найдена", 404);
+  return gunzipSync(Buffer.from(compressed, "base64"), { maxOutputLength: MAX_FEED_BYTES });
 }
 
 export async function getAvitoClient(scope: AvitoScope) {
@@ -336,11 +342,11 @@ export async function performAvitoApiAction(action: "test" | "connect" | "upload
       if (!snapshot) throw new AvitoAutoloadError("Сначала сформируйте и проверьте выгрузку");
       await prepareAvitoFeed(profile, scope, false, true);
       const url = avitoFeedUrl(profile)!;
-      if (action === "connect") await client.connectFeed(url, `Эко-платформа ${scope.branchId}`);
+      if (action === "connect") await client.connectFeed(url, `Эко-платформа ${scope.branchId}`, avitoFeedUrl(profile, "csv")!);
       else {
         const providerProfile = await client.profile();
         const feeds = Array.isArray(providerProfile.feeds_data) ? providerProfile.feeds_data : [];
-        if (!feeds.some((feed) => feed && typeof feed === "object" && (feed as Record<string, unknown>).feed_url === url)) throw new AvitoAutoloadError("Сначала подключите этот файл к профилю Авито");
+        if (!feeds.some((feed) => feed && typeof feed === "object" && (feed as Record<string, unknown>).feed_url === url)) throw new AvitoAutoloadError("Сначала подключите ссылку XML к профилю Авито");
         await client.upload();
       }
       const message = action === "connect" ? "Ссылка добавлена в профиль автозагрузки Авито" : "Авито принял запрос на обработку файла. Публикацию подтвердит отчёт";
