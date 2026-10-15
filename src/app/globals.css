@@ -71664,3 +71664,80 @@ select[size="1"]::-ms-expand {
   .eco-shipment-new-page .eco-shipment-mann-local > span { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
   .eco-shipment-new-page .eco-shipment-mann-add { padding-inline: 6px !important; }
 }
+
+/* Booking on a phone: one scrolling form, visible time choices, compact fixed actions. */
+.eco-records-drawer-backdrop { z-index: 130; }
+.eco-records-drawer { height: 100dvh; max-height: 100dvh; min-width: 0; }
+.eco-records-drawer-head, .eco-records-drawer-footer, .eco-records-form-nav { flex-shrink: 0; }
+.eco-records-form > * { flex-shrink: 0; }
+.eco-records-form > section { scroll-margin-top: 12px; }
+.eco-records-form > .eco-records-form-summary { padding: 0 0 12px; }
+.eco-records-form-nav { display: flex; gap: 6px; padding: 0 18px 10px; background: var(--eco-surface); border-bottom: 1px solid var(--eco-line); }
+.eco-records-form-nav button { flex: 1; min-height: 40px; border: 1px solid var(--eco-line); border-radius: 6px; background: var(--eco-surface); color: var(--eco-ink); font-size: 13px; font-weight: 550; cursor: pointer; }
+.eco-records-form-nav button:hover { background: var(--eco-surface-sunk); }
+.eco-records-form-nav button:focus-visible, .eco-records-slot-picker button:focus-visible, .eco-records-day-windows button:focus-visible { outline: 2px solid #a94421; outline-offset: 2px; }
+.eco-records-slot-picker { margin: 14px 0; padding: 12px 0; border-top: 1px solid var(--eco-line); border-bottom: 1px solid var(--eco-line); }
+.eco-records-slot-picker__head { display: flex; align-items: center; gap: 7px; color: var(--eco-ink); font-size: 14px; }
+.eco-records-slot-picker p { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; color: #646157; font-size: 13px; line-height: 1.5; }
+.eco-records-slot-picker__master + .eco-records-slot-picker__master { margin-top: 14px; }
+.eco-records-slot-picker__master > strong { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+.eco-records-slot-picker__times { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 8px; }
+.eco-records-slot-picker__times button { min-height: 44px; padding: 8px; border: 1px solid #b6cebd; border-radius: 6px; background: #f3f8f4; color: #245b38; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
+.eco-records-slot-picker__times button:hover { background: #e6f1e9; }
+.eco-records-slot-picker__times button[aria-pressed="true"] { background: #a94421; border-color: #a94421; color: #fff; }
+.eco-records-day-windows { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.eco-records-day-windows button { display: grid; gap: 3px; min-height: 52px; padding: 8px 12px; border: 1px solid #b6cebd; border-radius: 6px; background: #fff; text-align: left; cursor: pointer; }
+.eco-records-day-windows button:disabled { cursor: default; opacity: .65; }
+.eco-records-day-windows button strong { margin: 0; color: #245b38; font-size: 14px; font-variant-numeric: tabular-nums; }
+.eco-records-day-windows button span { color: #646157; font-size: 12px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.eco-records-day-windows > small { flex-basis: 100%; color: #646157; font-size: 12px; line-height: 1.5; }
+.eco-records-availability-item { border-left-width: 1px; box-shadow: none; }
+@media (max-width: 720px) {
+  .eco-records-drawer-head { padding: 12px 16px; }
+  .eco-records-drawer-head button { width: 44px; height: 44px; }
+  .eco-records-form-nav { padding: 0 12px 8px; }
+  .eco-records-form { padding: 12px; overscroll-behavior: contain; }
+  .eco-records-form > .eco-records-form-summary { grid-template-columns: 1fr 1fr; padding: 0 0 8px; gap: 0; }
+  .eco-records-form-summary > span { min-height: 0; padding: 7px 8px; border: 0; }
+  .eco-records-form-summary > span:first-child, .eco-records-form-summary > span:nth-child(4) { display: none; }
+  .eco-records-form-summary > .is-check { grid-column: 1 / -1; }
+  .eco-records-form-summary small { font-size: 10px; letter-spacing: 0; text-transform: none; }
+  .eco-records-form-summary strong { font-size: 12px; font-weight: 550; }
+  .eco-records-form section { padding: 12px; min-width: 0; }
+  .eco-records-form input, .eco-records-form select, .eco-records-form textarea { min-height: 44px; min-width: 0; max-width: 100%; font-size: 16px; }
+  .eco-records-form label { min-width: 0; font-size: 13px; font-weight: 550; }
+  .eco-records-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .eco-records-form-grid > label:has(input[type="date"]), .eco-records-form-grid > label:has(select) { grid-column: 1 / -1; }
+  .eco-records-form-grid input[type="time"] { padding-inline: 6px; }
+  .eco-records-service-picker { max-height: 280px; overscroll-behavior: auto; }
+  .eco-records-service-picker button { min-height: 48px; }
+  .eco-records-drawer-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  .eco-records-drawer-footer .eco-btn { min-height: 44px; width: auto; margin: 0; }
+  .eco-records-create-order { min-height: 44px; justify-content: center; }
+  .eco-records-availability { min-width: 0; }
+  .eco-records-availability-item { grid-template-columns: minmax(0, 1fr) auto; padding: 12px; }
+  .eco-records-availability-item > div:first-child { min-width: 0; }
+  .eco-records-availability-item > .eco-btn { min-height: 44px; }
+  .eco-records-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .eco-records-date-nav, .eco-records-toolbar .eco-records-search { grid-column: 1 / -1; }
+  .eco-records-toolbar .eco-records-confirmed { display: none; }
+}
+
+.eco-records-drawer-backdrop { top: var(--records-visual-top, 0); bottom: auto; height: var(--records-visual-height, 100dvh); }
+.eco-records-drawer { height: 100%; max-height: 100%; }
+@media (max-width: 720px) {
+  .eco-records-filterbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .eco-records-filterbar > .eco-select-chip { min-width: 0; }
+  .eco-records-filterbar select { min-width: 0; max-width: 100%; }
+  .eco-records-view-toggle { display: none !important; }
+}
+
+.eco-records-availability-title { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.eco-records-availability-title h2 { margin: 0; color: var(--eco-ink); font-size: 16px; font-weight: 650; }
+.eco-records-availability-title > span { color: #646157; font-size: 12px; }
+@media (max-width: 720px) {
+  .eco-records-toolbar > *, .eco-records-filterbar > * { box-sizing: border-box; min-width: 0; max-width: 100%; }
+  .eco-records-toolbar .eco-select-chip, .eco-records-toolbar .eco-records-search { min-width: 0; }
+  .eco-records-toolbar select, .eco-records-toolbar input { min-width: 0; max-width: 100%; }
+  .eco-records-availability-item.is-open { background: #f4f8f4; }
+}

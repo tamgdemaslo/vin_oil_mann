@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import RecordsSlotPicker from "./RecordsSlotPicker";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
@@ -820,6 +821,8 @@ export default function RecordsPageClient() {
   const clientPickerRef = useRef<HTMLDivElement | null>(null);
   const timelineInteractionRef = useRef<TimelineInteraction | null>(null);
   const formOpenedSnapshotRef = useRef("");
+  const formDialogRef = useRef<HTMLDivElement>(null);
+  const formErrorRef = useRef<HTMLDivElement>(null);
   const crmPrefillAppliedRef = useRef(false);
   const focusedRecordParamRef = useRef<string | null>(null);
   const [user, setUser] = useState<User>(null);
@@ -1382,6 +1385,12 @@ export default function RecordsPageClient() {
   }, [form.clientSearch, formOpen]);
 
   useEffect(() => {
+    if (!formOpen || !formError) return;
+    formErrorRef.current?.scrollIntoView({ block: "center" });
+    formErrorRef.current?.focus({ preventScroll: true });
+  }, [formOpen, formError]);
+
+  useEffect(() => {
     if (!clientDropdownOpen) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!clientPickerRef.current?.contains(event.target as Node)) setClientDropdownOpen(false);
@@ -1673,7 +1682,7 @@ export default function RecordsPageClient() {
   const getFreeSlots = useCallback(
     (staffIdValue: number, options?: { excludeRecordId?: number | null; fromMinute?: number; durationMinutes?: number }) => {
       const blocks = (timelineByStaff.get(staffIdValue) ?? [])
-        .filter((record) => record.id !== options?.excludeRecordId)
+        .filter((record) => record.id !== options?.excludeRecordId && record.statusKey !== "cancelled")
         .map((record) => ({ start: record.startMinute, end: record.endMinute }))
         .sort((a, b) => a.start - b.start);
       const merged: Array<{ start: number; end: number }> = [];
@@ -1702,13 +1711,13 @@ export default function RecordsPageClient() {
   );
 
   const nextFreeCards = useMemo(() => {
-    const fromMinute = nowMinute ?? timelineStartMinute;
+    const fromMinute = nowMinute == null ? timelineStartMinute : Math.ceil(nowMinute / bookingStepMinutes) * bookingStepMinutes;
     return timelineStaff.map((staffItem) => {
       const slots = getFreeSlots(staffItem.id, { fromMinute, durationMinutes: MIN_SLOT_MINUTES });
       const totalFree = slots.reduce((sum, slot) => sum + (slot.end - slot.start), 0);
-      return { staffItem, next: slots[0] ?? null, totalFree };
+      return { staffItem, next: slots[0] ?? null, slots, totalFree };
     });
-  }, [getFreeSlots, nowMinute, timelineStaff, timelineStartMinute]);
+  }, [bookingStepMinutes, getFreeSlots, nowMinute, timelineStaff, timelineStartMinute]);
 
   useEffect(() => {
     if (!formOpen || !form.datetime || !form.datetimeEnd || !form.staffId || form.serviceIds.length === 0) {
@@ -1776,13 +1785,41 @@ export default function RecordsPageClient() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }, []);
 
+  const formCurrentRef = useRef(form);
+  useEffect(() => { formCurrentRef.current = form; }, [form]);
   const closeForm = useCallback(() => {
     if (formSaving) return;
-    if (formOpenedSnapshotRef.current && formOpenedSnapshotRef.current !== JSON.stringify(form)) {
+    if (formOpenedSnapshotRef.current && formOpenedSnapshotRef.current !== JSON.stringify(formCurrentRef.current)) {
       if (!window.confirm("Закрыть форму? Несохранённые изменения будут потеряны.")) return;
     }
     setFormOpen(false);
-  }, [form, formSaving]);
+  }, [formSaving]);
+
+  useEffect(() => {
+    if (!formOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    document.body.style.overflow = "hidden";
+    const viewport = window.visualViewport;
+    const updateViewport = () => {
+      formDialogRef.current?.style.setProperty("--records-visual-height", `${viewport?.height ?? window.innerHeight}px`);
+      formDialogRef.current?.style.setProperty("--records-visual-top", `${viewport?.offsetTop ?? 0}px`);
+    };
+    updateViewport();
+    viewport?.addEventListener("resize", updateViewport);
+    viewport?.addEventListener("scroll", updateViewport);
+    formDialogRef.current?.querySelector<HTMLButtonElement>('[aria-label="Закрыть"]')?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); closeForm(); }
+      if (event.key !== "Tab") return;
+      const controls = [...(formDialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary') ?? [])].filter(element => element.getClientRects().length > 0);
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener("keydown", onKeyDown); viewport?.removeEventListener("resize", updateViewport); viewport?.removeEventListener("scroll", updateViewport); previousFocus?.focus(); };
+  }, [formOpen, closeForm]);
 
   const openCreateForm = useCallback(
     (defaults?: Partial<RecordFormState>) => {
@@ -2838,24 +2875,24 @@ export default function RecordsPageClient() {
 
         {nextFreeCards.length > 0 ? (
           <section className="eco-records-availability" aria-label="Ближайшие свободные окна">
-            {nextFreeCards.map(({ staffItem, next, totalFree }) => (
+            <div className="eco-records-availability-title"><h2>Свободные окна</h2><span>{formatScheduleTitle(scheduleDate)}</span></div>
+            {nextFreeCards.map(({ staffItem, next, slots, totalFree }) => (
               <div key={staffItem.id} className={cx("eco-records-availability-item", next && "is-open")}>
                 <div>
                   <span>Мастер</span>
                   <strong>{staffItem.name}</strong>
-                  {next ? (
-                    <p>
-                      Ближайшее окно: <b>{formatMinute(next.start)}–{formatMinute(next.end)}</b> · свободно {durationLabel(next.end - next.start)}
-                      {totalFree > next.end - next.start ? ` · за день ${durationLabel(totalFree)}` : ""}
-                    </p>
-                  ) : (
-                    <p>Свободных окон сегодня нет</p>
-                  )}
+                  <p>{next ? `Свободно ${durationLabel(totalFree)} · ${slots.length} ${slots.length === 1 ? "интервал" : slots.length < 5 ? "интервала" : "интервалов"}` : "На выбранную дату свободных окон нет"}</p>
                 </div>
                 <EcoButton type="button" size="sm" variant="primary" disabled={!next} onClick={() => next && openQuickCreateFromMinute(staffItem.id, next.start)}>
                   <Plus size={14} />
                   Записать
                 </EcoButton>
+                {slots.length ? <div className="eco-records-day-windows" aria-label={`Свободные интервалы: ${staffItem.name}`}>
+                  {slots.map(slot => <button key={slot.start} type="button" disabled={!canManageRecords} onClick={() => openQuickCreateFromMinute(staffItem.id, slot.start)}>
+                    <strong>{formatMinute(slot.start)}–{formatMinute(slot.end)}</strong><span>{durationLabel(slot.end - slot.start)}</span>
+                  </button>)}
+                  <small>Интервалы по журналу. Точное время проверим для выбранных услуг.</small>
+                </div> : null}
               </div>
             ))}
           </section>
@@ -3409,18 +3446,22 @@ export default function RecordsPageClient() {
       </div>
 
       {formOpen ? (
-        <div className="eco-records-drawer-backdrop" role="dialog" aria-modal="true">
+        <div ref={formDialogRef} className="eco-records-drawer-backdrop" role="dialog" aria-modal="true" aria-labelledby="records-form-title">
           <div className="eco-records-drawer">
             <div className="eco-records-drawer-head">
               <div>
                 <span>{formMode === "create" ? "Новая запись" : "Редактирование"}</span>
-                <strong>{formMode === "create" ? "Создать запись" : "Изменить запись"}</strong>
+                <strong id="records-form-title">{formMode === "create" ? "Создать запись" : "Изменить запись"}</strong>
               </div>
               <button type="button" onClick={closeForm} aria-label="Закрыть">
                 <X size={18} />
               </button>
             </div>
 
+            <nav className="eco-records-form-nav" aria-label="Разделы записи">
+              {[['records-client', 'Клиент'], ['records-services', 'Услуги'], ['records-time', 'Время']].map(([id, label]) => <button key={id} type="button" onClick={() => document.getElementById(id)?.scrollIntoView({ block: "start" })}>{label}</button>)}
+            </nav>
+            <div className="eco-records-form">
             <div className="eco-records-form-summary">
               <span><small>Филиал</small><strong>{companyTitle}</strong></span>
               <span><small>Дата и время</small><strong>{form.datetime ? `${formDate} · ${formStartTime || "—"}–${formEndTime || "—"}` : "Не выбрано"}</strong></span>
@@ -3431,8 +3472,7 @@ export default function RecordsPageClient() {
               </span>
             </div>
 
-            <div className="eco-records-form">
-              <section>
+              <section id="records-client">
                 <SectionTitle icon={<UserRound size={15} />} title="Клиент и автомобиль" />
                 <div className="eco-records-client-field" ref={clientPickerRef}>
                 <label>
@@ -3516,7 +3556,7 @@ export default function RecordsPageClient() {
                 ) : null}
               </section>
 
-              <section>
+              <section id="records-services">
                 <SectionTitle icon={<Wrench size={15} />} title="Что делаем" />
                 {selectedFormServices.length ? <div className="eco-records-selected-services">
                   {selectedFormServices.map((service) => <button key={service.id} type="button" onClick={() => toggleService(String(service.id))}><span>{service.title}</span><small>{durationLabel(Math.round(getServiceDurationSeconds(service) / 60))}</small><X size={13} /></button>)}
@@ -3544,10 +3584,10 @@ export default function RecordsPageClient() {
                 {visibleFormServices.some((service) => service.duration_configured === false || (service.assigned_master_count ?? service.master_membership_ids?.length ?? 0) === 0) ? <p className="eco-records-service-note">Услуги без готовой настройки тоже показаны. Чтобы выбрать отмеченную услугу, задайте ей длительность и назначьте мастера в разделе «Управление → Запись».</p> : null}
               </section>
 
-              <section>
+              <section id="records-time">
                 <SectionTitle icon={<Clock3 size={15} />} title="Когда и у кого" />
                 <div className="eco-records-form-grid">
-                  <label><span>Дата</span><input type="date" value={form.datetime ? formDate : ""} onChange={(event) => {
+                  <label><span>Дата</span><input type="date" value={formDate} onChange={(event) => {
                     const nextStart = replaceDatePart(form.datetime || `${event.target.value}T09:00`, event.target.value);
                     setForm((prev) => ({ ...prev, datetime: nextStart, datetimeEnd: addSecondsToDateTimeLocal(nextStart, prev.manualDuration && prev.datetimeEnd ? (calculateSeanceLengthSeconds(prev.datetime, prev.datetimeEnd) ?? selectedServiceDurationSeconds) : selectedServiceDurationSeconds) }));
                   }} /></label>
@@ -3556,12 +3596,26 @@ export default function RecordsPageClient() {
                     setForm((prev) => ({ ...prev, datetime: nextStart, datetimeEnd: addSecondsToDateTimeLocal(nextStart, prev.manualDuration && prev.datetimeEnd ? (calculateSeanceLengthSeconds(prev.datetime, prev.datetimeEnd) ?? selectedServiceDurationSeconds) : selectedServiceDurationSeconds) }));
                   }} /></label>
                   <label><span>Окончание</span><input type="time" value={formEndTime} onChange={(event) => setForm((prev) => ({ ...prev, datetimeEnd: replaceTimePart(prev.datetimeEnd || prev.datetime, event.target.value, formDate), manualDuration: true }))} /></label>
-                  <label><span>Мастер</span><select value={form.staffId} onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value }))}><option value="">Выберите мастера</option>{eligibleFormMasters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{form.serviceIds.length > 0 && eligibleFormMasters.length === 0 ? <small className="eco-records-warning">Для всех выбранных работ не назначен мастер</small> : null}</label>
+                  <label><span>Мастер</span><select value={form.staffId} onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value }))}><option value="">Любой подходящий мастер</option>{eligibleFormMasters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{form.serviceIds.length > 0 && eligibleFormMasters.length === 0 ? <small className="eco-records-warning">Для всех выбранных работ не назначен мастер</small> : null}</label>
                 </div>
+                <RecordsSlotPicker
+                  localDate={formDate}
+                  serviceIds={selectedFormServices.map(service => service.booking_service_id).filter((id): id is string => Boolean(id))}
+                  masterMembershipId={selectedFormMaster?.membership_id ?? undefined}
+                  durationMinutes={form.manualDuration ? formDurationMinutes || undefined : undefined}
+                  excludeBookingId={formMode === "edit" ? (records.find(record => record.id === editingRecordId)?.booking_id ?? records.find(record => record.id === editingRecordId)?.local_booking_id ?? null) : null}
+                  selectedLocalTime={formStartTime}
+                  onSelect={slot => {
+                    const master = staff.find(item => item.membership_id === slot.master.membershipId);
+                    if (!master) return;
+                    const local = utcInstantToJournalLocal(slot.startsAt, branchTimeZone);
+                    setForm(prev => ({ ...prev, staffId: String(master.id), datetime: local, datetimeEnd: addSecondsToDateTimeLocal(local, slot.durationMinutes * 60), overrideReason: null }));
+                  }}
+                />
                 {form.manualDuration ? <button type="button" className="eco-records-inline-action" onClick={() => setForm((prev) => ({ ...prev, manualDuration: false, datetimeEnd: prev.datetime ? addSecondsToDateTimeLocal(prev.datetime, selectedServiceDurationSeconds) : prev.datetimeEnd }))}>Пересчитать по услугам</button> : null}
                 <div className={cx("eco-records-availability-check", formAvailability.state !== "available" && "is-warning")} aria-live="polite">
                   {formAvailability.state === "loading" ? <Loader2 size={16} className="eco-spin" /> : formAvailability.state === "available" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-                  <div><strong>{formAvailability.message}</strong><p>Окончательная проверка повторится в транзакции при сохранении.</p>
+                  <div><strong>{formAvailability.message}</strong><p>Доступность повторно проверим при сохранении.</p>
                     {canOverrideConflict && formAvailability.state === "unavailable" && (formAvailability.reasonCode === "slot_taken" || formAvailability.reasonCode === "outside_schedule" || formAvailability.reasonCode === "nonstandard_start") ? (
                       <button
                         type="button"
@@ -3603,7 +3657,8 @@ export default function RecordsPageClient() {
               ) : null}
               </details>
 
-              {formError ? <div className="eco-records-form-error">{formError}</div> : null}
+              {formMode === "create" ? <button type="button" className="eco-records-inline-action eco-records-create-order" onClick={() => void handleSubmitRecord(true)} disabled={formSaving}><PackagePlus size={15} /> Создать и открыть заказ-наряд</button> : null}
+              {formError ? <div ref={formErrorRef} className="eco-records-form-error" role="alert" tabIndex={-1}>{formError}</div> : null}
             </div>
 
             <div className="eco-records-drawer-footer">
@@ -3611,12 +3666,6 @@ export default function RecordsPageClient() {
                 {formSaving ? <Loader2 size={15} className="eco-spin" /> : <CheckCircle2 size={15} />}
                 {formMode === "create" ? "Создать запись" : "Сохранить"}
               </EcoButton>
-              {formMode === "create" ? (
-                <EcoButton type="button" onClick={() => void handleSubmitRecord(true)} disabled={formSaving}>
-                  <PackagePlus size={15} />
-                  Создать и открыть заказ-наряд
-                </EcoButton>
-              ) : null}
               <EcoButton type="button" variant="ghost" onClick={closeForm}>
                 Отмена
               </EcoButton>
