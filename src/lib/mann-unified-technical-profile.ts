@@ -93,6 +93,8 @@ export type MannTechnicalCapacity = {
 };
 
 export type MannTechnicalProfileItem = {
+  researchVolumeText?: string;
+  researchResult?: boolean;
   revisionId: string;
   systemCode: string;
   systemLabel: string;

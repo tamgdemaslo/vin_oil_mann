@@ -8,7 +8,6 @@ export type VinLookupCachePayload = {
   openaiError?: string;
 };
 
-const CACHE_TTL_DAYS = Math.min(365, Math.max(1, parseInt(process.env.VIN_LOOKUP_CACHE_DAYS ?? "30", 10) || 30));
 let tableReady: Promise<void> | null = null;
 
 async function ensureVinLookupCacheTable() {
@@ -18,7 +17,8 @@ async function ensureVinLookupCacheTable() {
 }
 
 function getExpiryDate() {
-  return new Date(Date.now() + CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
+  // Keep the legacy non-null column without giving successful knowledge a TTL.
+  return new Date("9999-12-31T00:00:00Z");
 }
 
 function hasUsefulDecoded(decoded: VinDecoded | null | undefined): boolean {
@@ -72,7 +72,6 @@ export async function getVinLookupCache(vin: string): Promise<VinLookupCachePayl
       FROM vin_lookup_cache
       WHERE branch_id = ${branchId}
         AND vin = ${vin}
-        AND expires_at > NOW()
       LIMIT 1
     `;
     const payload = rows[0]?.payload ?? null;
@@ -97,6 +96,6 @@ export async function setVinLookupCache(vin: string, payload: VinLookupCachePayl
         expires_at = EXCLUDED.expires_at
     `;
   } catch (error) {
-    console.warn("[lookup-cache] write failed", error instanceof Error ? error.message : String(error));
+    throw new Error("Не удалось сохранить данные VIN в БД", { cause: error });
   }
 }

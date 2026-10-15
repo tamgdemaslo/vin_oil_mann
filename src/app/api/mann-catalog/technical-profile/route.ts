@@ -1,3 +1,4 @@
+import { addMannResearchCatalogToProfile } from "@/lib/mann-research-catalog";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
@@ -44,9 +45,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const profile = await runWithBranchApiContext(branch.context, () =>
-      getMannUnifiedTechnicalProfile(parsed.data.variantKeys, parsed.data.transmissionType, parsed.data.vehicleContext)
-    );
+    const profile = await runWithBranchApiContext(branch.context, async () => {
+      const profile = await getMannUnifiedTechnicalProfile(parsed.data.variantKeys, parsed.data.transmissionType, parsed.data.vehicleContext);
+      if (!branch.context.organizationId) return profile;
+      return addMannResearchCatalogToProfile({ organizationId: branch.context.organizationId, variantKeys: parsed.data.variantKeys, transmissionType: parsed.data.transmissionType, profile });
+    });
     if (parsed.data.researchMissing) {
       const organizationId = branch.context.organizationId;
       if (!organizationId) return NextResponse.json({ error: "Выберите организацию" }, { status: 403 });

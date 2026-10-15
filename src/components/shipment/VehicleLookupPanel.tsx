@@ -433,10 +433,10 @@ export function TechnicalProfile({
             return <FluidCard
               key={item.revisionId}
               systemCode={item.systemCode as MannFluidSystem}
-              label={item.systemLabel}
+              label={item.researchResult ? MANN_FLUID_LABELS[item.systemCode as MannFluidSystem] : item.systemLabel}
               componentModel={item.componentModel}
               specifications={[...new Set([...item.specifications, ...item.viscosityGrades, ...additions.flatMap(entry => entry.specification.split(/;\s*/))])].filter(value => value.trim())}
-              volumes={[...new Set([...(item.requiresReview ? [] : item.capacities.map(capacityLabel)), ...additions.map(entry => entry.volumeText)])].filter(value => value.trim())}
+              volumes={[...new Set([...(item.researchVolumeText ? [item.researchVolumeText] : item.requiresReview ? [] : item.capacities.map(capacityLabel)), ...additions.map(entry => entry.volumeText)])].filter(value => value.trim())}
               status={confirmed ? "По источнику" : "Требует проверки"}
               tone={confirmed ? "confirmed" : "warning"}
               conditions={conditions}
