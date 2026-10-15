@@ -123,6 +123,7 @@ export type AvitoFeedStats = {
   selected: number;
   included: number;
   outOfStock: number;
+  excludedByPackaging?: number;
   invalid: number;
   warnings: number;
   withdrawals: number;

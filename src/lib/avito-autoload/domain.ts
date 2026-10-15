@@ -6,6 +6,7 @@ import type { AvitoFeedStats, AvitoIssue, AvitoListing, AvitoOilType, AvitoOverr
 
 export const AVITO_CATALOG_VERSION = catalogs.version;
 export const AVITO_MAX_ADS = 50_000;
+export const AVITO_ALLOWED_CANISTER_VOLUMES = ["4 л", "5 л"] as const;
 export const AVITO_TYPE_LABELS: Record<AvitoOilType, string> = { motor: "Моторные масла", transmission: "Трансмиссионные масла" };
 export const AVITO_CONTACT_METHODS = ["По телефону и в сообщениях", "По телефону", "В сообщениях"] as const;
 export const AVITO_DEFAULT_SETTINGS: AvitoSettings = {
@@ -92,6 +93,11 @@ export function avitoStockAllowed(source: AvitoProductSource, volume: string, se
     : source.available > settings.stockBuffer;
 }
 
+/** The export contains retail canisters only; a bulk offer is not a packaged canister. */
+export function avitoPackagingAllowed(source: Pick<AvitoProductSource, "uomName">, volume: string) {
+  return !isLiterSaleUnit(source.uomName) && (AVITO_ALLOWED_CANISTER_VOLUMES as readonly string[]).includes(volume);
+}
+
 export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOverrides, settings: AvitoSettings, adId: string, remote: AvitoRemoteStatus | null = null): AvitoListing {
   settings = normalizeAvitoSettings(settings);
   const inferred = inferAvitoOilType(source);
@@ -159,22 +165,26 @@ export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOv
   if (!photos.length) warning("photos", "Без фотографий: публикация допускается, но объявление будет менее заметным");
   if (allPhotos.length > 10 && overrides.photoIds === undefined) warning("photos", "Будут использованы первые 10 фотографий");
   const stockAllowed = avitoStockAllowed(source, values.volume, settings);
+  const packagingAllowed = avitoPackagingAllowed(source, values.volume);
+  if (!packagingAllowed) warning("packaging", "Выгружаются только канистры 4 и 5 л. Другие объёмы и масло на розлив исключены");
   return {
     source,
     id: source.id, adId, name: source.name, article: source.article, type, enabled: source.avito === true,
     archived: source.archived, available: source.available, sourcePriceCents: source.salePriceCents, sourceUpdatedAt: source.updatedAt,
     overrides, values, photos, allPhotos, issues,
-    included: source.avito === true && !source.archived && stockAllowed && !issues.some((issue) => issue.severity === "error"), remote,
+    included: source.avito === true && !source.archived && packagingAllowed && stockAllowed && !issues.some((issue) => issue.severity === "error"), remote,
   };
 }
 
 export function avitoFeedStats(listings: AvitoListing[], settings: AvitoSettings, previousIds: readonly string[] = []): AvitoFeedStats {
   const selected = listings.filter((listing) => listing.enabled);
-  const eligible = selected.filter((listing) => !listing.archived && avitoStockAllowed(listing.source, listing.values.volume, settings));
+  const packaged = selected.filter((listing) => !listing.archived && avitoPackagingAllowed(listing.source, listing.values.volume));
+  const eligible = packaged.filter((listing) => avitoStockAllowed(listing.source, listing.values.volume, settings));
   const includedIds = new Set(listings.filter((listing) => listing.included).map((listing) => listing.adId));
   return {
     selected: selected.length, included: includedIds.size,
-    outOfStock: selected.filter((listing) => !listing.archived && !avitoStockAllowed(listing.source, listing.values.volume, settings)).length,
+    excludedByPackaging: selected.filter((listing) => !listing.archived && !avitoPackagingAllowed(listing.source, listing.values.volume)).length,
+    outOfStock: packaged.filter((listing) => !avitoStockAllowed(listing.source, listing.values.volume, settings)).length,
     invalid: eligible.filter((listing) => listing.issues.some((issue) => issue.severity === "error")).length,
     warnings: listings.filter((listing) => listing.included && listing.issues.some((issue) => issue.severity === "warning")).length,
     withdrawals: previousIds.filter((id) => !includedIds.has(id)).length,

@@ -21,7 +21,7 @@ export async function serveAvitoFeed(token: string, format: AvitoFeedFormat, hea
           await writeAvitoValue(scope, "snapshot", feed.snapshot);
           await avitoAudit(scope, "feed_fetched", "ok", `Файл ${format.toUpperCase()} выдан по ссылке: ${feed.stats.included} объявлений; пропущено с ошибками: ${feed.stats.invalid}`, { stats: feed.stats, format });
         }
-        return new Response(head ? null : feed[format], { headers: { ...headers, "Content-Type": `${format === "xml" ? "application/xml" : "text/csv"}; charset=utf-8`, "X-Avito-Feed-Format": format, "X-Avito-Feed-Status": "ready", "X-Avito-Skipped-Invalid": String(feed.stats.invalid) } });
+        return new Response(head ? null : feed[format], { headers: { ...headers, "Content-Type": `${format === "xml" ? "application/xml" : "text/csv"}; charset=utf-8`, "X-Avito-Feed-Format": format, "X-Avito-Feed-Status": "ready", "X-Avito-Skipped-Invalid": String(feed.stats.invalid), "X-Avito-Excluded-Packaging": String(feed.stats.excludedByPackaging ?? 0) } });
       } catch (error) {
         // Failed database reads or feed-wide validation must never become an
         // empty file. Individual listing errors are skipped in prepareAvitoFeed.
@@ -34,4 +34,3 @@ export async function serveAvitoFeed(token: string, format: AvitoFeedFormat, hea
     return result ?? failure("AVITO_FEED_NOT_FOUND", "Ссылка недействительна. Скопируйте текущую ссылку в настройках Авито в платформе.", 404);
   } catch { return failure("AVITO_FEED_UNAVAILABLE", "Файл временно недоступен. Повторите позже."); }
 }
-

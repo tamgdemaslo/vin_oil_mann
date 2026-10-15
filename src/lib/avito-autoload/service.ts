@@ -2,7 +2,7 @@ import { gzipSync, gunzipSync } from "node:zlib";
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { prisma } from "@/lib/db";
-import { AVITO_DEFAULT_SETTINGS, AVITO_MAX_ADS, avitoFeedStats, avitoSettingsIssues, avitoStockAllowed, buildAvitoCsv, buildAvitoListing, inferAvitoOilType, avitoListingGroupKey } from "./domain";
+import { AVITO_DEFAULT_SETTINGS, AVITO_MAX_ADS, avitoFeedStats, avitoSettingsIssues, avitoStockAllowed, avitoPackagingAllowed, buildAvitoCsv, buildAvitoListing, inferAvitoOilType, avitoListingGroupKey } from "./domain";
 import { AVITO_CHANNEL, avitoAdId, avitoAudit, avitoScope, decodeAvitoValue, newAvitoFeedToken, readAvitoValue, writeAvitoValue, resolveAvitoProfile, type AvitoSnapshot, type StoredAvitoProfile, type AvitoScope } from "./storage";
 import { avitoBranchAddress } from "./content";
 import { AvitoAutoloadError, avitoOverridesSchema, type avitoCredentialsSaveSchema, type avitoListingSaveSchema, type avitoSelectionSchema, type avitoSettingsSaveSchema } from "./schemas";
@@ -187,7 +187,7 @@ export async function getAvitoWorkspace(options: { branchName: string; canEdit: 
     switch (options.view) {
       case "selected": return listing.enabled;
       case "errors": return invalid;
-      case "ready": return !invalid && !listing.archived;
+      case "ready": return !invalid && !listing.archived && avitoPackagingAllowed(listing.source, listing.values.volume);
       case "published": return ["active", "old"].includes(listing.remote?.status ?? "");
       default: return true;
     }
@@ -272,11 +272,11 @@ export async function prepareAvitoFeed(profile: StoredAvitoProfile, scope: Avito
   if (avitoSettingsIssues(profile.settings).length) throw new AvitoAutoloadError("Исправьте адрес и контактные настройки");
   const [listings, previous] = await Promise.all([loadListings(scope, profile.settings, true), readAvitoValue<AvitoSnapshot>(scope, "snapshot")]);
   const stats = avitoFeedStats(listings, profile.settings, previous?.adIds);
-  // Automatic withdrawal is allowed only for an explicit stock rule or an
+  // Automatic withdrawal is allowed only for explicit packaging/stock rules or an
   // already-reviewed empty snapshot. Changing the selection to zero needs review.
-  const automaticStockWithdrawal = Boolean(automatic && previous && profile.settings.onlyInStock && listings.some((listing) => listing.enabled) && listings.every((listing) => listing.archived || !avitoStockAllowed(listing.source, listing.values.volume, profile.settings)));
-  if (!stats.included && !allowEmpty && !automaticStockWithdrawal && !(automatic && previous?.adIds.length === 0)) {
-    throw new AvitoAutoloadError(previous?.adIds.length ? "Файл станет пустым и снимет прежние объявления. Подтвердите пустую выгрузку" : "Для первой выгрузки нужен хотя бы один товар без ошибок с доступным остатком. Товары с ошибками пропускаются", 422, "AVITO_EMPTY_FEED", { stats });
+  const automaticPolicyWithdrawal = Boolean(automatic && previous && listings.some((listing) => listing.enabled) && listings.every((listing) => listing.archived || !avitoPackagingAllowed(listing.source, listing.values.volume) || !avitoStockAllowed(listing.source, listing.values.volume, profile.settings)));
+  if (!stats.included && !allowEmpty && !automaticPolicyWithdrawal && !(automatic && previous?.adIds.length === 0)) {
+    throw new AvitoAutoloadError(previous?.adIds.length ? "Файл станет пустым и снимет прежние объявления. Подтвердите пустую выгрузку" : "Для первой выгрузки нужна хотя бы одна канистра 4 или 5 л без ошибок с доступным остатком. Товары с ошибками пропускаются", 422, "AVITO_EMPTY_FEED", { stats });
   }
   if (allowEmpty && !previous) throw new AvitoAutoloadError("Для первой выгрузки нужен хотя бы один товар");
   const photoUrl = (id: string) => `${profile.settings.publicBaseUrl}/api/avito-autoload/feeds/${profile.feedToken}/photos/${encodeURIComponent(id)}`;
