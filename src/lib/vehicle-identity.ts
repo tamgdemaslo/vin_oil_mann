@@ -474,7 +474,7 @@ async function cachedTronkCall(params: {
   if (!params.refresh) {
     try {
       const cached = await prisma.vehicleLookupCache.findFirst({
-        where: { organizationId: params.organizationId, inputType: params.inputType, normalizedInputHash: hash, method: params.method, status: "success", expiresAt: { gt: new Date() } },
+        where: { organizationId: params.organizationId, inputType: params.inputType, normalizedInputHash: hash, method: params.method, status: "success" },
         orderBy: { completedAt: "desc" },
       });
       const raw = decryptRaw(cached?.rawResponseEncrypted ?? null);
@@ -506,13 +506,18 @@ async function cachedTronkCall(params: {
       normalizedVehicleJson: Prisma.JsonNull,
       requestedAt: new Date(Date.now() - call.durationMs),
       completedAt: new Date(),
-      expiresAt: new Date(Date.now() + ttlHours * 60 * 60 * 1000),
+      // Successful identities are durable knowledge; only unsuccessful attempts expire.
+      expiresAt: call.ok ? new Date("9999-12-31T00:00:00Z") : new Date(Date.now() + ttlHours * 60 * 60 * 1000),
       errorCode: call.ok ? null : call.code,
       errorMessage: call.ok ? null : call.message,
       providerRequestId: call.ok ? call.providerRequestId : null,
       sourceVersion: "2026-07-21",
     },
-  }).catch(() => null);
+  }).catch((error) => {
+    // A successful paid lookup must not silently lose the acquired knowledge.
+    if (call.ok) throw new Error("Не удалось сохранить найденный автомобиль в БД", { cause: error });
+    return null;
+  });
   return { call, fromCache: false, cacheId: saved?.id ?? null };
 }
 

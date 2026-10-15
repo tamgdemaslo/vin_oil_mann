@@ -33,6 +33,8 @@
     "test:shipment-visit-oil": "node scripts/test-shipment-visit-oil.mjs",
     "test:mann-vehicle-resolver": "node scripts/test-mann-vehicle-resolver.mjs",
     "test:mann-vehicle-matching": "node scripts/run-mann-matching-benchmark.mjs",
+    "test:mann-research-catalog": "node scripts/test-mann-research-catalog.mjs",
+    "test:vehicle-knowledge-persistence": "node scripts/test-vehicle-knowledge-persistence.mjs",
     "test:mann-fluid-matcher-v2": "node scripts/test-mann-fluid-matcher-v2.mjs",
     "score:mann-fluid-review-truth": "node scripts/score-mann-fluid-review-truth.mjs",
     "build:mann-active-review-package": "node scripts/build-mann-active-review-package.mjs",
