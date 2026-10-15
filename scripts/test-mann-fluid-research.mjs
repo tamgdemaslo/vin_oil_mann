@@ -36,7 +36,7 @@ try {
  assert.equal(missingMannFluids(profile).length,MANN_FLUID_SYSTEMS.length,'all aggregates researched, including missing ones');
  const completeProfile={...profile,items:MANN_FLUID_SYSTEMS.map(systemCode=>({systemCode,specifications:['Existing'],capacities:[{nominalLiters:5}]}))};
  assert.equal((await run({...input,profile:completeProfile})).status,'complete');assert.equal(s.calls,0);
- const first=await run(input);assert.equal(first.status,'saved');assert.equal(s.request.model,'gpt-5.6-terra');assert.equal(s.request.tool_choice,'required');assert.equal(s.rows[0].status,'pending_review');assert.equal(s.rows[0].confidence,0);
+ const first=await run(input);assert.equal(first.status,'saved');assert.equal(s.request.model,'gpt-6-luna');assert.equal(s.request.tool_choice,'required');assert.equal(s.rows[0].status,'pending_review');assert.equal(s.rows[0].confidence,0);
  assert.match(s.lock.sql,/SELECT pg_advisory_xact_lock/);assert.deepEqual(s.lock.values,['org1','VIN_FLUID_RESEARCH_V1']);
  assert.equal(s.rows[0].facts.systems.length,3,'group inventory persisted');
  assert.equal(JSON.parse(s.request.input).allSystems.length,3);
@@ -72,5 +72,5 @@ try {
  s=reset();await run(input);s.fail=true;await run({...input,group:'transmission'});assert.equal(s.rows[0].status,'pending_review');assert.equal(s.rows[1].status,'failed');assert.equal(s.rows[1].facts.failure.code,'provider');
  s.fail=false;await run({...input,group:'transmission',retryFailed:true});assert.equal(s.calls,3);await run({...input,retryFailed:true});assert.equal(s.calls,3,'successful group not retried');
  s=reset();s.networkFail=true;const disconnected=await run(input);assert.equal(disconnected.errorCode,'network');assert.equal(s.calls,0);assert.equal(s.rows[0].facts.failure.stage,'connection');assert.equal(JSON.stringify(disconnected).includes('private'),false);
- console.log('PASS Terra model, required web search, cited-source filtering, missing fields only, tenant cache, failure backoff, rate limit, pending-review persistence');
+ console.log('PASS Luna model, required web search, cited-source filtering, missing fields only, tenant cache, failure backoff, rate limit, pending-review persistence');
 }finally{if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;}

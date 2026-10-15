@@ -8,7 +8,7 @@ import type { MannUnifiedTechnicalProfile, MannTransmissionType } from "@/lib/ma
 import type { MannTechnicalVehicleContext } from "@/lib/mann-technical-applicability";
 import { MANN_FLUID_SYSTEMS as systems, MANN_FLUID_GROUPS, type MannFluidGroup } from "@/lib/mann-fluid-systems";
 
-const MODEL = "gpt-5.6-terra";
+const MODEL = "gpt-6-luna";
 const FACT = "VIN_FLUID_RESEARCH_V1";
 // A display label must not discard valid technical evidence from the whole group.
 const sourceTitleSchema = z.string().transform(value => value.length > 300 ? value.slice(0, 299) + "…" : value);
@@ -122,7 +122,7 @@ export async function researchMissingMannFluids(input: { organizationId: string;
     const count = await tx.aIAgentTechnicalEvidence.count({ where: { organizationId: input.organizationId, factType: FACT, createdAt: { gte: new Date(now.getTime() - 3600_000) } } });
     if (count >= 20) return { limited: true };
     const initialSystems = researchSystemStates({ items: [], unresolved: [], systems: [] }, new Set(), [], input.profile);
-    const row = await tx.aIAgentTechnicalEvidence.create({ data: { organizationId: input.organizationId, vehicleKey, aggregate, factType: FACT, vehicleSnapshot: JSON.parse(JSON.stringify(identity)), facts: { group, systems: initialSystems.filter(row => groupSystems.includes(row.systemCode)), items: [], unresolved: [] }, sourceName: MODEL, sourceUrl: "https://developers.openai.com/api/docs/models/gpt-5.6-terra", confidence: 0, status: "researching", validUntil: new Date(now.getTime() + 120_000) } });
+    const row = await tx.aIAgentTechnicalEvidence.create({ data: { organizationId: input.organizationId, vehicleKey, aggregate, factType: FACT, vehicleSnapshot: JSON.parse(JSON.stringify(identity)), facts: { group, systems: initialSystems.filter(row => groupSystems.includes(row.systemCode)), items: [], unresolved: [] }, sourceName: MODEL, sourceUrl: "https://developers.openai.com/api/docs/models/gpt-6-luna", confidence: 0, status: "researching", validUntil: new Date(now.getTime() + 120_000) } });
     return { id: row.id };
   });
   if (claim.previous) {
