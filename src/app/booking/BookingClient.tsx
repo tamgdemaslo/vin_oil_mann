@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isValidBookingCustomerName } from "@/lib/booking/customer-name";
+import { trackClientBookingSuccess } from "@/lib/client-site-analytics";
 import { publicBookingBranchFromSearch } from "@/lib/booking/public-link";
 import type { PublicServiceGroup } from "@/lib/booking/public-service-presentation";
 import BookingRecordCard from "./BookingRecordCard";
@@ -317,7 +318,12 @@ export default function BookingClient() {
     return "";
   }
   function goNext() { const message = validationMessage(); if (message) return setFormError(message); setFormError(""); setStep((current) => Math.min(4, current + 1)); }
-  function applyCreated(data: CreateResult) { setCreated(data); setSubmissionUnknown(false); sessionStorage.removeItem(DRAFT_KEY); }
+  function applyCreated(data: CreateResult) {
+    setCreated(data);
+    setSubmissionUnknown(false);
+    trackClientBookingSuccess(data.booking.id);
+    sessionStorage.removeItem(DRAFT_KEY);
+  }
 
   async function checkOriginalOperation() {
     if (!branchId || !idempotencyKey) return; setSubmitBusy(true); setFormError("");
