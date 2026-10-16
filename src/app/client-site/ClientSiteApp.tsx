@@ -3035,8 +3035,8 @@ function CasePage() {
                 <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.14em', textTransform: 'uppercase'}}>{c.costLabel || 'Итого'}</span>
                 <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: c.cost == null ? 22 : 36, color: '#F5F2ED', textAlign: 'right'}}>{c.cost == null ? 'ПО СОГЛАСОВАНИЮ' : fmtMoney(c.cost)}</span>
               </div>
-              <a href="/booking" className="btn rust" style={{width: '100%', marginTop: 18, justifyContent: 'space-between'}}>
-                Записать свою машину <span className="arr">→</span>
+              <a href={`/booking/transmission-quote?case=${encodeURIComponent(c.id)}`} className="btn rust" style={{width: '100%', marginTop: 18, justifyContent: 'space-between', whiteSpace: 'normal', textAlign: 'left'}}>
+                Рассчитать стоимость замены масла в АКПП <span className="arr" aria-hidden="true">→</span>
               </a>
             </div>
           </aside>

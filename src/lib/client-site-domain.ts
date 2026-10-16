@@ -21,7 +21,7 @@ export function isClientSiteRoot(headers: Pick<Headers, "get">) {
 
 export function clientSitePublicBackend(pathname: string) {
   const origin = process.env.PUBLIC_CLIENT_VIN_ORIGIN;
-  const delegated = ["/api/vin/lookup", "/api/vin/recommendations", "/api/vin/raw-lookup", "/api/public/vin-oil"].includes(pathname)
+  const delegated = ["/api/vin/lookup", "/api/vin/recommendations", "/api/vin/raw-lookup", "/api/public/vin-oil", "/api/public/leads"].includes(pathname)
     || /^\/api\/public\/booking(?:\/|$)/.test(pathname);
   if (!clientSiteOnly() || !origin || !delegated) return null;
   const url = new URL(origin);
@@ -45,7 +45,7 @@ export function isClientSitePublicPath(pathname: string, method: string) {
   if (READ_ONLY.has(method)) {
     if (["/robots.txt", "/sitemap.xml", "/favicon.ico", "/api/health/live", "/api/health/ready", "/api/stats", "/api/services", "/api/cases", "/api/account/demo", "/api/oils", "/api/oils/filters", "/api/appointments/slots"].includes(pathname)) return true;
     if (/^\/api\/(?:oils|cases)\/[^/]+$/.test(pathname)) return true;
-    if (pathname === "/booking" || /^\/booking\/manage\/[^/]+$/.test(pathname)) return true;
+    if (pathname === "/booking" || pathname === "/booking/transmission-quote" || /^\/booking\/manage\/[^/]+$/.test(pathname)) return true;
     if (pathname.startsWith("/_next/static/") || pathname === "/_next/image") return true;
     if (/^\/(?:assets|products|cases|team|brand|fonts|workshop)\/.+\.(?:avif|webp|png|jpe?g|gif|svg|woff2?|mp4|css)$/i.test(pathname)) return true;
   }

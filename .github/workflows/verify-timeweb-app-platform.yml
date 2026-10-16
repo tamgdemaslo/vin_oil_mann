@@ -52,6 +52,9 @@ jobs:
       - name: Verify client domain isolation and SEO
         run: npm run test:client-site-domain && node scripts/test-client-seo.mjs
 
+      - name: Verify transmission quote requests and client attention counts
+        run: node scripts/test-transmission-quote.mjs && node scripts/test-client-case-attention.mjs
+
       - name: Verify AI tool policy
         run: npm run test:ai-tool-loop-policy
 

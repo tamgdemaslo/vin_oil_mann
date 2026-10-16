@@ -547,7 +547,7 @@ export default function CrmPipelineClient({
         } else if (inactive) {
           return false;
         }
-        if (view === "all" && snoozedFuture) return false;
+        if ((view === "all" || view === "calculation_needed") && snoozedFuture) return false;
         if (view === "mine" && deal.responsibleLogin !== userLogin) return false;
         if (view === "overdue" && !deadline.overdue) return false;
         if (view === "noDeadline" && caseDueAt(deal)) return false;
@@ -615,6 +615,7 @@ export default function CrmPipelineClient({
         return;
       }
       setStages(data.stages ?? []);
+      window.dispatchEvent(new Event("eco-client-cases-changed"));
     } finally {
       setLoading(false);
     }
@@ -622,10 +623,18 @@ export default function CrmPipelineClient({
 
   useEffect(() => {
     void loadPipeline();
-  }, [loadPipeline]);
+  }, [loadPipeline, searchParams]);
 
   useEffect(() => {
     const filter = searchParams.get("filter");
+    if (filter === "overdue" || filter === "calculation_needed") {
+      setQuery("");
+      setResponsibleFilter("all");
+      setSourceFilter("all");
+      setStageFilter("all");
+      setLinkFilter("all");
+    }
+    if (filter === "calculation_needed") setView("calculation_needed");
     if (filter === "overdue") setView("overdue");
     if (filter === "today") setView("today");
     if (filter === "check_response") setView("check_response");

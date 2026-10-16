@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getClientCaseAttention } from "@/lib/client-case-attention";
+import { canAccessCrm } from "@/lib/crm-access";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import {
@@ -90,7 +92,15 @@ export async function GET() {
   if (!branchId) return NextResponse.json({ error: "Выберите филиал" }, { status: 409 });
 
   return runWithBranchApiContext(branch.context, async () => {
-    const items = await listClientCaseNotificationsForUser(access.session!.user.login, branchId);
+    const [items, clientCaseAttention] = await Promise.all([
+      listClientCaseNotificationsForUser(access.session!.user.login, branchId),
+      canAccessCrm(access.session!.user.role)
+        ? getClientCaseAttention(branchId).catch(error => {
+          console.warn("[crm-attention]", error);
+          return null;
+        })
+        : Promise.resolve(null),
+    ]);
     // Generating reminders can scan hundreds of CRM cases and send Telegram
     // notifications. Run it at most once per branch/interval and never make
     // every browser tab wait for the same background work.
@@ -99,6 +109,7 @@ export async function GET() {
       config: getCrmNotificationConfig(),
       notifications: items,
       notificationCounts: countsByUrgency(items),
+      clientCaseAttention,
     });
   });
 }

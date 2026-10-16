@@ -26,9 +26,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { MessengerTopbarButton } from "@/components/messenger/MessengerUi";
+import type { ClientCaseAttention } from "@/lib/client-case-attention";
 import { formatServiceTime } from "@/lib/date-time";
 import { loadDashboardClientBundle } from "@/lib/dashboard-client";
 import { safeReadJson } from "@/lib/http-json";
+import { ClientAttentionBadges, ClientAttentionLinks } from "./ClientCaseAttention";
 import { EcoStatusDot } from "./EcoUI";
 
 type PlatformUser = {
@@ -249,6 +251,7 @@ export default function PlatformShell() {
   const [branchSwitching, setBranchSwitching] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [notificationCounts, setNotificationCounts] = useState<NotificationCounts | null>(null);
+  const [clientCaseAttention, setClientCaseAttention] = useState<ClientCaseAttention | null>(null);
   const [deadlineCounts, setDeadlineCounts] = useState<DeadlineNotificationCounts | null>(null);
   const [deadlineToast, setDeadlineToast] = useState<DeadlineNotification | null>(null);
   const [deadlineExpanded, setDeadlineExpanded] = useState(false);
@@ -341,13 +344,15 @@ export default function PlatformShell() {
         cache: "no-store",
         signal: controller.signal,
       });
-      if (!res.ok) return;
+      if (!res.ok) { setClientCaseAttention(null); return; }
       const data = await safeReadJson<{
         notifications?: DeadlineNotification[];
         notificationCounts?: DeadlineNotificationCounts;
+        clientCaseAttention?: ClientCaseAttention | null;
       }>(res);
       const notifications = data?.notifications ?? [];
       setDeadlineCounts(data?.notificationCounts ?? null);
+      setClientCaseAttention(data?.clientCaseAttention ?? null);
       const top = notifications[0] ?? null;
       setDeadlineToast(top);
 
@@ -372,6 +377,7 @@ export default function PlatformShell() {
         body: JSON.stringify({ action: "browser_push", caseId: top.caseId, type: top.type, status: "sent" }),
       }).catch(() => undefined);
     } catch (error) {
+      setClientCaseAttention(null);
       if (!notificationForFailure || (error instanceof DOMException && error.name === "AbortError")) return;
       void fetch("/api/crm/deadline-notifications", {
         method: "POST",
@@ -398,9 +404,11 @@ export default function PlatformShell() {
     refresh();
     const timer = window.setInterval(refresh, 60_000);
     document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("eco-client-cases-changed", refresh);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("eco-client-cases-changed", refresh);
     };
   }, [loadDeadlineNotifications, pathname]);
 
@@ -676,11 +684,13 @@ export default function PlatformShell() {
                     aria-haspopup="menu"
                   >
                     <span>{section.label}</span>
+                    {section.id === "clients" && <ClientAttentionBadges counts={clientCaseAttention} />}
                     <ChevronDown aria-hidden className="eco-icon platform-shell__chevron" />
                   </button>
 
                   {!disabled && (
                     <div className={`platform-shell__dropdown ${open ? "is-open" : ""}`} role="menu" aria-hidden={!open}>
+                      {section.id === "clients" && section.items.some(item => item.href === "/crm" && !item.disabled) && <ClientAttentionLinks counts={clientCaseAttention} onNavigate={() => setOpenSectionId(null)} />}
                       {section.items.map((item) =>
                         item.disabled ? (
                           <div key={item.href} className="platform-shell__dropdown-link is-disabled">
@@ -924,8 +934,9 @@ export default function PlatformShell() {
               const sectionActive = section.items.some((navItem) => isActivePath(pathname, navItem.href));
               return (
                 <details key={section.id} open={sectionActive}>
-                  <summary><Icon aria-hidden className="eco-icon" /><span>{section.label}</span><ChevronDown aria-hidden className="eco-icon platform-shell__chevron" /></summary>
+                  <summary><Icon aria-hidden className="eco-icon" /><span>{section.label}</span>{section.id === "clients" && <ClientAttentionBadges counts={clientCaseAttention} />}<ChevronDown aria-hidden className="eco-icon platform-shell__chevron" /></summary>
                   <div>
+                    {section.id === "clients" && section.items.some(item => item.href === "/crm" && !item.disabled) && <ClientAttentionLinks counts={clientCaseAttention} mobile onNavigate={() => setMobileOpen(false)} />}
                     {section.items.map((navItem) => navItem.disabled ? (
                       <span key={navItem.href} className="platform-shell__mobile-link is-disabled" aria-disabled="true"><strong>{navItem.label}</strong><small>{navItem.disabledReason ?? navItem.description}</small></span>
                     ) : (

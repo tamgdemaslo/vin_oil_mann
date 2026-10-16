@@ -35,7 +35,7 @@ try {
   for (const [path, internal] of [["/", "/client-site"], ["/shop?brand=Eurol", "/client-site/shop?brand=Eurol"], ["/product/test-oil", "/client-site/product/test-oil"]]) {
     assert.equal(proxy(request(path)).headers.get("x-middleware-rewrite"), `https://tamgdemaslo.ru${internal}`);
   }
-  for (const path of ["/booking", "/booking/manage/token", "/robots.txt", "/sitemap.xml", "/api/oils", "/api/public/oils/test/image/photo", "/team/ilya.webp", "/workshop/garage-home.webp", "/brand/logo-wordmark-light.svg", "/fonts/diagnostic/google-fonts.css"]) {
+  for (const path of ["/booking", "/booking/transmission-quote", "/booking/manage/token", "/robots.txt", "/sitemap.xml", "/api/oils", "/api/public/oils/test/image/photo", "/team/ilya.webp", "/workshop/garage-home.webp", "/brand/logo-wordmark-light.svg", "/fonts/diagnostic/google-fonts.css"]) {
     assert.equal(proxy(request(path)).headers.get("x-middleware-next"), "1", `Public route: ${path}`);
   }
   for (const path of ["/api/auth/users", "/api/local-inventory/products", "/api/booking-admin/services", "/api/appointments", "/inventory", "/shipment", "/api/public/unapproved", "/_next/data/build/inventory.json"]) {
@@ -63,6 +63,10 @@ try {
   const rootHtml = renderToString(React.createElement(App, { initialPath: "/shop", initialOils: [oil], basePath: "" }));
   assert.ok(rootHtml.includes('href="/product/test-oil"'));
   assert.ok(!rootHtml.includes('href="/client-site'));
+  const caseHtml = renderToString(React.createElement(App, { initialPath: "/case/toyota-camry-70-u760", basePath: "" }));
+  assert.ok(caseHtml.includes('href="/booking/transmission-quote?case=toyota-camry-70-u760"'), "Case CTA carries its source to the quote form");
+  assert.ok(caseHtml.includes('Рассчитать стоимость замены масла в АКПП'));
+  assert.ok(!caseHtml.includes('Записать свою машину'));
   const crmHtml = renderToString(React.createElement(App, { initialPath: "/shop", initialOils: [oil] }));
   assert.ok(crmHtml.includes('href="/client-site/product/test-oil"'), "CRM rendering remains isolated");
   process.env.APP_ORIGIN = "https://www.tamgdemaslocrm.ru";
@@ -79,7 +83,7 @@ try {
   assert.equal(inProcessBackgroundWorkersEnabled(), false, "Dedicated client app never starts CRM workers");
   process.env.PUBLIC_CLIENT_VIN_ORIGIN = "https://www.tamgdemaslocrm.ru";
   assert.equal(proxy(request("/api/vin/lookup", "preview.twc1.net", "POST")).headers.get("x-middleware-rewrite"), "https://www.tamgdemaslocrm.ru/api/vin/lookup");
-  for (const path of ["/api/public/booking", "/api/public/booking/branches", "/api/public/booking/manage/test/cancel"]) {
+  for (const path of ["/api/public/leads", "/api/public/booking", "/api/public/booking/branches", "/api/public/booking/manage/test/cancel"]) {
     assert.equal(proxy(request(path, "preview.twc1.net", "POST")).headers.get("x-middleware-rewrite"), `https://www.tamgdemaslocrm.ru${path}`, "Booking uses existing CRM signatures and notification integrations");
   }
   assert.equal(proxy(request("/api/public/booking/private/unapproved", "preview.twc1.net", "POST")).status, 404, "Delegation cannot widen the public API whitelist");

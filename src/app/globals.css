@@ -71741,3 +71741,9 @@ select[size="1"]::-ms-expand {
   .eco-records-toolbar select, .eco-records-toolbar input { min-width: 0; max-width: 100%; }
   .eco-records-availability-item.is-open { background: #f4f8f4; }
 }
+
+/* Client work is visible without opening the CRM. */
+.platform-shell__client-attention { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.platform-shell__client-count { display: inline-flex; align-items: center; min-height: 20px; padding: 1px 5px; border-radius: 4px; font-size: 10px; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.platform-shell__client-count.is-overdue { background: #fce7e7; color: #922727; }
+.platform-shell__client-count.is-calculation { background: #fae9dc; color: #873710; }

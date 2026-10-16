@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { resolvePublicStorefront } from "@/lib/public-storefront";
 import { getFirstCrmStage } from "@/lib/crm";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
@@ -14,6 +15,7 @@ import {
 import { normalizePublicVin } from "@/lib/public-oil";
 
 type LeadBody = {
+  intent?: unknown;
   name?: unknown;
   phone?: unknown;
   vin?: unknown;
@@ -101,12 +103,13 @@ export async function POST(request: NextRequest) {
       return publicJson(request, { ok: true }, { status: 202, headers: rateLimitHeaders(rate) });
     }
 
+    const transmissionQuote = body.intent === "transmission_oil_quote";
     const name = text(body.name, 120);
     const phone = text(body.phone, 80);
     const phoneNormalized = normalizePhoneKey(phone);
     const vin = normalizePublicVin(body.vin) || null;
     const vehicle = text(body.vehicle, 200);
-    const service = text(body.service, 200);
+    const service = transmissionQuote ? "Расчёт стоимости замены масла в АКПП" : text(body.service, 200);
     const comment = text(body.comment, 1500);
     const sourcePage = text(body.sourcePage, 500);
     const utm = compactJson(body.utm);
@@ -115,6 +118,12 @@ export async function POST(request: NextRequest) {
 
     if (!phone || !phoneNormalized) {
       return publicJson(request, { error: "Укажите корректный телефон" }, { status: 400, headers: rateLimitHeaders(rate) });
+    }
+    if (transmissionQuote && (!name || name.length < 2 || !vehicle)) {
+      return publicJson(request, { error: "Укажите имя и автомобиль для расчёта" }, { status: 400, headers: rateLimitHeaders(rate) });
+    }
+    if (transmissionQuote && body.vin && (typeof body.vin !== "string" || !/^[A-HJ-NPR-Z0-9]{17}$/i.test(body.vin.trim()))) {
+      return publicJson(request, { error: "VIN должен содержать 17 латинских букв и цифр без I, O и Q" }, { status: 400, headers: rateLimitHeaders(rate) });
     }
     if (!name && !vin && !comment && !service) {
       return publicJson(
@@ -127,7 +136,15 @@ export async function POST(request: NextRequest) {
       return publicJson(request, { error: preferred.error }, { status: 400, headers: rateLimitHeaders(rate) });
     }
 
-    const firstStage = await getFirstCrmStage();
+    const storefront = await resolvePublicStorefront();
+    const configuredBranchId = process.env.PUBLIC_LEAD_BRANCH_ID?.trim();
+    const leadBranch = configuredBranchId
+      ? storefront.branches.find(branch => branch.branchId === configuredBranchId)
+      : storefront.branches[0];
+    if (!leadBranch) {
+      return publicJson(request, { error: "Филиал для заявок не настроен" }, { status: 503, headers: rateLimitHeaders(rate) });
+    }
+    const firstStage = await getFirstCrmStage(leadBranch.branchId);
     if (!firstStage) {
       return publicJson(request, { error: "Не найдены стадии CRM" }, { status: 500, headers: rateLimitHeaders(rate) });
     }
@@ -148,13 +165,16 @@ export async function POST(request: NextRequest) {
 
     const created = await prisma.crmDeal.create({
       data: {
-        title: "Заявка с сайта",
+        branchId: leadBranch.branchId,
+        caseType: transmissionQuote ? "calculation" : "manual",
+        caseStatus: "calculation_needed",
+        title: transmissionQuote ? "Расчёт замены масла в АКПП" : "Заявка с сайта",
         customerName: name,
         phoneNormalized,
         vehicle: vehicle ?? (vin ? `VIN ${vin}` : null),
         source: "client-site",
         clientType: "new_lead",
-        nextAction: "Перезвонить клиенту",
+        nextAction: transmissionQuote ? "Рассчитать стоимость и связаться с клиентом" : "Перезвонить клиенту",
         stageId: firstStage.id,
         responsibleLogin,
         nextContactAt: preferred.date,

@@ -1,0 +1,8 @@
+.shell { max-width: 840px; }
+.panel { border: 1px solid var(--booking-line); background: var(--booking-surface); }
+.actions { display: flex; justify-content: flex-end; padding: 0 30px 28px; }
+.honeypot { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 560px) {
+  .actions { padding: 0 20px 24px; }
+  .actions button { width: 100%; }
+}
