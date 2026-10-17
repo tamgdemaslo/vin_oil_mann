@@ -654,7 +654,7 @@ export default function PlatformShell() {
             <button
               type="button"
               className="platform-shell__mobile-toggle"
-              onClick={() => setMobileOpen((value) => !value)}
+              onClick={() => { setSearchOpen(false); setMobileOpen((value) => !value); }}
               aria-expanded={mobileOpen}
               aria-label={mobileOpen ? "Закрыть навигацию" : "Открыть навигацию"}
             >
@@ -720,6 +720,7 @@ export default function PlatformShell() {
         )}
 
         <div className="platform-shell__actions">
+          {user && <button type="button" className="platform-shell__search-toggle platform-shell__icon-btn" aria-label={searchOpen ? "Закрыть поиск" : "Открыть поиск"} aria-expanded={searchOpen} onClick={() => { setMobileOpen(false); setProfileOpen(false); setBranchMenuOpen(false); if (searchOpen) { setSearchOpen(false); searchInputRef.current?.blur(); } else { setSearchOpen(true); window.requestAnimationFrame(() => searchInputRef.current?.focus()); } }}><Search aria-hidden className="eco-icon" /></button>}
           {loading ? (
             <span className="platform-shell__loading">Загрузка...</span>
           ) : user ? (
@@ -729,6 +730,7 @@ export default function PlatformShell() {
                   <button
                     type="button"
                     className="platform-shell__org-switch-trigger"
+                    aria-label={`Рабочий филиал: ${activeBranchLabel}`}
                     onClick={() => {
                       setOpenSectionId(null);
                       setProfileOpen(false);
@@ -862,6 +864,7 @@ export default function PlatformShell() {
                 <button
                   type="button"
                   className="platform-shell__profile-btn"
+                  aria-label={`Профиль: ${user.name || user.login}`}
                   onClick={() => {
                     setOpenSectionId(null);
                     setBranchMenuOpen(false);
@@ -879,6 +882,7 @@ export default function PlatformShell() {
                 </button>
 
                 <div className={`platform-shell__profile-menu ${profileOpen ? "is-open" : ""}`} role="menu" aria-hidden={!profileOpen}>
+                  <div className="platform-shell__account-summary" role="presentation"><strong>{user.name || user.login}</strong><span>{roleLabel(navigation?.effectiveRole ?? user.role)}</span><small>ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ</small></div>
                   {(navigation?.personalItems ?? []).map((personalItem) => {
                     const Icon = personalItemIcon(personalItem);
                     if (personalItem.action === "logout") {
@@ -911,7 +915,7 @@ export default function PlatformShell() {
         <nav className="platform-shell__mobile-panel" aria-label="Мобильная навигация">
           <div className="platform-shell__mobile-user">
             <span className="platform-shell__avatar">{userInitials(user)}</span>
-            <span><strong>{user.name || user.login}</strong><small>{roleLabel(navigation?.effectiveRole ?? user.role)}</small></span>
+            <span><strong>{user.name || user.login}</strong><small>{roleLabel(navigation?.effectiveRole ?? user.role)}</small><small>ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ</small></span>
           </div>
           {branches.length > 0 && (
             <label className="platform-shell__mobile-branch">
@@ -968,16 +972,12 @@ export default function PlatformShell() {
             <span className="l-meta">{context.label}</span>
             <strong>{context.value}</strong>
           </div>
-          <span className="platform-shell__sub-sep" />
-          <div className={`platform-shell__sub-context ${allBranchesMode ? "is-all-branches" : ""}`}>
-            <span className="l-meta">Филиал:</span>
-            <strong>{activeBranchLabel}</strong>
-          </div>
+          <span className="platform-shell__mobile-branch-label" title={activeBranchLabel}>{activeBranchLabel}</span>
           <div className="grow" />
           {allBranchesMode
             ? <span className="platform-shell__lock-note">Обзор без создания операционных документов.</span>
             : locked && <span className="platform-shell__lock-note">Рабочие разделы откроются после открытия кассовой смены.</span>}
-          <span className="platform-shell__version">internal · live data</span>
+
         </div>
       )}
 
