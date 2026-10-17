@@ -40,6 +40,7 @@ function contextFor(booking: BookingWithDetails, managementUrl?: string | null):
     clientPhone: booking.phone,
     appointmentId: booking.id,
     appointmentAt: booking.startsAt,
+    timezone: booking.branch.timezone,
     car: vehicle ? [vehicle.make, vehicle.model, vehicle.plate].filter(Boolean).join(" · ") : null,
     carMake: vehicle?.make,
     carModel: vehicle?.model,

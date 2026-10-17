@@ -1,7 +1,7 @@
 export const SERVICE_TIME_ZONE =
   process.env.NEXT_PUBLIC_APP_TIMEZONE?.trim() ||
   process.env.APP_TIMEZONE?.trim() ||
-  "Europe/Moscow";
+  "Europe/Kaliningrad";
 
 type DateTimeInput = Date | string | number | null | undefined;
 
@@ -140,33 +140,33 @@ export function toServiceMomentString(value: DateTimeInput = new Date()): string
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}`;
 }
 
-export function formatServiceDate(value: DateTimeInput): string {
+export function formatServiceDate(value: DateTimeInput, timeZone = SERVICE_TIME_ZONE): string {
   const date = dateFromInput(value);
   if (!date) return "—";
   return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: SERVICE_TIME_ZONE,
+    timeZone,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
   }).format(date);
 }
 
-export function formatServiceTime(value: DateTimeInput): string {
+export function formatServiceTime(value: DateTimeInput, timeZone = SERVICE_TIME_ZONE): string {
   const date = dateFromInput(value);
   if (!date) return "—";
   return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: SERVICE_TIME_ZONE,
+    timeZone,
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
   }).format(date);
 }
 
-export function formatServiceDateTime(value: DateTimeInput): string {
+export function formatServiceDateTime(value: DateTimeInput, timeZone = SERVICE_TIME_ZONE): string {
   const date = dateFromInput(value);
   if (!date) return "—";
   return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: SERVICE_TIME_ZONE,
+    timeZone,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

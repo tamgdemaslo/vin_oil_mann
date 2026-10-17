@@ -203,6 +203,7 @@ export type NotificationEventContext = {
   publicPhone?: string | null;
   telegramUsername?: string | null;
   bookingUrl?: string | null;
+  timezone?: string | null;
   branchId?: string | null;
   branchName?: string | null;
   address?: string | null;
@@ -1274,9 +1275,9 @@ export function buildNotificationVariables(input: NotificationEventContext): Rec
     receptionManagerText: stringValue(input.receptionManagerText) || stringValue(payload.receptionManagerText) || settings.receptionManagerText,
     wifiName: stringValue(input.wifiName) || stringValue(payload.wifiName) || settings.wifiName,
     wifiPassword: stringValue(input.wifiPassword) || stringValue(payload.wifiPassword) || settings.wifiPassword,
-    appointmentDate: at ? formatServiceDate(at) : stringValue(input.appointmentDate),
-    appointmentTime: at ? formatServiceTime(at) : stringValue(input.appointmentTime),
-    appointmentDateTime: at ? formatServiceDateTime(at) : [input.appointmentDate, input.appointmentTime].map(stringValue).filter(Boolean).join(" "),
+    appointmentDate: at ? formatServiceDate(at, input.timezone || SERVICE_TIME_ZONE) : stringValue(input.appointmentDate),
+    appointmentTime: at ? formatServiceTime(at, input.timezone || SERVICE_TIME_ZONE) : stringValue(input.appointmentTime),
+    appointmentDateTime: at ? formatServiceDateTime(at, input.timezone || SERVICE_TIME_ZONE) : [input.appointmentDate, input.appointmentTime].map(stringValue).filter(Boolean).join(" "),
     vehicleDisplayName,
     vehicleBrand: stringValue(input.carMake),
     vehicleModel: stringValue(input.carModel),
@@ -2239,7 +2240,7 @@ export async function enqueueClientNotificationEvent(eventType: ClientNotificati
   return results;
 }
 
-export async function processDueClientNotificationJobs(limit = 20) {
+export async function processDueClientNotificationJobs(limit = 20, appointmentId: string | null = null) {
   await ensureClientNotificationsSchema();
   const organizationId = getMessengerOrganizationId();
   const rows = await prisma.$queryRaw<NotificationJobRow[]>`
@@ -2271,6 +2272,7 @@ export async function processDueClientNotificationJobs(limit = 20) {
     FROM notification_jobs
     WHERE organization_id = ${organizationId}
       AND branch_id = ${activeNotificationBranchId()}
+      AND (${appointmentId}::text IS NULL OR appointment_id = ${appointmentId})
       AND (
         (status IN ('scheduled', 'queued') AND scheduled_at <= now())
         OR (status = 'error' AND next_attempt_at IS NOT NULL AND next_attempt_at <= now() AND attempts < 3)
@@ -2570,7 +2572,7 @@ export async function handleAppointmentCreated(input: NotificationEventContext &
   const immediate = await enqueueClientNotificationEvent(eventType, input);
   await cancelAppointmentScheduledNotifications(nullableString(input.appointmentId) ?? "", "Напоминания пересозданы после создания записи").catch(() => 0);
   const reminders = await enqueueClientNotificationEvent("appointment_reminder", input);
-  const processed = await processDueClientNotificationJobs(10);
+  const processed = await processDueClientNotificationJobs(10, nullableString(input.appointmentId));
   return { immediate, reminders, processed };
 }
 
