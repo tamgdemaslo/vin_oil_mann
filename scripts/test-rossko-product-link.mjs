@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createJiti } from "jiti";
-const jiti = createJiti(import.meta.url);
-const { parseRosskoProductLink, rosskoProductFromSearch } = await jiti.import("../src/lib/rossko-product-link.ts");
+import { resolve } from "node:path";
+const jiti = createJiti(import.meta.url, { alias: { "@": resolve(process.cwd(), "src") } });
+const { completeRosskoProductLinkOem, defaultGreenlightSupplier, parseRosskoProductLink, rosskoProductFromSearch } = await jiti.import("../src/lib/rossko-product-link.ts");
 const guid = "NSIN0023147296";
 assert.equal(parseRosskoProductLink(`https://kgd.rossko.ru/product/?sid=private-session&text=${guid}`), guid);
 assert.equal(parseRosskoProductLink(`https://kgd.rossko.ru/product/?sid=x&amp;text=${guid.toLowerCase()}`), guid);
@@ -26,3 +27,34 @@ assert.throws(() => rosskoProductFromSearch({ PartsList: { Part: analogue } }, g
 assert.throws(() => rosskoProductFromSearch({ PartsList: { Part: { ...linked, brand: "" } } }, guid));
 assert.throws(() => rosskoProductFromSearch({ PartsList: { Part: [linked, { ...linked, partnumber: "different" }] } }, guid));
 console.log("ROSSKO product links: parsing, exact identity, singleton/array/crosses, offer prices passed");
+
+const withCrosses = { ...linked, crosses: { Part: [
+  { guid: "NSIN0000000022", partnumber: "15208-65F0A", stocks: { stock: { id: "DO-NOT-IMPORT", price: "300" } } },
+  { guid: "NSIN0000000023", partnumber: "1520865F0A" },
+  { ...linked },
+] } };
+const enriched = rosskoProductFromSearch({ PartsList: { Part: [analogue, withCrosses] } }, guid);
+assert.match(enriched.oemParts, /1520865F0A/);
+assert.ok(!enriched.oemParts.includes("DO-NOT-IMPORT"));
+assert.ok(!enriched.oemParts.includes("OTHER"));
+assert.ok(!enriched.oemParts.includes("811"));
+let calls = 0;
+assert.equal((await completeRosskoProductLinkOem(enriched, async () => { calls++; throw new Error(); })).oemParts, enriched.oemParts);
+assert.equal(calls, 0);
+const fallback = await completeRosskoProductLinkOem(result, async query => {
+  assert.equal(query, linked.partnumber);
+  return { PartsList: { Part: withCrosses } };
+});
+assert.equal(fallback.oemParts, enriched.oemParts);
+assert.equal((await completeRosskoProductLinkOem(result, async () => ({ PartsList: { Part: { ...withCrosses, brand: "OTHER" } } }))).oemParts, "");
+assert.ok((await completeRosskoProductLinkOem(result, async () => ({ PartsList: { Part: analogue } }))).warning);
+assert.ok((await completeRosskoProductLinkOem(result, async () => { throw new Error("timeout"); })).warning);
+assert.ok((await completeRosskoProductLinkOem(result, async () => ({ PartsList: { Part: linked } }))).warning);
+const supplier = { id: "local-supplier", name: 'ООО «Гринлайт»', displayName: "Greenlight" };
+assert.equal(defaultGreenlightSupplier([supplier, { id: "other", name: "Other", displayName: "Other" }])?.id, supplier.id);
+assert.equal(defaultGreenlightSupplier([{ ...supplier, displayName: "", name: "GREEN LIGHT" }])?.id, supplier.id);
+assert.equal(defaultGreenlightSupplier([{ ...supplier, displayName: "", name: "Грин лайт" }])?.id, supplier.id);
+assert.equal(defaultGreenlightSupplier([{ id: "other", name: "Greenlight Logistics", displayName: "" }]), null);
+assert.equal(defaultGreenlightSupplier([supplier, { ...supplier, id: "ambiguous" }]), null);
+assert.equal(defaultGreenlightSupplier([]), null);
+console.log("ROSSKO link OEM: exact-product crosses, deduplication, fallback and failures; Greenlight selection passed");

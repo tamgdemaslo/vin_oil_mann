@@ -1,3 +1,5 @@
+import { mergeProductCrossReferences, productCrossReferenceKey } from "@/lib/product-cross-references";
+
 /** Only the public product identifier is used; session parameters are discarded. */
 export function parseRosskoProductLink(value: unknown): string {
   if (typeof value !== "string" || value.length > 4096) throw new Error("Вставьте ссылку на товар ROSSKO");
@@ -53,5 +55,49 @@ export function rosskoProductFromSearch(data: unknown, guid: string) {
     const count = Number(text(row.count).replace(",", "."));
     return priceText && Number.isFinite(price) && price > 0 && count > 0 ? Math.round(price * 100) : null;
   });
-  return { guid, brand, article, sourceName, purchasePriceCents: prices.find((price) => price != null) ?? null };
+  const additions: string[] = [];
+  const crossQueue: unknown[] = [...matches];
+  const crossSeen = new Set<unknown>();
+  const ownArticleKey = productCrossReferenceKey(article);
+  while (crossQueue.length && crossSeen.size < 2000) {
+    const current = crossQueue.shift();
+    if (!current || crossSeen.has(current)) continue;
+    crossSeen.add(current);
+    const row = record(current);
+    for (const key of ["oem", "OEM", "oemParts"]) {
+      const value = text(row[key]);
+      if (value) additions.push(value);
+    }
+    const crossArticle = text(row.partnumber);
+    if (crossArticle && text(row.guid).toUpperCase() !== guid.toUpperCase() && productCrossReferenceKey(crossArticle) !== ownArticleKey) additions.push(crossArticle);
+    crossQueue.push(...list(record(row.crosses).Part));
+  }
+  return { guid, brand, article, sourceName, purchasePriceCents: prices.find((price) => price != null) ?? null,
+    oemParts: mergeProductCrossReferences("", additions) ?? "" };
+}
+/** An article search can return other brands; still require the linked GUID. */
+export async function completeRosskoProductLinkOem(
+  product: ReturnType<typeof rosskoProductFromSearch>,
+  search: (query: string) => Promise<unknown>,
+) {
+  if (product.oemParts) return { oemParts: product.oemParts, warning: "" };
+  try {
+    const result = rosskoProductFromSearch(await search(product.article), product.guid);
+    if (productCrossReferenceKey(result.article) !== productCrossReferenceKey(product.article) ||
+        result.brand.toLocaleLowerCase("ru-RU") !== product.brand.toLocaleLowerCase("ru-RU")) throw new Error("Product identity changed");
+    return result.oemParts
+      ? { oemParts: result.oemParts, warning: "" }
+      : { oemParts: "", warning: "ROSSKO не вернул OEM Parts. Их можно заполнить отдельно в карточке." };
+  } catch {
+    return { oemParts: "", warning: "Не удалось получить OEM Parts из ROSSKO. Повторите поиск в карточке товара." };
+  }
+}
+
+export function defaultGreenlightSupplier<T extends { id: string; name: string; displayName: string; fullName?: string | null }>(suppliers: T[]): T | null {
+  const normalize = (value: string) => value.normalize("NFKC").toLocaleLowerCase("ru-RU")
+    .replace(/(?:^|\s)(?:ооо|оао|зао|ао|ип|llc|ltd)(?=\s|$)/g, " ").replace(/[^\p{L}\p{N}]/gu, "");
+  const matches = suppliers.filter((supplier) => [supplier.name, supplier.displayName, supplier.fullName ?? ""]
+    .some((name) => ["greenlight", "гринлайт"].includes(normalize(name.replace(/[«»"']/g, " ")))));
+  const unique = [...new Map(matches.map((supplier) => [supplier.id, supplier])).values()];
+  return unique.length === 1 ? unique[0] : null;
 }

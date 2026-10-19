@@ -4,8 +4,9 @@ import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
 import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { rosskoIntegrationError } from "@/lib/rossko-integration";
-import { parseRosskoProductLink, rosskoProductFromSearch } from "@/lib/rossko-product-link";
+import { completeRosskoProductLinkOem, defaultGreenlightSupplier, parseRosskoProductLink, rosskoProductFromSearch } from "@/lib/rossko-product-link";
 import { buildRosskoProductName, recommendedRosskoRetailCents, suggestRosskoProductGroup } from "@/lib/rossko-product-import";
+import { supplierCounterpartyIdentityWhere } from "@/lib/local-inventory-admin";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -27,11 +28,20 @@ export async function POST(request: NextRequest) {
       let product: ReturnType<typeof rosskoProductFromSearch>;
       try { product = rosskoProductFromSearch(data, guid); }
       catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 422 }); }
-      const products = await prisma.localProduct.findMany({
+      const [products, suppliers, oem] = await Promise.all([prisma.localProduct.findMany({
         where: { branchId: branch.context.branchId!, archived: false, entityType: "product", groupPath: { not: null } },
         select: { id: true, name: true, brand: true, article: true, groupPath: true },
         take: 20_000,
-      });
+      }), prisma.localCounterparty.findMany({
+        where: {
+          branchId: branch.context.branchId!, archived: false,
+          AND: [supplierCounterpartyIdentityWhere(), { OR: ["name", "displayName", "fullName"].flatMap((field) =>
+            ["green", "грин"].map((name) => ({ [field]: { contains: name, mode: "insensitive" as const } }))) }],
+        },
+        select: { id: true, name: true, displayName: true, fullName: true },
+        take: 101,
+      }), completeRosskoProductLinkOem(product, (text) => rosskoSearch(cfg, { text, deliveryId: cfg.deliveryId!, addressId: cfg.addressId }))]);
+      const supplier = suppliers.length <= 100 ? defaultGreenlightSupplier(suppliers) : null;
       const salePrice = recommendedRosskoRetailCents(product.purchasePriceCents);
       return NextResponse.json({
         fields: {
@@ -40,9 +50,17 @@ export async function POST(request: NextRequest) {
           rosskoPartNumber: product.article, rosskoBrand: product.brand,
           buyPrice: product.purchasePriceCents == null ? "" : String(product.purchasePriceCents / 100),
           salePrice: salePrice == null ? "" : String(salePrice / 100), uomName: "шт",
+          oemParts: oem.oemParts,
+          supplierCounterpartyId: supplier?.id ?? "",
+          supplierName: supplier ? supplier.displayName || supplier.name : "",
         },
-        message: "Карточка заполнена. Проверьте категорию и цены перед сохранением. OEM, штрихкоды, фото и характеристики API ROSSKO не передаёт — заполните их отдельно." +
-          (product.purchasePriceCents == null ? " Доступная закупочная цена не найдена." : " Розничная цена рассчитана по правилам импорта ROSSKO."),
+        message: [
+          "Карточка заполнена. Проверьте категорию и цены перед сохранением.",
+          oem.oemParts ? "OEM Parts заполнены по кросс-номерам ROSSKO." : oem.warning,
+          supplier ? "Поставщик по умолчанию — Greenlight. Его можно изменить в карточке." : "Не удалось однозначно выбрать Greenlight среди активных поставщиков филиала. Выберите поставщика в карточке.",
+          "Штрихкоды, фото и характеристики заполните отдельно.",
+          product.purchasePriceCents == null ? "Доступная закупочная цена не найдена." : "Розничная цена рассчитана по правилам импорта ROSSKO.",
+        ].join(" "),
       });
     });
   } catch (error) {
