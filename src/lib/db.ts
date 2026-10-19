@@ -3,6 +3,7 @@ import { getRequestTenant, type RequestTenant } from "./request-tenant-store";
 import { configurePrismaPool } from "./prisma-pool-config";
 
 const BRANCH_SCOPED_MODELS = new Set([
+  "ProductKit", "ProductKitItem", "ProductKitStockTarget",
   "LegacyWorkShift", "ShiftRate", "PieceworkRule", "BonusPenalty", "PayrollAdjustment", "PayrollPayment",
   "ChangeLog", "ScheduledWorkingDay", "PayrollGoal", "PayrollAchievementDefinition",
   "PayrollAchievementAward", "EmployeeRecognition", "PayrollTeamGoal", "EmployeeMotivationSettings",

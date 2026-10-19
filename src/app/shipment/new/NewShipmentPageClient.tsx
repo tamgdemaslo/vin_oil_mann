@@ -1,4 +1,7 @@
 "use client";
+import ProductKitsWorkspace from "@/components/products/ProductKitsWorkspace";
+import type { ProductKitView } from "@/lib/product-kits";
+import { mergeKitPositions } from "@/lib/product-kit-calculation";
 
 import { Fragment, useState, useEffect, useCallback, useId, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
@@ -1353,6 +1356,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [applicable, setApplicable] = useState(false);
 
   const [positions, setPositions] = useState<Position[]>([]);
+  const [kitPickerOpen, setKitPickerOpen] = useState(false);
   const [stockByAssortment, setStockByAssortment] = useState<
     Record<string, { quantity: number; reserve?: number; available?: number; slotName?: string; cost?: number }>
   >({});
@@ -2658,6 +2662,28 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     } finally {
       setCreateAgentLoading(false);
     }
+  };
+
+  const addKitToShipment = async (kit: ProductKitView) => {
+    const lines: Position[] = kit.items.map((item) => ({
+      name: item.product.name, quantity: item.quantity, price: item.product.price,
+      discount: 0, discountMode: "percent", discountAmount: 0,
+      assortmentMeta: item.product.meta,
+      cell: item.product.cell, slotName: item.product.slotName,
+      stock: { cost: item.product.cost, quantity: item.product.stockQuantity, reserve: item.product.reserveQuantity, available: item.product.availableQuantity },
+      product: { id: item.product.id, name: item.product.name, uomName: item.product.uomName, groupPath: item.product.groupPath, packageVolume: item.product.packageVolume, volume: item.product.volume },
+    }));
+    setPositions((current) => mergeKitPositions(current, lines));
+    setStockByAssortment((current) => {
+      const next = { ...current };
+      for (const item of kit.items) next[item.product.meta.href] = {
+        quantity: item.product.stockQuantity, reserve: item.product.reserveQuantity,
+        available: item.product.availableQuantity, slotName: item.product.slotName, cost: item.product.cost,
+      };
+      return next;
+    });
+    markDraftDirty();
+    setProductAddNotice(`Добавлен комплект «${kit.name}». Проверьте доступность товаров в позициях отгрузки.`);
   };
 
   const addPosition = (p: Product) => {
@@ -5478,6 +5504,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 <Sparkles className="eco-icon" aria-hidden />
                 {positionAddMode === "mann" ? "Скрыть автоподбор" : "Подбор по автомобилю"}
             </button>
+            <button type="button" className={`eco-shipment-link-btn ${kitPickerOpen ? "is-active" : ""}`} onClick={() => setKitPickerOpen((open) => !open)} aria-expanded={kitPickerOpen} aria-controls="shipment-kit-picker">
+              <Plus className="eco-icon" aria-hidden /> Добавить комплект
+            </button>
             <button type="button" className="eco-shipment-link-btn" onClick={openServiceSearch} title="Добавить услугу, которой нет в каталоге">
               <Plus className="eco-icon" aria-hidden />
               Добавить услугу
@@ -5494,6 +5523,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               Добавить разовый товар
             </button>
           </div>
+          {kitPickerOpen && <div id="shipment-kit-picker" className="eco-card eco-card--padded"><ProductKitsWorkspace mode="picker" storeId={selectedStore?.id} onAdd={addKitToShipment} /></div>}
           {nonstockProductOpen && (
             <section id="shipment-nonstock-product-form" className="eco-nonstock-product-form" aria-labelledby="shipment-nonstock-product-title">
               <header className="eco-nonstock-product-form__head">

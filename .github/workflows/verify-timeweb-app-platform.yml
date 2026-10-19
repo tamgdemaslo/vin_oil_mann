@@ -67,6 +67,9 @@ jobs:
       - name: Verify branch isolation
         run: npm run test:branch-isolation
 
+      - name: Verify product kit calculations and shipment expansion
+        run: npm run test:product-kits
+
       - name: Verify ROSSKO branch consumers
         run: npm run test:ai-assistant-branch-context && npm run test:rossko-api
 

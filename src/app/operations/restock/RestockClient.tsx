@@ -1,4 +1,5 @@
 "use client";
+import KitTabs from "@/components/products/KitTabs";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -1598,6 +1599,7 @@ export default function RestockClient() {
 
   return (
     <div className="eco-restock-page">
+      <KitTabs section="restock" />
       <section className="eco-page-head eco-restock-head">
         <div>
           <div className="eco-page-crumbs">

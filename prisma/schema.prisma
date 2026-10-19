@@ -2515,6 +2515,7 @@ model LocalStore {
   storageAssignments     ProductStorageAssignment[]
   storefrontBranchStores StorefrontBranchStore[]
   bulkOilBarrels         LocalBulkOilBarrel[]
+  kitStockTargets        ProductKitStockTarget[]
 
   @@unique([branchId, id])
   @@index([name])
@@ -2528,6 +2529,7 @@ model LocalProduct {
   id                        String    @id @default(cuid())
   branchId                  String    @default("branch-main") @map("branch_id")
   entityType                String    @default("product") @map("entity_type")
+  kitItems                  ProductKitItem[]
   name                      String
   article                   String?
   code                      String?
@@ -2654,6 +2656,52 @@ model LocalProduct {
   @@index([branchId, barcodeCode128])
   @@index([updatedAt])
   @@map("local_products")
+}
+
+/// Internal virtual sets. Stock and prices always come from the component products.
+model ProductKit {
+  id        String   @id @default(cuid())
+  branchId  String   @map("branch_id")
+  name      String
+  archived  Boolean  @default(false)
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  items     ProductKitItem[]
+  targets   ProductKitStockTarget[]
+
+  @@unique([branchId, id])
+  @@index([branchId, archived, name])
+  @@map("product_kits")
+}
+
+model ProductKitItem {
+  id        String       @id @default(cuid())
+  branchId  String       @map("branch_id")
+  kitId     String       @map("kit_id")
+  productId String       @map("product_id")
+  quantity  Decimal      @db.Decimal(14, 3)
+  position  Int          @default(0)
+  kit       ProductKit   @relation(fields: [branchId, kitId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
+  product   LocalProduct @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([branchId, kitId, productId])
+  @@index([branchId, productId])
+  @@map("product_kit_items")
+}
+
+model ProductKitStockTarget {
+  id       String     @id @default(cuid())
+  branchId String     @map("branch_id")
+  kitId    String     @map("kit_id")
+  storeId  String     @map("store_id")
+  quantity Int        @default(0)
+  kit      ProductKit @relation(fields: [branchId, kitId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
+  store    LocalStore @relation(fields: [branchId, storeId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([branchId, kitId, storeId])
+  @@index([branchId, storeId])
+  @@map("product_kit_stock_targets")
 }
 
 /// One explicitly configured public storefront for a business group. Public

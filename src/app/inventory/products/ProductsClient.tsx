@@ -1,4 +1,5 @@
 "use client";
+import KitTabs from "@/components/products/KitTabs";
 
 import BulkOilBarrelManager from "@/components/receipts/BulkOilBarrelManager";
 
@@ -5459,6 +5460,7 @@ export default function ProductsClient() {
 
   return (
     <div className="eco-products-page">
+      <KitTabs section="catalog" />
       {formOpen && (
         <div className="product-editor-backdrop">
           <section role="dialog" aria-modal="true" className="product-editor-drawer">

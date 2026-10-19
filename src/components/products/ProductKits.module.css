@@ -1,0 +1,75 @@
+.workspace { display: flex; flex-direction: column; gap: 18px; min-width: 0; color: var(--eco-ink-2, #272b2a); }
+.heading, .editorHead, .editorFooter, .detailHead { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.heading { align-items: flex-start; }
+.crumbs, .description, .hint, .detailHead > span { color: var(--eco-ink-3, #525252); font-size: 13px; line-height: 1.6; }
+.crumbs { margin: 0 0 8px; }
+.description { margin: 8px 0 0; max-width: 65ch; }
+.tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--eco-line, #ddd); margin-bottom: 4px; }
+.tabs a { padding: 12px 0; font-size: 14px; color: var(--eco-ink-3, #525252); border-bottom: 2px solid transparent; text-decoration: none; font-weight: 600; }
+.tabs a[aria-current] { color: var(--eco-rust, #914b30); border-bottom-color: currentColor; }
+.tabs a:hover { color: var(--eco-ink-2, #272b2a); }
+.tabs a:focus-visible, .expand:focus-visible, .results button:focus-visible { outline: 2px solid var(--eco-rust, #914b30); outline-offset: 3px; }
+.toolbar { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+.search { position: relative; flex: 1 1 260px; }
+.search > svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--eco-ink-3, #525252); }
+.search input { width: 100%; padding-left: 38px; }
+.field, .nameField { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+.field { flex: 0 1 260px; }
+.check { display: flex; align-items: center; gap: 7px; min-height: 38px; font-size: 13px; }
+.hint { margin: 0; }
+.tableWrap { position: relative; min-width: 0; max-width: 100%; overflow-x: auto; border: 1px solid var(--eco-line, #ddd); border-radius: 8px; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--eco-surface, #fff); }
+.table th { text-align: left; background: var(--eco-bg, #f5f6f5); font-size: 12px; color: var(--eco-ink-3, #525252); font-weight: 600; padding: 12px 16px; white-space: nowrap; }
+.table td { padding: 16px; border-top: 1px solid var(--eco-line, #ddd); vertical-align: top; }
+.table td:first-child { min-width: 220px; }
+.table small, .composition small, .expand small, .results small { display: block; margin-top: 5px; font-size: 12px; line-height: 1.5; color: var(--eco-ink-3, #525252); font-weight: 400; }
+.expand { display: flex; align-items: flex-start; gap: 8px; text-align: left; width: 100%; border: 0; background: transparent; padding: 0; color: inherit; cursor: pointer; }
+.expand svg { flex-shrink: 0; margin-top: 2px; }
+.expand small { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; max-width: 440px; }
+.expand strong { overflow-wrap: anywhere; }
+.availability { display: flex; align-items: flex-start; flex-direction: column; gap: 8px; white-space: nowrap; }
+.numeric { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.actions { display: flex; align-items: center; gap: 8px; }
+.target { display: flex; align-items: center; gap: 8px; }
+.target input { width: 80px; }
+.need { display: flex; flex-direction: column; gap: 6px; min-width: 200px; max-width: 360px; }
+.need span { color: var(--eco-ink-3, #525252); line-height: 1.5; }
+.detail { background: var(--eco-bg, #f5f6f5); }
+.detailHead { margin-bottom: 12px; }
+.detailHead h3 { margin: 0; font-size: 15px; }
+.composition { width: 100%; border-collapse: collapse; }
+.composition th, .composition td { padding: 8px 12px; font-size: 12px; text-align: left; }
+.composition td { border-top: 1px solid var(--eco-line, #ddd); }
+.shortage { color: var(--eco-danger, #a52f25); font-weight: 600; }
+.error { padding: 12px 16px; border-radius: 6px; background: var(--eco-danger-tint, #fff0ed); color: var(--eco-danger, #982e20); display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 13px; }
+.notice { padding: 12px 16px; background: var(--eco-success-tint, #edf5ef); color: var(--eco-success, #296344); border-radius: 6px; margin: 0; font-size: 13px; }
+.loading, .empty { padding: 40px 20px; text-align: center; border: 1px solid var(--eco-line, #ddd); border-radius: 8px; font-size: 14px; }
+.empty svg { margin: 0 auto 12px; color: var(--eco-ink-3, #525252); }
+.empty h2 { font-size: 17px; margin: 0 0 8px; }
+.empty p { margin: 0 0 18px; color: var(--eco-ink-3, #525252); }
+.pagination { display: flex; align-items: center; justify-content: flex-end; gap: 16px; font-size: 13px; }
+.editor { display: flex; flex-direction: column; gap: 22px; background: var(--eco-surface, #fff); border: 1px solid var(--eco-line, #ddd); border-radius: 8px; padding: 24px; }
+.editorHead h2 { margin: 0; font-size: 18px; }
+.nameField { max-width: 640px; }
+.quantity { display: flex; align-items: center; gap: 8px; }
+.quantity input { width: 100px; }
+.emptyComposition { padding: 20px 0; margin: 0; border-block: 1px solid var(--eco-line, #ddd); font-size: 13px; color: var(--eco-ink-3, #525252); }
+.results { max-height: 300px; overflow-y: auto; border: 1px solid var(--eco-line, #ddd); border-radius: 6px; }
+.results button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 20px; background: transparent; border: 0; border-bottom: 1px solid var(--eco-line, #ddd); padding: 12px 16px; text-align: left; cursor: pointer; color: inherit; font-size: 13px; }
+.results button:hover:not(:disabled) { background: var(--eco-bg, #f5f6f5); }
+.results button:disabled { opacity: .65; cursor: default; }
+.results p { padding: 12px 16px; font-size: 13px; }
+.editorFooter { padding-top: 18px; border-top: 1px solid var(--eco-line, #ddd); font-size: 13px; }
+.editorFooter > span { display: flex; gap: 16px; align-items: center; }
+.editorFooter strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.srOnly { position: absolute; left: 0; top: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 640px) {
+  .toolbar { gap: 12px; }
+  .field { flex: 1 1 100%; }
+  .editor { padding: 16px; }
+  .table th, .table td { padding: 12px; }
+  .editorFooter > .actions { width: 100%; flex-wrap: wrap; }
+  .editorFooter > .actions button { flex: 1; }
+  .target { flex-direction: column; align-items: stretch; }
+  .target input { width: 100%; }
+}
