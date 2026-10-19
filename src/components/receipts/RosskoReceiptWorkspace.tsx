@@ -19,6 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput } from "@/components/platform/EcoUI";
+import { normalizeReceiptProductDetails, type RosskoReceiptProductDetails } from "@/lib/rossko-receipt-product";
+import { mergeProductCrossReferences } from "@/lib/product-cross-references";
 import { formatServiceDateTime } from "@/lib/date-time";
 
 type RosskoReceiptAction =
@@ -42,6 +44,7 @@ type RosskoReceiptPreviewLine = {
   brand: string;
   name: string;
   suggestedProductName: string;
+  productDetails: RosskoReceiptProductDetails;
   orderedQty: number;
   alreadyReceivedQty: number;
   manualClosedQty: number;
@@ -629,6 +632,81 @@ export default function RosskoReceiptWorkspace({
   );
 }
 
+// Limit provider lookups when an order contains many new products.
+let activeOemLookups = 0;
+const oemLookupQueue: Array<() => void> = [];
+async function receiptOemLookup(body: { brand: string; article: string }, signal: AbortSignal) {
+  if (activeOemLookups >= 3) await new Promise<void>((resolve) => oemLookupQueue.push(resolve));
+  else activeOemLookups += 1;
+  try {
+    signal.throwIfAborted();
+    return await fetch("/api/products/rossko/oem-preview", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal,
+    });
+  } finally {
+    const next = oemLookupQueue.shift();
+    if (next) next(); else activeOemLookups -= 1;
+  }
+}
+
+function ReceiptProductFields({ line, details, disabled, onChange, onBusy }: {
+  line: RosskoReceiptPreviewLine;
+  details: RosskoReceiptProductDetails;
+  disabled: boolean;
+  onChange: (changes: Partial<RosskoReceiptProductDetails>, oemMode?: "ifEmpty" | "merge") => void;
+  onBusy: (busy: boolean) => void;
+}) {
+  const [oemStatus, setOemStatus] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const brand = details.brand;
+  const article = details.article;
+  const initiallyEmpty = !line.productDetails.oemParts;
+  useEffect(() => {
+    if ((!initiallyEmpty && attempt === 0) || !brand.trim() || !article.trim() || disabled) return;
+    const controller = new AbortController();
+    onBusy(true);
+    const timeout = setTimeout(() => { controller.abort(); onBusy(false); setOemStatus("Поиск OEM Parts занял слишком много времени. Укажите вручную или повторите поиск."); }, 20000);
+    const timer = setTimeout(async () => {
+      setOemStatus("Ищем OEM Parts в ROSSKO…");
+      try {
+        const response = await receiptOemLookup({ brand, article }, controller.signal);
+        const data = await response.json() as { items?: Array<{ oem: string; partNumber: string }>; error?: string };
+        if (!response.ok) throw new Error(data.error || "Поиск недоступен");
+        const oemParts = mergeProductCrossReferences("", (data.items ?? []).flatMap((item) => [item.oem, item.partNumber])) || "";
+        if (!controller.signal.aborted) {
+          if (oemParts) onChange({ oemParts }, attempt > 0 ? "merge" : "ifEmpty");
+          setOemStatus(oemParts ? "OEM Parts получены из ROSSKO. Проверьте номера перед сохранением." : "OEM Parts не найдены — можно указать вручную.");
+        }
+      } catch {
+        if (!controller.signal.aborted) setOemStatus("Не удалось получить OEM Parts. Укажите вручную или повторите поиск.");
+      } finally { clearTimeout(timeout); if (!controller.signal.aborted) onBusy(false); }
+    }, 350);
+    return () => { clearTimeout(timer); clearTimeout(timeout); controller.abort(); onBusy(false); };
+    // onChange uses a functional state update and must not restart the provider request on each keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brand, article, initiallyEmpty, attempt, disabled]);
+  const fields = [
+    ["brand", "Бренд", 100], ["article", "Артикул", 120], ["category", "Категория", 300],
+    ["barcodeEan13", "Штрихкод EAN-13", 13], ["barcodeEan8", "Штрихкод EAN-8", 8],
+    ["barcodeCode128", "Внутренний штрихкод Code 128", 120],
+  ] as const;
+  return <fieldset className="eco-receipt-product-fields" disabled={disabled}>
+    <legend>{line.product ? "Данные карточки товара" : "Данные нового товара"}</legend>
+    <div className="eco-receipt-product-grid">
+      {fields.map(([key, label, maxLength]) => <label key={key}><span>{label}</span>
+        <EcoInput value={details[key]} maxLength={maxLength} aria-label={`${label}: ${line.brand} ${line.article}`} onChange={(event) => onChange({ [key]: event.target.value })} />
+        {key === "barcodeCode128" && <EcoButton type="button" size="sm" onClick={() => onChange({ barcodeCode128: `ECO-${crypto.randomUUID().replaceAll("-", "").slice(0, 20).toUpperCase()}` })}>Присвоить штрихкод</EcoButton>}
+      </label>)}
+      <label><span>Розничная цена, ₽</span><EcoInput type="number" min={0} step="0.01" value={details.salePrice} onChange={(event) => onChange({ salePrice: event.target.value === "" ? 0 : Number(event.target.value) })} /></label>
+      <label className="eco-receipt-product-oem"><span>OEM Parts</span><textarea value={details.oemParts} maxLength={10000} rows={2} aria-label={`OEM Parts: ${line.brand} ${line.article}`} onChange={(event) => onChange({ oemParts: event.target.value })} />
+        <small role="status">{oemStatus || "Номера через запятую, точку с запятой или с новой строки."}</small>
+        <EcoButton type="button" size="sm" onClick={() => setAttempt((current) => current + 1)}>Найти OEM Parts</EcoButton>
+      </label>
+    </div>
+    {line.product && <small>Изменённые поля сохранятся в карточке товара при создании приёмки.</small>}
+  </fieldset>;
+}
+
 function RosskoReceiptEditor({
   orderId,
   onClose,
@@ -646,6 +724,8 @@ function RosskoReceiptEditor({
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [selectedProducts, setSelectedProducts] = useState<Record<string, string>>({});
+  const [oemBusy, setOemBusy] = useState<Record<string, boolean>>({});
+  const [productDetails, setProductDetails] = useState<Record<string, RosskoReceiptProductDetails>>({});
   const [newProductNames, setNewProductNames] = useState<Record<string, string>>({});
   const [pickerLineKey, setPickerLineKey] = useState<string | null>(null);
   const [productSearch, setProductSearch] = useState("");
@@ -665,6 +745,7 @@ function RosskoReceiptEditor({
       setEnabled(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.receiveQty > 0])));
       setQuantities(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.receiveQty])));
       setSelectedProducts({});
+      setProductDetails(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.productDetails])));
       setNewProductNames(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.suggestedProductName])));
       setNotice(noticeAfterRefresh);
     } catch (cause) {
@@ -707,7 +788,7 @@ function RosskoReceiptEditor({
   }
 
   async function createDraft() {
-    if (!preview || saving) return;
+    if (!preview || saving || Object.values(oemBusy).some(Boolean)) return;
     const missingName = preview.lines.find((line) =>
       line.action === "CREATE_PRODUCT" &&
       enabled[line.sourceLineKey] &&
@@ -718,6 +799,11 @@ function RosskoReceiptEditor({
       setError(`Укажите название нового товара для позиции ${missingName.brand} ${missingName.article}.`);
       return;
     }
+    try {
+      for (const line of preview.lines.filter((item) => enabled[item.sourceLineKey] && Number(quantities[item.sourceLineKey]) > 0 && !selectedProducts[item.sourceLineKey])) {
+        normalizeReceiptProductDetails(productDetails[line.sourceLineKey]);
+      }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Проверьте данные товара"); return; }
     const lines = preview.lines
       .filter((line) => enabled[line.sourceLineKey] && Number(quantities[line.sourceLineKey]) > 0)
       .map((line) => ({
@@ -725,6 +811,7 @@ function RosskoReceiptEditor({
         receiveQty: Number(quantities[line.sourceLineKey]),
         selectedProductId: selectedProducts[line.sourceLineKey] || null,
         createProduct: !line.product && line.action !== "AMBIGUOUS_PRODUCT",
+        productDetails: selectedProducts[line.sourceLineKey] ? undefined : productDetails[line.sourceLineKey],
         newProductName: line.action === "CREATE_PRODUCT" ? newProductNames[line.sourceLineKey]?.trim() : undefined,
       }));
     if (!lines.length) {
@@ -836,23 +923,21 @@ function RosskoReceiptEditor({
                             <tr className={line.receiptEligibility === "WAITING_PROVIDER" ? "is-waiting" : line.receiptEligibility === "PROVIDER_CANCELLED" ? "is-cancelled" : blocked ? "is-disabled" : line.warnings.length ? "has-warning" : ""}>
                               <td><input type="checkbox" checked={Boolean(enabled[line.sourceLineKey])} disabled={blocked || needsProduct} onChange={(event) => toggleLine(line, event.target.checked)} aria-label={`Принять ${line.name}`} /></td>
                               <td className="eco-restock-receipt-product">
-                                {line.action === "CREATE_PRODUCT" ? (
+                                {(["CREATE_PRODUCT", "MATCHED_EXISTING"].includes(line.action)) ? (
                                   <label className="eco-restock-receipt-new-name">
-                                    <span>Название новой карточки</span>
-                                    <EcoInput
-                                      value={newProductNames[line.sourceLineKey] ?? ""}
-                                      maxLength={240}
-                                      aria-label={`Название нового товара: ${line.brand} ${line.article}`}
-                                      aria-invalid={invalidNewProductName}
-                                      onChange={(event) => setNewProductNames((current) => ({ ...current, [line.sourceLineKey]: event.target.value }))}
-                                    />
-                                    {invalidNewProductName
-                                      ? <small className="is-error">Укажите название новой карточки</small>
-                                      : <small>ROSSKO: {line.name}</small>}
+                                    <span>{line.product ? "Название карточки" : "Название новой карточки"}</span>
+                                    <EcoInput value={productDetails[line.sourceLineKey]?.name ?? ""} maxLength={240}
+                                      aria-label={`Название товара: ${line.brand} ${line.article}`} aria-invalid={invalidNewProductName}
+                                      disabled={blocked || saving}
+                                      onChange={(event) => {
+                                        const name = event.target.value;
+                                        setNewProductNames((current) => ({ ...current, [line.sourceLineKey]: name }));
+                                        setProductDetails((current) => ({ ...current, [line.sourceLineKey]: { ...current[line.sourceLineKey], name } }));
+                                      }} />
+                                    {invalidNewProductName ? <small className="is-error">Укажите название новой карточки</small> : <small>ROSSKO: {line.name}</small>}
                                   </label>
-                                ) : (
-                                  <><strong>{line.name}</strong><span>{line.brand}</span></>
-                                )}
+                                ) : <><strong>{line.name}</strong><span>{line.brand}</span></>}
+
                               </td>
                               <td className="l-mono">{line.article}</td>
                               <td>{line.rosskoStatusLabel}</td>
@@ -870,6 +955,18 @@ function RosskoReceiptEditor({
                               </td>
                               <td className="l-number">{formatMoney(line.purchasePrice)} ₽</td>
                             </tr>
+                            {["CREATE_PRODUCT", "MATCHED_EXISTING"].includes(line.action) && productDetails[line.sourceLineKey] && (
+                              <tr className="eco-restock-receipt-detail-row"><td /><td colSpan={11}>
+                                <ReceiptProductFields line={line} details={productDetails[line.sourceLineKey]} disabled={blocked || saving || !enabled[line.sourceLineKey]}
+                                  onBusy={(busy) => setOemBusy((current) => ({ ...current, [line.sourceLineKey]: busy }))}
+                                  onChange={(changes, oemMode) => setProductDetails((current) => {
+                                    const details = current[line.sourceLineKey];
+                                    if (oemMode === "ifEmpty" && details.oemParts.trim()) return current;
+                                    if (oemMode === "merge") changes = { ...changes, oemParts: mergeProductCrossReferences(details.oemParts, [changes.oemParts]) || "" };
+                                    return { ...current, [line.sourceLineKey]: { ...details, ...changes } };
+                                  })} />
+                              </td></tr>
+                            )}
                             {(line.warnings.length > 0 || pickerOpen) && (
                               <tr className={`eco-restock-receipt-detail-row is-${line.receiptEligibility.toLocaleLowerCase("ru-RU")}`}><td /><td colSpan={11}>
                                 {line.warnings.map((warning) => <p key={warning}>{line.receiptEligibility === "WAITING_PROVIDER" ? <CalendarClock size={14} /> : line.receiptEligibility === "PROVIDER_CANCELLED" ? <PackageX size={14} /> : <AlertTriangle size={14} />}{warning}</p>)}
@@ -899,7 +996,7 @@ function RosskoReceiptEditor({
           {created ? (
             <><EcoButton type="button" onClick={onClose}>К заказам</EcoButton><Link className="eco-btn eco-btn--primary" href={`/inventory/receipts?document=${encodeURIComponent(created.documentId)}&open=edit`}>Открыть приёмку</Link></>
           ) : (
-            <><div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div><EcoButton type="button" onClick={onClose}>Назад</EcoButton>{error && <EcoButton type="button" onClick={() => void fetchPreview()}><RefreshCw size={15} />{preview ? "Обновить данные" : "Повторить"}</EcoButton>}<EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || nothingReceivable || !selectedLines.length || hasInvalidNewProductName || saving}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать приёмку на {formatNumber(selectedQty)} шт.</EcoButton></>
+            <><div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div><EcoButton type="button" onClick={onClose}>Назад</EcoButton>{error && <EcoButton type="button" onClick={() => void fetchPreview()}><RefreshCw size={15} />{preview ? "Обновить данные" : "Повторить"}</EcoButton>}<EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || nothingReceivable || !selectedLines.length || hasInvalidNewProductName || Object.values(oemBusy).some(Boolean) || saving}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать приёмку на {formatNumber(selectedQty)} шт.</EcoButton></>
           )}
         </footer>
       </section>

@@ -71863,3 +71863,15 @@ select[size="1"]::-ms-expand {
 @media (max-width: 720px) {
   .platform-shell__mobile-toggle, .platform-shell__search-toggle, .platform-shell__notification-btn { width: 44px; height: 44px; min-height: 44px; flex-basis: 44px; }
 }
+
+.eco-receipt-product-fields { margin: 0; padding: 12px 0; border: 0; min-width: 0; max-width: calc(100vw - 120px); }
+.eco-receipt-product-fields legend { font-size: 12px; font-weight: 600; }
+.eco-receipt-product-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; }
+.eco-receipt-product-grid label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.eco-receipt-product-grid label > span { font-size: 12px; font-weight: 600; }
+.eco-receipt-product-grid textarea { width: 100%; padding: 8px; border: 1px solid var(--eco-line-strong); border-radius: 6px; background: var(--eco-surface, #fff); color: inherit; font: inherit; resize: vertical; }
+.eco-receipt-product-grid .eco-btn { align-self: flex-start; }
+.eco-receipt-product-oem { grid-column: 1 / -1; }
+.eco-receipt-product-fields small { display: block; margin-top: 6px; font-size: 12px; }
+
+.eco-restock-receipt-table .eco-receipt-product-fields .eco-input { width: 100%; min-width: 0; text-align: left; }

@@ -5,12 +5,14 @@ import type { BranchContext } from "@/lib/branch-context";
 import { prisma } from "@/lib/db";
 import {
   createLocalStockDocument,
+  updateLocalAdminProduct,
   quickCreateSupplier,
   supplierCounterpartyIdentityWhere,
   type StockDocumentSourceMetadata,
 } from "@/lib/local-inventory-admin";
 import {
   buildRosskoProductName,
+  suggestRosskoProductGroup,
   normalizeRosskoArticle,
   normalizeRosskoBrand,
   recommendedRosskoRetailCents,
@@ -23,6 +25,8 @@ import {
   normalizeRosskoOrderPartStatus,
   type RosskoReceiptEligibility,
 } from "@/lib/rossko-order-status";
+
+import { normalizeReceiptProductDetails, receiptProductChanges, type RosskoReceiptProductDetails } from "@/lib/rossko-receipt-product";
 
 const MAX_RECEIPT_LINES = 240;
 const ROSSKO_SOURCE = "rossko";
@@ -76,6 +80,7 @@ export type RosskoReceiptPreviewLine = {
   brand: string;
   name: string;
   suggestedProductName: string;
+  productDetails: RosskoReceiptProductDetails;
   orderedQty: number;
   alreadyReceivedQty: number;
   manualClosedQty: number;
@@ -136,6 +141,7 @@ export type RosskoReceiptDraftDecision = {
   selectedProductId?: string | null;
   createProduct?: boolean;
   newProductName?: string;
+  productDetails?: RosskoReceiptProductDetails;
 };
 
 export class RosskoReceiptError extends Error {
@@ -582,7 +588,7 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
     findRosskoSupplierCounterparty(tx, branchId),
     tx.localProduct.findMany({
       where: { branchId, archived: false, entityType: "product" },
-      select: { id: true, name: true, article: true, brand: true, rosskoPartNumber: true, rosskoBrand: true, raw: true },
+      select: { id: true, name: true, article: true, brand: true, rosskoPartNumber: true, rosskoBrand: true, raw: true, groupPath: true, oemParts: true, barcodeEan13: true, barcodeEan8: true, barcodeCode128: true, salePriceCents: true },
       take: 20_000,
     }),
     loadReceiptHistory(tx, branchId, order.id, sourceLineKeys),
@@ -644,6 +650,21 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
       brand: part.brand,
       name: part.name,
       suggestedProductName: buildRosskoProductName({ brand: part.brand, article: part.article, sourceName: part.name }),
+      productDetails: (() => {
+        const product = products.find((candidate) => candidate.id === match.product?.id);
+        const source = record(part.raw) ?? {};
+        return {
+          name: product?.name || buildRosskoProductName({ brand: part.brand, article: part.article, sourceName: part.name }),
+          brand: product?.brand || part.brand,
+          article: product?.article || part.article,
+          category: product?.groupPath || suggestRosskoProductGroup(products, part.name),
+          oemParts: product?.oemParts || textAt(source, "oemParts") || textAt(source, "oem"),
+          barcodeEan13: product?.barcodeEan13 || textAt(source, "barcodeEan13"),
+          barcodeEan8: product?.barcodeEan8 || textAt(source, "barcodeEan8"),
+          barcodeCode128: product?.barcodeCode128 || textAt(source, "barcodeCode128"),
+          salePrice: product ? product.salePriceCents / 100 : (recommendedRosskoRetailCents(Math.round(part.price * 100)) ?? 0) / 100,
+        };
+      })(),
       orderedQty,
       alreadyReceivedQty,
       manualClosedQty,
@@ -835,6 +856,11 @@ function receiptSourceStatusChanges(before: NormalizedRosskoOrder, after: Normal
   });
 }
 
+function receiptDetails(value: unknown) {
+  try { return normalizeReceiptProductDetails(value); }
+  catch (error) { throw new RosskoReceiptError(error instanceof Error ? error.message : "Проверьте карточку товара", 422, "INVALID_PRODUCT_DETAILS"); }
+}
+
 function draftFingerprint(storeId: string, decisions: RosskoReceiptDraftDecision[]) {
   const canonical = decisions
     .map((line) => ({
@@ -843,6 +869,7 @@ function draftFingerprint(storeId: string, decisions: RosskoReceiptDraftDecision
       selectedProductId: text(line.selectedProductId) || null,
       createProduct: line.createProduct === true,
       newProductName: line.newProductName === undefined ? null : receiptProductName(line.newProductName),
+      productDetails: line.productDetails === undefined ? null : receiptDetails(line.productDetails),
     }))
     .filter((line) => line.receiveQty > 0)
     .sort((left, right) => left.sourceLineKey.localeCompare(right.sourceLineKey));
@@ -1021,6 +1048,7 @@ export async function createRosskoReceiptDraft(input: {
     for (const { decision, line, receiveQty } of requested) {
       const sourceLine = line!;
       const part = normalizedParts.get(sourceLine.sourceLineKey)!;
+      const details = decision.productDetails === undefined ? undefined : receiptDetails(decision.productDetails);
       const selectedId = text(decision.selectedProductId);
       let productId = selectedId || sourceLine.product?.id || "";
       if (selectedId) {
@@ -1049,13 +1077,17 @@ export async function createRosskoReceiptDraft(input: {
             orderId,
             sourceLineKey: sourceLine.sourceLineKey,
             partGuid: part.guid,
-            brand: part.brand,
-            article: part.article,
+            brand: details?.brand ?? part.brand,
+            article: details?.article ?? part.article,
             name: part.name,
-            nameOverride: newProductName,
-            category: null,
+            nameOverride: details?.name ?? newProductName,
+            category: details?.category ?? null,
+            oemParts: details?.oemParts,
+            barcodeEan13: details?.barcodeEan13,
+            barcodeEan8: details?.barcodeEan8,
+            barcodeCode128: details?.barcodeCode128,
             purchasePriceCents: Math.round(part.price * 100),
-            retailPriceCents: recommendedRosskoRetailCents(Math.round(part.price * 100)),
+            retailPriceCents: details ? Math.round(details.salePrice * 100) : recommendedRosskoRetailCents(Math.round(part.price * 100)),
             supplierCounterpartyId: supplier.id,
             transaction: tx,
           });
@@ -1076,6 +1108,23 @@ export async function createRosskoReceiptDraft(input: {
         matchedProductIds.push(productId);
       }
 
+      // Apply edits and fill missing catalog fields; keep provider source identity unchanged.
+      if (details && !createdProductIds.includes(productId)) {
+        if (selectedId) throw new RosskoReceiptError("Обновите данные после выбора товара из каталога", 409, "PRODUCT_DETAILS_SELECTION_CHANGED");
+        const baseline = sourceLine.productDetails;
+        const current = await tx.localProduct.findFirst({ where: { id: productId, branchId, archived: false }, select: {
+          name: true, brand: true, article: true, groupPath: true, oemParts: true,
+          barcodeEan13: true, barcodeEan8: true, barcodeCode128: true,
+        } });
+        if (!current) throw new RosskoReceiptError("Товар больше недоступен в филиале", 409, "PRODUCT_NOT_FOUND");
+        const stored = { ...current, category: current.groupPath };
+        const changes = receiptProductChanges(details, baseline, stored);
+        if (Object.keys(changes).length) {
+          const { category, ...fields } = changes;
+          const updated = await updateLocalAdminProduct(productId, { ...fields, ...(category === undefined ? {} : { groupPath: String(category) }) }, input.actor, branchId, { transaction: tx });
+          if (!updated.ok) throw new RosskoReceiptError(updated.error, 422, "PRODUCT_UPDATE_FAILED");
+        }
+      }
       documentPositions.push({ productId, quantity: receiveQty, price: part.price });
       sourcePositions.push({
         source: ROSSKO_SOURCE,

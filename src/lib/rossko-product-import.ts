@@ -369,6 +369,10 @@ async function resolveRosskoProductGroup(
     select: { id: true, name: true, brand: true, article: true, groupPath: true },
     take: 20_000,
   });
+  return suggestRosskoProductGroup(products, productName);
+}
+
+export function suggestRosskoProductGroup(products: CatalogIdentityRow[], productName: string) {
   const inferred = inferRosskoFilterType(productName);
   const inferredGroup = categoryByType(products).get(inferred.type)?.trim();
   if (inferredGroup) return inferredGroup;
@@ -550,6 +554,10 @@ export type ResolveOrCreateRosskoLocalProductInput = {
   name: string;
   nameOverride?: string | null;
   category?: string | null;
+  oemParts?: string;
+  barcodeEan13?: string;
+  barcodeEan8?: string;
+  barcodeCode128?: string;
   purchasePriceCents: number;
   retailPriceCents?: number | null;
   supplierCounterpartyId?: string | null;
@@ -603,6 +611,10 @@ export async function resolveOrCreateRosskoLocalProduct(input: ResolveOrCreateRo
       minimumBalance: 0,
       supplierCounterpartyId: input.supplierCounterpartyId || undefined,
       brand,
+      oemParts: input.oemParts,
+      barcodeEan13: input.barcodeEan13,
+      barcodeEan8: input.barcodeEan8,
+      barcodeCode128: input.barcodeCode128,
       rosskoPartNumber: article,
       rosskoBrand: brand,
       markingEnabled: false,

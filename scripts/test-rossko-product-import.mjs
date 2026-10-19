@@ -91,7 +91,7 @@ const [service, inventoryService, oemService, batchService, executeRoute, previe
   readFile("prisma/schema.prisma", "utf8"),
 ]);
 assert.doesNotMatch(service, /rosskoSearch/);
-assert.doesNotMatch(service, /const payload[\s\S]*?oemParts:\s*/);
+assert.match(service, /oemParts: input\.oemParts/, "receipt imports carry reviewed OEM data");
 assert.doesNotMatch(service, /GreenLight|Грин Лайт/);
 assert.match(service, /supplierCounterpartyId:\s*supplier\?\.id/);
 assert.match(service, /id:\s*\{\s*in:\s*supplierIds\s*\}/);
