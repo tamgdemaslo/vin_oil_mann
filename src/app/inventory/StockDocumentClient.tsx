@@ -1115,7 +1115,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     });
   }
 
-  async function saveCellEditor() {
+  async function saveCellEditor(selectedCellId = cellEditor?.selectedCellId) {
     if (!cellEditor || readOnly) return;
     if (!selectedStoreId) {
       setFormError("Выберите склад перед назначением ячейки");
@@ -1126,7 +1126,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       setFormError("Выберите строки для назначения ячейки");
       return;
     }
-    let selected = warehouseCellOptions.find((cell) => cell.cellId === cellEditor.selectedCellId) ?? null;
+    let selected = warehouseCellOptions.find((cell) => cell.cellId === selectedCellId) ?? null;
     const createCode = cleanCell(cellEditor.createName);
     if (!selected && createCode) {
       selected = warehouseCellOptions.find((cell) => cell.slotName.toLocaleLowerCase("ru-RU") === createCode.toLocaleLowerCase("ru-RU")) ?? null;
@@ -1190,9 +1190,6 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       !query || [cell.slotName, cell.name, cell.zone].some((value) => value.toLocaleLowerCase("ru-RU").includes(query))
     );
     const selectedCell = warehouseCellOptions.find((cell) => cell.cellId === cellEditor.selectedCellId) ?? null;
-    const assignmentWillChange = cellEditor.mode === "single" && Boolean(
-      targetPosition?.assignedCellId && selectedCell && targetPosition.assignedCellId !== selectedCell.cellId
-    );
     const previousAssignedCell = targetPosition?.knownCells.find((cell) => cell.cellId === targetPosition.assignedCellId) ?? null;
     const exactExisting = warehouseCellOptions.find((cell) => cell.slotName.toLowerCase() === cleanCell(cellEditor.createName).toLowerCase());
     return (
@@ -1227,7 +1224,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
               type="button"
               className={selectedCell?.cellId === cell.cellId ? "is-active" : ""}
               aria-pressed={selectedCell?.cellId === cell.cellId}
-              onClick={() => setCellEditor({ ...cellEditor, selectedCellId: cell.cellId, createName: "", createLabel: "" })}
+              disabled={!selectedStoreId}
+              onClick={() => void saveCellEditor(cell.cellId)}
             >
               <MapPin size={14} />
               <strong>{cell.slotName}{cell.name ? ` · ${cell.name}` : ""}</strong>
@@ -1259,15 +1257,19 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             <div className="eco-receipt-cell-warning">Такая ячейка уже есть. Будет использована существующая ячейка {exactExisting.slotName}.</div>
           )}
         </details>
-        {assignmentWillChange && (
+        {previousAssignedCell && (
           <div className="eco-receipt-cell-warning">
-            У товара уже назначена ячейка {previousAssignedCell?.slotName}. После проведения она будет заменена на {selectedCell?.slotName} — это станет единственным местом хранения всего остатка на складе.
+            Сейчас назначена ячейка {previousAssignedCell.slotName}. Если выбрать другую, после проведения она станет единственным местом хранения всего остатка товара на складе.
           </div>
         )}
         <p className="eco-receipt-cell-hint">Ячейка применится при проведении приёмки.</p>
         <div className="eco-receipt-cell-actions">
           <button type="button" onClick={() => { setCellEditor(null); cellAnchorRef.current?.focus({ preventScroll: true }); }}>Отмена</button>
-          <button type="button" className="is-primary" disabled={!selectedStoreId || (!cellEditor.selectedCellId && !cleanCell(cellEditor.createName))} onClick={() => void saveCellEditor()}>{assignmentWillChange ? "Изменить ячейку" : "Сохранить"}</button>
+          {cleanCell(cellEditor.createName) && (
+            <button type="button" className="is-primary" disabled={!selectedStoreId} onClick={() => void saveCellEditor()}>
+              {exactExisting ? "Назначить" : "Создать и назначить"}
+            </button>
+          )}
         </div>
       </div>
     );
