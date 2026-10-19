@@ -11,6 +11,7 @@ export default function RosskoProductLinkFields({ disabled, onFill, onLoadingCha
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [existingProduct, setExistingProduct] = useState<{ id: string; name: string } | null>(null);
   const pending = useRef<AbortController | null>(null);
   const latestFill = useRef(onFill);
   useEffect(() => { latestFill.current = onFill; }, [onFill]);
@@ -23,6 +24,7 @@ export default function RosskoProductLinkFields({ disabled, onFill, onLoadingCha
     setLoading(true);
     onLoadingChange(true);
     setError("");
+    setExistingProduct(null);
     setMessage("");
     try {
       const response = await fetch("/api/products/rossko/link", {
@@ -30,8 +32,11 @@ export default function RosskoProductLinkFields({ disabled, onFill, onLoadingCha
         body: JSON.stringify({ url }), signal: controller.signal,
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Не удалось загрузить товар ROSSKO");
       if (controller.signal.aborted) return;
+      if (!response.ok) {
+        if (data.existingProduct?.id) setExistingProduct(data.existingProduct);
+        throw new Error(data.error || "Не удалось загрузить товар ROSSKO");
+      }
       if (latestFill.current(data.fields)) setMessage(data.message);
     } catch (failure) {
       if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Не удалось загрузить товар ROSSKO");
@@ -49,7 +54,7 @@ export default function RosskoProductLinkFields({ disabled, onFill, onLoadingCha
       <label className="product-editor-field">
         <span className="product-editor-label">Ссылка на товар ROSSKO</span>
         <input className="eco-input product-editor-input" type="url" value={url} disabled={loading || disabled}
-          onChange={(event) => { setUrl(event.target.value); setError(""); setMessage(""); }}
+          onChange={(event) => { setUrl(event.target.value); setError(""); setMessage(""); setExistingProduct(null); }}
           onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void load(); } }}
           placeholder="https://kgd.rossko.ru/product/?text=NSIN…" />
       </label>
@@ -57,6 +62,7 @@ export default function RosskoProductLinkFields({ disabled, onFill, onLoadingCha
         {loading ? "Загружаем товар…" : "Заполнить по ссылке"}
       </button>
       {error ? <p className="product-editor-alert is-error" role="alert">{error}</p> : null}
+      {existingProduct ? <a className="eco-btn" href={`/inventory/products?product=${encodeURIComponent(existingProduct.id)}`}>Открыть существующий товар</a> : null}
       {message ? <p className="product-editor-alert" role="status">{message}</p> : null}
     </section>
   );

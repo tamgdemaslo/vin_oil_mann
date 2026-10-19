@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { createLocalAdminProduct, supplierCounterpartyIdentityWhere } from "@/lib/local-inventory-admin";
 import { normalizePartNumberForCrossMatch } from "@/lib/part-number-cross-reference";
 import { rosskoConfig, rosskoOrders } from "@/lib/rossko";
+import { lockRosskoArticleCreation } from "@/lib/rossko-product-duplicate";
 
 const MAX_IMPORT_ROWS = 240;
 const ROSSKO_IMPORT_CONCURRENCY = 1;
@@ -581,6 +582,7 @@ export async function resolveOrCreateRosskoLocalProduct(input: ResolveOrCreateRo
   }
 
   const operation = async (tx: Prisma.TransactionClient) => {
+    await lockRosskoArticleCreation(tx, branchId, article);
     await lockRosskoProductIdentity(tx, branchId, brand, article);
     const duplicate = await duplicateByBrandArticle(tx, branchId, brand, article);
     if (duplicate) {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi } from "@/lib/branch-api";
+import { prisma } from "@/lib/db";
+import { findRosskoArticleDuplicate, lockRosskoArticleCreation, rosskoDuplicateResponse } from "@/lib/rossko-product-duplicate";
 import {
   canManageWarehouseMarking,
   createLocalAdminProduct,
@@ -82,7 +84,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Недостаточно прав для изменения настроек маркировки" }, { status: 403 });
   }
 
-  const result = await createLocalAdminProduct(body as Parameters<typeof createLocalAdminProduct>[0], session.user, branchAccess.context.branchId!);
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+  const input = body as Parameters<typeof createLocalAdminProduct>[0];
+  const branchId = branchAccess.context.branchId!;
+  const result = input.rosskoPartNumber?.trim() && input.entityType !== "service"
+    ? await prisma.$transaction(async (tx) => {
+        const article = input.article?.trim() || input.rosskoPartNumber!.trim();
+        const brand = input.brand?.trim() || input.rosskoBrand?.trim() || "";
+        await lockRosskoArticleCreation(tx, branchId, article);
+        const duplicate = await findRosskoArticleDuplicate(tx, { branchId, article, brand });
+        if (duplicate) return rosskoDuplicateResponse(duplicate);
+        return createLocalAdminProduct(input, session.user, branchId, { transaction: tx });
+      }, { timeout: 20_000 })
+    : await createLocalAdminProduct(input, session.user, branchId);
+  if (!result.ok) return NextResponse.json(result, { status: "existingProduct" in result ? 409 : 400 });
   return NextResponse.json(result.product);
 }

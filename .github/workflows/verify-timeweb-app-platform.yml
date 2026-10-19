@@ -71,7 +71,7 @@ jobs:
         run: npm run test:product-kits
 
       - name: Verify ROSSKO branch consumers
-        run: npm run test:ai-assistant-branch-context && npm run test:rossko-api
+        run: npm run test:ai-assistant-branch-context && npm run test:rossko-api && npm run test:rossko-product-link
 
       - name: Verify barrel scanner formats
         run: npm run test:barrel-marking-input
