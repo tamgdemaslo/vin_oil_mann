@@ -18,6 +18,7 @@
     "test:rossko-api": "node scripts/test-rossko-api-2-1-contract.mjs",
     "test:rossko-errors": "node scripts/test-rossko-error-classification.mjs",
     "test:rossko-product-import": "node scripts/test-rossko-product-import.mjs",
+    "test:rossko-product-link": "node scripts/test-rossko-product-link.mjs",
     "test:product-oem-catalog": "node scripts/test-product-oem-catalog.mjs",
     "test:product-history": "node scripts/test-product-document-history.mjs",
     "test:rossko-receipt": "node scripts/test-rossko-receipt.mjs && node scripts/test-rossko-receipt-product.mjs",

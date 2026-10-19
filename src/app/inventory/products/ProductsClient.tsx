@@ -43,6 +43,7 @@ import ProductCopyToBranchDialog from "@/components/products/ProductCopyToBranch
 import ProductHistoryPanel from "@/components/products/ProductHistoryPanel";
 import ProductOemBatchPanel from "@/components/products/ProductOemBatchPanel";
 import RosskoProductImportDialog from "@/components/products/RosskoProductImportDialog";
+import RosskoProductLinkFields from "@/components/products/RosskoProductLinkFields";
 import CreatableSearchCombobox from "@/components/products/CreatableSearchCombobox";
 import CreatableMultiCombobox from "@/components/products/CreatableMultiCombobox";
 import PriceLabelPrintDialog from "@/components/receipts/PriceLabelPrintDialog";
@@ -1779,6 +1780,7 @@ export default function ProductsClient() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeProduct, setActiveProduct] = useState<ProductRow | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
+  const [rosskoLinkLoading, setRosskoLinkLoading] = useState(false);
   const [formBaseline, setFormBaseline] = useState<ProductForm>(emptyForm);
   const [markingTouched, setMarkingTouched] = useState(false);
   const [formErrors, setFormErrors] = useState<ProductFormErrors>({});
@@ -4076,6 +4078,7 @@ export default function ProductsClient() {
   }
 
   async function submit(closeAfter = false) {
+    if (rosskoLinkLoading) return;
     const validation = validateProductForm(form);
     if (Object.keys(validation).length) {
       setFormErrors(validation);
@@ -5058,7 +5061,7 @@ export default function ProductsClient() {
         <button
           type="button"
           onClick={() => void submit(false)}
-          disabled={saving || !formDirty}
+          disabled={saving || rosskoLinkLoading || !formDirty}
           className="eco-btn eco-btn--primary"
         >
           {saving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Save aria-hidden className="eco-icon" />}
@@ -5067,7 +5070,7 @@ export default function ProductsClient() {
         <button
           type="button"
           onClick={() => void submit(true)}
-          disabled={saving || !formDirty}
+          disabled={saving || rosskoLinkLoading || !formDirty}
           className="eco-btn"
         >
           Сохранить и закрыть
@@ -5576,6 +5579,18 @@ export default function ProductsClient() {
 
               <div className={`product-editor-workspace is-${mobileEditorView}-view`}>
                 <div className="product-editor-main-flow">
+                  {!editingId ? <RosskoProductLinkFields disabled={saving} onLoadingChange={setRosskoLinkLoading} onFill={(fields) => {
+                    if (formDirty && !window.confirm("Заменить заполненные поля новой карточки данными из ссылки ROSSKO?")) return false;
+                    const next = { ...emptyForm };
+                    for (const key of productFormKeys) {
+                      if (typeof fields[key] === "string") next[key] = fields[key];
+                    }
+                    setForm(next);
+                    setFormErrors({});
+                    setFormError(null);
+                    setMarkingTouched(false);
+                    return true;
+                  }} /> : null}
                   <section id={productEditorSectionElementId("main")} className="product-editor-section product-editor-main-card">
                     <div className="product-editor-section-head">
                       <div>
