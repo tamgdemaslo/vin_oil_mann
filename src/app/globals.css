@@ -1,6 +1,35 @@
 @import url("/fonts/diagnostic/google-fonts.css");
 @import "tailwindcss";
 
+/* Receipt unknown barcode resolution uses the document's existing control styles. */
+.eco-receipt-barcode-resolver {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid #d9d6cc;
+  border-radius: 8px;
+  background: #fffdf7;
+}
+.eco-receipt-barcode-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.eco-receipt-barcode-head h4 { margin: 0; color: #292723; font-size: 15px; font-weight: 700; }
+.eco-receipt-barcode-head p, .eco-receipt-barcode-note { margin: 5px 0 0; color: #625b4e; font-size: 13px; line-height: 1.5; }
+.eco-receipt-barcode-value { width: fit-content; max-width: 100%; overflow-wrap: anywhere; padding: 5px 9px; background: #f0ede3; border-radius: 4px; color: #3a3328; font-size: 15px; }
+.eco-receipt-barcode-options { max-height: 240px; overflow: auto; border: 1px solid #ddd9cf; border-radius: 6px; background: #fff; }
+.eco-receipt-barcode-options button { display: grid; gap: 4px; width: 100%; border: 0; border-bottom: 1px solid #eeece6; padding: 12px; text-align: left; background: transparent; cursor: pointer; color: #282a26; }
+.eco-receipt-barcode-options button:last-child { border-bottom: 0; }
+.eco-receipt-barcode-options button:hover { background: #f4f3ee; }
+.eco-receipt-barcode-options button:focus-visible { outline: 2px solid #9b5433; outline-offset: -2px; }
+.eco-receipt-barcode-options strong, .eco-receipt-barcode-selected strong { font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.eco-receipt-barcode-options span, .eco-receipt-barcode-selected span { display: block; color: #62665d; font-size: 12px; line-height: 1.5; }
+.eco-receipt-barcode-selected { display: flex; align-items: flex-start; gap: 10px; border: 1px solid #d2ddce; border-radius: 6px; padding: 12px; color: #294b2d; background: #f4f8f1; }
+.eco-receipt-barcode-selected svg { flex: 0 0 auto; margin-top: 2px; }
+.eco-receipt-barcode-resolver > .eco-btn { justify-self: start; white-space: normal; }
+@media (max-width: 600px) {
+  .eco-receipt-barcode-resolver { padding: 14px; }
+  .eco-receipt-barcode-resolver > .eco-btn { width: 100%; justify-content: center; }
+}
+
 :root {
   --background: #fbfcff;
   --foreground: #2b3134;

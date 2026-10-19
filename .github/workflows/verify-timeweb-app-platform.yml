@@ -76,6 +76,9 @@ jobs:
       - name: Verify barrel scanner formats
         run: npm run test:barrel-marking-input
 
+      - name: Verify receipt barcode lookup and binding
+        run: npm run test:receipt-barcode
+
       - name: TypeScript check
         run: npx tsc --noEmit
 

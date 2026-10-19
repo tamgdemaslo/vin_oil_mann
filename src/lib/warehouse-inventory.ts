@@ -5,6 +5,7 @@ import type { User } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { calculateWeightedAverageCostCents, requireBalanceAverageCost } from "@/lib/inventory-costing";
 import { lockInventoryCostKeys } from "@/lib/inventory-costing-db";
+import { lockProductBarcodeBinding } from "@/lib/product-barcode-binding";
 
 export const INVENTORY_CATEGORIES = [
   "Моторное масло на разлив",
@@ -2426,6 +2427,7 @@ export async function bindInventoryBarcode(
     const session = await tx.inventorySession.findUnique({ where: { id: sessionId } });
     if (!session) return { ok: false as const, error: "Инвентаризация не найдена", status: 404 };
     if (!COUNTABLE_STATUSES.includes(session.status)) return { ok: false as const, error: "Привязка штрихкода сейчас недоступна" };
+    await lockProductBarcodeBinding(tx, session.branchId, productId, barcode);
     const product = await tx.localProduct.findFirst({ where: { id: productId, branchId: session.branchId } });
     if (!product) return { ok: false as const, error: "Товар не найден", status: 404 };
     const conflict = await tx.localProduct.findFirst({

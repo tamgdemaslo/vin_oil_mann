@@ -44,6 +44,8 @@ import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/
 import { formatServiceDate, formatServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 import PriceLabelPrintDialog from "@/components/receipts/PriceLabelPrintDialog";
 import RosskoReceiptWorkspace from "@/components/receipts/RosskoReceiptWorkspace";
+import ReceiptBarcodeResolver from "@/components/receipts/ReceiptBarcodeResolver";
+import { isProductBarcodeSearch } from "@/lib/product-barcode-input";
 
 type StockDocumentType = "receipt" | "writeoff";
 type StockDocumentStatus = "draft" | "posted" | "cancelled" | "needs_review" | "blocked";
@@ -57,7 +59,7 @@ const DOCUMENT_PAGE_SIZE = 30;
 
 type StoreOption = { id: string; name: string; isMain?: boolean };
 type CounterpartyOption = { id: string; name: string; phone?: string; legalTitle?: string; inn?: string };
-type ProductOption = {
+export type ProductOption = {
   markingMode?: string;
   id: string;
   name: string;
@@ -407,6 +409,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [productQuantities, setProductQuantities] = useState<Record<string, number>>({});
   const [productsSearching, setProductsSearching] = useState(false);
   const [productsError, setProductsError] = useState<string | null>(null);
+  const [productsQuery, setProductsQuery] = useState("");
+  const [unknownBarcode, setUnknownBarcode] = useState("");
+  const [barcodeLookup, setBarcodeLookup] = useState(false);
+  const [barcodeBinding, setBarcodeBinding] = useState(false);
+  const barcodeScanPending = useRef(false);
   const [positions, setPositions] = useState<Position[]>([]);
   const [selectedPositionIds, setSelectedPositionIds] = useState<string[]>([]);
   const [cellEditor, setCellEditor] = useState<CellEditorState | null>(null);
@@ -506,7 +513,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     position.availableKnown && Number(position.quantity) > Number(position.available) + 0.000001
   ));
   const reasonOptions = adjustmentType === "technical" ? technicalAdjustmentReasons : expenseWriteoffReasons;
-  const canSaveDraft = !readOnly && positions.length > 0 && !hasInvalidQty && !savingAction;
+  const canSaveDraft = !readOnly && positions.length > 0 && !hasInvalidQty && !savingAction && !barcodeLookup && !barcodeBinding;
   const canConduct = canSaveDraft && Boolean(selectedStoreId) && !hasInvalidReceiptPrice && !barrelReceiptError && (isReceipt || Boolean(adjustmentReason)) && !hasKnownWriteoffOverAvailable;
   const footerHelper = (() => {
     if (readOnly) return `${editingDocument ? statusMeta(editingDocument).label : "Документ"} открыт только для просмотра. Для нового движения используйте копию или корректировку.`;
@@ -527,6 +534,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   })();
 
   function resetDocumentForm() {
+    setUnknownBarcode("");
+    setProductsQuery("");
     const today = todayInput();
     setPositions([]);
     setSelectedPositionIds([]);
@@ -556,6 +565,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   }
 
   function closeDocumentForm() {
+    if (barcodeLookup || barcodeBinding) return;
     resetDocumentForm();
     setFormOpen(false);
   }
@@ -874,6 +884,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         });
         const data = await readJson<{ products?: ProductOption[]; error?: string }>(res);
         if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить товары");
+        if (controller.signal.aborted) return;
+        setProductsQuery(query);
         setProducts((Array.isArray(data?.products) ? data.products : []).filter((p) => p.entityType !== "service"));
       } catch (e) {
         if (!(e instanceof DOMException && e.name === "AbortError")) {
@@ -1010,6 +1022,46 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       return next;
     });
     setNewProductOpen(false);
+    setUnknownBarcode("");
+  }
+
+  function resolveUnknownBarcode(barcode: string) {
+    setUnknownBarcode(barcode);
+    setProductSearch("");
+    setProducts([]);
+    setProductsQuery("");
+    setNewProductOpen(false);
+  }
+
+  function focusReceiptScanner() {
+    window.requestAnimationFrame(() => document.getElementById("receipt-product-search")?.focus());
+  }
+
+  async function scanReceiptBarcode(barcode: string) {
+    if (readOnly || savingAction || barcodeScanPending.current || barcodeBinding) return;
+    barcodeScanPending.current = true;
+    setBarcodeLookup(true);
+    setProductsError(null);
+    setInfo(null);
+    try {
+      const response = await fetch(`/api/local-inventory/products/barcode?${new URLSearchParams({ barcode })}`, { cache: "no-store" });
+      const data = await response.json().catch(() => ({ error: "Не удалось проверить штрихкод. Повторите попытку." }));
+      if (!response.ok) throw new Error(data.error || "Не удалось найти штрихкод");
+      if (data.status === "FOUND" && data.product) {
+        addProduct(data.product, 1);
+        setInfo(`Добавлено 1 шт.: ${data.product.name}`);
+        focusReceiptScanner();
+      } else if (data.status === "NOT_FOUND") {
+        resolveUnknownBarcode(barcode);
+      } else {
+        throw new Error(`Штрихкод привязан к нескольким товарам: ${(data.products ?? []).map((product: ProductOption) => product.name).join(", ")}`);
+      }
+    } catch (failure) {
+      setProductsError(failure instanceof Error ? failure.message : "Не удалось найти штрихкод");
+    } finally {
+      barcodeScanPending.current = false;
+      setBarcodeLookup(false);
+    }
   }
 
   function updatePosition(localId: string, patch: Partial<Position>) {
@@ -1968,7 +2020,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                     <Printer size={15} /> Ценники
                   </EcoButton>
                 )}
-                <button type="button" className="eco-icon-btn eco-receipt-close" onClick={closeDocumentForm} aria-label="Закрыть">
+                <button type="button" className="eco-icon-btn eco-receipt-close" onClick={closeDocumentForm} disabled={barcodeLookup || barcodeBinding} aria-label="Закрыть">
                   <X size={18} />
                 </button>
               </div>
@@ -2241,18 +2293,32 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                   <div className="eco-receipt-product-search">
                     <Search size={18} />
                     <input
+                      id="receipt-product-search"
+                      aria-label="Поиск товара или сканирование штрихкода"
                       value={productSearch}
-                      onChange={(event) => setProductSearch(event.target.value)}
+                      onChange={(event) => { setProductSearch(event.target.value); setProducts([]); setProductsQuery(""); setProductsError(null); setProductsSearching(event.target.value.trim().length >= 2); }}
                       onKeyDown={(event) => {
-                        if (event.key === "Enter" && products[0]) {
+                        if (event.key === "Enter") {
                           event.preventDefault();
-                          addProduct(products[0], isReceipt ? productSearchQuantity(products[0].id) : 1);
+                          const query = event.currentTarget.value.trim();
+                          const freshProduct = productsQuery === query ? products[0] : null;
+                          if (isReceipt && isProductBarcodeSearch(query) && (/^\d{8,14}$/.test(query) || /^ECO-/i.test(query) || !freshProduct)) {
+                            void scanReceiptBarcode(query);
+                          } else if (freshProduct) {
+                            addProduct(freshProduct, isReceipt ? productSearchQuantity(freshProduct.id) : 1);
+                          }
                         }
                       }}
                       placeholder="Поиск по названию, артикулу, коду, OEM или штрихкоду…"
-                      disabled={readOnly}
+                      disabled={readOnly || barcodeLookup || barcodeBinding || Boolean(unknownBarcode)}
                     />
                   </div>
+                  {barcodeLookup ? <p className="eco-receipt-result-hint" role="status"><Loader2 size={15} className="animate-spin" />Проверяем штрихкод…</p> : null}
+                  {isReceipt && unknownBarcode && !readOnly ? <ReceiptBarcodeResolver
+                    key={unknownBarcode} barcode={unknownBarcode} onBusyChange={setBarcodeBinding}
+                    onCancel={() => { setUnknownBarcode(""); focusReceiptScanner(); }}
+                    onAdded={(product) => { addProduct(product, 1); setInfo(`Штрихкод ${unknownBarcode} сохранён. Добавлено 1 шт.: ${product.name}`); focusReceiptScanner(); }}
+                  /> : null}
 
                   {(productSearch.trim().length >= 2 || products.length > 0 || productsSearching || productsError) && !readOnly && (
                     <div className="eco-receipt-product-results">
@@ -2328,9 +2394,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                         </div>
                         );
                       })}
-                      {!productsSearching && products.length === 0 && productSearch.trim().length >= 2 && (
+                      {!productsSearching && !productsError && !barcodeLookup && productsQuery === productSearch.trim() && products.length === 0 && productSearch.trim().length >= 2 && (
                         <div className="eco-receipt-empty-result">
                           <strong>Товар не найден</strong>
+                          {isReceipt && isProductBarcodeSearch(productSearch) ? <button type="button" onClick={() => resolveUnknownBarcode(productSearch.trim())}><Plus size={14} />Привязать штрихкод к товару</button> : null}
                           <button type="button" onClick={() => {
                             setNewProductOpen(true);
                             setNewProduct((prev) => ({ ...prev, name: productSearch }));
@@ -2705,7 +2772,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                   </>
                 ) : (
                   <>
-                    <EcoButton type="button" onClick={closeDocumentForm}>Отмена</EcoButton>
+                    <EcoButton type="button" onClick={closeDocumentForm} disabled={barcodeLookup || barcodeBinding}>Отмена</EcoButton>
                     {editingDocument?.id && isReceipt && isDraftDocument(editingDocument) && (
                       <EcoButton type="button" variant="danger" onClick={() => setReceiptDialog({ type: "delete-draft", document: editingDocument, invoiceAction: "keep" })}>
                         <Trash2 size={15} /> Удалить
