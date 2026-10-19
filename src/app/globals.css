@@ -24372,27 +24372,63 @@ select.eco-input::-ms-expand,
   opacity: 0.52;
 }
 
-.eco-receipt-cell-editor-host {
-  margin: -4px 0 12px;
-}
-
-.eco-receipt-cell-popover {
-  z-index: 2;
-  display: grid;
-  gap: 10px;
-  width: min(100%, 460px);
-  padding: 12px;
+.eco-receipt-cell-anchor {
+  position: fixed;
+  z-index: 1200;
+  width: min(360px, calc(100vw - 24px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--eco-surface);
   border: 1px solid var(--eco-line-strong);
   border-radius: 6px;
   box-shadow: var(--eco-shadow-md);
 }
 
-.eco-receipt-bulk-cells .eco-receipt-cell-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: 380px;
+.eco-receipt-cell-popover {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.eco-receipt-cell-hint {
+  margin: 0;
+  color: var(--eco-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.eco-receipt-cell-context {
+  margin: 0;
+  color: var(--eco-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.eco-receipt-cell-new summary {
+  cursor: pointer;
+  color: var(--eco-rust);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.eco-receipt-cell-new[open] > label { margin-top: 10px; }
+
+.eco-receipt-cell-anchor :is(button, summary):focus-visible,
+.eco-receipt-cell-create input:focus-visible,
+.eco-receipt-cell-search:focus-within {
+  outline: 2px solid var(--eco-rust);
+  outline-offset: 2px;
+}
+
+.eco-receipt-cell-actions button:disabled { opacity: .5; cursor: not-allowed; }
+
+.eco-receipt-cell-anchor .eco-receipt-cell-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding-top: 8px;
+  background: var(--eco-surface);
+  box-shadow: 0 -6px 8px var(--eco-surface);
 }
 
 .eco-receipt-cell-popover-head {

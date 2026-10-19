@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -44,6 +44,7 @@ import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/
 import { formatServiceDate, formatServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 import PriceLabelPrintDialog from "@/components/receipts/PriceLabelPrintDialog";
 import RosskoReceiptWorkspace from "@/components/receipts/RosskoReceiptWorkspace";
+import ReceiptCellPopover from "@/components/receipts/ReceiptCellPopover";
 import ReceiptBarcodeResolver from "@/components/receipts/ReceiptBarcodeResolver";
 import { isProductBarcodeSearch } from "@/lib/product-barcode-input";
 
@@ -416,7 +417,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const barcodeScanPending = useRef(false);
   const [positions, setPositions] = useState<Position[]>([]);
   const [selectedPositionIds, setSelectedPositionIds] = useState<string[]>([]);
+  const cellAnchorRef = useRef<HTMLButtonElement | null>(null);
   const [cellEditor, setCellEditor] = useState<CellEditorState | null>(null);
+  const dismissCellEditor = useCallback(() => setCellEditor(null), []);
   const [warehouseCellOptions, setWarehouseCellOptions] = useState<StorageCellOption[]>([]);
   const [warehouseCellsLoading, setWarehouseCellsLoading] = useState(false);
 
@@ -1085,9 +1088,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     ));
   }
 
-  function openCellEditor(position: Position) {
+  function openCellEditor(position: Position, anchor: HTMLButtonElement) {
     if (readOnly) return;
     setFormError(null);
+    cellAnchorRef.current = anchor;
     setCellEditor({
       mode: "single",
       localId: position.localId,
@@ -1098,9 +1102,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     });
   }
 
-  function openBulkCellEditor() {
+  function openBulkCellEditor(anchor: HTMLButtonElement) {
     if (readOnly || selectedPositionIds.length === 0) return;
     setFormError(null);
+    cellAnchorRef.current = anchor;
     setCellEditor({
       mode: "bulk",
       selectedCellId: "",
@@ -1173,11 +1178,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         };
       })
     );
-    setInfo(targetIds.length > 1
-      ? `Ячейка ${nextCell} выбрана для ${targetIds.length} строк. Фактическое место изменится при проведении приёмки.`
-      : `Ячейка ${nextCell} выбрана. Фактическое место изменится при проведении приёмки.`);
     setFormError(null);
     setCellEditor(null);
+    cellAnchorRef.current?.focus({ preventScroll: true });
   }
 
   function renderCellEditor(targetPosition?: Position) {
@@ -1196,10 +1199,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       <div className="eco-receipt-cell-popover" role="dialog" aria-label="Назначение ячейки">
         <div className="eco-receipt-cell-popover-head">
           <strong>{cellEditor.mode === "bulk" ? "Назначить ячейку строкам" : "Ячейка позиции"}</strong>
-          <button type="button" onClick={() => setCellEditor(null)} aria-label="Закрыть выбор ячейки">
+          <button type="button" onClick={() => { setCellEditor(null); cellAnchorRef.current?.focus({ preventScroll: true }); }} aria-label="Закрыть выбор ячейки">
             <X size={14} />
           </button>
         </div>
+        {targetPosition && <p className="eco-receipt-cell-context">{targetPosition.name}</p>}
         {!selectedStoreId && (
           <div className="eco-receipt-cell-warning">Сначала выберите склад документа.</div>
         )}
@@ -1209,6 +1213,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             value={cellEditor.search}
             onChange={(event) => setCellEditor({ ...cellEditor, search: event.target.value })}
             placeholder="Поиск по ячейкам склада"
+            aria-label="Поиск по ячейкам склада"
           />
         </label>
         <div className="eco-receipt-cell-options">
@@ -1221,6 +1226,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
               key={cell.cellId}
               type="button"
               className={selectedCell?.cellId === cell.cellId ? "is-active" : ""}
+              aria-pressed={selectedCell?.cellId === cell.cellId}
               onClick={() => setCellEditor({ ...cellEditor, selectedCellId: cell.cellId, createName: "", createLabel: "" })}
             >
               <MapPin size={14} />
@@ -1229,36 +1235,39 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             </button>
           ))}
         </div>
-        <label className="eco-receipt-cell-create">
-          <span>Создать новую ячейку · код</span>
-          <input
-            value={cellEditor.createName}
-            onChange={(event) => setCellEditor({ ...cellEditor, createName: event.target.value, selectedCellId: "" })}
-            placeholder="Например A-12"
-          />
-        </label>
-        {cellEditor.createName ? (
+        <details className="eco-receipt-cell-new">
+          <summary>Создать новую ячейку</summary>
           <label className="eco-receipt-cell-create">
-            <span>Название / зона</span>
+            <span>Код ячейки</span>
             <input
-              value={cellEditor.createLabel}
-              onChange={(event) => setCellEditor({ ...cellEditor, createLabel: event.target.value })}
-              placeholder="Например Масляные фильтры"
+              value={cellEditor.createName}
+              onChange={(event) => setCellEditor({ ...cellEditor, createName: event.target.value, selectedCellId: "" })}
+              placeholder="Например A-12"
             />
           </label>
-        ) : null}
-        {exactExisting && cellEditor.createName && (
-          <div className="eco-receipt-cell-warning">Такая ячейка уже есть. Будет использована существующая ячейка {exactExisting.slotName}.</div>
-        )}
+          {cellEditor.createName ? (
+            <label className="eco-receipt-cell-create">
+              <span>Название / зона</span>
+              <input
+                value={cellEditor.createLabel}
+                onChange={(event) => setCellEditor({ ...cellEditor, createLabel: event.target.value })}
+                placeholder="Например Масляные фильтры"
+              />
+            </label>
+          ) : null}
+          {exactExisting && cellEditor.createName && (
+            <div className="eco-receipt-cell-warning">Такая ячейка уже есть. Будет использована существующая ячейка {exactExisting.slotName}.</div>
+          )}
+        </details>
         {assignmentWillChange && (
           <div className="eco-receipt-cell-warning">
             У товара уже назначена ячейка {previousAssignedCell?.slotName}. После проведения она будет заменена на {selectedCell?.slotName} — это станет единственным местом хранения всего остатка на складе.
           </div>
         )}
-        <div className="eco-receipt-cell-warning">До проведения документа выбранная ячейка остаётся только планом приёмки.</div>
+        <p className="eco-receipt-cell-hint">Ячейка применится при проведении приёмки.</p>
         <div className="eco-receipt-cell-actions">
-          <button type="button" onClick={() => setCellEditor(null)}>Отмена</button>
-          <button type="button" className="is-primary" onClick={() => void saveCellEditor()}>{assignmentWillChange ? "Изменить ячейку" : "Сохранить"}</button>
+          <button type="button" onClick={() => { setCellEditor(null); cellAnchorRef.current?.focus({ preventScroll: true }); }}>Отмена</button>
+          <button type="button" className="is-primary" disabled={!selectedStoreId || (!cellEditor.selectedCellId && !cleanCell(cellEditor.createName))} onClick={() => void saveCellEditor()}>{assignmentWillChange ? "Изменить ячейку" : "Сохранить"}</button>
         </div>
       </div>
     );
@@ -2450,7 +2459,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                   <div className="eco-receipt-section-head">
                     <div>
                       <span>{isReceipt ? "Позиции приёмки" : "Позиции корректировки"}</span>
-                      <h3>{positions.length ? `${positions.length} строк` : "Позиции ещё не добавлены"}</h3>
+                      <h3>{positions.length ? `${positions.length} ${new Intl.PluralRules("ru").select(positions.length) === "one" ? "строка" : new Intl.PluralRules("ru").select(positions.length) === "few" ? "строки" : "строк"}` : "Позиции ещё не добавлены"}</h3>
                     </div>
                     {isReceipt && positions.length > 0 && !readOnly && (
                       <div className="eco-receipt-bulk-cells">
@@ -2458,18 +2467,17 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                           {selectedPositionIds.length === positions.length ? <CheckSquare2 size={14} /> : <Square size={14} />}
                           {selectedPositionIds.length || "Выбрать"}
                         </button>
-                        <button type="button" onClick={openBulkCellEditor} disabled={selectedPositionIds.length === 0}>
+                        <button type="button" onClick={(event) => openBulkCellEditor(event.currentTarget)} aria-haspopup="dialog" aria-expanded={cellEditor?.mode === "bulk"} disabled={selectedPositionIds.length === 0}>
                           <MapPin size={14} />
                           Назначить ячейку
                         </button>
-                        {cellEditor?.mode === "bulk" && renderCellEditor()}
                       </div>
                     )}
                   </div>
-                  {cellEditor?.mode === "single" && (
-                    <div className="eco-receipt-cell-editor-host">
+                  {cellEditor && cellAnchorRef.current && (
+                    <ReceiptCellPopover anchor={cellAnchorRef.current} onClose={dismissCellEditor}>
                       {renderCellEditor(positions.find((position) => position.localId === cellEditor.localId))}
-                    </div>
+                    </ReceiptCellPopover>
                   )}
 
                   <div className={`eco-receipt-position-table${isReceipt ? " is-receipt" : ""}${hasBulkOilReceipt ? " has-barrel-receipt" : ""}`}>
@@ -2574,7 +2582,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                 <button
                                   type="button"
                                   className={`eco-receipt-cell-pill is-${issue}`}
-                                  onClick={() => openCellEditor(position)}
+                                  onClick={(event) => openCellEditor(position, event.currentTarget)}
+                                  aria-haspopup="dialog"
+                                  aria-expanded={cellEditor?.mode === "single" && cellEditor.localId === position.localId}
+                                  aria-label={`Ячейка: ${position.slotName || "не указана"}. ${position.name}`}
                                   disabled={readOnly || !isReceipt}
                                   title={issue === "wrong-store" ? `Ячейка ${position.slotName} относится к другому складу` : "Назначить или изменить ячейку"}
                                 >
@@ -2653,7 +2664,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                             <button
                               type="button"
                               className={`eco-receipt-cell-pill is-${cellIssue(position)}`}
-                              onClick={() => openCellEditor(position)}
+                              onClick={(event) => openCellEditor(position, event.currentTarget)}
+                                  aria-haspopup="dialog"
+                                  aria-expanded={cellEditor?.mode === "single" && cellEditor.localId === position.localId}
+                                  aria-label={`Ячейка: ${position.slotName || "не указана"}. ${position.name}`}
                               disabled={readOnly}
                             >
                               <MapPin size={13} />
