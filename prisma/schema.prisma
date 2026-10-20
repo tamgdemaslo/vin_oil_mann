@@ -89,6 +89,7 @@ model Branch {
   clientVehicles         ClientVehicle[]
   bookings               Booking[]
   bookingServiceItems    BookingServiceItem[]
+  customerReturnStates   CustomerReturnState[]
   salesPlans             BranchSalesPlan[]
   storefrontBranches     StorefrontBranch[]
   storefrontBindings     StorefrontProductBinding[]
@@ -731,6 +732,24 @@ model CustomerAnalyticsSettings {
   @@id([branchId, id])
   @@index([branchId])
   @@map("customer_analytics_settings")
+}
+
+/// Shared daily draft/skip state; optimistic version prevents lost updates.
+model CustomerReturnState {
+  branchId         String   @map("branch_id")
+  branch           Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  serviceDate      String   @map("service_date") @db.VarChar(10)
+  clientKey        String   @map("client_key") @db.VarChar(400)
+  draftText        String?  @map("draft_text") @db.Text
+  draftFingerprint String?  @map("draft_fingerprint") @db.Text
+  skipped          Boolean  @default(false)
+  version          Int      @default(1)
+  updatedByLogin   String   @map("updated_by_login")
+  updatedByName    String   @map("updated_by_name")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([branchId, serviceDate, clientKey])
+  @@map("customer_return_states")
 }
 
 model VinLookupCache {

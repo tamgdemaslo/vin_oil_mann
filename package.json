@@ -25,6 +25,8 @@
     "test:rossko-receipt": "node scripts/test-rossko-receipt.mjs && node scripts/test-rossko-receipt-product.mjs",
     "test:rossko-incoming": "node scripts/test-rossko-incoming.mjs",
     "test:oil-search": "node scripts/test-oil-search.mjs",
+    "test:customer-return": "node scripts/test-customer-return-candidates.mjs && node scripts/test-customer-return-state-route.mjs",
+    "test:customer-return-db": "node scripts/test-customer-return-state-db.mjs",
     "test:client-oil-metadata": "node scripts/test-client-oil-metadata.mjs",
     "test:storefront-publication": "node scripts/test-storefront-publication.mjs",
     "test:storefront-publication-db": "node scripts/test-storefront-publication-db.mjs",

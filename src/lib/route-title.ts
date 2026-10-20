@@ -86,6 +86,7 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/management", title: () => `Управление | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/cabinet", title: () => `Мой профиль | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/cabinet/shifts", title: () => `Зарплата | Финансы` },
+  { match: (pathname) => pathname === "/cabinet/customer-return", title: () => `Кого вернуть сегодня | Кабинет` },
   { match: (pathname) => pathname === "/cabinet/customer-analytics", title: () => `Аналитика клиентов | Кабинет` },
   { match: (pathname) => pathname === "/cabinet/integrations", title: () => `Интеграции | Кабинет` },
   { match: (pathname) => pathname === "/cabinet/integrations/messenger", title: () => `Каналы связи | Управление` },

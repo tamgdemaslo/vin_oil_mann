@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import CustomerReturnQueue from "./CustomerReturnQueue";
+import type { ReturnCandidate } from "@/lib/customer-return-candidates";
 import {
   BarChart3,
   BellPlus,
@@ -64,6 +66,7 @@ type ClientRow = {
   lastVisitGlobal: string | null;
   lastDemandId: string | null;
   lastDemandName: string | null;
+  lastVisitServices?: string[];
   lastServiceId: string | null;
   lastServiceName: string | null;
   primaryServiceId: string | null;
@@ -123,6 +126,8 @@ type QuickFilter =
   | null;
 
 type Payload = {
+  branchId: string;
+  returnCandidates?: ReturnCandidate[];
   generatedAt: string;
   dateFrom: string | null;
   dateTo: string | null;
@@ -203,7 +208,7 @@ type SortField =
   | "avgRevenuePerVisitCents"
   | "daysSinceLastVisit"
   | "segment";
-type AnalyticsTab = "overview" | "clients" | "sleeping" | "duplicates" | "services";
+type AnalyticsTab = "returns" | "overview" | "clients" | "sleeping" | "duplicates" | "services";
 
 const STORAGE_KEY = "customer-analytics-ui-state:v2";
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
@@ -272,13 +277,13 @@ function formatRub(cents: number | null): string {
 function formatDate(value: string | null): string {
   if (!value) return "—";
   const formatted = formatServiceDate(value);
-  return formatted === "—" ? value : formatted.slice(0, 8);
+  return formatted === "—" ? value : formatted;
 }
 
 function formatDateTime(value: string | null): string {
   if (!value) return "—";
   const formatted = formatServiceDateTime(value);
-  return formatted === "—" ? value : formatted.replace(/\.\d{4},?/, "");
+  return formatted === "—" ? value : formatted;
 }
 
 function formatPhoneDisplay(value: string | null): string {
@@ -524,13 +529,11 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
       if (!res.ok) {
         const message = [data?.error, data?.hint].filter(Boolean).join(". ");
         setLoadError(message || "Не удалось загрузить аналитику клиентов");
-        setPayload(null);
         return;
       }
       setPayload(data as Payload);
     } catch {
       setLoadError("Не удалось загрузить аналитику клиентов. Проверьте локальную базу и повторите попытку.");
-      setPayload(null);
     } finally {
       setLoading(false);
     }
@@ -619,6 +622,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
           client.normalizedPhone,
           client.vehicleLabel,
           client.lastDemandName,
+          ...(client.lastVisitServices ?? []),
           client.primaryServiceName,
         ]
           .filter(Boolean)
@@ -673,7 +677,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
 
   const drawerClient = drawerKey ? payload?.clients.find((client) => client.clientKey === drawerKey) ?? null : null;
 
-  async function openDrawer(client: ClientRow) {
+  async function openDrawer(client: ClientRow, allServices = false) {
     setDrawerKey(client.clientKey);
     setHistory(null);
     setHistoryLoading(true);
@@ -681,7 +685,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
     try {
       const qs = new URLSearchParams({ clientKey: client.clientKey });
       if (client.normalizedPhone) qs.set("phone", client.normalizedPhone);
-      if (servicesQuery) qs.set("services", servicesQuery);
+      if (servicesQuery && !allServices) qs.set("services", servicesQuery);
       const res = await fetch(`/api/analytics/customers/history?${qs.toString()}`, { cache: "no-store" });
       const data = await res.json();
       if (res.ok) setHistory(data as HistoryPayload);
@@ -888,6 +892,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
 
   const tabItems: { id: AnalyticsTab; label: string; count?: number }[] = [
     { id: "overview", label: "Обзор" },
+    { id: "returns", label: "Кого вернуть сегодня", count: payload?.returnCandidates?.length ?? 0 },
     { id: "clients", label: "Клиенты", count: filteredClients.length },
     { id: "sleeping", label: "Спящие", count: sleepingClients.length },
     { id: "duplicates", label: "Дубли", count: payload?.duplicates.length ?? 0 },
@@ -947,12 +952,12 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
             <p>{description}</p>
           </div>
           <div className="eco-ca-table-hints">
-            <span>Поиск и chips сверху</span>
+            <span>Поиск по клиенту, авто и услугам</span>
             <span>Сортировка в заголовках</span>
           </div>
         </div>
         <div className="eco-ca-table-scroller">
-          <table className="eco-ca-table">
+          <table className={`eco-ca-table${activeTab === "sleeping" ? " eco-ca-table--sleeping" : ""}`}>
             <thead>
               <tr>
                 {(
@@ -962,6 +967,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
                     [null, "Авто"],
                     [null, "Первый визит"],
                     ["lastVisitGlobal", "Последний визит"],
+                    [null, "Работы последнего визита"],
                     ["visitCountAllTime", "Визитов"],
                     ["revenueCents", "Выручка"],
                     ["profitCents", "Прибыль"],
@@ -970,7 +976,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
                     ["segment", "Сегмент"],
                     [null, "Действия"],
                   ] as const
-                ).map(([field, label]) => (
+                ).filter(([, label]) => activeTab !== "sleeping" || !["Первый визит", "Выручка", "Прибыль", "Средний чек", "Сегмент"].includes(label)).map(([field, label]) => (
                   <th key={label}>
                     {field ? (
                       <button type="button" onClick={() => toggleSort(field)}>
@@ -1008,25 +1014,44 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
                   <td>
                     <div className="eco-ca-table-vehicle">{client.vehicleCount > 1 ? `${client.vehicleCount} авто` : client.vehicleLabel ?? "—"}</div>
                   </td>
-                  <td className="eco-ca-table-nowrap">{formatDate(client.firstVisitGlobal)}</td>
+                  {activeTab !== "sleeping" && <td className="eco-ca-table-nowrap">{formatDate(client.firstVisitGlobal)}</td>}
                   <td>
                     <div className="eco-ca-table-nowrap">{formatDate(client.lastVisitGlobal)}</div>
-                    {client.lastDemandName && <div className="eco-ca-table-muted">{client.lastDemandName}</div>}
+                    {client.lastDemandId && (
+                      <Link href={`/shipment/${client.lastDemandId}`} className="eco-ca-link">
+                        {client.lastDemandName || "Открыть документ"} <ExternalLink size={12} />
+                      </Link>
+                    )}
+                  </td>
+                  <td className="eco-ca-table-visit-context">
+                    {client.lastVisitServices?.length ? (
+                      <ul className="eco-ca-visit-services">
+                        {client.lastVisitServices.map((service) => <li key={service}>{service}</li>)}
+                      </ul>
+                    ) : <span className="eco-ca-table-muted">Услуги не указаны в документе</span>}
+                    <button type="button" onClick={() => void openDrawer(client)} className="eco-ca-link eco-ca-visit-history">История и состав документов</button>
                   </td>
                   <td>
                     <div className="eco-ca-table-strong">{client.visitCountAllTime}</div>
                     <div className="eco-ca-table-muted">в периоде {client.visitCount}</div>
                   </td>
+                  {activeTab !== "sleeping" && <>
                   <td className="eco-ca-table-nowrap eco-ca-table-strong">{formatRub(client.revenueCents)}</td>
                   <td className="eco-ca-table-nowrap">
                     {formatRub(client.profitCents)}
                     {client.hasIncompleteCost && <div className="eco-ca-table-warning">неполная</div>}
                   </td>
                   <td className="eco-ca-table-nowrap">{formatRub(client.avgRevenuePerVisitCents)}</td>
-                  <td>{client.daysSinceLastVisit ?? "—"}</td>
+                  </>}
                   <td>
-                    <span className={segmentClass(client.segment)}>{statusLabel(client.segment)}</span>
+                    <div className="eco-ca-table-strong">{client.daysSinceLastVisit ?? "—"}</div>
+                    {client.statuses.includes("sleeping") && (
+                      <div className="eco-ca-table-visit-reason">Больше порога {inactiveDays} дн.</div>
+                    )}
                   </td>
+                  {activeTab !== "sleeping" && <td>
+                    <span className={segmentClass(client.segment)}>{statusLabel(client.segment)}</span>
+                  </td>}
                   <td>
                     <div className="eco-ca-row-actions">
                       <button type="button" onClick={() => void openDrawer(client)} className="eco-icon-btn" title="Открыть сводку">
@@ -1047,7 +1072,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
               ))}
               {tableClients.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="eco-ca-empty-row">
+                  <td colSpan={activeTab === "sleeping" ? 8 : 13} className="eco-ca-empty-row">
                     Нет данных по текущим фильтрам. Измените период, поиск или быстрые выборки.
                   </td>
                 </tr>
@@ -1185,6 +1210,12 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
           <strong>{client.displayName}</strong>
           <span>{formatPhoneDisplay(client.phone)}</span>
           <em><Car size={13} /> {client.vehicleCount > 1 ? `${client.vehicleCount} авто` : client.vehicleLabel ?? "Авто не указано"}</em>
+          {mode === "sleeping" && (
+            <span className="eco-ca-client-row__visit-context">
+              Последний визит: {formatDate(client.lastVisitGlobal)}<br />
+              {client.lastVisitServices?.join(" · ") || "Услуги не указаны в документе"}
+            </span>
+          )}
         </button>
         <div className="eco-ca-client-row__stats">
           <span><strong>{client.visitCountAllTime}</strong>визитов</span>
@@ -1280,7 +1311,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
         </section>
       )}
 
-      {loading ? (
+      {loading && !payload ? (
         <Skeleton />
       ) : payload ? (
         <>
@@ -1443,7 +1474,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
                   <div className="eco-ca-panel-head">
                     <div>
                       <h2>Спящие клиенты</h2>
-                      <p>Первые 5 клиентов, которым нужен возврат.</p>
+                      <p>Не обращались больше {inactiveDays} дней. Срок обслуживания нужно уточнить.</p>
                     </div>
                     <button type="button" onClick={() => openTab("sleeping")}>Показать всех</button>
                   </div>
@@ -1477,8 +1508,17 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
             </div>
           )}
 
+          {activeTab === "returns" && <CustomerReturnQueue
+            key={`${payload.branchId}:${userLogin}:${payload.todayYmd}`}
+            scope={`${payload.branchId}:${userLogin}`}
+            branchId={payload.branchId}
+            today={payload.todayYmd}
+            candidates={payload.returnCandidates ?? []}
+            onRefresh={() => void fetchPayload()}
+            onOpenClient={key => { const client = payload.clients.find(item => item.clientKey === key); if (client) void openDrawer(client, true); }}
+          />}
           {activeTab === "clients" && renderClientTable("Текущая таблица учитывает период, поиск, источники, услуги и быстрые выборки.")}
-          {activeTab === "sleeping" && renderClientTable(`Клиенты, которые раньше были, но не приезжали ${inactiveDays}+ дней.`)}
+          {activeTab === "sleeping" && renderClientTable(`С последнего визита прошло больше ${inactiveDays} дней. Дата и работы показаны за всю историю с учётом фильтра услуг. Статус не означает, что обслуживание уже требуется.`)}
 
           {activeTab === "duplicates" && (
             <section className="eco-ca-panel eco-ca-panel--wide">

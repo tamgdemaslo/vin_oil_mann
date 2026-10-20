@@ -33,7 +33,7 @@ const BRANCH_SCOPED_MODELS = new Set([
   "InventoryMovementLink", "InventoryAssignment", "InventoryLock", "InventorySchedule",
   "InventoryAuditLog", "LocalInventoryDocument", "LocalInventoryDocumentAuditLog",
   "LocalInventoryDocumentPosition", "LocalSupplierInvoice", "LocalSupplierInvoicePayment",
-  "CustomerAnalyticsSettings", "VinLookupCache", "WebhookSubscription", "CommunicationConsent",
+  "CustomerAnalyticsSettings", "CustomerReturnState", "VinLookupCache", "WebhookSubscription", "CommunicationConsent",
   "NotificationLog", "ClientNotificationPreference", "OrganizationMember",
   "ProductMannPomanMigrationAudit", "ProductImportJob", "ProductImportRow", "ProductOemBatch", "ProductOemBatchItem", "ClosingDocument",
   "ClosingDocumentNumberSequence", "LocalDemandPosition", "DemandAttributeDefinition",

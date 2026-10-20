@@ -100,7 +100,7 @@ export function resolveNavigationForUser({
   }
 
   if (canCustomerRead) {
-    const clientItems = [branchOnly("/clients/counterparties", "Клиенты", "Клиенты, контакты и история.")];
+    const clientItems = [branchOnly("/clients/counterparties", "Клиенты", "Клиенты, контакты и история."), branchOnly("/cabinet/customer-return", "Кого вернуть сегодня", "Общие черновики и подборка филиала.")];
     if (canCustomerManage) {
       clientItems.push(branchOnly("/crm", "Дела клиентов", "Следующие действия и контроль."));
       clientItems.push(branchOnly("/messages", "Сообщения", "Рабочая переписка с клиентами."));

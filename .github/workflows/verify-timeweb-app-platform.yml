@@ -79,6 +79,9 @@ jobs:
       - name: Verify receipt barcode lookup and binding
         run: npm run test:receipt-barcode
 
+      - name: Verify customer return scenarios and shared draft API
+        run: npm run test:customer-return
+
       - name: TypeScript check
         run: npx tsc --noEmit
 

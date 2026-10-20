@@ -1,3 +1,7 @@
+import { SERVICE_TIME_ZONE } from "@/lib/date-time";
+import { buildCustomerReturnCandidates, type ReturnCandidate } from "@/lib/customer-return-candidates";
+import { vehicleAttribute } from "@/lib/customer-vehicle-identity";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { Prisma } from "@prisma/client";
 import { isAnonymousRetailCounterparty } from "@/lib/anonymous-retail-counterparty";
 import {
@@ -41,6 +45,7 @@ const demandSelect = {
       productId: true,
       product: { select: { name: true } },
       assortmentType: true,
+      analyticsMetricCode: true,
       name: true,
       quantity: true,
       priceCentsPerUnit: true,
@@ -82,7 +87,7 @@ type CrmDealAnalyticsRow = {
 };
 
 export function getAnalyticsTodayYmd(): string {
-  const tz = process.env.CUSTOMER_ANALYTICS_TZ?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const tz = process.env.CUSTOMER_ANALYTICS_TZ?.trim() || SERVICE_TIME_ZONE;
   try {
     return new Intl.DateTimeFormat("en-CA", {
       timeZone: tz,
@@ -219,6 +224,7 @@ export type CustomerAnalyticsRow = {
   lastVisitGlobal: string | null;
   lastDemandId: string | null;
   lastDemandName: string | null;
+  lastVisitServices: string[];
   lastServiceId: string | null;
   lastServiceName: string | null;
   primaryServiceId: string | null;
@@ -306,6 +312,8 @@ export type CustomerServicePoint = {
 };
 
 export type CustomerAnalyticsPayload = {
+  branchId: string;
+  returnCandidates: ReturnCandidate[];
   generatedAt: string;
   dateFrom: string | null;
   dateTo: string | null;
@@ -332,32 +340,11 @@ export type CustomerAnalyticsPayload = {
   clients: CustomerAnalyticsRow[];
 };
 
-function safeString(value: unknown): string | null {
-  if (value == null) return null;
-  if (typeof value === "string") return value.trim() || null;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (value instanceof Date) return value.toISOString();
-  return null;
-}
-
 function normalizeTextKey(value: string | null | undefined): string {
   return (value ?? "")
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
-}
-
-function attributeValueByName(raw: unknown, matcher: RegExp): string | null {
-  if (!Array.isArray(raw)) return null;
-  for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
-    const attr = item as { name?: unknown; value?: unknown };
-    const name = safeString(attr.name);
-    if (!name || !matcher.test(name.toLowerCase())) continue;
-    const value = safeString(attr.value);
-    if (value) return value;
-  }
-  return null;
 }
 
 function vehicleFromParts(params: {
@@ -376,9 +363,9 @@ function vehicleFromParts(params: {
 }
 
 function vehicleFromDemand(demand: LocalDemandWithRelations): VehicleSummary | null {
-  const model = attributeValueByName(demand.attributes, /модель|авто|vehicle|car/);
-  const plate = attributeValueByName(demand.attributes, /гос|г\/н|номер|plate/);
-  const vin = attributeValueByName(demand.attributes, /vin/);
+  const model = vehicleAttribute(demand.attributes, "model");
+  const plate = vehicleAttribute(demand.attributes, "plate");
+  const vin = vehicleAttribute(demand.attributes, "vin");
   return vehicleFromParts({ id: `demand:${demand.id}`, model, plate, vin, source: "shipments" });
 }
 
@@ -696,7 +683,9 @@ function buildClientRows(params: {
       if (financials.hasIncompleteCost) periodHasIncompleteCost = true;
     }
 
-    const lastDemand = allServiceDemands[allServiceDemands.length - 1] ?? null;
+    // Keep the document and its services aligned with the displayed last visit date,
+    // even when imported document dates and timestamps have different ordering.
+    const lastDemand = allServiceDemands.findLast((demand) => demand.documentDate === lastVisitGlobal) ?? null;
     const visitCount = periodDemands.length;
     const visitCountAllTime = allServiceDemands.length;
     const regular =
@@ -751,6 +740,7 @@ function buildClientRows(params: {
       lastVisitGlobal,
       lastDemandId: lastDemand?.id ?? null,
       lastDemandName: lastDemand?.name ?? null,
+      lastVisitServices: lastDemand ? demandServiceRefs(lastDemand).map((service) => service.name) : [],
       lastServiceId: svc.lastServiceId,
       lastServiceName: svc.lastServiceName,
       primaryServiceId: svc.primaryServiceId,
@@ -1101,7 +1091,7 @@ export async function loadCustomerAnalyticsPayload(params: {
     prisma.localDemand.findMany({
       where: { applicable: true },
       select: demandSelect,
-      orderBy: { momentAt: "asc" },
+      orderBy: [{ momentAt: "asc" }, { id: "asc" }],
     }),
     prisma.localCounterparty.findMany({
       where: { archived: false },
@@ -1125,6 +1115,23 @@ export async function loadCustomerAnalyticsPayload(params: {
   });
 
   return {
+    branchId: getScopedBranchId(),
+    returnCandidates: buildCustomerReturnCandidates({
+      today: todayYmd,
+      clients,
+      documents: customerDemands.map(demand => ({
+        id: demand.id,
+        clientKey: clientKeyFromDemand(demand),
+        date: demand.documentDate,
+        attributes: demand.attributes,
+        lines: demand.positions.map(position => ({
+          name: position.product?.name ?? position.name,
+          type: position.assortmentType,
+          quantity: Number(position.quantity),
+          metric: position.analyticsMetricCode,
+        })),
+      })),
+    }),
     generatedAt: new Date().toISOString(),
     dateFrom,
     dateTo,
@@ -1254,4 +1261,26 @@ export async function loadCustomerDemandHistory(params: {
     crmCases: acc.crmDeals.map(crmCaseFromDeal),
     vehicles: [...acc.vehicles.values()],
   };
+}
+
+/** Full branch history for staff queue; never exposes financial analytics. */
+export async function loadCustomerReturnQueue(today = getAnalyticsTodayYmd()) {
+  const demands = (await prisma.localDemand.findMany({
+    where: { applicable: true }, select: demandSelect, orderBy: [{ momentAt: "asc" }, { id: "asc" }],
+  })).filter(demand => !isAnonymousRetailCounterparty(demand.counterparty));
+  const accumulators = buildAccumulators({ counterparties: [], demands, crmDeals: [] });
+  return buildCustomerReturnCandidates({
+    today,
+    clients: [...accumulators.values()].map(acc => ({
+      clientKey: acc.key, displayName: pickDisplayName(acc), phone: acc.phone ?? acc.normalizedPhone,
+    })),
+    documents: demands.map(demand => ({
+      id: demand.id, clientKey: clientKeyFromDemand(demand), date: demand.documentDate,
+      attributes: demand.attributes,
+      lines: demand.positions.map(position => ({
+        name: position.product?.name ?? position.name, type: position.assortmentType,
+        quantity: Number(position.quantity), metric: position.analyticsMetricCode,
+      })),
+    })),
+  });
 }

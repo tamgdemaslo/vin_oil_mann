@@ -20,6 +20,7 @@ const requiredScopedModels = [
   "LocalProduct",
   "LocalStore",
   "LocalStockBalance",
+  "CustomerReturnState",
   "LocalDemand",
   "ShipmentRevision",
   "Diagnostic",
