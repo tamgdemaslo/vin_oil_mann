@@ -157,13 +157,13 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
               {current.offers.map((offer,index)=><div key={`${offer.vehicle}:${index}`}>
                 <p><strong>{offer.vehicle}</strong>{offer.sourceDate ? ` · состав от ${formatServiceDate(offer.sourceDate)}` : ""}</p>
                 <ul className="eco-return-queue__reasons">{offer.lines.map(line=><li key={line.productId}>
-                  <strong>{line.name}</strong><p>{line.quantity} {line.unit} × {returnMoney(line.priceCents)} = {returnMoney(line.sumCents)} · доступно {line.available} {line.unit}</p>
+                  <strong>{line.name}</strong>{line.selectionBasis && <p>{line.replaces ? `Вместо: ${line.replaces}. ` : ""}{line.selectionBasis}</p>}<p>{line.quantity} {line.unit} × {returnMoney(line.priceCents)} = {returnMoney(line.sumCents)} · доступно {line.available} {line.unit}</p>
                 </li>)}</ul>
                 <p>Работа: {offer.laborCents==null ? "тариф не подтверждён" : offer.laborCents===0 ? "включена" : returnMoney(offer.laborCents)}. {offer.laborBasis}</p>
                 {offer.totalCents!=null && <p><strong>Итого с работой: {returnMoney(offer.totalCents)}</strong></p>}
                 {!!offer.issues.length && <ul className="eco-return-queue__notice">{offer.issues.map(issue=><li key={issue}>{issue}</li>)}</ul>}
               </div>)}
-              <p className="eco-return-queue__note">Наличие и цены — на момент расчёта. Состав и количество взяты из прошлого обслуживания; фасовка не означает фактически залитый объём. Перед использованием обновите подборку.</p>
+              <p className="eco-return-queue__note">Наличие и цены — на момент расчёта. Масло и количество взяты из прошлого обслуживания; замены фильтров отмечены отдельно; фасовка не означает фактически залитый объём. Перед использованием обновите подборку.</p>
             </section>}
             {currentSaved?.deliveryStatus && currentSaved.deliveryStatus!=="none" && <p role="status" className="eco-return-queue__notice">
               <strong>{({sending:"Отправляем в Telegram…",sent:"Отправлено в Telegram",queued:"Передано в очередь Telegram",failed:"Telegram сообщил об ошибке отправки",unknown:"Результат отправки не подтверждён"} as Record<string,string>)[currentSaved.deliveryStatus]??"Проверьте статус отправки"}</strong>

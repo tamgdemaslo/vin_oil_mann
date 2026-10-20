@@ -82,6 +82,7 @@ export type MannLocalProductMatch = {
 };
 
 export type MannLocalProductMatchType =
+  | "EXACT_PRODUCT_NAME_BRAND_ARTICLE"
   | "EXACT_PRODUCT_BRAND_ARTICLE"
   | "OEM_EXACT_BRAND_ARTICLE"
   | "OEM_EXACT_ARTICLE"
@@ -223,6 +224,14 @@ export function normalizePartArticle(value: unknown): NormalizedPartArticle {
 
 export function normalizeMannProductBrand(value: unknown): "MANN" | undefined {
   return normalizeCrossReferenceBrand(value) === "MANN" ? "MANN" : undefined;
+}
+
+/** Legacy cards can name MANN explicitly while leaving the brand field blank.
+ * A different filled brand wins; a name alone never supplies a part number.
+ */
+export function mannProductBrandEvidence(product:{brand?:string|null;name?:string|null}):boolean {
+  if(product.brand?.trim())return normalizeMannProductBrand(product.brand)==="MANN";
+  return /^(?:(?:масляный\s+фильтр|фильтр\s+масляный|oil\s+filter)\s+)?MANN(?:[-\s]FILTER)?(?=\s|$)/i.test(product.name?.trim()??"");
 }
 
 function normalizeEngineCode(value: unknown): string | null {
@@ -1063,12 +1072,16 @@ function productHasMannArticle(
   if (expected.canonical.length < 3) return null;
   const article = normalizePartNumberForCrossMatch(product.article);
   const code = normalizePartNumberForCrossMatch(product.code);
-  const mannBrand = normalizeMannProductBrand(product.brand);
+  const mannBrand = mannProductBrandEvidence(product);
   if (mannBrand && article.canonical === expected.canonical) {
-    return { confidence: 100, reason: "Exact MANN product brand + article", matchType: "EXACT_PRODUCT_BRAND_ARTICLE" };
+    return normalizeMannProductBrand(product.brand)
+      ? { confidence: 100, reason: "Exact MANN product brand + article", matchType: "EXACT_PRODUCT_BRAND_ARTICLE" }
+      : { confidence: 98, reason: "Explicit MANN name + exact product article; brand field empty", matchType: "EXACT_PRODUCT_NAME_BRAND_ARTICLE" };
   }
   if (mannBrand && !article.canonical && code.canonical === expected.canonical) {
-    return { confidence: 99, reason: "Exact MANN product brand + legacy code", matchType: "EXACT_PRODUCT_BRAND_ARTICLE" };
+    return normalizeMannProductBrand(product.brand)
+      ? { confidence: 99, reason: "Exact MANN product brand + legacy code", matchType: "EXACT_PRODUCT_BRAND_ARTICLE" }
+      : { confidence: 97, reason: "Explicit MANN name + exact legacy code; brand field empty", matchType: "EXACT_PRODUCT_NAME_BRAND_ARTICLE" };
   }
 
   const entries = parseOemParts(product.oemParts);
@@ -1235,7 +1248,7 @@ export async function matchMannArticlesToLocalProducts(params: {
     const authoritativeValues = [
       item.mannArticle,
       ...collisionRows.map((row) => row.mannArticleNormalized),
-      ...candidates.flatMap((product) => normalizeMannProductBrand(product.brand) ? [product.article, product.article ? null : product.code] : []).filter(Boolean),
+      ...candidates.flatMap((product) => mannProductBrandEvidence(product) ? [product.article, product.article ? null : product.code] : []).filter(Boolean),
     ];
     const authoritativeCollisionIndex = buildPartNumberCollisionIndex(authoritativeValues);
     const observedCollisionIndex = buildPartNumberCollisionIndex([

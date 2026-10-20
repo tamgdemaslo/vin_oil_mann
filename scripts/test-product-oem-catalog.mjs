@@ -44,6 +44,14 @@ assert.equal(
   "a MANN article must not match a longer name token by substring",
 );
 
+// An explicit MANN product name plus exact structured article works for legacy cards with empty brand.
+assert.equal(evaluateMannArticleProductMatch({name:'Масляный фильтр Mann W610/6',article:'W610/6',brand:null},'W610/6')?.matchType,'EXACT_PRODUCT_NAME_BRAND_ARTICLE');
+assert.equal(evaluateMannArticleProductMatch({name:'Фильтр масляный MANN W712/95',code:'W712/95',brand:''},'W712/95')?.matchType,'EXACT_PRODUCT_NAME_BRAND_ARTICLE');
+for(const name of ['Масляный фильтр MANNOL W610/6','Аналог MANN W610/6','Масляный фильтр LYNX (MANN W610/6)'])assert.equal(evaluateMannArticleProductMatch({name,article:'W610/6'},'W610/6'),null);
+assert.equal(evaluateMannArticleProductMatch({name:'Масляный фильтр MANN W610/6',article:'W610/6',brand:'LYNX'},'W610/6'),null,'Filled contradictory brand is never overridden by a name');
+assert.equal(evaluateMannArticleProductMatch({name:'Масляный фильтр MANN W610/6'},'W610/6'),null,'Name alone never supplies article evidence');
+assert.equal(evaluateMannArticleProductMatch({name:'Масляный фильтр MANN W610/6',article:'W610/60'},'W610/6'),null);
+
 // 1–3. Exact own article, exact branded OEM and exact article-only OEM.
 assert.equal(evaluateMannArticleProductMatch({ brand: "MANN", article: "HU 719/7 X" }, "HU719/7X")?.matchType, "EXACT_PRODUCT_BRAND_ARTICLE");
 assert.equal(evaluateMannArticleProductMatch({ oemParts: "MANN: HU 719/7 X" }, "HU719/7X")?.matchType, "OEM_EXACT_BRAND_ARTICLE");

@@ -36,13 +36,14 @@ assert.equal(build(reason,bulkDocs,{...context,products:[...context.products,{id
 // Server adapter must load only active branch stock and current product cards; no mutation API is provided.
 const dir=mkdtempSync(join(tmpdir(),'return-offer-loader-'));const mock=join(dir,'mock.ts');
 writeFileSync(mock,`export const test:any={queries:[],labor:{source:'assistant_rule',laborPriceCents:0,priceFromCents:null,priceToCents:null,requiresHumanConfirmation:false,name:'Тариф',selectionReason:'База'}};
+export const loadCustomerReturnFilterSelections=async()=>({selections:{},issues:{}});
 export const getScopedBranchId=()=> 'branch-a';
 export const assistantTariffContext=async()=>({locationId:'gagarina'});
-export const resolveLaborPrice=async(input:any)=>{test.queries.push(input);return test.labor;};
+export const resolveCustomerReturnLabor=async(organizationId:string)=>{test.queries.push({organizationId});return test.labor;};
 export const prisma={branch:{findFirstOrThrow:async(input:any)=>{test.queries.push(input);return {slug:'gagarina',name:'Гагарина',address:null,status:'active',legacyOrganizationId:'org-a',bookingSettings:{publicBookingEnabled:true}};}},localProduct:{findMany:async(input:any)=>{test.queries.push(input);return []}}};`);
-const isolated=createJiti(import.meta.url,{alias:{'@':resolve('src'),...Object.fromEntries(['db','request-tenant-store','ai-assistant/tariff-context','ai-assistant/labor-pricing'].map(n=>['@/lib/'+n,mock]))}});
+const isolated=createJiti(import.meta.url,{alias:{'@':resolve('src'),[resolve('src/lib/customer-return-filter-loader.ts')]:mock,...Object.fromEntries(['customer-return-filter-loader','db','request-tenant-store','customer-return-labor','ai-assistant/tariff-context','ai-assistant/labor-pricing'].map(n=>['@/lib/'+n,mock]))}});
 const {enrichCustomerReturnOffers}=await isolated.import('../src/lib/customer-return-offer-loader.ts');const {test}=await isolated.import(mock);
 const enriched=await enrichCustomerReturnOffers([candidate],docs);assert.match(enriched[0].draft,/Сергей/);
 assert.equal(test.queries[0].where.id,'branch-a');assert.equal(test.queries[1].organizationId,'org-a');assert.equal(test.queries[2].where.branchId,'branch-a');assert.equal(test.queries[2].select.stockBalances.where.branchId,'branch-a');assert.equal(test.queries[2].select.stockBalances.where.store.archived,false);
 assert.equal(enriched[0].offerReady,false,'Missing current cards must never produce a complete offer');
-console.log('PASS: historical composition, live prices/free stock, fractional amounts, packaging changes, full totals, exact labor, branch sender/link, stale draft fingerprints, read-only branch-scoped adapter.');
+console.log('PASS: historical composition, live prices/free stock, fractional amounts, packaging changes, full totals, exact labor, branch sender/link, stale draft fingerprints, branch-scoped adapter.');
