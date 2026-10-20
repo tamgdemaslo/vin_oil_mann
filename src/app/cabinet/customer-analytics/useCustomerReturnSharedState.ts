@@ -37,5 +37,16 @@ export function useCustomerReturnSharedState(branchId:string,today:string) {
     }catch{return {ok:false,error:"Нет связи с сервером. Правки не сохранены; текст остаётся в поле и его можно скопировать."};}
     finally{setSaving(false);}
   }
-  return {states,loaded,error,saving,refresh,patch};
+  async function send(change:{clientKey:string;expectedVersion:number;fingerprint:string}) {
+    setSaving(true);
+    try {
+      const res=await fetch("/api/analytics/customer-return/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({branchId,serviceDate:today,...change})});
+      const data=await res.json();
+      if(data.state)setStates(previous=>mergeCustomerReturnStates(previous,[data.state]));
+      if(!res.ok)return {ok:false,error:data.error||"Результат не подтверждён. Обновите общий статус."};
+      return {ok:true,error:null};
+    }catch{return {ok:false,error:"Связь прервалась. Результат не подтверждён; обновите общий статус перед повторным действием."};}
+    finally{setSaving(false);void refresh();}
+  }
+  return {states,loaded,error,saving,refresh,patch,send};
 }

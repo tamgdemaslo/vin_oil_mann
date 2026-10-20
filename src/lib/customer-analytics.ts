@@ -1,5 +1,6 @@
 import { SERVICE_TIME_ZONE } from "@/lib/date-time";
 import { buildCustomerReturnCandidates, type ReturnCandidate } from "@/lib/customer-return-candidates";
+import { enrichCustomerReturnOffers } from "@/lib/customer-return-offer-loader";
 import { vehicleAttribute } from "@/lib/customer-vehicle-identity";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { Prisma } from "@prisma/client";
@@ -1116,22 +1117,23 @@ export async function loadCustomerAnalyticsPayload(params: {
 
   return {
     branchId: getScopedBranchId(),
-    returnCandidates: buildCustomerReturnCandidates({
+    returnCandidates: await enrichCustomerReturnOffers(buildCustomerReturnCandidates({
       today: todayYmd,
-      clients,
+      clients: clients.map(client=>({...client,counterpartyId:client.counterpartyIds.length===1?client.counterpartyIds[0]:null})),
       documents: customerDemands.map(demand => ({
         id: demand.id,
         clientKey: clientKeyFromDemand(demand),
         date: demand.documentDate,
         attributes: demand.attributes,
         lines: demand.positions.map(position => ({
-          name: position.product?.name ?? position.name,
+          productId: position.productId,
+          name: position.name,
           type: position.assortmentType,
           quantity: Number(position.quantity),
           metric: position.analyticsMetricCode,
         })),
       })),
-    }),
+    }), customerDemands.map(returnOfferDocument)),
     generatedAt: new Date().toISOString(),
     dateFrom,
     dateTo,
@@ -1269,18 +1271,24 @@ export async function loadCustomerReturnQueue(today = getAnalyticsTodayYmd()) {
     where: { applicable: true }, select: demandSelect, orderBy: [{ momentAt: "asc" }, { id: "asc" }],
   })).filter(demand => !isAnonymousRetailCounterparty(demand.counterparty));
   const accumulators = buildAccumulators({ counterparties: [], demands, crmDeals: [] });
-  return buildCustomerReturnCandidates({
+  return enrichCustomerReturnOffers(buildCustomerReturnCandidates({
     today,
     clients: [...accumulators.values()].map(acc => ({
       clientKey: acc.key, displayName: pickDisplayName(acc), phone: acc.phone ?? acc.normalizedPhone,
+      counterpartyId:acc.counterpartyIds.size===1?[...acc.counterpartyIds][0]:null,
     })),
     documents: demands.map(demand => ({
       id: demand.id, clientKey: clientKeyFromDemand(demand), date: demand.documentDate,
       attributes: demand.attributes,
       lines: demand.positions.map(position => ({
-        name: position.product?.name ?? position.name, type: position.assortmentType,
+        productId: position.productId, name: position.name, type: position.assortmentType,
         quantity: Number(position.quantity), metric: position.analyticsMetricCode,
       })),
     })),
-  });
+  }), demands.map(returnOfferDocument));
+}
+
+function returnOfferDocument(demand: LocalDemandWithRelations) {
+  return { id:demand.id, clientKey:clientKeyFromDemand(demand), date:demand.documentDate, attributes:demand.attributes,
+    lines:demand.positions.map(p=>({productId:p.productId,name:p.name,type:p.assortmentType,quantity:Number(p.quantity),metric:p.analyticsMetricCode})) };
 }

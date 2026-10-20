@@ -748,6 +748,13 @@ model CustomerReturnState {
   updatedByName    String   @map("updated_by_name")
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  deliveryStatus         String    @default("none") @map("delivery_status")
+  deliveryAttemptId      String?   @map("delivery_attempt_id")
+  deliveryConversationId String?   @map("delivery_conversation_id")
+  deliveryMessageId      String?   @map("delivery_message_id")
+  deliveryAt             DateTime? @map("delivery_at") @db.Timestamptz(6)
+  deliveryError          String?   @map("delivery_error") @db.Text
+
   @@id([branchId, serviceDate, clientKey])
   @@map("customer_return_states")
 }

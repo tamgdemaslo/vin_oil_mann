@@ -26,7 +26,7 @@ assert.ok(!kinds(analyze(retail)).includes('oil_soon'),'oil sale alone is not an
 const forecasting=[doc('f1','2026-01-01',100000),doc('f2','2026-04-01',104000),doc('f3','2026-07-01',108000)];
 const forecast=analyze(forecasting,'2026-12-01');
 assert.equal(forecast[0].reasons.find(r=>r.scenario==='oil_soon')?.confidence,'estimate');
-assert.ok(/(?:текущий пробег|какой сейчас пробег)/.test(forecast[0].draft),'draft requests actual mileage instead of asserting forecast');
+assert.ok(!/Подскажите|какой сейчас пробег/.test(forecast[0].draft),"Candidate does not start a mileage conversation");
 const decreasing=forecasting.map((d,i)=>i===1?doc('f2','2026-04-01',90000):d);
 assert.ok(!kinds(analyze(decreasing,'2026-12-01')).includes('oil_soon'),'bad mileage disables estimate');
 assert.ok(!kinds(analyze([doc('x','2025-08-01',100000),doc('y','2025-08-01',100001),doc('z','2026-04-01',110000)])).includes('missed_interval'),'same-day documents are one visit');

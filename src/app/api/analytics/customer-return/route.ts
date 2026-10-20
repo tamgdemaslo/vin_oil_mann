@@ -51,7 +51,7 @@ export async function PATCH(request:NextRequest) {
       const today=getAnalyticsTodayYmd();
       if(parsed.data.serviceDate!==today) return json({error:"Начался новый день. Пересчитайте подборку; ваш текст остаётся в поле.",code:"day_changed"},409);
       const candidate=(await loadCustomerReturnQueue(today)).find(c=>c.clientKey===parsed.data.clientKey);
-      if(!candidate || returnCandidateFingerprint(candidate)!==parsed.data.fingerprint) return json({error:"История клиента изменилась. Пересчитайте подборку и проверьте причины; ваш текст можно скопировать.",code:"candidate_changed"},409);
+      if(!candidate || returnCandidateFingerprint(candidate)!==parsed.data.fingerprint) return json({error:"История, цены, наличие или предложение изменились. Пересчитайте подборку и проверьте расчёт; ваш текст можно скопировать.",code:"candidate_changed"},409);
       const result=await patchCustomerReturnState(parsed.data,access.context.user);
       return result.status==="saved"?json(result):json({...result,error:"Другой сотрудник уже изменил эту запись. Сравните тексты перед сохранением.",code:"version_conflict"},409);
     });

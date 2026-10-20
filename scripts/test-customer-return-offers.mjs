@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import {createJiti} from 'jiti';
+import {resolve,join} from 'node:path';
+import {mkdtempSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+const jiti=createJiti(import.meta.url,{alias:{'@':resolve('src')}});
+const {buildCustomerReturnOffer:build,attachCustomerReturnOffers:attach,customerReturnSender:sender,customerReturnBookingUrl:link}=await jiti.import('../src/lib/customer-return-offer.ts');
+const {returnCandidateFingerprint:fp}=await jiti.import('../src/lib/customer-return-shared-types.ts');
+const reason={scenario:'missed_interval',vehicle:'Kia Sorento',lastVisit:'2026-05-26',documentIds:['last','same','older'],confidence:'history',needsReview:false,explanation:'Интервал'};
+const line=(productId,name,quantity,metric)=>({productId,name,quantity,metric,type:'product'});
+const service={name:'Замена моторного масла',quantity:1,type:'service',metric:'ENGINE_OIL_CHANGE'};
+const docs=[{id:'last',clientKey:'c',date:'2026-05-26',attributes:[],lines:[service,line('oil','Eurol 5W-30, 5 л.',1,'ENGINE_OIL'),line('filter','Фильтр масляный OEM123',1,'OIL_FILTER')]},{id:'same',clientKey:'c',date:'2026-05-26',attributes:[],lines:[line('seal','Кольцо сливной пробки',1,'SEALS_GASKETS')]},{id:'older',clientKey:'c',date:'2025-11-20',attributes:[],lines:[service,line('old','Старое масло, 4 л.',1,'ENGINE_OIL')]}];
+const context={sender:sender({slug:'dachnaya',name:'Дачная',address:null}),bookingUrl:link('https://example.com/old?x=y','branch-main',true),laborCents:0,laborBasis:'Действующий тариф',products:[{id:'oil',name:'Eurol 5W-30, 5 л.',unit:'шт',priceCents:659000,archived:false,available:3,entityType:'product'},{id:'filter',name:'Фильтр масляный OEM123',unit:'шт',priceCents:99000,archived:false,available:2,entityType:'product'},{id:'seal',name:'Кольцо сливной пробки',unit:'шт',priceCents:4000,archived:false,available:1,entityType:'product'}]};
+const candidate={id:'c',clientKey:'c',displayName:'Александр',phone:null,reasons:[reason],draft:'старый'};
+const offer=build(reason,docs,context);
+assert.equal(offer.totalCents,762000);assert.equal(offer.status,'ready');assert.equal(offer.lines.length,3);assert.deepEqual(offer.documentIds,['last','same']);
+const draft=attach(candidate,docs,context);assert.match(draft.draft,/Вадим, мастер-приёмщик «Там, где масло» на Дачной/);assert.match(draft.draft,/Итого с работой — 7\s620 ₽/);assert.ok(!/Эко-платформа|Подскажите|актуально ли|какой сейчас пробег/.test(draft.draft));assert.match(draft.draft,/branchId=branch-main/);
+assert.match(sender({slug:'gagarina',name:'Гагарина',address:null}),/Сергей/);assert.ok(!sender({slug:'new',name:'Новый',address:null}).includes('Вадим'));
+assert.equal(link('javascript:alert(1)','b',true),null);assert.equal(link('https://example.com','b',false),null);assert.equal(link(undefined,'b',true),null);
+const change=(id,patch)=>({...context,products:context.products.map(p=>p.id===id?{...p,...patch}:p)});
+for(const ctx of [change('oil',{available:0}),change('filter',{archived:true}),change('filter',{priceCents:0}),change('oil',{priceNeedsSetup:true}),change('oil',{name:'Eurol 5W-30, 1 л.'}),{...context,laborCents:null}]){
+ const result=build(reason,docs,ctx);assert.equal(result.status,'review');assert.equal(result.totalCents,null);assert.equal(attach(candidate,docs,ctx).offerReady,false);assert.ok(!attach(candidate,docs,ctx).draft.includes('Итого с работой'));
+}
+assert.equal(build({...reason,needsReview:true},docs,context).totalCents,null);
+assert.equal(build({...reason,vehicle:'Автомобиль не указан'},docs,context).totalCents,null);
+assert.equal(attach({...candidate,reasons:[{...reason,vehicleKey:'vin-a'},{...reason,vehicleKey:'vin-b'}]},docs,context).offers.length,2,'Different cars with the same model label remain separate');
+assert.equal(build(reason,docs.map(d=>({...d,lines:d.lines.filter(l=>l.productId!=='filter')})),context).totalCents,null);
+assert.equal(build(reason,[],context).totalCents,null);
+assert.equal(build(reason,docs,{...context,laborCents:150000}).totalCents,912000);
+assert.equal(attach({...candidate,reasons:[reason,{...reason,vehicle:'Другая машина'}]},docs,change('filter',{available:1})).offerReady,false,'Stock is checked for the full multi-car offer');
+assert.notEqual(fp(draft),fp(attach(candidate,docs,change('oil',{priceCents:660000}))),'Price changes invalidate shared drafts');
+assert.notEqual(fp(draft),fp(attach(candidate,docs,change('oil',{available:2}))),'Availability changes invalidate shared drafts');
+assert.notEqual(fp(draft),fp(attach(candidate,docs,{...context,sender:'Сергей'})),'Sender changes invalidate shared drafts');
+const bulkDocs=[{...docs[0],lines:[service,line('bulk','Моторное масло 1 л.',4.25,'ENGINE_OIL'),line('filter','Фильтр масляный OEM123',1,'OIL_FILTER')]}];
+assert.equal(build(reason,bulkDocs,{...context,products:[...context.products,{id:'bulk',name:'Моторное масло 1 л.',unit:'л',priceCents:99000,archived:false,available:4.25,entityType:'product'}]}).totalCents,519750,'Fractional liters use integer cents');
+// Server adapter must load only active branch stock and current product cards; no mutation API is provided.
+const dir=mkdtempSync(join(tmpdir(),'return-offer-loader-'));const mock=join(dir,'mock.ts');
+writeFileSync(mock,`export const test:any={queries:[],labor:{source:'assistant_rule',laborPriceCents:0,priceFromCents:null,priceToCents:null,requiresHumanConfirmation:false,name:'Тариф',selectionReason:'База'}};
+export const getScopedBranchId=()=> 'branch-a';
+export const assistantTariffContext=async()=>({locationId:'gagarina'});
+export const resolveLaborPrice=async(input:any)=>{test.queries.push(input);return test.labor;};
+export const prisma={branch:{findFirstOrThrow:async(input:any)=>{test.queries.push(input);return {slug:'gagarina',name:'Гагарина',address:null,status:'active',legacyOrganizationId:'org-a',bookingSettings:{publicBookingEnabled:true}};}},localProduct:{findMany:async(input:any)=>{test.queries.push(input);return []}}};`);
+const isolated=createJiti(import.meta.url,{alias:{'@':resolve('src'),...Object.fromEntries(['db','request-tenant-store','ai-assistant/tariff-context','ai-assistant/labor-pricing'].map(n=>['@/lib/'+n,mock]))}});
+const {enrichCustomerReturnOffers}=await isolated.import('../src/lib/customer-return-offer-loader.ts');const {test}=await isolated.import(mock);
+const enriched=await enrichCustomerReturnOffers([candidate],docs);assert.match(enriched[0].draft,/Сергей/);
+assert.equal(test.queries[0].where.id,'branch-a');assert.equal(test.queries[1].organizationId,'org-a');assert.equal(test.queries[2].where.branchId,'branch-a');assert.equal(test.queries[2].select.stockBalances.where.branchId,'branch-a');assert.equal(test.queries[2].select.stockBalances.where.store.archived,false);
+assert.equal(enriched[0].offerReady,false,'Missing current cards must never produce a complete offer');
+console.log('PASS: historical composition, live prices/free stock, fractional amounts, packaging changes, full totals, exact labor, branch sender/link, stale draft fingerprints, read-only branch-scoped adapter.');

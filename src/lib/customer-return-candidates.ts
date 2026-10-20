@@ -1,9 +1,11 @@
+import type { ReturnOffer } from "./customer-return-offer";
 import { customerVehicleIdentity, vehicleAttribute } from "./customer-vehicle-identity";
 
 export type ReturnScenario = "missed_interval" | "oil_soon" | "single_visit";
 export type ReturnReason = {
   scenario: ReturnScenario;
   vehicle: string;
+  vehicleKey?: string;
   explanation: string;
   lastVisit: string;
   documentIds: string[];
@@ -15,8 +17,12 @@ export type ReturnCandidate = {
   clientKey: string;
   displayName: string;
   phone: string | null;
+  counterpartyId?: string | null;
   reasons: ReturnReason[];
   draft: string;
+  offers?: ReturnOffer[];
+  offerReady?: boolean;
+  bookingUrl?: string | null;
   needsReview: boolean;
 };
 export type ReturnDocument = {
@@ -24,7 +30,7 @@ export type ReturnDocument = {
   clientKey: string;
   date: string;
   attributes: unknown;
-  lines: { name: string; type: string; quantity: number; metric: string | null }[];
+  lines: { productId?: string | null; name: string; type: string; quantity: number; metric: string | null }[];
 };
 export const RETURN_SCENARIO_LABELS: Record<ReturnScenario, string> = {
   missed_interval: "Пропущен привычный интервал",
@@ -51,21 +57,15 @@ function isOilChange(document: ReturnDocument): boolean {
     line.metric === "ENGINE_OIL_CHANGE" || /замен.*(?:моторн.*масл|масл.*двигател)/i.test(line.name)
   ));
 }
-function makeDraft(name: string, reasons: ReturnReason[]): string {
-  const greeting = name && !/без имени|розничн|не указан|^клиент$/i.test(name) ? `Здравствуйте, ${name}!` : "Здравствуйте!";
-  const body = reasons.map(reason => {
-    if (reason.scenario === "missed_interval") return `Раньше вы обращались к нам для замены моторного масла на ${reason.vehicle}. Хотели уточнить, какой сейчас пробег и актуально ли очередное обслуживание?`;
-    if (reason.scenario === "oil_soon") return `Возможно, на ${reason.vehicle} приближается следующая замена моторного масла. Подскажите текущий пробег — поможем уточнить срок и подобрать удобное время.`;
-    return `Вы были у нас ${new Intl.DateTimeFormat("ru-RU", {timeZone:"UTC"}).format(new Date(reason.lastVisit + "T00:00:00Z"))}${reason.vehicle !== "Автомобиль не указан" ? ` на ${reason.vehicle}` : ""}. Хотели уточнить, актуально ли сейчас обслуживание автомобиля. Если да, поможем подобрать удобное время.`;
-  });
-  return `${greeting} Это Эко-платформа.\n\n${body.join("\n\n")}`;
+function makeDraft(): string {
+  return "Предложение ещё не рассчитано. Требуются актуальные цены, наличие и тариф работы филиала.";
 }
 
 /** Pure daily calculation. Full branch history only; never sends, creates tasks or calls AI. */
 export function buildCustomerReturnCandidates(input: {
   today: string;
   documents: ReturnDocument[];
-  clients: { clientKey: string; displayName: string; phone: string | null }[];
+  clients: { clientKey: string; displayName: string; phone: string | null; counterpartyId?:string|null }[];
 }): ReturnCandidate[] {
   if (!validDate(input.today)) return [];
   const today = day(input.today);
@@ -92,7 +92,7 @@ export function buildCustomerReturnCandidates(input: {
       else cars.set(car, [...(cars.get(car) ?? []), d]);
       if (linkedVins && linkedVins.size > 1 || vin && vinClients.get(vin)!.size > 1) clientReview = true;
     }
-    for (const carDocs of cars.values()) {
+    for (const [vehicleKey,carDocs] of cars) {
       const visits = new Map<string, {oil: boolean; miles: Set<number>; docs: string[]; label: string}>();
       for (const d of [...carDocs].sort((a,b)=>a.date.localeCompare(b.date))) {
         const visit = visits.get(d.date) ?? {oil:false, miles:new Set<number>(), docs:[], label:identities.get(d.id)!.label};
@@ -117,7 +117,7 @@ export function buildCustomerReturnCandidates(input: {
       const estimate = forecastable && lastOil.mileage!=null ? lastPoint.mileage!+speed*(today-day(lastPoint.date))-lastOil.mileage : null;
       const knownDistance = !badMileage && lastOil.mileage!=null && lastPoint ? lastPoint.mileage!-lastOil.mileage : null;
       const elapsed = today-day(lastOil.date), vehicle=ordered.at(-1)!.label;
-      const base = {vehicle,lastVisit:lastOil.date,documentIds:ordered.flatMap(v=>v.docs),needsReview:clientReview||badMileage};
+      const base = {vehicle,vehicleKey,lastVisit:lastOil.date,documentIds:ordered.flatMap(v=>v.docs),needsReview:clientReview||badMileage};
       if (oil.length>=3) {
         const gaps=oil.slice(1).map((v,i)=>day(v.date)-day(oil[i].date)).slice(-4), usual=median(gaps);
         if (usual>=30 && usual<=400 && median(gaps.map(g=>Math.abs(g-usual)))/usual<=.35 && elapsed>usual*1.5 && elapsed-usual>=30) {
@@ -133,12 +133,11 @@ export function buildCustomerReturnCandidates(input: {
     const dates=[...new Set(history.map(d=>d.date))].sort(), lastDate=dates.at(-1)!, absent=today-day(lastDate);
     if (dates.length===1 && absent>=335 && absent<365) {
       const vehicleLabels=[...new Set(history.map(d=>identities.get(d.id)!.label))];
-      reasons.push({scenario:"single_visit",vehicle:vehicleLabels.length===1?vehicleLabels[0]:"Автомобиль не указан",explanation:`Один день посещения за всю доступную историю; после него — ${absent} дн.`,lastVisit:lastDate,documentIds:history.map(d=>d.id),confidence:"history",needsReview:clientReview});
+      reasons.push({scenario:"single_visit",vehicleKey:cars.size===1?[...cars.keys()][0]:undefined,vehicle:vehicleLabels.length===1?vehicleLabels[0]:"Автомобиль не указан",explanation:`Один день посещения за всю доступную историю; после него — ${absent} дн.`,lastVisit:lastDate,documentIds:history.map(d=>d.id),confidence:"history",needsReview:clientReview||cars.size!==1});
     }
     if (!reasons.length) continue;
     // One editable draft per customer, even if several vehicles/reasons qualify.
-    const draftReasons = reasons.filter((r,i)=>reasons.findIndex(x=>x.vehicle===r.vehicle)===i);
-    result.push({id:client.clientKey,clientKey:client.clientKey,displayName:client.displayName,phone:client.phone,reasons,draft:makeDraft(client.displayName,draftReasons),needsReview:reasons.some(r=>r.needsReview)});
+    result.push({id:client.clientKey,clientKey:client.clientKey,displayName:client.displayName,phone:client.phone,counterpartyId:client.counterpartyId,reasons,draft:makeDraft(),needsReview:reasons.some(r=>r.needsReview)});
   }
   return result.sort((a,b)=>Number(a.needsReview)-Number(b.needsReview)||a.displayName.localeCompare(b.displayName,"ru"));
 }

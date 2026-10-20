@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import {createJiti} from 'jiti';
+import {mkdtempSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+const mock=join(mkdtempSync(join(tmpdir(),'return-send-route-')),'mock.ts');
+writeFileSync(mock,`export const test:any={access:{ok:true,context:{branchId:'a',user:{login:'anna',name:'Анна',role:'admin'}}},today:'2026-10-20',calls:[]};
+export const requireBranchApi=async()=>test.access;export const runWithBranchApiContext=(_c:any,fn:any)=>fn();
+export const getAnalyticsTodayYmd=()=>test.today;export const loadCustomerReturnQueue=async()=>[{clientKey:'server-client',phone:'server-phone'}];
+export class CustomerReturnDeliveryError extends Error {status=409;}
+export const sendCustomerReturnDraft=async(candidate:any,input:any,actor:any)=>{test.calls.push({candidate,input,actor});return {deliveryStatus:'sent'};};`);
+const jiti=createJiti(import.meta.url,{alias:{'@':resolve('src'),...Object.fromEntries(['branch-api','customer-analytics','customer-return-delivery'].map(n=>['@/lib/'+n,mock]))}});
+const {POST}=await jiti.import('../src/app/api/analytics/customer-return/send/route.ts');const {test}=await jiti.import(mock);const {NextRequest}=await import('next/server.js');
+const base={branchId:'a',serviceDate:'2026-10-20',clientKey:'server-client',expectedVersion:1,fingerprint:'current'};
+const send=body=>POST(new NextRequest('http://localhost/api/analytics/customer-return/send',{method:'POST',body:JSON.stringify(body)}));
+assert.equal((await send({...base,branchId:'b'})).status,409);assert.equal((await send({...base,serviceDate:'2026-10-19'})).status,409);assert.equal((await send({...base,phone:'spoofed'})).status,400);assert.equal((await send({...base,conversationId:'foreign'})).status,400);assert.equal((await send({...base,clientKey:'foreign'})).status,409);assert.equal((await send({...base,expectedVersion:0})).status,400);assert.equal(test.calls.length,0);
+assert.equal((await send(base)).status,200);assert.equal(test.calls[0].actor.login,'anna');assert.equal(test.calls[0].candidate.phone,'server-phone');
+test.access.context.user.role='invalid';assert.equal((await send(base)).status,403);
+test.access={ok:false,response:new Response('Forbidden',{status:403})};assert.equal((await send(base)).status,403);
+console.log('PASS: explicit send route enforces session, role, active branch/day/version and server-owned recipient; all adapters mocked, no real messages.');

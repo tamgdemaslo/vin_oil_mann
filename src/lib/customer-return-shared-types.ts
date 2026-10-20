@@ -1,9 +1,14 @@
-import type { ReturnReason } from "./customer-return-candidates";
+import type { ReturnReason, ReturnCandidate } from "./customer-return-candidates";
 export type CustomerReturnSharedState = {
   clientKey: string;
   draftText: string | null;
   draftFingerprint: string | null;
   skipped: boolean;
+  deliveryStatus?: string;
+  deliveryConversationId?: string | null;
+  deliveryMessageId?: string | null;
+  deliveryAt?: string | null;
+  deliveryError?: string | null;
   version: number;
   updatedByLogin: string;
   updatedByName: string;
@@ -17,12 +22,13 @@ export type CustomerReturnStatePatch = {
   draftText?: string | null;
   skipped?: boolean;
 };
-export function returnCandidateFingerprint(candidate: { reasons: ReturnReason[] }): string {
+export function returnCandidateFingerprint(candidate: { reasons: ReturnReason[] } & Partial<Pick<ReturnCandidate,"offers"|"draft"|"bookingUrl"|"phone"|"counterpartyId">>): string {
   const normalized=candidate.reasons.map(reason=>Object.fromEntries(Object.entries({
     ...reason,documentIds:[...reason.documentIds].sort(),
   }).sort(([a],[b])=>a<b?-1:a>b?1:0)));
   const serialized=normalized.map(reason=>JSON.stringify(reason)).sort();
-  return `[${serialized.join(",")}]`;
+  const reasons=`[${serialized.join(",")}]`;
+  return candidate.offers ? JSON.stringify({reasons,offers:candidate.offers,draft:candidate.draft,bookingUrl:candidate.bookingUrl,phone:candidate.phone,counterpartyId:candidate.counterpartyId}) : reasons;
 }
 
 /** Poll responses may arrive out of order; never roll back an acknowledged version. */

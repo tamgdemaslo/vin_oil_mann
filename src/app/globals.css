@@ -72026,3 +72026,6 @@ select[size="1"]::-ms-expand {
   .eco-return-queue__filters label { flex-basis: 100%; }
 }
 .eco-return-queue__conflict-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 240px; overflow: auto; padding: 10px; background: var(--eco-surface); }
+
+.eco-return-queue__booking-toggle { display: flex; align-items: start; gap: 8px; margin: 12px 0; font-size: 14px; }
+.eco-return-queue__booking-toggle input { flex: 0 0 auto; margin-top: 3px; }
