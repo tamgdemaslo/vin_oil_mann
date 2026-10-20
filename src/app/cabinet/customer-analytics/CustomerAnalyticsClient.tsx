@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import CustomerReturnQueue from "./CustomerReturnQueue";
+import type { ManagementInsight } from "@/lib/customer-management-insights";
 import type { ReturnCandidate } from "@/lib/customer-return-candidates";
 import {
+  ArrowRight,
   BarChart3,
   BellPlus,
   CalendarPlus,
@@ -128,6 +130,7 @@ type QuickFilter =
 type Payload = {
   branchId: string;
   returnCandidates?: ReturnCandidate[];
+  managementInsights?: ManagementInsight[];
   generatedAt: string;
   dateFrom: string | null;
   dateTo: string | null;
@@ -477,6 +480,8 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
   const [activeTab, setActiveTab] = useState<AnalyticsTab>("overview");
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(50);
   const [page, setPage] = useState(1);
+  const [insightSelection, setInsightSelection] = useState<{ title: string; clientKeys: string[] } | null>(null);
+  const selectionRef = useRef<HTMLDivElement>(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   const [payload, setPayload] = useState<Payload | null>(null);
@@ -532,6 +537,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
         return;
       }
       setPayload(data as Payload);
+      setInsightSelection(null);
     } catch {
       setLoadError("Не удалось загрузить аналитику клиентов. Проверьте локальную базу и повторите попытку.");
     } finally {
@@ -580,6 +586,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
   ]);
 
   function resetFilters() {
+    setInsightSelection(null);
     setClientType("all");
     setSourceFilter("all");
     setResponsibleFilter("all");
@@ -589,6 +596,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
   }
 
   function applyQuickFilter(next: QuickFilter) {
+    setInsightSelection(null);
     const active = quickFilter === next ? null : next;
     setQuickFilter(active);
     if (active === "sleeping") setActiveTab("sleeping");
@@ -605,12 +613,15 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
     setActiveTab(tab);
     setPage(1);
     if (tab === "sleeping") setQuickFilter(null);
+    if (tab !== "clients") setInsightSelection(null);
   }
 
   const filteredClients = useMemo(() => {
     if (!payload) return [];
     const q = search.trim().toLowerCase();
+    const insightKeys = insightSelection ? new Set(insightSelection.clientKeys) : null;
     let list = payload.clients.filter((client) => {
+      if (insightKeys && !insightKeys.has(client.clientKey)) return false;
       if (!clientTypeMatches(client, clientType)) return false;
       if (sourceFilter !== "all" && !client.sources.includes(sourceFilter)) return false;
       if (responsibleFilter !== "all" && !client.responsibleLogins.includes(responsibleFilter)) return false;
@@ -644,7 +655,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
       return String(av).localeCompare(String(bv), "ru") * mul;
     });
     return list;
-  }, [payload, search, clientType, sourceFilter, responsibleFilter, quickFilter, sortField, sortDesc]);
+  }, [payload, search, clientType, sourceFilter, responsibleFilter, quickFilter, sortField, sortDesc, insightSelection]);
 
   const sleepingClients = useMemo(() => filteredClients.filter((client) => client.statuses.includes("sleeping")), [filteredClients]);
   const tableClients = useMemo(
@@ -674,6 +685,21 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
   useEffect(() => {
     setPage(1);
   }, [search, clientType, sourceFilter, responsibleFilter, quickFilter, sortField, sortDesc, activeTab, pageSize]);
+
+  useEffect(() => {
+    if (insightSelection && activeTab === "clients") {
+      selectionRef.current?.focus();
+      selectionRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [insightSelection, activeTab]);
+
+  function openInsightClients(title: string, clientKeys: string[]) {
+    resetFilters();
+    setInsightSelection({ title, clientKeys });
+    setSortField("revenueCents");
+    setSortDesc(true);
+    setActiveTab("clients");
+  }
 
   const drawerClient = drawerKey ? payload?.clients.find((client) => client.clientKey === drawerKey) ?? null : null;
 
@@ -1341,8 +1367,40 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
             </section>
           ) : null}
 
+          {activeTab === "clients" && insightSelection && (
+            <div ref={selectionRef} tabIndex={-1} className="eco-ca-selection" role="region" aria-label="Клиенты из вывода">
+              <div><strong>Клиенты из вывода</strong><p>{insightSelection.title}</p><small>Найдено с учётом фильтров: {filteredClients.length} из {insightSelection.clientKeys.length}. Период и услуги сохранены.</small></div>
+              <button type="button" className="eco-btn" onClick={() => setInsightSelection(null)}>Показать всех клиентов</button>
+            </div>
+          )}
+
           {activeTab === "overview" && (
             <div className="eco-ca-dashboard">
+              <section className="eco-ca-panel eco-ca-conclusions" aria-labelledby="customer-conclusions-title">
+                <div className="eco-ca-panel-head">
+                  <div>
+                    <h2 id="customer-conclusions-title">Выводы и действия</h2>
+                    <p>Что означают цифры и с какими клиентами стоит разобраться.</p>
+                  </div>
+                </div>
+                <p className="eco-ca-conclusions__scope">По текущему филиалу, периоду и выбранным услугам. Поиск, сегмент, источник и ответственный не ограничивают выводы. Анонимная розница исключена. CRM — на сегодня.</p>
+                {(payload.managementInsights ?? []).length ? <div className="eco-ca-conclusions__list">
+                  {payload.managementInsights!.map(insight => (
+                    <article key={insight.id} className="eco-ca-conclusion">
+                      <div className="eco-ca-conclusion__body">
+                        <h3><span className={`eco-ca-badge eco-ca-badge--${insight.tone === "warning" ? "warning" : insight.tone === "good" ? "success" : "neutral"}`}>{insight.tone === "warning" ? "Проверить" : insight.tone === "good" ? "Рост" : "Наблюдение"}</span>{insight.title}</h3>
+                        <p>{insight.evidence}</p>
+                        <p className="eco-ca-conclusion__action"><strong>Что делать.</strong> {insight.recommendation}</p>
+                        <details><summary>Как читать вывод</summary><p>{insight.limitation}</p></details>
+                      </div>
+                      {!!insight.actions.length && <div className="eco-ca-conclusion__links">
+                        {insight.actions.map(action => <button key={action.label} type="button" className="eco-btn" disabled={loading} onClick={() => openInsightClients(`${insight.title} · ${action.label}`, action.clientKeys)}>{action.label} <span>{action.clientKeys.length}</span><ArrowRight size={14} aria-hidden="true" /></button>)}
+                      </div>}
+                    </article>
+                  ))}
+                </div> : <p className="eco-ca-empty">Для выводов пока недостаточно данных. Проверьте период и историю проведённых отгрузок.</p>}
+              </section>
+
               <section className="eco-ca-kpi-grid">
                 {[
                   ["Клиентов", String(payload.kpis.clientsInPeriod), "за выбранный период", `${filteredClients.length} в выборке`],
@@ -1386,8 +1444,8 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
                 <article className="eco-ca-panel eco-ca-panel--attention">
                   <div className="eco-ca-panel-head">
                     <div>
-                      <h2>На что обратить внимание</h2>
-                      <p>Быстрые рабочие сигналы по базе.</p>
+                      <h2>Быстрые выборки</h2>
+                      <p>Группы клиентов для проверки.</p>
                     </div>
                     <BellPlus size={18} />
                   </div>

@@ -72029,3 +72029,28 @@ select[size="1"]::-ms-expand {
 
 .eco-return-queue__booking-toggle { display: flex; align-items: start; gap: 8px; margin: 12px 0; font-size: 14px; }
 .eco-return-queue__booking-toggle input { flex: 0 0 auto; margin-top: 3px; }
+
+/* Management conclusions reuse the analytics panel and client table. */
+.eco-ca-conclusions { box-shadow: none; }
+.eco-ca-conclusions__scope { margin: -4px 0 14px; color: var(--eco-muted); font-size: 12px; line-height: 1.5; }
+.eco-ca-conclusion { padding: 18px 0; border-top: 1px solid var(--eco-line); display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 260px); gap: 16px 28px; }
+.eco-ca-conclusion:last-child { padding-bottom: 0; }
+.eco-ca-conclusion h3 { margin: 0 0 8px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; color: var(--eco-ink); font-size: 15px; line-height: 1.4; }
+.eco-ca-conclusion p { margin: 6px 0; max-width: 86ch; font-size: 13px; line-height: 1.55; color: var(--eco-muted); overflow-wrap: anywhere; }
+.eco-ca-conclusion .eco-ca-conclusion__action { color: var(--eco-ink); }
+.eco-ca-conclusion details { margin-top: 8px; font-size: 12px; color: var(--eco-muted); }
+.eco-ca-conclusion summary { cursor: pointer; width: fit-content; }
+.eco-ca-conclusion__links { display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 8px; }
+.eco-ca-conclusion__links .eco-btn { height: auto; min-height: 36px; white-space: normal; text-align: left; justify-content: flex-start; padding: 8px 10px; line-height: 1.4; }
+.eco-ca-conclusion__links .eco-btn span { margin-left: auto; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.eco-ca-conclusion__links svg { flex-shrink: 0; }
+.eco-ca-selection { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; margin: 14px 0; border: 1px solid var(--eco-line); border-radius: 6px; background: var(--eco-surface); }
+.eco-ca-selection p { margin: 4px 0; font-size: 13px; overflow-wrap: anywhere; }
+.eco-ca-selection small { color: var(--eco-muted); }
+.eco-ca-conclusions button:focus-visible, .eco-ca-conclusions summary:focus-visible, .eco-ca-selection:focus-visible { outline: 2px solid var(--eco-rust); outline-offset: 3px; }
+@media (max-width: 760px) {
+  .eco-ca-conclusion { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 16px 0; }
+  .eco-ca-conclusion__links { align-items: flex-start; }
+  .eco-ca-conclusion__links .eco-btn { max-width: 100%; }
+  .eco-ca-selection { align-items: flex-start; flex-direction: column; }
+}

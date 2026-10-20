@@ -1,3 +1,4 @@
+import { buildCustomerManagementInsights, type ManagementInsight } from "@/lib/customer-management-insights";
 import { SERVICE_TIME_ZONE } from "@/lib/date-time";
 import { buildCustomerReturnCandidates, type ReturnCandidate } from "@/lib/customer-return-candidates";
 import { enrichCustomerReturnOffers } from "@/lib/customer-return-offer-loader";
@@ -334,6 +335,7 @@ export type CustomerAnalyticsPayload = {
   responsibles: { id: string; name: string }[];
   kpis: CustomerAnalyticsKpis;
   insights: CustomerAnalyticsInsight[];
+  managementInsights: ManagementInsight[];
   duplicates: CustomerAnalyticsDuplicate[];
   trend: CustomerTrendPoint[];
   segments: CustomerSegmentPoint[];
@@ -1158,6 +1160,22 @@ export async function loadCustomerAnalyticsPayload(params: {
     responsibles: buildResponsibles(crmDeals),
     kpis: buildKpis(clients, anonymousRetail),
     insights: buildInsights(clients),
+    managementInsights: buildCustomerManagementInsights({
+      today: todayYmd,
+      dateFrom,
+      dateTo,
+      clientKeys: clients.map(client => client.clientKey),
+      documents: customerDemands.filter(demand => demandMatchesServiceFilter(demand, serviceIdSet)).map(demand => ({
+        clientKey: clientKeyFromDemand(demand),
+        date: demand.documentDate,
+        ...demandFinancials(demand),
+      })),
+      cases: crmDeals.map(deal => ({
+        clientKey: clientKeyFromCrmDeal(deal),
+        nextContactDate: deal.nextContactAt ? deal.nextContactAt.toLocaleDateString("en-CA", { timeZone: SERVICE_TIME_ZONE }) : null,
+        status: deal.status,
+      })),
+    }),
     duplicates: buildDuplicates(clients),
     trend: buildTrend(
       clients,
