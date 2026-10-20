@@ -15,12 +15,16 @@ export async function enrichCustomerReturnOffers(candidates:ReturnCandidate[],do
   const ids=new Set(candidates.flatMap(c=>c.reasons.flatMap(r=>r.documentIds)));
   const relevant=documents.filter(d=>ids.has(d.id));
   const productIds=[...new Set(relevant.flatMap(d=>d.lines.flatMap(l=>l.productId?[l.productId]:[])))];
-  const products=await prisma.localProduct.findMany({where:{branchId,id:{in:productIds}},select:{id:true,name:true,article:true,code:true,brand:true,oemParts:true,uomName:true,salePriceCents:true,priceNeedsSetup:true,archived:true,entityType:true,stockBalances:{where:{branchId,store:{archived:false}},select:{available:true}}}});
+  const select={id:true,name:true,article:true,code:true,brand:true,oemParts:true,sae:true,acea:true,apiSpec:true,oem:true,ilsac:true,packageVolume:true,uomName:true,salePriceCents:true,priceNeedsSetup:true,archived:true,entityType:true,stockBalances:{where:{branchId,store:{archived:false}},select:{available:true}}} as const;
+  const products=await prisma.localProduct.findMany({where:{branchId,id:{in:productIds}},select});
+  const oilCards=await prisma.localProduct.findMany({where:{branchId,archived:false,entityType:"product",OR:[{sae:{not:null}},{name:{contains:"мотор",mode:"insensitive"}}]},select});
+  const oilProducts=[...new Map([...products,...oilCards].map(p=>[p.id,p])).values()].map(p=>({...p,unit:p.uomName,priceCents:p.salePriceCents,available:p.stockBalances.reduce((sum,b)=>sum+Math.max(0,Number(b.available)),0)}));
   const context={
     sender:customerReturnSender(branch),
     bookingUrl:customerReturnBookingUrl(process.env.PUBLIC_BOOKING_ORIGIN??process.env.APP_ORIGIN??process.env.NEXT_PUBLIC_APP_ORIGIN,branchId,branch.status==="active"&&!!branch.bookingSettings?.publicBookingEnabled),
     laborCents:labor.source!=="system_policy"&&!labor.requiresHumanConfirmation&&labor.priceFromCents==null&&labor.priceToCents==null?labor.laborPriceCents:null,
     laborBasis: `${labor.name}. ${labor.selectionReason}`,
+    oilProducts,
     products:products.map(p=>({id:p.id,name:p.name,article:p.article,code:p.code,brand:p.brand,oemParts:p.oemParts,unit:p.uomName,priceCents:p.salePriceCents,priceNeedsSetup:p.priceNeedsSetup,archived:p.archived,entityType:p.entityType,available:p.stockBalances.reduce((sum,b)=>sum+Math.max(0,Number(b.available)),0)})),
   };
   const {selections:filterSelections,issues:filterLookupIssues}=await loadCustomerReturnFilterSelections(candidates,relevant,context.products,organizationId);

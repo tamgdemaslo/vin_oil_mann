@@ -1,11 +1,12 @@
 import type { ReturnCandidate, ReturnDocument, ReturnReason } from "./customer-return-candidates";
+import { selectCustomerReturnOil, type ReturnOilProduct } from "./customer-return-oil";
 
 export type ReturnOfferLine = { productId:string; name:string; quantity:number; unit:string; priceCents:number; sumCents:number; available:number; selectionBasis?:string; replaces?:string };
 export type ReturnOffer = { status:"ready"|"review"; vehicle:string; sourceDate:string; documentIds:string[]; lines:ReturnOfferLine[]; laborCents:number|null; laborBasis:string; totalCents:number|null; issues:string[] };
 export type ReturnOfferProduct = { id:string; name:string; unit:string|null; priceCents:number; archived:boolean; available:number; entityType:string; priceNeedsSetup?:boolean };
 export type ReturnFilterSelection = { product:ReturnOfferProduct; quantity:number; replaces:string|null; basis:string };
 export const returnFilterSelectionKey = (reason:ReturnReason) => [...reason.documentIds].sort().join("|");
-export type ReturnOfferContext = { sender:string; bookingUrl:string|null; laborCents:number|null; laborBasis:string; products:ReturnOfferProduct[]; filterSelections?:Record<string,ReturnFilterSelection[]>; filterLookupIssues?:Record<string,string> };
+export type ReturnOfferContext = { sender:string; bookingUrl:string|null; laborCents:number|null; laborBasis:string; products:ReturnOfferProduct[]; oilProducts?:ReturnOilProduct[]; filterSelections?:Record<string,ReturnFilterSelection[]>; filterLookupIssues?:Record<string,string> };
 export const returnMoney = (cents:number) => new Intl.NumberFormat("ru-RU",{maximumFractionDigits:2}).format(cents/100)+" ₽";
 export function customerReturnSender(branch:{slug:string;name:string;address:string|null}) {
   const location=`${branch.slug} ${branch.name} ${branch.address??""}`;
@@ -38,11 +39,18 @@ export function buildCustomerReturnOffer(reason:ReturnReason,documents:ReturnDoc
   if(reason.needsReview)issues.push("Привязка автомобиля или история пробега требует проверки.");
   if(!sourceDate)issues.push("В истории нет подтверждённой замены моторного масла.");
   let materials=source.flatMap(d=>d.lines).filter(l=>l.quantity>0&&returnMaterialKind(l));
-  const selections=context.filterSelections?.[returnFilterSelectionKey(reason)]??[];
+  const oil=context.oilProducts?selectCustomerReturnOil(materials.filter(l=>returnMaterialKind(l)==="oil"),context.oilProducts):{selections:[],issues:[]};
+  issues.push(...oil.issues);
+  if(oil.selections.length){
+    materials=materials.filter(l=>returnMaterialKind(l)!=="oil");
+    materials.push(...oil.selections.map(s=>({productId:s.product.id,name:s.product.name,quantity:s.quantity,type:"product",metric:"ENGINE_OIL"})));
+  }
+  const filterSelections=context.filterSelections?.[returnFilterSelectionKey(reason)]??[];
+  const selections=[...filterSelections,...oil.selections];
   const selectedById=new Map(selections.map(s=>[s.product.id,s]));
-  if(selections.length){
+  if(filterSelections.length){
     materials=materials.filter(l=>returnMaterialKind(l)!=="filter");
-    materials.push(...selections.map(s=>({productId:s.product.id,name:s.product.name,quantity:s.quantity,type:"product",metric:"OIL_FILTER"})));
+    materials.push(...filterSelections.map(s=>({productId:s.product.id,name:s.product.name,quantity:s.quantity,type:"product",metric:"OIL_FILTER"})));
   }
   if(!materials.some(l=>returnMaterialKind(l)==="oil"))issues.push("В прошлом обслуживании не найдено масло сервиса.");
   if(!materials.some(l=>returnMaterialKind(l)==="filter"))issues.push("В прошлом обслуживании не найден масляный фильтр.");

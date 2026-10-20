@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';import {createJiti} from 'jiti';import {resolve} from 'node:path';
+const j=createJiti(import.meta.url,{fsCache:false,alias:{'@':resolve('src')}});
+const {selectCustomerReturnOil:select,returnOilPackMl:pack,sameReturnOil:same}=await j.import('../src/lib/customer-return-oil.ts');
+const {attachCustomerReturnOffers:attach}=await j.import('../src/lib/customer-return-offer.ts');
+const {returnCandidateFingerprint:fingerprint}=await j.import('../src/lib/customer-return-shared-types.ts');
+const p=(id,liters,extra={})=>({id,name:`Brand Line 5W-30, моторное масло, ${liters} л.`,brand:'Brand',sae:'5W-30',acea:'C3',apiSpec:'SP',oem:'VW 504.00; VW 507.00',ilsac:null,packageVolume:`${liters} л`,unit:'шт',priceCents:liters*100000,available:5,archived:false,entityType:'product',...extra});
+const line=(p,quantity=1,extra={})=>({productId:p.id,name:p.name,quantity,type:'product',metric:'ENGINE_OIL',...extra});
+const sum=r=>r.selections.reduce((s,l)=>s+Math.round(l.quantity*l.product.priceCents),0);
+assert.equal(pack('Масло 5W-30, 100 мл.'),100);assert.equal(pack('Масло 5W30, 0,1 л.'),100);assert.equal(pack('Масло 5W30, 4л'),4000);assert.equal(pack('Масло 5W-30'),null);assert.equal(pack('Масло 1 л / 5 л'),null);
+const old=p('bulk',0.1),bulk=p('bulk',1,{name:'Brand Line 5W-30, моторное масло на розлив, 1 л.',unit:'л',priceCents:99000,available:51});
+let r=select([line(old,36,{analyticsBaseQuantity:36,analyticsBaseUnit:'LITER'})],[bulk]);assert.equal(r.issues.length,0);assert.equal(r.selections[0].quantity,3.6);assert.equal(sum(r),356400);assert.match(r.selections[0].basis,/3.6 л/);
+r=select([line(old,50)],[bulk]);assert.equal(r.selections[0].quantity,5);assert.equal(sum(r),495000);
+r=select([line(bulk,3.6)],[bulk]);assert.equal(r.selections[0].quantity,3.6,'Already-litre history is not divided again');
+const four=p('four',4,{available:0}),five=p('five',5,{priceCents:1261000,available:2}),one=p('one',1,{priceCents:275000,available:4});
+r=select([line(four,2)],[four,five,one]);assert.equal(r.issues.length,0);assert.deepEqual(Object.fromEntries(r.selections.map(s=>[s.product.id,s.quantity])),{five:1,one:3});assert.equal(sum(r),2086000);
+r=select([line(four)],[four,five]);assert.equal(r.selections.length,0);assert.match(r.issues[0],/точные 4 л/,'Do not silently sell a surplus litre');
+r=select([line(four)],[four,p('sealed',5,{unit:'л'})]);assert.equal(r.selections.length,0,'Contradictory litre unit and five-litre name cannot supply a price unit');
+const sameBulk=p('loose',1,{unit:'л',priceCents:59000,available:62});r=select([line(four)],[four,sameBulk]);assert.equal(r.selections[0].quantity,4);assert.equal(sum(r),236000);
+const tiny=p('tiny',0.1,{priceCents:9900,available:50});r=select([line(bulk,4.7)],[{...bulk,available:0},tiny]);assert.equal(r.selections[0].quantity,47,'Whole 100 ml portions also work as destination units');
+for(const patch of [{brand:'Other'},{sae:'0W-30'},{acea:'C2'},{apiSpec:'SN'},{oem:'VW 502.00'},{name:'Brand Other Line 5W-30, моторное масло, 1 л.'},{archived:true},{priceNeedsSetup:true},{priceCents:0},{available:0},{unit:null},{packageVolume:'5 л'}]){
+ r=select([line(four)],[four,p('alternative',1,patch)]);assert.equal(r.selections.length,0,JSON.stringify(patch));
+}
+assert.equal(same(four,p('different',1,{brand:null})),false);
+r=select([line(four)],[{...four,name:'Brand New Formula 5W-30, моторное масло, 4 л.',available:5},one]);assert.equal(r.selections.length,0,'A reused product ID with a different line is not proof of equivalence');
+r=select([line(four,0.5)],[{...four,available:1},one]);assert.equal(r.selections[0].product.id,'one');assert.equal(r.selections[0].quantity,2,'No fractional sealed cans');
+r=select([line(four),line(one)],[four,five,one]);assert.equal(r.issues.length,0);assert.equal(r.selections.reduce((s,l)=>s+l.quantity*pack(l.product.name),0),5000,'Combine all source packs of the same oil before choosing destination packs');
+r=select([line(bulk,0.0001)],[bulk]);assert.equal(r.selections.length,0,'Sub-millilitre quantities require review');
+// Complete quotes must use converted oil prices and still enforce filter/labor/vehicle/combined stock.
+const reason={scenario:'missed_interval',vehicle:'Honda',vehicleKey:'one',lastVisit:'2025-11-13',documentIds:['d'],needsReview:false,confidence:'history',explanation:'Test'};
+const filter=p('filter',1,{name:'Масляный фильтр',priceCents:69000,available:2});
+const docs=[{id:'d',clientKey:'c',date:'2025-11-13',attributes:[],lines:[{name:'Замена моторного масла',type:'service',quantity:1,metric:'ENGINE_OIL_CHANGE'},line(old,36),{...line(filter),metric:'OIL_FILTER'}]}];
+const candidate={id:'c',clientKey:'c',displayName:'Артём',reasons:[reason],needsReview:false,draft:'',phone:null};
+const ctx={sender:'Вадим',bookingUrl:null,laborCents:0,laborBasis:'База',products:[bulk,filter],oilProducts:[bulk]};
+let quote=attach(candidate,docs,ctx);assert.equal(quote.offerReady,true);assert.equal(quote.offers[0].totalCents,425400);assert.equal(quote.offers[0].lines[0].quantity,3.6);
+assert.notEqual(fingerprint(quote),fingerprint(attach(candidate,docs,{...ctx,oilProducts:[{...bulk,priceCents:100000}]})),'A changed oil price invalidates a saved draft');
+assert.notEqual(fingerprint(quote),fingerprint(attach(candidate,docs,{...ctx,oilProducts:[{...bulk,available:0}]})),'Oil stock changes invalidate a saved draft');
+assert.equal(attach(candidate,docs,{...ctx,laborCents:null}).offerReady,false);
+assert.equal(attach({...candidate,reasons:[{...reason,needsReview:true}]},docs,ctx).offerReady,false);
+assert.equal(attach(candidate,docs,{...ctx,products:[bulk,{...filter,available:0}]}).offerReady,false);
+quote=attach({...candidate,reasons:[reason,{...reason,vehicleKey:'two',vehicle:'Honda 2'}]},docs,{...ctx,oilProducts:[{...bulk,available:5}]});assert.equal(quote.offerReady,false,'A single client with two cars must not spend the same five litres twice');
+console.log('PASS: 100 ml→litres, unchanged litre history, exact mixed packs, bulk prices, no surplus/fractional cans, identity/spec conflicts, price/free-stock/branch adapter inputs, full quote totals and multi-car stock. No network or writes.');

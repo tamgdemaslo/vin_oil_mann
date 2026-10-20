@@ -163,7 +163,7 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
                 {offer.totalCents!=null && <p><strong>Итого с работой: {returnMoney(offer.totalCents)}</strong></p>}
                 {!!offer.issues.length && <ul className="eco-return-queue__notice">{offer.issues.map(issue=><li key={issue}>{issue}</li>)}</ul>}
               </div>)}
-              <p className="eco-return-queue__note">Наличие и цены — на момент расчёта. Масло и количество взяты из прошлого обслуживания; замены фильтров отмечены отдельно; фасовка не означает фактически залитый объём. Перед использованием обновите подборку.</p>
+              <p className="eco-return-queue__note">Наличие и цены — на момент расчёта. Объём покупки взят из прошлого обслуживания; изменения фасовок масла и замены фильтров отмечены отдельно. Объём покупки не означает фактически залитый объём. Перед использованием обновите подборку.</p>
             </section>}
             {currentSaved?.deliveryStatus && currentSaved.deliveryStatus!=="none" && <p role="status" className="eco-return-queue__notice">
               <strong>{({sending:"Отправляем в Telegram…",sent:"Отправлено в Telegram",queued:"Передано в очередь Telegram",failed:"Telegram сообщил об ошибке отправки",unknown:"Результат отправки не подтверждён"} as Record<string,string>)[currentSaved.deliveryStatus]??"Проверьте статус отправки"}</strong>

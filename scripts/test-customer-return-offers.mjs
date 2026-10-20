@@ -45,5 +45,8 @@ const isolated=createJiti(import.meta.url,{alias:{'@':resolve('src'),[resolve('s
 const {enrichCustomerReturnOffers}=await isolated.import('../src/lib/customer-return-offer-loader.ts');const {test}=await isolated.import(mock);
 const enriched=await enrichCustomerReturnOffers([candidate],docs);assert.match(enriched[0].draft,/Сергей/);
 assert.equal(test.queries[0].where.id,'branch-a');assert.equal(test.queries[1].organizationId,'org-a');assert.equal(test.queries[2].where.branchId,'branch-a');assert.equal(test.queries[2].select.stockBalances.where.branchId,'branch-a');assert.equal(test.queries[2].select.stockBalances.where.store.archived,false);
+assert.equal(test.queries[3].where.branchId,'branch-a');assert.equal(test.queries[3].where.archived,false);assert.equal(test.queries[3].where.entityType,'product');
+assert.equal(test.queries[3].select.stockBalances.where.branchId,'branch-a');assert.equal(test.queries[3].select.stockBalances.where.store.archived,false);
+for(const field of ['brand','sae','acea','apiSpec','oem','ilsac','packageVolume','uomName'])assert.equal(test.queries[3].select[field],true);
 assert.equal(enriched[0].offerReady,false,'Missing current cards must never produce a complete offer');
 console.log('PASS: historical composition, live prices/free stock, fractional amounts, packaging changes, full totals, exact labor, branch sender/link, stale draft fingerprints, branch-scoped adapter.');
