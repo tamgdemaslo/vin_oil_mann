@@ -28,7 +28,8 @@ export function returnCandidateFingerprint(candidate: { reasons: ReturnReason[] 
   }).sort(([a],[b])=>a<b?-1:a>b?1:0)));
   const serialized=normalized.map(reason=>JSON.stringify(reason)).sort();
   const reasons=`[${serialized.join(",")}]`;
-  return candidate.offers ? JSON.stringify({reasons,offers:candidate.offers,draft:candidate.draft,bookingUrl:candidate.bookingUrl,phone:candidate.phone,counterpartyId:candidate.counterpartyId}) : reasons;
+  const offers=candidate.offers?.map(offer=>({...offer,lines:offer.lines.map(line=>line.stockPolicy==="always_available"?{...line,available:null}:line)}));
+  return candidate.offers ? JSON.stringify({reasons,offers,draft:candidate.draft,bookingUrl:candidate.bookingUrl,phone:candidate.phone,counterpartyId:candidate.counterpartyId}) : reasons;
 }
 
 /** Poll responses may arrive out of order; never roll back an acknowledged version. */

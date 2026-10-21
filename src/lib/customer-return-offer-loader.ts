@@ -11,7 +11,7 @@ export async function enrichCustomerReturnOffers(candidates:ReturnCandidate[],do
   const branchId=getScopedBranchId();
   const branch=await prisma.branch.findFirstOrThrow({where:{id:branchId},select:{slug:true,name:true,address:true,status:true,legacyOrganizationId:true,bookingSettings:{select:{publicBookingEnabled:true}}}});
   const organizationId=branch.legacyOrganizationId??branchId;
-  const labor=await resolveCustomerReturnLabor(organizationId);
+  const [labor,customerLabor]=await Promise.all([resolveCustomerReturnLabor(organizationId),resolveCustomerReturnLabor(organizationId,"customer")]);
   const ids=new Set(candidates.flatMap(c=>c.reasons.flatMap(r=>r.documentIds)));
   const relevant=documents.filter(d=>ids.has(d.id));
   const productIds=[...new Set(relevant.flatMap(d=>d.lines.flatMap(l=>l.productId?[l.productId]:[])))];
@@ -24,6 +24,8 @@ export async function enrichCustomerReturnOffers(candidates:ReturnCandidate[],do
     bookingUrl:customerReturnBookingUrl(process.env.PUBLIC_BOOKING_ORIGIN??process.env.APP_ORIGIN??process.env.NEXT_PUBLIC_APP_ORIGIN,branchId,branch.status==="active"&&!!branch.bookingSettings?.publicBookingEnabled),
     laborCents:labor.source!=="system_policy"&&!labor.requiresHumanConfirmation&&labor.priceFromCents==null&&labor.priceToCents==null?labor.laborPriceCents:null,
     laborBasis: `${labor.name}. ${labor.selectionReason}`,
+    customerLaborCents:customerLabor.source!=="system_policy"&&!customerLabor.requiresHumanConfirmation&&customerLabor.priceFromCents==null&&customerLabor.priceToCents==null?customerLabor.laborPriceCents:null,
+    customerLaborBasis:`${customerLabor.name}. ${customerLabor.selectionReason}`,
     oilProducts,
     products:products.map(p=>({id:p.id,name:p.name,article:p.article,code:p.code,brand:p.brand,oemParts:p.oemParts,unit:p.uomName,priceCents:p.salePriceCents,priceNeedsSetup:p.priceNeedsSetup,archived:p.archived,entityType:p.entityType,available:p.stockBalances.reduce((sum,b)=>sum+Math.max(0,Number(b.available)),0)})),
   };

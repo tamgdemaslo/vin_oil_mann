@@ -42,8 +42,8 @@ export async function loadCustomerReturnFilterSelections(candidates:ReturnCandid
       const ids=[...new Set(result.flatMap(r=>r.compatibleProducts.map(p=>p.id)))];
       if(!ids.length)return [];
       // Re-read unrestricted branch stock: catalogue summaries can be limited to five stores.
-      const rows=await prisma.localProduct.findMany({where:{branchId,id:{in:ids},archived:false,entityType:"product"},select:{id:true,name:true,uomName:true,salePriceCents:true,priceNeedsSetup:true,archived:true,entityType:true,stockBalances:{where:{branchId,store:{archived:false}},select:{available:true}}}});
-      return rows.map(p=>({id:p.id,name:p.name,unit:p.uomName,priceCents:p.salePriceCents,priceNeedsSetup:p.priceNeedsSetup,archived:p.archived,entityType:p.entityType,available:p.stockBalances.reduce((s,b)=>s+Math.max(0,Number(b.available)),0)}));
+      const rows=await prisma.localProduct.findMany({where:{branchId,id:{in:ids},archived:false,entityType:"product"},select:{id:true,name:true,brand:true,uomName:true,salePriceCents:true,priceNeedsSetup:true,archived:true,entityType:true,stockBalances:{where:{branchId,store:{archived:false}},select:{available:true}}}});
+      return rows.map(p=>({id:p.id,name:p.name,brand:p.brand,unit:p.uomName,priceCents:p.salePriceCents,priceNeedsSetup:p.priceNeedsSetup,archived:p.archived,entityType:p.entityType,available:p.stockBalances.reduce((s,b)=>s+Math.max(0,Number(b.available)),0)}));
     })());
     return matches.get(key)!;
   }
@@ -93,6 +93,8 @@ export async function loadCustomerReturnFilterSelections(candidates:ReturnCandid
     const date=history.filter(oilService).map(d=>d.date).sort().at(-1);
     if(!date)return;
     const old=history.filter(d=>d.date===date).flatMap(d=>d.lines).filter(l=>l.quantity>0&&returnMaterialKind(l)==="filter");
+    // With only a paid oil-change service, invite with customer oil; do not invent a filter purchase.
+    if(!old.length&&!history.filter(d=>d.date===date).flatMap(d=>d.lines).some(l=>l.quantity>0&&returnMaterialKind(l)==="oil"))return;
     // Multiple old filters can be a kit or separate applications; never collapse them into one SKU.
     if(old.length>1)return;
     const quantity=old[0]?.quantity??1;

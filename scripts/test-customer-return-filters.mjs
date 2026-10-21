@@ -22,7 +22,7 @@ const {returnCandidateFingerprint:fp}=await jiti.import('../src/lib/customer-ret
 const {state}=await jiti.import(mock);
 const product={id:'old',name:'Фильтр масляный старый',unit:'шт',priceCents:90000,archived:false,available:0,entityType:'product',brand:'MANN',article:'HU 123',oemParts:null};
 const oil={...product,id:'oil',name:'Моторное масло 5 л.',available:5,priceCents:500000};
-const alt={id:'new',name:'Фильтр масляный совместимый',uomName:'шт',salePriceCents:80000,priceNeedsSetup:false,archived:false,entityType:'product',stockBalances:[{available:3}]};
+const alt={id:'new',name:'Фильтр масляный совместимый',brand:'LYNXauto',uomName:'шт',salePriceCents:80000,priceNeedsSetup:false,archived:false,entityType:'product',stockBalances:[{available:3}]};
 const service={name:'Замена моторного масла',type:'service',metric:'ENGINE_OIL_CHANGE',quantity:1};
 const reason={scenario:'single_visit',vehicle:'Автомобиль',vehicleKey:'A123BC39',lastVisit:'2025-11-01',documentIds:['d'],confidence:'history',needsReview:false,explanation:'Год'};
 const candidate={id:'c',clientKey:'c',counterpartyId:'client-a',displayName:'Тест',phone:null,reasons:[reason],draft:'',needsReview:false};
@@ -34,7 +34,7 @@ assert.deepEqual(articles({...product,brand:'OTHER',oemParts:'HU 123'}),[],'Unbr
 reset();let selected=await load([candidate],[doc],[oil,product],'org-a');let offer=build(reason,[doc],{...context,filterSelections:selected});
 assert.equal(offer.status,'ready');assert.equal(offer.totalCents,580000);assert.equal(offer.lines[1].productId,'new');assert.equal(offer.lines[1].replaces,product.name);assert.match(offer.lines[1].selectionBasis,/MANN/);assert.ok(!offer.issues.some(i=>i.includes('Недостаточно')));
 assert.equal(state.queries[0].organizationId,'org-a');assert.equal(state.queries[1].where.branchId,'branch-a');assert.equal(state.queries[1].select.stockBalances.where.store.archived,false);
-const enriched=attach(candidate,[doc],{...context,filterSelections:selected});assert.match(enriched.draft,/совместимый/);assert.ok(!enriched.draft.includes(product.name));assert.match(enriched.draft,/5\s800 ₽/);
+const enriched=attach(candidate,[doc],{...context,filterSelections:selected});assert.match(enriched.draft,/Масляный фильтр LYNX/);assert.equal(state.queries[1].select.brand,true);assert.equal(enriched.offers[0].lines[1].name,alt.name);assert.ok(!enriched.draft.includes(product.name));assert.match(enriched.draft,/5\s800 ₽/);
 reset();assert.deepEqual(await load([candidate],[doc],[oil,{...product,available:2}],'org-a'),{});assert.equal(state.calls,0,'Keep available historical SKU without catalogue queries');
 for(const patch of [{stockBalances:[{available:0}]},{archived:true},{priceNeedsSetup:true},{salePriceCents:0}]){reset();state.rows=[{...alt,...patch}];assert.deepEqual(await load([candidate],[doc],[oil,product],'org-a'),{});}
 reset();state.fail=true;assert.deepEqual(await load([candidate],[doc],[oil,product],'org-a'),{});

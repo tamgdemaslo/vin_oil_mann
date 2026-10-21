@@ -6,7 +6,7 @@ import os from 'node:os';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),root=process.cwd(),out=fs.mkdtempSync(path.join(os.tmpdir(),'return-workflow-preview-'));
 const ts=require('typescript'),w=require('next/dist/compiled/webpack/webpack');
-const sources={CustomerReturnQueue:'src/app/cabinet/customer-analytics/CustomerReturnQueue.tsx',useCustomerReturnSharedState:'src/app/cabinet/customer-analytics/useCustomerReturnSharedState.ts',...Object.fromEntries(['customer-return-candidates','customer-return-shared-types','customer-return-workflow','customer-return-offer','customer-return-oil','customer-vehicle-identity','date-time'].map(n=>[n,'src/lib/'+n+'.ts']))};
+const sources={CustomerReturnQueue:'src/app/cabinet/customer-analytics/CustomerReturnQueue.tsx',useCustomerReturnSharedState:'src/app/cabinet/customer-analytics/useCustomerReturnSharedState.ts',...Object.fromEntries(['customer-return-candidates','customer-return-shared-types','customer-return-message','customer-return-workflow','customer-return-offer','customer-return-oil','customer-vehicle-identity','date-time'].map(n=>[n,'src/lib/'+n+'.ts']))};
 for(const [name,file] of Object.entries(sources))fs.writeFileSync(out+'/'+name+'.js',ts.transpileModule(fs.readFileSync(root+'/'+file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX}}).outputText);
 fs.writeFileSync(out+'/link.js',`import React from 'react';export default function Link({children,...props}){return React.createElement('a',props,children)}`);
 const today='2026-10-21',branchId='preview-only';

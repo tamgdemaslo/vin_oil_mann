@@ -14,12 +14,12 @@ const context={sender:sender({slug:'dachnaya',name:'Дачная',address:null})
 const candidate={id:'c',clientKey:'c',displayName:'Александр',phone:null,reasons:[reason],draft:'старый'};
 const offer=build(reason,docs,context);
 assert.equal(offer.totalCents,762000);assert.equal(offer.status,'ready');assert.equal(offer.lines.length,3);assert.deepEqual(offer.documentIds,['last','same']);
-const draft=attach(candidate,docs,context);assert.match(draft.draft,/Вадим, мастер-приёмщик «Там, где масло» на Дачной/);assert.match(draft.draft,/Итого с работой — 7\s620 ₽/);assert.ok(!/Эко-платформа|Подскажите|актуально ли|какой сейчас пробег/.test(draft.draft));assert.match(draft.draft,/branchId=branch-main/);
+const draft=attach(candidate,docs,context);assert.match(draft.draft,/Вадим, мастер-приёмщик «Там, где масло» на Дачной/);assert.match(draft.draft,/с материалами и работой: 7\s620 ₽/);assert.ok(!/Эко-платформа|Подскажите|актуально ли|какой сейчас пробег/.test(draft.draft));assert.match(draft.draft,/branchId=branch-main/);
 assert.match(sender({slug:'gagarina',name:'Гагарина',address:null}),/Сергей/);assert.ok(!sender({slug:'new',name:'Новый',address:null}).includes('Вадим'));
 assert.equal(link('javascript:alert(1)','b',true),null);assert.equal(link('https://example.com','b',false),null);assert.equal(link(undefined,'b',true),null);
 const change=(id,patch)=>({...context,products:context.products.map(p=>p.id===id?{...p,...patch}:p)});
 for(const ctx of [change('oil',{available:0}),change('filter',{archived:true}),change('filter',{priceCents:0}),change('oil',{priceNeedsSetup:true}),change('oil',{name:'Eurol 5W-30, 1 л.'}),{...context,laborCents:null}]){
- const result=build(reason,docs,ctx);assert.equal(result.status,'review');assert.equal(result.totalCents,null);assert.equal(attach(candidate,docs,ctx).offerReady,false);assert.ok(!attach(candidate,docs,ctx).draft.includes('Итого с работой'));
+ const result=build(reason,docs,ctx);assert.equal(result.status,'review');assert.equal(result.totalCents,null);assert.equal(attach(candidate,docs,ctx).offerReady,false);assert.ok(!attach(candidate,docs,ctx).draft.includes('с материалами и работой:'));
 }
 assert.equal(build({...reason,needsReview:true},docs,context).totalCents,null);
 assert.equal(build({...reason,vehicle:'Автомобиль не указан'},docs,context).totalCents,null);
@@ -44,9 +44,9 @@ export const prisma={branch:{findFirstOrThrow:async(input:any)=>{test.queries.pu
 const isolated=createJiti(import.meta.url,{alias:{'@':resolve('src'),[resolve('src/lib/customer-return-filter-loader.ts')]:mock,...Object.fromEntries(['customer-return-filter-loader','db','request-tenant-store','customer-return-labor','ai-assistant/tariff-context','ai-assistant/labor-pricing'].map(n=>['@/lib/'+n,mock]))}});
 const {enrichCustomerReturnOffers}=await isolated.import('../src/lib/customer-return-offer-loader.ts');const {test}=await isolated.import(mock);
 const enriched=await enrichCustomerReturnOffers([candidate],docs);assert.match(enriched[0].draft,/Сергей/);
-assert.equal(test.queries[0].where.id,'branch-a');assert.equal(test.queries[1].organizationId,'org-a');assert.equal(test.queries[2].where.branchId,'branch-a');assert.equal(test.queries[2].select.stockBalances.where.branchId,'branch-a');assert.equal(test.queries[2].select.stockBalances.where.store.archived,false);
-assert.equal(test.queries[3].where.branchId,'branch-a');assert.equal(test.queries[3].where.archived,false);assert.equal(test.queries[3].where.entityType,'product');
-assert.equal(test.queries[3].select.stockBalances.where.branchId,'branch-a');assert.equal(test.queries[3].select.stockBalances.where.store.archived,false);
-for(const field of ['brand','sae','acea','apiSpec','oem','ilsac','packageVolume','uomName'])assert.equal(test.queries[3].select[field],true);
+assert.equal(test.queries[0].where.id,'branch-a');assert.equal(test.queries[1].organizationId,'org-a');assert.equal(test.queries[3].where.branchId,'branch-a');assert.equal(test.queries[3].select.stockBalances.where.branchId,'branch-a');assert.equal(test.queries[3].select.stockBalances.where.store.archived,false);
+assert.equal(test.queries[4].where.branchId,'branch-a');assert.equal(test.queries[4].where.archived,false);assert.equal(test.queries[4].where.entityType,'product');
+assert.equal(test.queries[4].select.stockBalances.where.branchId,'branch-a');assert.equal(test.queries[4].select.stockBalances.where.store.archived,false);
+for(const field of ['brand','sae','acea','apiSpec','oem','ilsac','packageVolume','uomName'])assert.equal(test.queries[4].select[field],true);
 assert.equal(enriched[0].offerReady,false,'Missing current cards must never produce a complete offer');
 console.log('PASS: historical composition, live prices/free stock, fractional amounts, packaging changes, full totals, exact labor, branch sender/link, stale draft fingerprints, branch-scoped adapter.');

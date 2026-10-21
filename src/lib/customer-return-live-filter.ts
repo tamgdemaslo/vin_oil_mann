@@ -58,6 +58,6 @@ export async function lookupCustomerReturnOilFilter(input:Input):Promise<{produc
   if(!applicability.ids.length)return {products:[],basis:applicability.basis,issue:applicability.issue};
   // The catalogue matcher can summarize one warehouse; the daily offer uses
   // fresh free stock from all active stores of the selected branch.
-  const products=await prisma.localProduct.findMany({where:{branchId,id:{in:applicability.ids},archived:false,entityType:"product"},select:{id:true,name:true,uomName:true,salePriceCents:true,priceNeedsSetup:true,archived:true,entityType:true,stockBalances:{where:{branchId,store:{archived:false}},select:{available:true}}}});
-  return {products:products.map(p=>({id:p.id,name:p.name,unit:p.uomName,priceCents:p.salePriceCents,priceNeedsSetup:p.priceNeedsSetup,archived:p.archived,entityType:p.entityType,available:p.stockBalances.reduce((s,b)=>s+Math.max(0,Number(b.available)),0)})),basis:applicability.basis};
+  const products=await prisma.localProduct.findMany({where:{branchId,id:{in:applicability.ids},archived:false,entityType:"product"},select:{id:true,name:true,brand:true,uomName:true,salePriceCents:true,priceNeedsSetup:true,archived:true,entityType:true,stockBalances:{where:{branchId,store:{archived:false}},select:{available:true}}}});
+  return {products:products.map(p=>({id:p.id,name:p.name,brand:p.brand,unit:p.uomName,priceCents:p.salePriceCents,priceNeedsSetup:p.priceNeedsSetup,archived:p.archived,entityType:p.entityType,available:p.stockBalances.reduce((s,b)=>s+Math.max(0,Number(b.available)),0)})),basis:applicability.basis};
 }

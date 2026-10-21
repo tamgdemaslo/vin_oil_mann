@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Copy, RefreshCw,Send } from "lucide-react";
 import { RETURN_SCENARIO_LABELS, type ReturnCandidate, type ReturnScenario } from "@/lib/customer-return-candidates";
+import { withCustomerReturnBookingLink } from "@/lib/customer-return-message";
 import { returnMoney } from "@/lib/customer-return-offer";
 import { returnCandidateFingerprint } from "@/lib/customer-return-shared-types";
 import { RETURN_TABS,customerReturnTab,customerReturnStatus,type ReturnTab } from "@/lib/customer-return-workflow";
@@ -172,8 +173,9 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
               <h4>{current.offerReady ? "Предложение рассчитано" : "Предложение требует проверки"}</h4>
               {current.offers.map((offer,index)=><div key={`${offer.vehicle}:${index}`}>
                 <p><strong>{offer.vehicle}</strong>{offer.sourceDate ? ` · состав от ${formatServiceDate(offer.sourceDate)}` : ""}</p>
+                {offer.materialsOwner==="customer" && <p>Обслуживание с маслом клиента. Масло не включено в предложение; применяется отдельный тариф работы.</p>}
                 <ul className="eco-return-queue__reasons">{offer.lines.map(line=><li key={line.productId}>
-                  <strong>{line.name}</strong>{line.selectionBasis && <p>{line.replaces ? `Вместо: ${line.replaces}. ` : ""}{line.selectionBasis}</p>}<p>{line.quantity} {line.unit} × {returnMoney(line.priceCents)} = {returnMoney(line.sumCents)} · доступно {line.available} {line.unit}</p>
+                  <strong>{line.name}</strong>{line.selectionBasis && <p>{line.replaces ? `Вместо: ${line.replaces}. ` : ""}{line.selectionBasis}</p>}<p>{line.quantity} {line.unit} × {returnMoney(line.priceCents)} = {returnMoney(line.sumCents)} · {line.stockPolicy==="always_available"?"универсальное кольцо: складской остаток не ограничивает предложение":`доступно ${line.available} ${line.unit}`}</p>
                 </li>)}</ul>
                 <p>Работа: {offer.laborCents==null ? "тариф не подтверждён" : offer.laborCents===0 ? "включена" : returnMoney(offer.laborCents)}. {offer.laborBasis}</p>
                 {offer.totalCents!=null && <p><strong>Итого с работой: {returnMoney(offer.totalCents)}</strong></p>}
@@ -190,7 +192,7 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
             {conflict && <div role="alert" className="eco-return-queue__notice"><p>Коллега изменил эту запись. Ваш текст остался в поле. Общий текст сейчас:</p><pre className="eco-return-queue__conflict-text">{currentSaved?.draftText ?? current.draft}</pre><button type="button" className="eco-btn" disabled={currentBusy} onClick={()=>clearEdit(current.id)}>Загрузить общий текст</button></div>}
             {!deliveryLocked && (current.bookingUrl ? <label className="eco-return-queue__booking-toggle"><input type="checkbox" checked={draft.includes(current.bookingUrl)} disabled={!shared.loaded || currentBusy || deliveryLocked} onChange={e=>{
               const url=current.bookingUrl!;
-              const text=e.target.checked ? `${draft.trim()}\n\nВыбрать удобное время и записаться: ${url}` : draft.split("\n").filter(line=>!line.includes(url)).join("\n").trim();
+              const text=withCustomerReturnBookingLink(draft,url,e.target.checked);
               setEdits({...edits,[current.id]:{text,baseVersion:currentEdit?.baseVersion??version}});
             }}/> Добавить ссылку на самостоятельную запись в этот филиал</label> : <p className="eco-return-queue__note">Ссылка на запись не добавлена: проверьте, включена ли онлайн-запись филиала и настроен ли публичный адрес приложения.</p>)}
             <textarea id="return-message-draft" readOnly={deliveryLocked} disabled={!shared.loaded || currentBusy} rows={8} value={draft} maxLength={10000} onChange={e => setEdits({...edits,[current.id]:{text:e.target.value,baseVersion:currentEdit?.baseVersion??version}})} />

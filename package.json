@@ -26,7 +26,7 @@
     "test:rossko-incoming": "node scripts/test-rossko-incoming.mjs",
     "test:oil-search": "node scripts/test-oil-search.mjs",
     "test:customer-management-insights": "node scripts/test-customer-management-insights.mjs",
-    "test:customer-return": "node scripts/test-customer-return-candidates.mjs && node scripts/test-customer-return-state-route.mjs && node scripts/test-customer-return-offers.mjs && node scripts/test-customer-return-labor.mjs && node scripts/test-customer-return-oil.mjs && node scripts/test-customer-return-filters.mjs && node scripts/test-customer-return-historical-filter.mjs && node scripts/test-customer-return-live-filter.mjs && node scripts/test-customer-return-send-route.mjs && node scripts/test-customer-return-jobs.mjs",
+    "test:customer-return": "node scripts/test-customer-return-candidates.mjs && node scripts/test-customer-return-state-route.mjs && node scripts/test-customer-return-offers.mjs && node scripts/test-customer-return-message.mjs && node scripts/test-customer-return-own-oil-seals.mjs && node scripts/test-customer-return-labor.mjs && node scripts/test-customer-return-oil.mjs && node scripts/test-customer-return-filters.mjs && node scripts/test-customer-return-historical-filter.mjs && node scripts/test-customer-return-live-filter.mjs && node scripts/test-customer-return-send-route.mjs && node scripts/test-customer-return-jobs.mjs",
     "test:customer-return-db": "node scripts/test-customer-return-state-db.mjs && node scripts/test-customer-return-delivery-db.mjs && node scripts/test-customer-return-jobs-db.mjs",
     "test:client-oil-metadata": "node scripts/test-client-oil-metadata.mjs",
     "test:storefront-publication": "node scripts/test-storefront-publication.mjs",
