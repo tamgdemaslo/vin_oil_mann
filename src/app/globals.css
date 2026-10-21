@@ -72054,3 +72054,18 @@ select[size="1"]::-ms-expand {
   .eco-ca-conclusion__links .eco-btn { max-width: 100%; }
   .eco-ca-selection { align-items: flex-start; flex-direction: column; }
 }
+
+/* Return workflow: shared delivery stages remain visible above the offer. */
+.eco-return-queue__tabs { display:flex; flex-wrap:wrap; gap:4px 16px; padding:0 18px; border-bottom:1px solid var(--eco-line); }
+.eco-return-queue__tabs button { display:flex; align-items:center; gap:8px; padding:12px 0; border:0; border-bottom:3px solid transparent; background:transparent; color:var(--eco-muted); font:inherit; font-size:14px; cursor:pointer; }
+.eco-return-queue__tabs button[aria-current="page"] { color:var(--eco-ink); border-bottom-color:var(--eco-rust); font-weight:700; }
+.eco-return-queue__tabs button span { min-width:24px; padding:2px 6px; border-radius:4px; background:var(--eco-surface-sunk); font-size:12px; font-variant-numeric:tabular-nums; text-align:center; }
+.eco-return-queue__summary { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px 16px; padding:12px 18px; }
+.eco-return-queue__summary p { margin:0; flex:1 1 350px; font-size:13px; color:var(--eco-muted); }
+.eco-return-queue .eco-return-queue__badge { display:block; width:fit-content; padding:3px 6px; border-radius:4px; background:var(--eco-surface-sunk); color:var(--eco-ink); font-size:12px; }
+.eco-return-queue__delivery { padding:12px 14px; margin:0 0 18px; border-left:3px solid var(--eco-line); background:var(--eco-surface-sunk); font-size:14px; line-height:1.6; overflow-wrap:anywhere; }
+.eco-return-queue__delivery a { text-decoration:underline; }
+.eco-return-queue .eco-return-queue__badge--sent,.eco-return-queue__delivery--sent { color:#235638; background:#edf6ef; border-color:#467454; }
+.eco-return-queue .eco-return-queue__badge--processing,.eco-return-queue__delivery--processing { color:#244d79; background:#edf3fa; border-color:#567ba7; }
+.eco-return-queue .eco-return-queue__badge--errors,.eco-return-queue__delivery--errors { color:#8a3028; background:#fff0ed; border-color:#b64d40; }
+@media (max-width:760px) { .eco-return-queue__tabs { gap:0 14px; } .eco-return-queue__tabs button { font-size:13px; } }

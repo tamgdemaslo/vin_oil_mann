@@ -14,16 +14,16 @@ export class CustomerReturnDeliveryError extends Error {
   constructor(message:string,public status=409){super(message);}
 }
 /** Explicit employee action only. Atomic branch/day/client claim prevents concurrent/repeated sends. */
-export async function sendCustomerReturnDraft(candidate:ReturnCandidate,input:{serviceDate:string;expectedVersion:number;fingerprint:string},actor:User){
+export async function sendCustomerReturnDraft(candidate:ReturnCandidate,input:{serviceDate:string;expectedVersion:number;fingerprint:string},actor:User, queuedAttempt?:string){
   if(!candidate.offerReady)throw new CustomerReturnDeliveryError("Предложение не рассчитано полностью. Проверьте состав, цены, наличие и работу.");
   const fingerprint=returnCandidateFingerprint(candidate);
   if(fingerprint!==input.fingerprint)throw new CustomerReturnDeliveryError("Цены, наличие или история изменились. Пересчитайте подборку.");
   const branchId=getScopedBranchId();
   const key={branchId,serviceDate:input.serviceDate,clientKey:candidate.clientKey};
   const where={branchId_serviceDate_clientKey:key};
-  const saved=await prisma.customerReturnState.findUnique({where,select:customerReturnStateSelect});
+  const saved=await prisma.customerReturnState.findUnique({where,select:{...customerReturnStateSelect,deliveryAttemptId:true}});
   if(!saved)throw new CustomerReturnDeliveryError("Сначала сохраните черновик.");
-  if(saved.deliveryStatus!=="none")return serializeCustomerReturnState(saved);
+  if(queuedAttempt ? saved.deliveryStatus!=="sending" || saved.deliveryAttemptId!==queuedAttempt : saved.deliveryStatus!=="none")return serializeCustomerReturnState(saved);
   if(saved.version!==input.expectedVersion || saved.draftFingerprint!==fingerprint || saved.skipped)throw new CustomerReturnDeliveryError("Черновик изменён коллегой или пропущен. Обновите общую подборку.");
   const text=saved.draftText?.trim();
   if(!text || text.length>4096)throw new CustomerReturnDeliveryError("Сообщение должно содержать от 1 до 4096 символов.",400);
@@ -33,8 +33,8 @@ export async function sendCustomerReturnDraft(candidate:ReturnCandidate,input:{s
   if(!candidate.counterpartyId && !candidate.phone)throw new CustomerReturnDeliveryError("У клиента нет телефона или привязанной карточки.",400);
   const status=await getContactStatus(contact);
   if(!status.canMessage)throw new CustomerReturnDeliveryError(status.telegramConnected?"Клиент недоступен для сообщения в Telegram.":"Telegram филиала не подключён.");
-  const attempt=randomUUID();
-  const claimed=await prisma.customerReturnState.updateMany({where:{...key,version:input.expectedVersion,deliveryStatus:"none",skipped:false},data:{deliveryStatus:"sending",deliveryAttemptId:attempt,deliveryError:null,version:{increment:1},updatedByLogin:actor.login,updatedByName:actor.name,updatedAt:new Date()}});
+  const attempt=queuedAttempt??randomUUID();
+  const claimed=queuedAttempt?{count:1}:await prisma.customerReturnState.updateMany({where:{...key,version:input.expectedVersion,deliveryStatus:"none",skipped:false},data:{deliveryStatus:"sending",deliveryAttemptId:attempt,deliveryError:null,version:{increment:1},updatedByLogin:actor.login,updatedByName:actor.name,updatedAt:new Date()}});
   if(!claimed.count){
     const current=await prisma.customerReturnState.findUniqueOrThrow({where,select:customerReturnStateSelect});
     if(current.deliveryStatus!=="none")return serializeCustomerReturnState(current);
@@ -52,7 +52,7 @@ export async function sendCustomerReturnDraft(candidate:ReturnCandidate,input:{s
     const deliveryStatus=result?.outbox?.status==="sent"||result?.message.status==="sent"?"sent":result?.outbox && ["queued","processing"].includes(result.outbox.status)?"queued":result?.outbox?.nextAttemptAt?"queued":result?.outbox?.status==="failed"?"failed":"unknown";
     await prisma.customerReturnState.updateMany({where:{...key,deliveryAttemptId:attempt},data:{deliveryStatus,deliveryMessageId:result?.message.id??null,deliveryAt:deliveryStatus==="sent"?new Date():null,deliveryError:["failed","unknown"].includes(deliveryStatus)?"Telegram не подтвердил отправку. Проверьте диалог перед повторными действиями.":null,version:{increment:1},updatedAt:new Date()}});
   }catch(error){
-    await prisma.customerReturnState.updateMany({where:{...key,deliveryAttemptId:attempt},data:{deliveryStatus:sendStarted?"unknown":"none",deliveryError:sendStarted?"Результат отправки не подтверждён. Проверьте диалог; повторная отправка заблокирована.":"Отправка не началась. Проверьте подключение Telegram и привязку клиента.",version:{increment:1},updatedAt:new Date()}});
+    await prisma.customerReturnState.updateMany({where:{...key,deliveryAttemptId:attempt},data:{deliveryStatus:sendStarted?"unknown":queuedAttempt?"failed":"none",deliveryError:sendStarted?"Результат отправки не подтверждён. Проверьте диалог; повторная отправка заблокирована.":"Отправка не началась. Проверьте подключение Telegram и привязку клиента.",version:{increment:1},updatedAt:new Date()}});
     if(!sendStarted)throw new CustomerReturnDeliveryError(error instanceof CustomerReturnDeliveryError?error.message:"Не удалось подготовить диалог Telegram. Сообщение не отправлялось.");
   }
   return serializeCustomerReturnState(await prisma.customerReturnState.findUniqueOrThrow({where,select:customerReturnStateSelect}));

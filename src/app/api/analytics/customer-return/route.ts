@@ -1,10 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { canAccessCustomerReturnQueue } from "@/lib/customer-analytics-access";
 import { getAnalyticsTodayYmd, loadCustomerReturnQueue } from "@/lib/customer-analytics";
 import { listCustomerReturnStates, patchCustomerReturnState } from "@/lib/customer-return-state";
 import { returnCandidateFingerprint } from "@/lib/customer-return-shared-types";
+
+import { processPendingCustomerReturnDeliveries } from "@/lib/customer-return-jobs";
+import { runForBranch } from "@/lib/branch-workers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,6 +34,8 @@ export async function GET(request:NextRequest) {
     return await runWithBranchApiContext(access.context,async()=>{
       const today=getAnalyticsTodayYmd();
       const states=await listCustomerReturnStates(today);
+      // Resume persisted jobs after a server restart, without delaying status polling.
+      if(states.some(state=>state.deliveryStatus==="queued" && !state.deliveryMessageId))after(async()=>{try{await runForBranch(branchId,()=>processPendingCustomerReturnDeliveries());}catch(error){console.error("[customer-return-worker-resume]",error instanceof Error?error.name:"unknown");}});
       const candidates=request.nextUrl.searchParams.get("statesOnly")==="1"?undefined:await loadCustomerReturnQueue(today);
       return json({branchId,today,states,...(candidates?{candidates}:{})});
     });
@@ -50,7 +55,7 @@ export async function PATCH(request:NextRequest) {
     return await runWithBranchApiContext(access.context,async()=>{
       const today=getAnalyticsTodayYmd();
       if(parsed.data.serviceDate!==today) return json({error:"Начался новый день. Пересчитайте подборку; ваш текст остаётся в поле.",code:"day_changed"},409);
-      const candidate=(await loadCustomerReturnQueue(today)).find(c=>c.clientKey===parsed.data.clientKey);
+      const candidate=(await loadCustomerReturnQueue(today,parsed.data.clientKey)).find(c=>c.clientKey===parsed.data.clientKey);
       if(!candidate || returnCandidateFingerprint(candidate)!==parsed.data.fingerprint) return json({error:"История, цены, наличие или предложение изменились. Пересчитайте подборку и проверьте расчёт; ваш текст можно скопировать.",code:"candidate_changed"},409);
       const result=await patchCustomerReturnState(parsed.data,access.context.user);
       return result.status==="saved"?json(result):json({...result,error:"Другой сотрудник уже изменил эту запись. Сравните тексты перед сохранением.",code:"version_conflict"},409);

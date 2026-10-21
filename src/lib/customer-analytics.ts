@@ -1284,7 +1284,7 @@ export async function loadCustomerDemandHistory(params: {
 }
 
 /** Full branch history for staff queue; never exposes financial analytics. */
-export async function loadCustomerReturnQueue(today = getAnalyticsTodayYmd()) {
+export async function loadCustomerReturnQueue(today = getAnalyticsTodayYmd(), clientKey?: string) {
   const demands = (await prisma.localDemand.findMany({
     where: { applicable: true }, select: demandSelect, orderBy: [{ momentAt: "asc" }, { id: "asc" }],
   })).filter(demand => !isAnonymousRetailCounterparty(demand.counterparty));
@@ -1303,7 +1303,7 @@ export async function loadCustomerReturnQueue(today = getAnalyticsTodayYmd()) {
         quantity: Number(position.quantity), metric: position.analyticsMetricCode,
       })),
     })),
-  }), demands.map(returnOfferDocument));
+  }).filter(candidate => !clientKey || candidate.clientKey === clientKey), demands.map(returnOfferDocument));
 }
 
 function returnOfferDocument(demand: LocalDemandWithRelations) {

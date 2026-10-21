@@ -43,6 +43,19 @@ per-branch processing results. Without this scheduled call, due client
 notifications remain queued until an owner manually processes them in the
 notifications journal.
 
+## Customer return delivery queue
+
+The customer return send endpoint saves the employee-approved text atomically
+and returns HTTP 202 before catalog lookup or Telegram calls. Existing
+`customer_return_states` rows store queued work; no schema migration is needed.
+A Next.js `after` callback starts processing with an explicit branch context.
+Authenticated status polling resumes pending jobs after a restart. The trusted
+client notification cron above also resumes these jobs when `CRON_SECRET` is
+configured. Only explicitly queued employee actions are processed, three at a
+time; no campaign is created by a worker. Jobs with an uncertain transport
+outcome are never automatically submitted again. Keep the trusted scheduler
+configured so recovery also works while nobody has the CRM open.
+
 ## Telegram connectivity
 
 Telegram user sessions try MTProto TCP and secure WebSocket on port 443 when
