@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, ChevronDown, Phone, Plus, Search, X, ArrowRight, Archive } from "lucide-react";
+import { type DragEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarClock, ChevronDown, Phone, Plus, Search, X, ArrowRight, Archive, GripVertical } from "lucide-react";
 import { EcoButton } from "@/components/platform/EcoUI";
 import { formatServiceDate } from "@/lib/date-time";
 import { formatPhoneForDisplay, normalizePhoneKey } from "@/lib/phone-normalize";
-import { simpleCaseDeadline, simpleCaseStatus, WORK_CASE_LABELS, WORK_CASE_STATUSES, type SimpleCaseStatus } from "@/lib/client-case-simple";
+import { simpleCaseDeadline, simpleCaseStatus, WORK_CASE_LABELS, WORK_CASE_STATUSES, type SimpleCaseStatus, type WorkCaseStatus } from "@/lib/client-case-simple";
 import type { ClientCaseAction } from "@/lib/client-case-shared";
 import styles from "./simple-crm.module.css";
 
@@ -22,6 +22,13 @@ type Deal = {
 type Stage = { id: string; name: string; deals: Deal[] };
 type Case = Deal & { stage: Stage };
 type Form = { phone: string; title: string; customerName: string; vehicle: string };
+const BOARD_MOVE_ACTIONS: Record<WorkCaseStatus, ClientCaseAction> = {
+  calculation_needed: "calculate",
+  calculation_sent: "mark_calculation_sent",
+  waiting_parts: "waiting_parts",
+  parts_arrived: "parts_arrived",
+};
+const CASE_DRAG_TYPE = "application/x-eco-client-case";
 const EMPTY_FORM: Form = { phone: "", title: "", customerName: "", vehicle: "" };
 const CREATOR_NAMES: Record<string, string> = { ilya: "Илья", denis: "Денис", vadim: "Вадим", maksim: "Максим", sergei: "Сергей", "client-site": "Сайт" };
 const creatorName = (login: string) => CREATOR_NAMES[login] ?? login;
@@ -71,6 +78,9 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   const [form, setForm] = useState<Form>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<WorkCaseStatus | null>(null);
+  const mutationPending = useRef(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [edit, setEdit] = useState({ title: "", phone: "", customerName: "", vehicle: "", notes: "" });
   const [now, setNow] = useState(() => new Date());
@@ -150,24 +160,27 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     finally { submitting.current = false; setSaving(false); requestAnimationFrame(() => phoneRef.current?.focus()); }
   }
 
-  async function action(row: Case, action: ClientCaseAction, body: Record<string, unknown> = {}) {
-    if (busy) return;
+  async function action(row: Case, action: ClientCaseAction, body: Record<string, unknown> = {}, successMessage?: string) {
+    if (mutationPending.current) return;
+    mutationPending.current = true;
     setBusy(row.id); setActionError(null); setNotice("");
     try {
       const res = await fetch(`/api/client-cases/${encodeURIComponent(row.id)}/action`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, action }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Не удалось обновить заявку");
+      if (data.case?.id === row.id) setCases(current => current.map(item => item.id === row.id ? { ...item, ...data.case, stage: item.stage } : item));
       await load();
-      setNotice(action === "mark_calculation_sent" ? "Расчёт отмечен отправленным. Напоминаний об ответе не будет." : "Заявка обновлена");
+      setNotice(successMessage ?? (action === "mark_calculation_sent" ? "Расчёт отмечен отправленным. Напоминаний об ответе не будет." : "Заявка обновлена"));
     } catch (error) { setActionError(error instanceof Error ? error.message : "Не удалось обновить заявку"); }
-    finally { setBusy(null); }
+    finally { mutationPending.current = false; setBusy(null); }
   }
 
   async function saveDetails(event: FormEvent<HTMLFormElement>, row: Case) {
     event.preventDefault();
-    if (busy) return;
+    if (mutationPending.current) return;
     if (!edit.title.trim()) { setActionError("Укажите запрос клиента"); return; }
     if (edit.phone.trim() && !normalizePhoneKey(edit.phone)) { setActionError("Проверьте телефон клиента"); return; }
+    mutationPending.current = true;
     setBusy(row.id); setActionError(null);
     try {
       const res = await fetch(`/api/crm/deals/${encodeURIComponent(row.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(edit) });
@@ -175,7 +188,44 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
       if (!res.ok) throw new Error(data.error || "Не удалось сохранить изменения");
       setEditing(null); await load(); setNotice("Изменения сохранены");
     } catch (error) { setActionError(error instanceof Error ? error.message : "Не удалось сохранить изменения"); }
-    finally { setBusy(null); }
+    finally { mutationPending.current = false; setBusy(null); }
+  }
+
+  function endDrag() {
+    setDraggedId(null);
+    setDropTarget(null);
+  }
+
+  function startDrag(event: DragEvent<HTMLElement>, row: Case) {
+    const target = event.target as Element;
+    if (busy || saving || editing || loadError || simpleCaseStatus(row) === "closed" ||
+      (target.closest("a, button, input, textarea, select, summary") && !target.closest("[data-drag-handle]"))) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(CASE_DRAG_TYPE, row.id);
+    event.dataTransfer.setData("text/plain", row.id);
+    setDraggedId(row.id);
+  }
+
+  function canDrop(status: WorkCaseStatus) {
+    const row = cases.find(item => item.id === draggedId);
+    return !busy && !loadError && row && simpleCaseStatus(row) !== status;
+  }
+
+  async function moveTo(row: Case, status: WorkCaseStatus) {
+    if (simpleCaseStatus(row) === "closed" || simpleCaseStatus(row) === status) return;
+    await action(row, BOARD_MOVE_ACTIONS[status], {}, `Заявка перемещена: ${WORK_CASE_LABELS[status]}`);
+  }
+
+  function dropCase(event: DragEvent<HTMLElement>, status: WorkCaseStatus) {
+    if (!draggedId) return;
+    event.preventDefault();
+    const row = cases.find(item => item.id === draggedId);
+    const valid = canDrop(status) && (event.dataTransfer.getData(CASE_DRAG_TYPE) || event.dataTransfer.getData("text/plain")) === draggedId;
+    endDrag();
+    if (valid && row) void moveTo(row, status);
   }
 
   function renderRow(row: Case) {
@@ -184,7 +234,19 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     const isOverdue = due && due < now;
     const isEditing = editing === row.id;
     const hasBooking = Boolean(row.yclientsRecordId || row.appointmentId);
-    return <article className={`${styles.row} ${isOverdue ? styles.overdueCard : ""}`} key={row.id} id={`case-${row.id}`}>
+    return <article className={`${styles.row} ${isOverdue ? styles.overdueCard : ""} ${draggedId === row.id ? styles.draggedCard : ""}`} key={row.id} id={`case-${row.id}`} aria-busy={busy === row.id}
+      draggable={status !== "closed" && !busy && !saving && !editing && !loadError}
+      onDragStart={event => startDrag(event, row)} onDragEnd={endDrag}>
+      {status !== "closed" && <button type="button" className={styles.dragHandle} data-drag-handle draggable={!busy && !saving && !editing && !loadError}
+        disabled={Boolean(busy) || saving || Boolean(editing) || Boolean(loadError)}
+        aria-label={`Переместить заявку: ${row.vehicle || row.customerName || row.title}`} title="Перетащите в другую колонку. Нажмите, чтобы выбрать этап."
+        onClick={event => {
+          const card = event.currentTarget.closest("article");
+          const details = card?.querySelector("details");
+          if (details) details.open = true;
+          card?.querySelector<HTMLSelectElement>("[data-stage-select]")?.focus();
+        }}><GripVertical size={16} /></button>}
+      {busy === row.id && <span className={styles.savingBadge} role="status">Сохраняем…</span>}
       <div className={styles.cardHeading}><strong>{row.vehicle || row.customerName || "Новый запрос"}</strong><span>{row.source === "client-site" || row.createdByLogin === "client-site" ? "С сайта" : "Звонок"}</span></div>
       <div className={styles.request}><strong>{row.title}</strong></div>
       <div className={styles.client}>
@@ -208,6 +270,12 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
       <details className={styles.details} open={isEditing || undefined}>
         <summary>Подробнее <ChevronDown size={14} /></summary>
         <div className={styles.detailsBody}>
+          {status !== "closed" && !isEditing && <label className={styles.stageField}>Этап заявки
+            <select data-stage-select aria-label="Этап заявки" value={status} disabled={Boolean(busy) || Boolean(loadError)}
+              onChange={event => void moveTo(row, event.target.value as WorkCaseStatus)}>
+              {WORK_CASE_STATUSES.map(stage => <option key={stage} value={stage}>{WORK_CASE_LABELS[stage]}</option>)}
+            </select>
+          </label>}
           <p className={styles.notes}>{row.title}</p>
           {row.notes && <p className={styles.notes}>{row.notes}</p>}
           {row.suppliesNote && <p>Запчасти: {row.suppliesNote}</p>}
@@ -264,14 +332,25 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     {loadError && <div role="alert" className={styles.formError}>{loadError} <EcoButton onClick={() => void load(true)}>Повторить загрузку</EcoButton></div>}
     {urgentOnly && <p className={styles.filterNote}>Только просроченные <button onClick={() => setUrgentOnly(false)}>Показать все</button></p>}
     {loading ? <p className={styles.empty} role="status">Загружаем заявки…</p> : <>
-      {view !== "closed" && <div className={styles.board} data-mobile-focus={mobileFocus}>
+      {view !== "closed" && <div className={`${styles.board} ${draggedId ? styles.boardDragging : ""}`} data-mobile-focus={mobileFocus}>
         {WORK_CASE_STATUSES.filter(status => view === "board" || view === status).map(status => {
           const index = WORK_CASE_STATUSES.indexOf(status);
           const items = rows.filter(row => simpleCaseStatus(row) === status);
           const titles = ["Нужно рассчитать", "Расчёт отправлен", "Запчасти заказаны", "Пришли — записать"];
           const hints = ["Сделать сегодня", "Ждём решения клиента", "Ждём поставку", "Позвонить клиенту"];
           const needsAction = status === "calculation_needed" || status === "parts_arrived";
-          return <section key={status} id={`queue-${status}`} className={`${styles.column} ${needsAction ? styles.activeColumn : ""}`} data-status={status} aria-label={WORK_CASE_LABELS[status]}>
+          return <section key={status} id={`queue-${status}`} className={`${styles.column} ${needsAction ? styles.activeColumn : ""} ${dropTarget === status ? styles.dropTarget : ""}`} data-status={status} aria-label={WORK_CASE_LABELS[status]}
+            onDragEnter={event => { if (canDrop(status)) event.preventDefault(); }}
+            onDragOver={event => {
+              if (!canDrop(status)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              setDropTarget(status);
+            }}
+            onDragLeave={event => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(current => current === status ? null : current);
+            }} onDrop={event => dropCase(event, status)}>
+            {dropTarget === status && <div className={styles.dropHint}>Отпустите, чтобы сменить этап</div>}
             <header className={styles.columnHeading}><div><h2>{titles[index]} <span>{items.length}</span></h2><p>{hints[index]}</p></div>{needsAction && <span className={styles.actionDot} aria-label="Требует действия" />}</header>
             <div className={styles.columnCards}>{items.map(renderRow)}{!items.length && <p className={styles.columnEmpty}>{query ? "Совпадений нет" : status === "calculation_needed" ? "Все расчёты готовы" : status === "parts_arrived" ? "Поступлений пока нет" : "Пока нет заявок"}</p>}</div>
           </section>;

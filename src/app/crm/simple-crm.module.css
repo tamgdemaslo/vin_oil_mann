@@ -114,3 +114,24 @@
  .views button { min-height:34px; }
  .mobileSwitch { margin-bottom:16px; }
 }
+
+.row { position:relative; }
+.row[draggable="true"] { cursor:grab; }
+.row[draggable="true"] :is(a,button,summary,select,input,textarea) { cursor:pointer; }
+.row[aria-busy="true"] { opacity:.65; }
+.dragHandle { position:absolute; top:6px; right:5px; display:grid; place-items:center; width:30px; height:30px; padding:0; border:0; border-radius:4px; background:transparent; color:var(--eco-ink-3,#625e56); cursor:grab !important; }
+.dragHandle:hover { background:var(--eco-surface-sunk,#f1eee7); }
+.dragHandle:active { cursor:grabbing !important; }
+.dragHandle:disabled { opacity:.4; cursor:default !important; }
+.row:has(.dragHandle) .cardHeading { padding-right:22px; }
+.draggedCard { opacity:.4; }
+.boardDragging .column { min-height:300px; }
+.dropTarget { outline:2px dashed var(--eco-rust,#a34220); outline-offset:3px; background:#f6e9e0; }
+.dropHint { padding:10px 5px 0; font-size:11px; font-weight:600; color:var(--eco-rust,#a34220); }
+.stageField { display:grid; gap:6px; margin-bottom:14px; font-size:12px; }
+.stageField select { width:100%; min-width:0; min-height:40px; padding:8px; border:1px solid var(--eco-line-strong,#cdc7ba); border-radius:4px; background:var(--eco-surface,#fff); color:var(--eco-ink,#25231f); font:inherit; }
+.savingBadge { font-size:11px; color:var(--eco-ink-3,#625e56); }
+@media(pointer:coarse) { .dragHandle { display:none; } .row:has(.dragHandle) .cardHeading { padding-right:0; } .row[draggable="true"] { cursor:default; } }
+@media(prefers-reduced-motion:no-preference) { .row { transition:opacity .12s; } }
+.column { position:relative; }
+.dropHint { position:absolute; z-index:1; top:-28px; left:0; padding:5px 8px; border-radius:4px; background:var(--eco-rust,#a34220); color:#fff; pointer-events:none; }
