@@ -8,6 +8,7 @@ import { withCustomerReturnBookingLink } from "@/lib/customer-return-message";
 import { returnMoney } from "@/lib/customer-return-offer";
 import { returnCandidateFingerprint } from "@/lib/customer-return-shared-types";
 import { RETURN_TABS,customerReturnTab,customerReturnStatus,type ReturnTab } from "@/lib/customer-return-workflow";
+import { effectiveCustomerReturnState } from "@/lib/customer-return-contact-policy";
 import { useCustomerReturnSharedState } from "./useCustomerReturnSharedState";
 import { formatServiceDate, formatServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 
@@ -39,7 +40,8 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
   const [legacy] = useState<Saved>(() => readSaved(storageKey));
   const [edits,setEdits]=useState<Record<string,Edit>>({});
   const shared=useCustomerReturnSharedState(branchId,today);
-  const saved = {skipped:Object.values(shared.states).filter(state=>state.skipped).map(state=>state.clientKey)};
+  const states=useMemo(()=>Object.fromEntries(Object.entries(shared.states).map(([key,state])=>[key,effectiveCustomerReturnState(candidates.find(candidate=>candidate.id===key)??{},state)])),[shared.states,candidates]);
+  const saved = {skipped:Object.values(states).filter(state=>state.skipped).map(state=>state.clientKey)};
   const hasEdits=Object.keys(edits).length>0;
   const [selected, setSelected] = useState<string | null>(null);
   const [scenario, setScenario] = useState<ReturnScenario | "all">("all");
@@ -62,21 +64,21 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
   function clearEdit(id:string){setEdits(previous=>{const next={...previous};delete next[id];return next;});}
 
   // A new visit can remove a client from today's candidates; their delivery report must survive.
-  const reportCandidates=useMemo(()=>[...candidates,...Object.values(shared.states).filter(state=>state.deliveryStatus && state.deliveryStatus!=="none" && !candidates.some(candidate=>candidate.id===state.clientKey)).map(state=>({id:state.clientKey,clientKey:state.clientKey,displayName:"Клиент вне текущей подборки",phone:null,reasons:[],draft:state.draftText??"",needsReview:false} as ReturnCandidate))],[candidates,shared.states]);
-  const counts=Object.fromEntries(Object.keys(RETURN_TABS).map(key=>[key,reportCandidates.filter(candidate=>customerReturnTab(candidate,shared.states[candidate.id])===key).length])) as Record<ReturnTab,number>;
+  const reportCandidates=useMemo(()=>[...candidates,...Object.values(states).filter(state=>state.deliveryStatus && state.deliveryStatus!=="none" && !candidates.some(candidate=>candidate.id===state.clientKey)).map(state=>({id:state.clientKey,clientKey:state.clientKey,displayName:"Клиент вне текущей подборки",phone:null,reasons:[],draft:state.draftText??"",needsReview:false} as ReturnCandidate))],[candidates,states]);
+  const counts=Object.fromEntries(Object.keys(RETURN_TABS).map(key=>[key,reportCandidates.filter(candidate=>customerReturnTab(candidate,states[candidate.id])===key).length])) as Record<ReturnTab,number>;
   const visible = useMemo(() => reportCandidates.filter(candidate =>
-    customerReturnTab(candidate,shared.states[candidate.id])===tab &&
+    customerReturnTab(candidate,states[candidate.id])===tab &&
     (scenario === "all" || candidate.reasons.some(reason => reason.scenario === scenario)) &&
     (!search.trim() || [candidate.displayName, candidate.phone, ...candidate.reasons.map(r => r.vehicle)].filter(Boolean).join(" ").toLowerCase().includes(search.trim().toLowerCase()))
-  ), [reportCandidates, scenario, search, tab, shared.states]);
+  ), [reportCandidates, scenario, search, tab, states]);
   const current = visible.find(c => c.id === selected) ?? visible[0];
   const currentBusy=!!current && !!shared.busy[current.id];
-  const currentSaved = current ? shared.states[current.id] : null;
+  const currentSaved = current ? states[current.id] : null;
   const currentFingerprint = current ? fingerprint(current) : "";
   const currentEdit=current?edits[current.id]:null;
   const draft = currentEdit?.text ?? currentSaved?.draftText ?? current?.draft ?? "";
   const version=currentSaved?.version ?? 0;
-  const staleDraft=!!currentSaved?.draftText && currentSaved.draftFingerprint!==currentFingerprint;
+  const staleDraft=(!currentSaved?.deliveryStatus||currentSaved.deliveryStatus==="none") && !!currentSaved?.draftText && currentSaved.draftFingerprint!==currentFingerprint;
   const deliveryLocked=!!currentSaved?.deliveryStatus && currentSaved.deliveryStatus!=="none";
   const conflict=!!currentEdit && currentEdit.baseVersion!==version;
   const legacyDraft=current?legacy.drafts[current.id]:null;
@@ -124,9 +126,9 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
         </div>
         <button type="button" className="eco-btn" disabled={hasEdits || shared.saving} title={hasEdits?"Сначала сохраните или отмените свои правки":undefined} onClick={()=>{void shared.refresh();onRefresh();}}><RefreshCw size={15} /> Пересчитать</button>
       </div>
-      <p className="eco-return-queue__note">Отправка через Telegram филиала. После нажатия клиент перейдёт в «В процессе», и откроется следующий. Коллеги видят общую очередь.</p>
+      <p className="eco-return-queue__note">Отправка через Telegram филиала. После нажатия клиент перейдёт в «В процессе», и откроется следующий. Коллеги видят общую очередь. Отправки прошлых дней учитываются; без нового обслуживания повторное приглашение заблокировано.</p>
       <nav className="eco-return-queue__tabs" aria-label="Статус предложения">{Object.entries(RETURN_TABS).map(([key,label])=><button key={key} type="button" aria-current={tab===key?"page":undefined} onClick={()=>{setTab(key as ReturnTab);setSelected(null);setNotice(null);}}>{label}<span>{shared.loaded?counts[key as ReturnTab]:"…"}</span></button>)}</nav>
-      <div className="eco-return-queue__summary"><p>{({ready:"Рассчитанные предложения. Проверьте текст и отправьте — следующий клиент откроется сразу.",processing:"Сообщения обрабатываются в фоне. Статусы обновляются каждые 3 секунды; результат сохранится после закрытия страницы.",sent:"Telegram подтвердил отправку. Дата, текст и диалог сохранены в карточке.",errors:"Отправка не удалась или её результат не подтверждён. Проверьте причину и диалог.",review:"Не хватает данных для полного предложения. Причина указана в карточке.",skipped:"Клиенты, которых сотрудники пропустили сегодня."})[tab]}</p><button type="button" className="eco-btn" onClick={()=>void shared.refresh()}><RefreshCw size={14}/> Обновить статусы</button></div>
+      <div className="eco-return-queue__summary"><p>{({ready:"Рассчитанные предложения. Проверьте текст и отправьте — следующий клиент откроется сразу.",processing:"Сообщения обрабатываются в фоне. Статусы обновляются каждые 3 секунды; результат сохранится после закрытия страницы.",sent:"Telegram подтвердил отправку. История сохраняется между днями. Повторное приглашение по тому же обслуживанию заблокировано.",errors:"Отправка не удалась или её результат не подтверждён. Проверьте причину и диалог.",review:"Не хватает данных для полного предложения. Причина указана в карточке.",skipped:"Клиенты, которых сотрудники пропустили сегодня."})[tab]}</p><button type="button" className="eco-btn" onClick={()=>void shared.refresh()}><RefreshCw size={14}/> Обновить статусы</button></div>
       <div className="eco-return-queue__filters">
         <label>Сценарий<select value={scenario} onChange={e => setScenario(e.target.value as ReturnScenario | "all")}>
           <option value="all">Все три сценария</option>
@@ -146,7 +148,7 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
               <strong>{candidate.displayName}</strong>
               <span>{[...new Set(candidate.reasons.map(r => r.vehicle))].join("; ")}</span>
               <span>{[...new Set(candidate.reasons.map(r => RETURN_SCENARIO_LABELS[r.scenario]))].join(" · ")}</span>
-              <span className={`eco-return-queue__badge eco-return-queue__badge--${customerReturnTab(candidate,shared.states[candidate.id])}`}>{customerReturnStatus(shared.states[candidate.id])??(candidate.offerReady?"Готово к отправке":"Проверить предложение")}{shared.states[candidate.id]?.deliveryAt && ` · ${formatServiceDateTime(shared.states[candidate.id].deliveryAt!)}`}</span>
+              <span className={`eco-return-queue__badge eco-return-queue__badge--${customerReturnTab(candidate,states[candidate.id])}`}>{customerReturnStatus(states[candidate.id])??(candidate.offerReady?"Готово к отправке":"Проверить предложение")}{states[candidate.id]?.deliveryAt && ` · ${formatServiceDateTime(states[candidate.id].deliveryAt!)}`}</span>
               {candidate.needsReview && <span className="eco-ca-table-warning">{candidate.offerReady===false ? "Проверить предложение" : "Проверить историю"}</span>}
               {saved.skipped.includes(candidate.id) && <span>Пропущен сегодня</span>}
             </button>)}
@@ -156,6 +158,7 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
             {currentSaved?.deliveryStatus && currentSaved.deliveryStatus!=="none" && <p role="status" className={`eco-return-queue__delivery eco-return-queue__delivery--${customerReturnTab(current,currentSaved??undefined)}`}>
               <strong>{customerReturnStatus(currentSaved??undefined)}</strong>
               {currentSaved.deliveryAt && ` · ${formatServiceDateTime(currentSaved.deliveryAt)}`}
+              {currentSaved.historyServiceDate && " · Отправка прошлого дня сохранена. Повтор по тому же обслуживанию заблокирован."}
               {currentSaved.deliveryError && ` · ${currentSaved.deliveryError}`}
               {currentSaved.deliveryConversationId && <> · <Link href={`/messages?conversationId=${encodeURIComponent(currentSaved.deliveryConversationId)}`}>Открыть диалог</Link></>}
               {["failed","unknown"].includes(currentSaved.deliveryStatus) && " · Перед повторными действиями проверьте историю в диалоге."}

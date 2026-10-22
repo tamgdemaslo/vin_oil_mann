@@ -35,7 +35,7 @@ export async function GET(request:NextRequest) {
       const today=getAnalyticsTodayYmd();
       const states=await listCustomerReturnStates(today);
       // Resume persisted jobs after a server restart, without delaying status polling.
-      if(states.some(state=>state.deliveryStatus==="queued" && !state.deliveryMessageId))after(async()=>{try{await runForBranch(branchId,()=>processPendingCustomerReturnDeliveries());}catch(error){console.error("[customer-return-worker-resume]",error instanceof Error?error.name:"unknown");}});
+      if(states.some(state=>[state,state.previousDelivery].some(item=>item?.deliveryStatus==="queued" && !item.deliveryMessageId)))after(async()=>{try{await runForBranch(branchId,()=>processPendingCustomerReturnDeliveries());}catch(error){console.error("[customer-return-worker-resume]",error instanceof Error?error.name:"unknown");}});
       const candidates=request.nextUrl.searchParams.get("statesOnly")==="1"?undefined:await loadCustomerReturnQueue(today);
       return json({branchId,today,states,...(candidates?{candidates}:{})});
     });

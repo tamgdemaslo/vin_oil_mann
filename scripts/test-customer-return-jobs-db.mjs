@@ -38,5 +38,31 @@ try{
  await run('job-a',()=>enqueue({...input,clientKey:'second',fingerprint:fp(second)},actor));test.unknown=true;
  await run('job-a',()=>pump());assert.equal((await run('job-a',()=>prisma.customerReturnState.findFirstOrThrow({where:{branchId:"job-a",clientKey:'second'}}))).deliveryStatus,'unknown');
  test.unknown=false;await run('job-a',()=>pump());assert.equal(test.calls.length,2,'Unknown transport never requeued');
- console.log('PASS: real PostgreSQL concurrent durable inserts and worker claims, branch isolation, version changes, duplicate prevention and uncertain outcome; Telegram mocked.');
+ // Yesterday's actual send stays protected on following days, including after a process restart.
+ await run('job-a',()=>prisma.customerReturnState.updateMany({where:{branchId:'job-a',clientKey:candidate.clientKey},data:{deliveryAt:new Date('2026-10-21T12:00:00Z')}}));
+ await assert.rejects(()=>run('job-a',()=>enqueue({...input,serviceDate:'2026-10-22'},actor)),/Повторное сообщение заблокировано/);
+ const {listCustomerReturnStates:list}=await jiti.import('../src/lib/customer-return-state.ts');
+ const {effectiveCustomerReturnState:effective}=await jiti.import('../src/lib/customer-return-contact-policy.ts');
+ const carried=(await run('job-a',()=>list('2026-10-22'))).find(r=>r.clientKey===candidate.clientKey);
+ assert.equal(effective(candidate,carried).deliveryStatus,'sent');assert.equal(carried.version,0);assert.equal(carried.previousDelivery.draftText,input.draftText);
+ assert.equal((await run('job-b',()=>list('2026-10-22'))).length,0,'Historical dispatches remain branch-scoped');
+ await assert.rejects(()=>run('job-a',()=>enqueue({...input,serviceDate:'2026-10-22',clientKey:'second'},actor)),/Повторное сообщение заблокировано/,'Unknown previous delivery is not retried tomorrow');
+ // A browser can forge dates, but the worker recomputes and checks the real candidate before Telegram.
+ const fresh={...candidate,offers:[{sourceDate:'2026-10-22',lines:[]}]};
+ await run('job-a',()=>enqueue({...input,serviceDate:'2026-10-23',fingerprint:fp(fresh)},actor));
+ await run('job-a',()=>pump());assert.equal(test.calls.length,2,'Forged new-service dates cannot reach transport');
+ // A real new service opens a new campaign; the old sent report is never changed.
+ const next={...candidate,clientKey:'new-cycle',id:'new-cycle',offers:[{sourceDate:'2026-10-22',lines:[]}]};test.candidates.push(next);
+ await run('job-a',()=>prisma.customerReturnState.create({data:{branchId:'job-a',clientKey:next.clientKey,serviceDate:'2026-10-21',deliveryStatus:'sent',deliveryAt:new Date('2026-10-21T12:00:00Z'),updatedByLogin:'anna',updatedByName:'Анна'}}));
+ await run('job-a',()=>enqueue({...input,clientKey:next.clientKey,serviceDate:'2026-10-23',fingerprint:fp(next)},actor));await run('job-a',()=>pump());assert.equal(test.calls.length,3);
+ // The lock spans dates: racing requests around midnight accept at most one job.
+ const midnight={...input,clientKey:'midnight'};
+ const races=await Promise.allSettled(['2026-10-24','2026-10-25'].map(serviceDate=>run('job-a',()=>enqueue({...midnight,serviceDate},actor))));
+ assert.equal(races.filter(r=>r.status==='fulfilled').length,1,'Only one cross-day claim can win');
+ // A late Telegram acknowledgement is reconciled across days, rather than remaining queued forever.
+ await run('job-a',()=>prisma.customerReturnState.create({data:{branchId:'job-a',clientKey:'late-ack',serviceDate:'2026-10-21',deliveryStatus:'queued',deliveryMessageId:'late-ack-message',updatedByLogin:'anna',updatedByName:'Анна'}}));
+ await run('job-a',()=>prisma.$executeRawUnsafe("INSERT INTO messenger_outbox(id,branch_id,message_id,status,updated_at) VALUES ('late-ack-outbox','job-a','late-ack-message','sent','2026-10-21T12:00:00Z') ON CONFLICT (id) DO UPDATE SET status='sent',updated_at='2026-10-21T12:00:00Z'"));
+ const {previousCustomerReturnDelivery:previous}=await jiti.import('../src/lib/customer-return-state.ts');
+ assert.equal((await run('job-a',()=>previous('2026-10-22','late-ack'))).deliveryStatus,'sent');
+ console.log('PASS: real PostgreSQL durable claims, yesterday report recovery, cross-day suppression, real new-service unlock, forged-service rejection, midnight races and late outbox acknowledgements; Telegram mocked.');
 }finally{await prisma.$disconnect();}

@@ -1,3 +1,4 @@
+import { returnContactBlocks,returnFingerprintOffers } from "./customer-return-contact-policy";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -5,7 +6,7 @@ import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { getPublicUsers, type User } from "@/lib/auth";
 import { loadCustomerReturnQueue } from "@/lib/customer-analytics";
 import { CustomerReturnDeliveryError, sendCustomerReturnDraft } from "@/lib/customer-return-delivery";
-import { customerReturnStateSelect as select, serializeCustomerReturnState } from "@/lib/customer-return-state";
+import { customerReturnStateSelect as select, serializeCustomerReturnState,previousCustomerReturnDelivery } from "@/lib/customer-return-state";
 import { assertMessengerOutboundTextSafe } from "@/lib/messenger/messenger-security";
 
 export type ReturnDeliveryRequest = { serviceDate:string; clientKey:string; expectedVersion:number; fingerprint:string; draftText:string };
@@ -20,6 +21,9 @@ export async function enqueueCustomerReturnDelivery(input:ReturnDeliveryRequest,
   const change={draftText:text,draftFingerprint:input.fingerprint,deliveryStatus:"queued",deliveryAttemptId:randomUUID(),deliveryError:null,updatedByLogin:actor.login,updatedByName:actor.name,updatedAt:new Date()};
   try{
     const row=await prisma.$transaction(async tx=>{
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${key.branchId+":"+key.clientKey},0))`);
+      const previous=await previousCustomerReturnDelivery(key.serviceDate,key.clientKey,tx);
+      if(previous&&returnContactBlocks(returnFingerprintOffers(input.fingerprint),previous))throw new CustomerReturnDeliveryError("Клиенту уже отправлено приглашение или отправка ещё не завершена. Повторное сообщение заблокировано до нового обслуживания; проверьте историю отправки.");
       if(input.expectedVersion===0)return tx.customerReturnState.create({data:{...key,...change},select});
       const result=await tx.customerReturnState.updateMany({where:{...key,version:input.expectedVersion,deliveryStatus:"none",skipped:false},data:{...change,version:{increment:1}}});
       return result.count?tx.customerReturnState.findUniqueOrThrow({where,select}):null;

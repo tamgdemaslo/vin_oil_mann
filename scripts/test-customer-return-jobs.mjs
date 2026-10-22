@@ -7,16 +7,17 @@ const mock=join(mkdtempSync(join(tmpdir(),'return-jobs-')),'mock.ts');
 writeFileSync(mock,`
 import {Prisma} from '${resolve('node_modules/@prisma/client/default.js')}';
 export const test:any={branch:'a',rows:[],candidates:[],sent:[],prepared:[],gate:null,throwSend:false};
-const match=(row:any,where:any)=>Object.entries(where).every(([k,v]:any)=>row[k]===v);
+const match=(row:any,where:any)=>Object.entries(where).every(([k,v]:any)=>v&&typeof v==="object"?("lt" in v?row[k]<v.lt:"in" in v?v.in.includes(row[k]):"not" in v?row[k]!==v.not:false):row[k]===v);
 const key=(where:any)=>where.branchId_serviceDate_clientKey??where;
 const table={
+ findFirst:async({where}:any)=>test.rows.filter((r:any)=>match(r,where)).sort((a:any,b:any)=>b.serviceDate.localeCompare(a.serviceDate))[0]??null,
  findUnique:async({where}:any)=>test.rows.find((r:any)=>match(r,key(where)))??null,
  findUniqueOrThrow:async(args:any)=>{const r=await table.findUnique(args);if(!r)throw Error('Missing');return {...r};},
  create:async({data}:any)=>{if(test.rows.some((r:any)=>r.branchId===data.branchId&&r.serviceDate===data.serviceDate&&r.clientKey===data.clientKey))throw new Prisma.PrismaClientKnownRequestError('duplicate',{code:'P2002',clientVersion:'test'});const row={version:1,skipped:false,deliveryMessageId:null,deliveryConversationId:null,deliveryAt:null,...data};test.rows.push(row);return {...row};},
  updateMany:async({where,data}:any)=>{let count=0;for(const r of test.rows)if(match(r,where)){for(const [k,v] of Object.entries(data))r[k]=typeof v==='object'&&v&&'increment' in v?r[k]+(v as any).increment:v;count++;}return {count};},
- findMany:async({where,take}:any)=>test.rows.filter((r:any)=>match(r,where)).slice(0,take).map((r:any)=>({...r})),
+ findMany:async({where,take}:any)=>test.rows.filter((r:any)=>match(r,where)).sort((a:any,b:any)=>b.serviceDate.localeCompare(a.serviceDate)).slice(0,take??Infinity).map((r:any)=>({...r})),
 };
-export const prisma:any={customerReturnState:table,$transaction:async(fn:any)=>fn({customerReturnState:table})};
+export const prisma:any={customerReturnState:table,messengerOutbox:{findMany:async()=>[]},$transaction:async(fn:any)=>fn({...prisma,$executeRaw:async()=>1})};
 export const getScopedBranchId=()=>test.branch;
 export const getPublicUsers=async()=>[{login:'anna',name:'Анна',role:'admin'}];
 export const loadCustomerReturnQueue=async(date:any,key:any)=>{test.prepared.push({date,key});return test.candidates.filter((c:any)=>c.clientKey===key);};
@@ -51,6 +52,7 @@ release();await first;test.gate=null;await pump();
 assert.equal(test.sent.length,2);assert.equal(tab({},test.rows[0]),'sent');assert.equal(test.sent[0].text,one.draftText);assert.equal(test.contact.phone,'server-phone');
 assert.ok(test.prepared.every(call=>call.key),'Only individual client offers recomputed');
 await enqueue(one,actor);await pump();assert.equal(test.sent.length,2,'Sent job never resubmitted');
+await assert.rejects(()=>enqueue({...one,serviceDate:'2026-10-22'},actor),/Повторное сообщение заблокировано/,'Midnight is not a new invitation');
 const stale=input('stale');await enqueue(stale,actor);test.candidates.find(c=>c.clientKey==='stale').draft='new quote';await pump();
 assert.equal(test.rows.find(r=>r.clientKey==='stale').deliveryStatus,'failed');assert.equal(test.sent.length,2,'Stale quote blocked before transport');
 const lost=input('unknown');await enqueue(lost,actor);test.throwSend=true;await pump();assert.equal(test.rows.find(r=>r.clientKey==='unknown').deliveryStatus,'unknown');test.throwSend=false;await pump();assert.equal(test.sent.length,3,'Uncertain transport is not retried');

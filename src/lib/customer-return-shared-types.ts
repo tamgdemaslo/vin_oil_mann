@@ -1,5 +1,8 @@
 import type { ReturnReason, ReturnCandidate } from "./customer-return-candidates";
 export type CustomerReturnSharedState = {
+  serviceDate?: string;
+  previousDelivery?: CustomerReturnSharedState;
+  historyServiceDate?: string;
   clientKey: string;
   draftText: string | null;
   draftFingerprint: string | null;
@@ -38,7 +41,12 @@ export function mergeCustomerReturnStates(
 ): Record<string, CustomerReturnSharedState> {
   const next = { ...previous };
   for (const state of incoming) {
-    if (!next[state.clientKey] || next[state.clientKey].version <= state.version) next[state.clientKey] = state;
+    const current=next[state.clientKey];
+    if(current?.serviceDate&&state.serviceDate&&current.serviceDate!==state.serviceDate){
+      if(state.serviceDate>current.serviceDate)next[state.clientKey]=state;
+      continue;
+    }
+    if (!current || current.version <= state.version) next[state.clientKey] = state;
   }
   return next;
 }

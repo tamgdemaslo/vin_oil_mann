@@ -1,10 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
+import { RETURN_CONTACT_STATUSES } from "./customer-return-contact-policy";
 import type { CustomerReturnSharedState, CustomerReturnStatePatch } from "./customer-return-shared-types";
 
 export const customerReturnStateSelect = {
-  clientKey:true, draftText:true, draftFingerprint:true, skipped:true, version:true,
+  serviceDate:true, clientKey:true, draftText:true, draftFingerprint:true, skipped:true, version:true,
   updatedByLogin:true, updatedByName:true, updatedAt:true,
   deliveryStatus:true, deliveryConversationId:true,deliveryMessageId:true,deliveryAt:true,deliveryError:true,
 } as const;
@@ -13,12 +14,10 @@ type Row = Omit<CustomerReturnSharedState, "updatedAt"|"deliveryAt"> & { updated
 export const serializeCustomerReturnState = (row: Row): CustomerReturnSharedState => ({ ...row, updatedAt: row.updatedAt.toISOString(),deliveryAt:row.deliveryAt?.toISOString()??null });
 const serialize=serializeCustomerReturnState;
 
-export async function listCustomerReturnStates(serviceDate: string): Promise<CustomerReturnSharedState[]> {
-  const rows = await prisma.customerReturnState.findMany({
-    where:{branchId:getScopedBranchId(), serviceDate}, select,
-  });
+type ContactDb=Pick<Prisma.TransactionClient,"customerReturnState"|"messengerOutbox">;
+async function reconcileCustomerReturnRows(rows:Row[],db:ContactDb=prisma):Promise<CustomerReturnSharedState[]> {
   const messageIds=rows.flatMap(row=>row.deliveryMessageId?[row.deliveryMessageId]:[]);
-  const deliveries=messageIds.length?await prisma.messengerOutbox.findMany({where:{branchId:getScopedBranchId(),messageId:{in:messageIds}},select:{messageId:true,status:true,updatedAt:true,nextAttemptAt:true}}):[];
+  const deliveries=messageIds.length?await db.messengerOutbox.findMany({where:{branchId:getScopedBranchId(),messageId:{in:messageIds}},select:{messageId:true,status:true,updatedAt:true,nextAttemptAt:true}}):[];
   return rows.map(row=>{
     const delivery=deliveries.find(d=>d.messageId===row.deliveryMessageId);
     const state=serialize(row);
@@ -28,6 +27,29 @@ export async function listCustomerReturnStates(serviceDate: string): Promise<Cus
     }else if(state.deliveryStatus==="sending" && Date.now()-row.updatedAt.getTime()>180000)state.deliveryStatus="unknown";
     return state;
   });
+}
+
+export async function previousCustomerReturnDelivery(serviceDate:string,clientKey:string,db:ContactDb=prisma) {
+  const rows=await db.customerReturnState.findMany({where:{branchId:getScopedBranchId(),clientKey,serviceDate:{not:serviceDate},deliveryStatus:{in:RETURN_CONTACT_STATUSES}},orderBy:[{serviceDate:"desc"},{updatedAt:"desc"}],select});
+  const contacts=(await reconcileCustomerReturnRows(rows,db)).filter(row=>RETURN_CONTACT_STATUSES.includes(row.deliveryStatus??""));
+  return contacts.find(row=>row.deliveryStatus!=="sent")??contacts[0];
+}
+
+export async function listCustomerReturnStates(serviceDate: string): Promise<CustomerReturnSharedState[]> {
+  const branchId=getScopedBranchId();
+  const [todayRows,previousRows]=await Promise.all([
+    prisma.customerReturnState.findMany({where:{branchId,serviceDate},select}),
+    prisma.customerReturnState.findMany({where:{branchId,serviceDate:{lt:serviceDate},deliveryStatus:{in:RETURN_CONTACT_STATUSES}},orderBy:[{serviceDate:"desc"},{updatedAt:"desc"}],select}),
+  ]);
+  const reconciled=await reconcileCustomerReturnRows([...todayRows,...previousRows]);
+  const result=new Map(reconciled.filter(row=>row.serviceDate===serviceDate).map(row=>[row.clientKey,row]));
+  const seen=new Set<string>();
+  for(const previous of reconciled.filter(row=>row.serviceDate!==serviceDate && RETURN_CONTACT_STATUSES.includes(row.deliveryStatus??"")).sort((a,b)=>Number(a.deliveryStatus==="sent")-Number(b.deliveryStatus==="sent"))){
+    if(seen.has(previous.clientKey))continue;seen.add(previous.clientKey);
+    const current=result.get(previous.clientKey)??{clientKey:previous.clientKey,serviceDate,draftText:null,draftFingerprint:null,skipped:false,version:0,deliveryStatus:"none",updatedByLogin:"",updatedByName:"",updatedAt:previous.updatedAt};
+    result.set(previous.clientKey,{...current,previousDelivery:previous});
+  }
+  return [...result.values()];
 }
 
 export async function patchCustomerReturnState(input: CustomerReturnStatePatch, actor: {login:string; name:string}) {

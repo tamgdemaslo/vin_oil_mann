@@ -28,8 +28,8 @@ export function useCustomerReturnSharedState(branchId:string,today:string) {
       setLoaded(true);setError(null);
     }catch(e){if(!current.signal.aborted)setError(e instanceof Error?e.message:"Не удалось загрузить общие правки.");}
   },[branchId,today]);
-  const active=Object.values({...states,...pending}).some(state=>["queued","sending"].includes(state.deliveryStatus??""));
-  useEffect(()=>{void refresh();return()=>controller.current?.abort();},[refresh]);
+  const active=Object.values({...states,...pending}).some(state=>[state,state.previousDelivery].some(item=>["queued","sending"].includes(item?.deliveryStatus??"")));
+  useEffect(()=>{setStates({});setPending({});pendingKeys.current.clear();setLoaded(false);setError(null);void refresh();return()=>controller.current?.abort();},[refresh]);
   useEffect(()=>{
     const poll=()=>{if(document.visibilityState==="visible")void refresh();};
     const timer=setInterval(poll,active?3000:15000);window.addEventListener("focus",poll);
@@ -49,7 +49,7 @@ export function useCustomerReturnSharedState(branchId:string,today:string) {
   async function send(change:{clientKey:string;expectedVersion:number;fingerprint:string;draftText:string}) {
     if(pendingKeys.current.has(change.clientKey))return {ok:false,error:"Сообщение уже обрабатывается."};
     pendingKeys.current.add(change.clientKey);
-    const optimistic:CustomerReturnSharedState={clientKey:change.clientKey,draftText:change.draftText,draftFingerprint:change.fingerprint,version:change.expectedVersion,skipped:false,updatedByLogin:"",updatedByName:"",updatedAt:new Date().toISOString(),deliveryStatus:"queued"};
+    const optimistic:CustomerReturnSharedState={serviceDate:today,clientKey:change.clientKey,draftText:change.draftText,draftFingerprint:change.fingerprint,version:change.expectedVersion,skipped:false,updatedByLogin:"",updatedByName:"",updatedAt:new Date().toISOString(),deliveryStatus:"queued"};
     setPending(previous=>({...previous,[change.clientKey]:optimistic}));
     let uncertain=false;
     try {

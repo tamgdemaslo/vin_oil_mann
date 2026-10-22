@@ -1,3 +1,4 @@
+import { returnContactBlocks } from "./customer-return-contact-policy";
 import { randomUUID,createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
@@ -6,7 +7,7 @@ import { getContactStatus,startContactConversation } from "@/lib/messenger/messe
 import { getConversation,sendMessage } from "@/lib/messenger/messenger-gateway";
 import { getActiveTelegramUserAccount } from "@/lib/messenger/channels/telegram-user-session";
 import { assertMessengerOutboundTextSafe } from "@/lib/messenger/messenger-security";
-import { customerReturnStateSelect,serializeCustomerReturnState } from "./customer-return-state";
+import { customerReturnStateSelect,serializeCustomerReturnState,previousCustomerReturnDelivery } from "./customer-return-state";
 import { returnCandidateFingerprint } from "./customer-return-shared-types";
 import type { ReturnCandidate } from "./customer-return-candidates";
 
@@ -28,6 +29,9 @@ export async function sendCustomerReturnDraft(candidate:ReturnCandidate,input:{s
   const text=saved.draftText?.trim();
   if(!text || text.length>4096)throw new CustomerReturnDeliveryError("Сообщение должно содержать от 1 до 4096 символов.",400);
   try{assertMessengerOutboundTextSafe(text);}catch(error){throw new CustomerReturnDeliveryError(error instanceof Error?error.message:"Проверьте текст сообщения.",400);}
+  // Re-check real, freshly calculated history, never trust source dates supplied by a browser.
+  const previous=await previousCustomerReturnDelivery(input.serviceDate,candidate.clientKey);
+  if(previous&&returnContactBlocks(candidate,previous))throw new CustomerReturnDeliveryError("Повторное приглашение заблокировано: предыдущее обращение уже отправлено или ещё обрабатывается. Дождитесь нового обслуживания.");
   // Identity and phone come only from freshly recomputed branch history, never from request fields.
   const contact={entityType:"counterparty",counterpartyId:candidate.counterpartyId,phone:candidate.phone,displayName:candidate.displayName,preferredChannel:"telegram"};
   if(!candidate.counterpartyId && !candidate.phone)throw new CustomerReturnDeliveryError("У клиента нет телефона или привязанной карточки.",400);
