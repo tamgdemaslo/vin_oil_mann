@@ -155,3 +155,8 @@
 .quickForm select { width:100%; min-height:44px; padding:10px; font-size:15px; }
 .page select:focus-visible { outline:2px solid var(--eco-rust,#a34220); outline-offset:3px; }
 @media(max-width:560px) { .changeDeadline,.correspondence select { min-height:44px; } .deadlineForm input,.quickForm select { font-size:16px; } .deadlineForm :global(.eco-btn) { min-height:44px; font-size:12px; } }
+
+.customerLink,.client a.customerLink { color:var(--eco-rust,#a34220); text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:3px; }
+.customerLink:hover,.client a.customerLink:hover { color:var(--eco-ink,#25231f); }
+.cardHeading .customerLink { display:inline-flex; align-items:center; min-height:32px; }
+@media(max-width:560px) { .cardHeading .customerLink,.client a.customerLink { min-height:44px; } }
