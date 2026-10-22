@@ -142,3 +142,16 @@
 .orderNumber { display:block; color:var(--eco-ink,#25231f); font-size:12px; font-weight:650; overflow-wrap:anywhere; }
 .partsDialogActions { display:flex; justify-content:space-between; gap:12px; }
 @media(max-width:560px) { .quickForm input[type="datetime-local"] { max-width:100%; min-width:0; } }
+
+.changeDeadline { display:flex; align-items:center; gap:6px; width:fit-content; min-height:36px; border:1px solid var(--eco-line-strong,#cdc7ba); border-radius:4px; padding:6px 10px; background:var(--eco-surface,#fff); color:var(--eco-ink,#25231f); font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+.changeDeadline:hover { background:var(--eco-surface-sunk,#f1eee7); }
+.changeDeadline:disabled { opacity:.5; cursor:default; }
+.deadlineForm { display:grid; gap:10px; border-top:1px solid var(--eco-line,#dedbd2); padding-top:10px; color:var(--eco-ink,#25231f); }
+.deadlineForm label { display:grid; gap:7px; font-size:12px; }
+.deadlineForm input { width:100%; min-width:0; max-width:100%; min-height:44px; padding:8px; font-size:13px; }
+.deadlineForm :global(.eco-btn) { min-height:38px; padding:8px; font-size:11px; justify-content:center; }
+.correspondence { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; font-size:11px; color:var(--eco-ink-3,#625e56); }
+.correspondence select { flex:1; min-width:110px; width:100%; min-height:36px; border:1px solid var(--eco-line,#dedbd2); border-radius:4px; padding:6px 8px; background:var(--eco-surface,#fff); color:var(--eco-ink,#25231f); font:inherit; font-size:12px; }
+.quickForm select { width:100%; min-height:44px; padding:10px; font-size:15px; }
+.page select:focus-visible { outline:2px solid var(--eco-rust,#a34220); outline-offset:3px; }
+@media(max-width:560px) { .changeDeadline,.correspondence select { min-height:44px; } .deadlineForm input,.quickForm select { font-size:16px; } .deadlineForm :global(.eco-btn) { min-height:44px; font-size:12px; } }

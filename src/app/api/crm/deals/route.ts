@@ -1,3 +1,4 @@
+import { validCaseCorrespondence, withCaseCorrespondence } from "@/lib/client-case-correspondence";
 import { caseDayDeadline } from "@/lib/client-case-simple";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
@@ -364,6 +365,10 @@ export async function POST(request: NextRequest) {
     const lastOutboundMessageAt = parseDate(body.lastOutboundMessageAt) ?? (caseStatus === "calculation_sent" ? new Date() : null);
     const lastClientMessageAt = parseDate(body.lastClientMessageAt) ?? null;
 
+    if (body.correspondenceChannel !== undefined && !validCaseCorrespondence(body.correspondenceChannel)) {
+      return NextResponse.json({ error: "Выберите мессенджер из списка" }, { status: 400 });
+    }
+
     const createData: CrmDealCreateData = {
       organizationId: parseOptionalString(body.organizationId),
       title: title ?? customerName ?? counterparty?.name ?? phoneNormalized ?? "Новое дело клиента",
@@ -394,7 +399,7 @@ export async function POST(request: NextRequest) {
       nextContactAt,
       lastClientMessageAt,
       lastOutboundMessageAt,
-      notes: parseOptionalString(body.notes),
+      notes: body.correspondenceChannel === undefined ? parseOptionalString(body.notes) : withCaseCorrespondence(parseOptionalString(body.notes), body.correspondenceChannel),
       createdByLogin: session.user.login,
     };
     if (!createData.nextAction) {

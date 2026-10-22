@@ -1,3 +1,4 @@
+import { caseCorrespondence, validCaseCorrespondence, withCaseCorrespondence } from "@/lib/client-case-correspondence";
 import { caseDayDeadline } from "@/lib/client-case-simple";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
@@ -201,8 +202,18 @@ export async function PATCH(
     const data: Record<string, unknown> = {};
     const current = await prisma.crmDeal.findUnique({
       where: { id },
-      select: { id: true, responsibleLogin: true, stageId: true },
+      select: { id: true, responsibleLogin: true, stageId: true, notes: true },
     });
+
+    if (!current) return NextResponse.json({ error: "Заявка не найдена" }, { status: 404 });
+    if (body.correspondenceChannel !== undefined && !validCaseCorrespondence(body.correspondenceChannel)) {
+      return NextResponse.json({ error: "Выберите мессенджер из списка" }, { status: 400 });
+    }
+    for (const field of ["suppliesExpectedAt", "nextActionAt", "nextContactAt"] as const) {
+      if (body[field] !== undefined && body[field] !== null && body[field] !== "" && !parseDate(body[field])) {
+        return NextResponse.json({ error: "Проверьте дату и время" }, { status: 400 });
+      }
+    }
 
     if (body.organizationId !== undefined) data.organizationId = parseOptionalString(body.organizationId);
     if (body.title !== undefined) data.title = parseOptionalString(body.title) ?? "Новое дело клиента";
@@ -252,7 +263,10 @@ export async function PATCH(
     if (body.lastClientMessageAt !== undefined) data.lastClientMessageAt = parseDate(body.lastClientMessageAt);
     if (body.lastOutboundMessageAt !== undefined) data.lastOutboundMessageAt = parseDate(body.lastOutboundMessageAt);
     if (body.closeReason !== undefined) data.closeReason = parseOptionalString(body.closeReason);
-    if (body.notes !== undefined) data.notes = parseOptionalString(body.notes);
+    if (body.notes !== undefined || body.correspondenceChannel !== undefined) {
+      data.notes = withCaseCorrespondence(body.notes === undefined ? current.notes : parseOptionalString(body.notes),
+        body.correspondenceChannel === undefined ? caseCorrespondence(current.notes) : body.correspondenceChannel);
+    }
     if (body.status !== undefined) {
       const status = parseOptionalString(body.status);
       if (status && ["open", "won", "lost"].includes(status)) {

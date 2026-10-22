@@ -9,6 +9,7 @@ import { formatServiceDate, formatServiceDateTime, parseServiceDateTime, toServi
 import { formatPhoneForDisplay, normalizePhoneKey } from "@/lib/phone-normalize";
 import { simpleCaseDeadline, simpleCaseStatus, WORK_CASE_LABELS, WORK_CASE_STATUSES, type SimpleCaseStatus, type WorkCaseStatus } from "@/lib/client-case-simple";
 import { caseRosskoOrder, caseTimeRemaining, validCaseRosskoOrder } from "@/lib/client-case-parts";
+import { CASE_CORRESPONDENCE_CHANNELS, caseCorrespondence, withoutCaseCorrespondence } from "@/lib/client-case-correspondence";
 import type { ClientCaseAction } from "@/lib/client-case-shared";
 import styles from "./simple-crm.module.css";
 
@@ -22,7 +23,7 @@ type Deal = {
 };
 type Stage = { id: string; name: string; deals: Deal[] };
 type Case = Deal & { stage: Stage };
-type Form = { phone: string; title: string; customerName: string; vehicle: string };
+type Form = { phone: string; title: string; customerName: string; vehicle: string; correspondenceChannel: string };
 const BOARD_MOVE_ACTIONS: Record<WorkCaseStatus, ClientCaseAction> = {
   calculation_needed: "calculate",
   calculation_sent: "mark_calculation_sent",
@@ -30,7 +31,7 @@ const BOARD_MOVE_ACTIONS: Record<WorkCaseStatus, ClientCaseAction> = {
   parts_arrived: "parts_arrived",
 };
 const CASE_DRAG_TYPE = "application/x-eco-client-case";
-const EMPTY_FORM: Form = { phone: "", title: "", customerName: "", vehicle: "" };
+const EMPTY_FORM: Form = { phone: "", title: "", customerName: "", vehicle: "", correspondenceChannel: "" };
 const CREATOR_NAMES: Record<string, string> = { ilya: "Илья", denis: "Денис", vadim: "Вадим", maksim: "Максим", sergei: "Сергей", "client-site": "Сайт" };
 const creatorName = (login: string) => CREATOR_NAMES[login] ?? login;
 function phoneHref(phone: string | null) {
@@ -80,6 +81,9 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   const [partsOrder, setPartsOrder] = useState("");
   const [partsExpected, setPartsExpected] = useState("");
   const [partsError, setPartsError] = useState<string | null>(null);
+  const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; status: SimpleCaseStatus; value: string } | null>(null);
+  const [quickError, setQuickError] = useState<{ id: string; message: string } | null>(null);
+  const deadlineInputRef = useRef<HTMLInputElement>(null);
   const [urgentOnly, setUrgentOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [form, setForm] = useState<Form>(EMPTY_FORM);
@@ -128,7 +132,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     if (found && focusedId.current !== found.id) {
       focusedId.current = found.id;
       setView(simpleCaseStatus(found)); setUrgentOnly(false); setQuery(""); setEditing(found.id);
-      setEdit({ title: found.title, phone: found.phoneNormalized || "", customerName: found.customerName || "", vehicle: found.vehicle || "", notes: found.notes || "" });
+      setEdit({ title: found.title, phone: found.phoneNormalized || "", customerName: found.customerName || "", vehicle: found.vehicle || "", notes: withoutCaseCorrespondence(found.notes) });
     }
   }, [searchParams, cases]);
 
@@ -205,6 +209,44 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     finally { mutationPending.current = false; setBusy(null); }
   }
 
+  async function patchCard(row: Case, body: Record<string, unknown>, message: string) {
+    if (mutationPending.current) return false;
+    mutationPending.current = true;
+    setBusy(row.id); setQuickError(null); setNotice("");
+    try {
+      const res = await fetch(`/api/crm/deals/${encodeURIComponent(row.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Не удалось сохранить изменения");
+      setCases(current => current.map(item => item.id === row.id ? { ...item, ...data, stage: item.stage } : item));
+      await load(); setNotice(message);
+      return true;
+    } catch (error) {
+      setQuickError({ id: row.id, message: error instanceof Error ? error.message : "Не удалось сохранить изменения" });
+      return false;
+    } finally { mutationPending.current = false; setBusy(null); }
+  }
+
+  function editDeadline(row: Case) {
+    const status = simpleCaseStatus(row);
+    const date = status === "waiting_parts" ? row.suppliesExpectedAt : row.nextActionAt || row.nextContactAt;
+    setQuickError(null);
+    setDeadlineEdit({ id: row.id, status, value: date ? toServiceMomentString(date).slice(0, 16).replace(" ", "T") : "" });
+    requestAnimationFrame(() => deadlineInputRef.current?.focus());
+  }
+
+  async function saveDeadline(event: FormEvent<HTMLFormElement>, row: Case) {
+    event.preventDefault();
+    if (!deadlineEdit || mutationPending.current) return;
+    const current = cases.find(item => item.id === row.id);
+    if (!current || simpleCaseStatus(current) !== deadlineEdit.status) {
+      setQuickError({ id: row.id, message: "Этап заявки изменился. Закройте изменение срока и откройте его заново." }); return;
+    }
+    const date = parseServiceDateTime(deadlineEdit.value);
+    if (!date) { setQuickError({ id: row.id, message: "Укажите дату и время" }); return; }
+    const ok = await patchCard(row, deadlineEdit.status === "waiting_parts" ? { suppliesExpectedAt: date.toISOString() } : { nextActionAt: date.toISOString() }, "Новый срок сохранён");
+    if (ok) setDeadlineEdit(null);
+  }
+
   function openPartsOrder(row: Case) {
     if (mutationPending.current || saving) return;
     setPartsRow(row);
@@ -241,7 +283,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
 
   function startDrag(event: DragEvent<HTMLElement>, row: Case) {
     const target = event.target as Element;
-    if (busy || saving || editing || loadError || simpleCaseStatus(row) === "closed" ||
+    if (busy || saving || editing || deadlineEdit || loadError || simpleCaseStatus(row) === "closed" ||
       (target.closest("a, button, input, textarea, select, summary") && !target.closest("[data-drag-handle]"))) {
       event.preventDefault();
       return;
@@ -280,10 +322,10 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     const partsDue = row.suppliesExpectedAt ? parseServiceDateTime(row.suppliesExpectedAt) : null;
     const hasBooking = Boolean(row.yclientsRecordId || row.appointmentId);
     return <article className={`${styles.row} ${isOverdue ? styles.overdueCard : ""} ${draggedId === row.id ? styles.draggedCard : ""}`} key={row.id} id={`case-${row.id}`} aria-busy={busy === row.id}
-      draggable={status !== "closed" && !busy && !saving && !editing && !loadError}
+      draggable={status !== "closed" && !busy && !saving && !editing && !deadlineEdit && !loadError}
       onDragStart={event => startDrag(event, row)} onDragEnd={endDrag}>
-      {status !== "closed" && <button type="button" className={styles.dragHandle} data-drag-handle draggable={!busy && !saving && !editing && !loadError}
-        disabled={Boolean(busy) || saving || Boolean(editing) || Boolean(loadError)}
+      {status !== "closed" && <button type="button" className={styles.dragHandle} data-drag-handle draggable={!busy && !saving && !editing && !deadlineEdit && !loadError}
+        disabled={Boolean(busy) || saving || Boolean(editing) || Boolean(deadlineEdit) || Boolean(loadError)}
         aria-label={`Переместить заявку: ${row.vehicle || row.customerName || row.title}`} title="Перетащите в другую колонку. Нажмите, чтобы выбрать этап."
         onClick={event => {
           const card = event.currentTarget.closest("article");
@@ -292,7 +334,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
           card?.querySelector<HTMLSelectElement>("[data-stage-select]")?.focus();
         }}><GripVertical size={16} /></button>}
       {busy === row.id && <span className={styles.savingBadge} role="status">Сохраняем…</span>}
-      <div className={styles.cardHeading}><strong>{row.vehicle || row.customerName || "Новый запрос"}</strong><span>{row.source === "client-site" || row.createdByLogin === "client-site" ? "С сайта" : "Звонок"}</span></div>
+      <div className={styles.cardHeading}><strong>{row.vehicle || row.customerName || "Новый запрос"}</strong><span>{row.source === "client-site" || row.createdByLogin === "client-site" ? "С сайта" : row.source || ""}</span></div>
       <div className={styles.request}><strong>{row.title}</strong></div>
       <div className={styles.client}>
         {row.customerName && row.vehicle && <span>{row.customerName}</span>}
@@ -305,7 +347,18 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
         {status === "waiting_parts" && (partsDue ? deadlineInfo(partsDue, "Поставка до") : <span>Срок поставки не указан</span>)}
         {status === "calculation_sent" && <span>Расчёт у клиента</span>}
         {status === "closed" && <span>{row.closeReason || "Закрыто"}</span>}
+        {(status === "waiting_parts" || status === "parts_arrived") && deadlineEdit?.id !== row.id && <button type="button" className={styles.changeDeadline} disabled={Boolean(busy) || Boolean(loadError)} onClick={() => editDeadline(row)}><CalendarClock size={14} />{(status === "waiting_parts" ? partsDue : due) ? "Изменить срок" : "Указать срок"}</button>}
+        {deadlineEdit?.id === row.id && <form className={styles.deadlineForm} aria-label="Изменение срока" onSubmit={event => void saveDeadline(event, row)}>
+          <label>{deadlineEdit.status === "waiting_parts" ? "Когда ждём запчасти" : "Позвонить и записать до"}<input ref={deadlineInputRef} className="eco-input" type="datetime-local" required value={deadlineEdit.value} disabled={Boolean(busy)} onInput={event => setDeadlineEdit({ ...deadlineEdit, value: event.currentTarget.value })} onChange={event => setDeadlineEdit({ ...deadlineEdit, value: event.target.value })} /></label>
+          <div className={styles.actions}><EcoButton type="submit" variant="primary" disabled={Boolean(busy)}>{busy === row.id ? "Сохраняем…" : "Сохранить срок"}</EcoButton><EcoButton type="button" disabled={Boolean(busy)} onClick={() => { setDeadlineEdit(null); setQuickError(null); }}>Отмена</EcoButton></div>
+        </form>}
       </div>
+      <label className={styles.correspondence}>Где переписка
+        <select aria-label={`Где переписка: ${row.customerName || row.vehicle || row.title}`} value={caseCorrespondence(row.notes)} disabled={Boolean(busy) || Boolean(loadError)} onChange={event => void patchCard(row, { correspondenceChannel: event.target.value }, "Мессенджер сохранён")}>
+          <option value="">Не указана</option>{CASE_CORRESPONDENCE_CHANNELS.map(channel => <option key={channel} value={channel}>{channel}</option>)}
+        </select>
+      </label>
+      {quickError?.id === row.id && <p className={styles.formError} role="alert">{quickError.message}</p>}
       <div className={styles.actions}>
         {status === "calculation_needed" && <Link className="eco-btn eco-btn--primary" href={calculationHref(row)}>Рассчитать <ArrowRight size={15} /></Link>}
         {status === "calculation_sent" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "waiting_parts")}>Отметить заказ</EcoButton>}
@@ -323,7 +376,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
             </select>
           </label>}
           <p className={styles.notes}>{row.title}</p>
-          {row.notes && <p className={styles.notes}>{row.notes}</p>}
+          {withoutCaseCorrespondence(row.notes) && <p className={styles.notes}>{withoutCaseCorrespondence(row.notes)}</p>}
           {row.suppliesNote && <p>Запчасти: {row.suppliesNote}</p>}
           {row.source && <p>Источник: {row.source === "client-site" ? "Сайт" : row.source}</p>}
           {isEditing ? <form onSubmit={event => void saveDetails(event, row)} className={styles.editForm}>
@@ -336,7 +389,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
           </form> : <div className={styles.actions}>
             {status === "waiting_parts" && <EcoButton disabled={Boolean(busy)} onClick={() => openPartsOrder(row)}>Изменить заказ и срок</EcoButton>}
             {status === "calculation_needed" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "mark_calculation_sent")}>Расчёт уже отправлен</EcoButton>}
-            <EcoButton onClick={() => { setEdit({ title: row.title, phone: row.phoneNormalized || "", customerName: row.customerName || "", vehicle: row.vehicle || "", notes: row.notes || "" }); setEditing(row.id); }}>Редактировать</EcoButton>
+            <EcoButton onClick={() => { setEdit({ title: row.title, phone: row.phoneNormalized || "", customerName: row.customerName || "", vehicle: row.vehicle || "", notes: withoutCaseCorrespondence(row.notes) }); setEditing(row.id); }}>Редактировать</EcoButton>
             {row.phoneNormalized && <a className="eco-btn" href={phoneHref(row.phoneNormalized)}><Phone size={15} />Позвонить</a>}
             {status !== "closed" && <>
               {status !== "calculation_needed" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "calculate")}>Нужен новый расчёт</EcoButton>}
@@ -368,6 +421,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
       <div className={styles.formHeading}>Срок расчёта — сегодня. Установим автоматически.</div>
       <label className={styles.phoneField}>Телефон<input ref={phoneRef} type="tel" inputMode="tel" autoComplete="tel" className="eco-input" placeholder="+7 900 000-00-00" required value={form.phone} disabled={saving} aria-invalid={Boolean(formError) || undefined} aria-describedby={formError ? "request-form-error" : undefined} onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
       <label className={styles.titleField}>Что рассчитать<input className="eco-input" placeholder="Например: замена масла в АКПП" required maxLength={500} value={form.title} disabled={saving} onChange={e => setForm({ ...form, title: e.target.value })} /></label>
+      <label>Где переписка · необязательно<select className="eco-input" value={form.correspondenceChannel} disabled={saving} onChange={event => setForm({ ...form, correspondenceChannel: event.target.value })}><option value="">Не указана</option>{CASE_CORRESPONDENCE_CHANNELS.map(channel => <option key={channel} value={channel}>{channel}</option>)}</select></label>
       <details className={styles.optional}><summary>Имя и авто <ChevronDown size={14} /></summary><div><label>Имя · необязательно<input className="eco-input" autoComplete="name" value={form.customerName} disabled={saving} onChange={e => setForm({ ...form, customerName: e.target.value })} /></label><label>Авто / VIN · необязательно<input className="eco-input" value={form.vehicle} disabled={saving} onChange={e => setForm({ ...form, vehicle: e.target.value })} /></label></div></details>
       <EcoButton className={styles.submit} type="submit" variant="primary" disabled={saving || Boolean(loadError) || loading}><Plus size={16} />{saving ? "Добавляем…" : "Сохранить запрос"}</EcoButton>
       {formError && <p className={styles.formError} role="alert" id="request-form-error">{formError}</p>}
