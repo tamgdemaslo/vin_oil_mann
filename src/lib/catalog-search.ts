@@ -56,6 +56,10 @@ export type CatalogSearchParams = {
   supplier?: string | string[];
   apiSpec?: string | string[];
   acea?: string | string[];
+  ilsac?: string | string[];
+  engineOem?: string | string[];
+  atf?: string | string[];
+  oemAtf?: string | string[];
   packageVolume?: string | string[];
   stock?: string;
   markingProblems?: boolean;
@@ -284,6 +288,10 @@ export type CatalogSearchResult = {
       entityType: string[];
       apiSpec: string[];
       acea: string[];
+      ilsac: string[];
+      engineOem: string[];
+      atf: string[];
+      oemAtf: string[];
       packageVolume: string[];
       stock: StockFilter;
       markingProblems: boolean;
@@ -300,6 +308,10 @@ export type CatalogSearchResult = {
       entityTypes: string[];
       apiSpecs: string[];
       acea: string[];
+      ilsac: string[];
+      engineOem: string[];
+      atf: string[];
+      oemAtf: string[];
       packageVolumes: string[];
     };
     facets: {
@@ -310,6 +322,10 @@ export type CatalogSearchResult = {
       entityTypes: FacetOption[];
       apiSpecs: FacetOption[];
       acea: FacetOption[];
+      ilsac: FacetOption[];
+      engineOem: FacetOption[];
+      atf: FacetOption[];
+      oemAtf: FacetOption[];
       packageVolumes: FacetOption[];
       stock: Record<StockFilter, number>;
     };
@@ -999,7 +1015,7 @@ function filterValuesInclude(values: string[], candidates: string | string[] | n
   });
 }
 
-type CatalogFacetKey = "brand" | "sae" | "supplier" | "group" | "entityType" | "apiSpec" | "acea" | "packageVolume";
+type CatalogFacetKey = "brand" | "sae" | "supplier" | "group" | "entityType" | "apiSpec" | "acea" | "ilsac" | "engineOem" | "atf" | "oemAtf" | "packageVolume";
 
 function productFacetValues(item: CatalogSearchItem, key: CatalogFacetKey): string[] {
   if (key === "brand") return item.brand ? [item.brand] : [];
@@ -1008,20 +1024,28 @@ function productFacetValues(item: CatalogSearchItem, key: CatalogFacetKey): stri
   if (key === "group") return item.groupPath ? [item.groupPath] : [];
   if (key === "entityType") return item.entityType ? [item.entityType] : [];
   if (key === "packageVolume") return item.packageVolume ? [item.packageVolume] : [];
-  if (key === "acea") return parseStoredAttributeValues(item.acea, "acea");
+  if (key === "acea") return [...new Set([...parseStoredAttributeValues(item.acea, "acea"), ...parseStoredAttributeValues(item.aceaExtra, "acea")])];
+  if (key === "ilsac") return parseStoredAttributeValues(item.ilsac, "ilsac");
+  if (key === "engineOem") return parseStoredAttributeValues(item.oem, "engineOem");
+  if (key === "atf") return parseStoredAttributeValues(item.atf, "atf");
+  if (key === "oemAtf") return parseStoredAttributeValues(item.oemAtf, "transmissionOem");
   const profile = resolveProductFluidAttributeProfile(item);
   return parseStoredAttributeValues(item.apiSpec, profile === "TRANSMISSION_FLUID" ? "transmissionApi" : "engineApi");
 }
 
 function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult["meta"]["filters"], storeId?: string | null) {
-  if (!filterValuesInclude(filters.brand, productFacetValues(item, "brand"))) return false;
-  if (!filterValuesInclude(filters.sae, productFacetValues(item, "sae"))) return false;
-  if (!filterValuesInclude(filters.supplier, productFacetValues(item, "supplier"))) return false;
-  if (!filterValuesInclude(filters.group, productFacetValues(item, "group"))) return false;
-  if (!filterValuesInclude(filters.entityType, productFacetValues(item, "entityType"))) return false;
-  if (!filterValuesInclude(filters.apiSpec, productFacetValues(item, "apiSpec"))) return false;
-  if (!filterValuesInclude(filters.acea, productFacetValues(item, "acea"))) return false;
-  if (!filterValuesInclude(filters.packageVolume, productFacetValues(item, "packageVolume"))) return false;
+  if (filters.brand.length && !filterValuesInclude(filters.brand, productFacetValues(item, "brand"))) return false;
+  if (filters.sae.length && !filterValuesInclude(filters.sae, productFacetValues(item, "sae"))) return false;
+  if (filters.supplier.length && !filterValuesInclude(filters.supplier, productFacetValues(item, "supplier"))) return false;
+  if (filters.group.length && !filterValuesInclude(filters.group, productFacetValues(item, "group"))) return false;
+  if (filters.entityType.length && !filterValuesInclude(filters.entityType, productFacetValues(item, "entityType"))) return false;
+  if (filters.apiSpec.length && !filterValuesInclude(filters.apiSpec, productFacetValues(item, "apiSpec"))) return false;
+  if (filters.acea.length && !filterValuesInclude(filters.acea, productFacetValues(item, "acea"))) return false;
+  if (filters.ilsac.length && !filterValuesInclude(filters.ilsac, productFacetValues(item, "ilsac"))) return false;
+  if (filters.engineOem.length && !filterValuesInclude(filters.engineOem, productFacetValues(item, "engineOem"))) return false;
+  if (filters.atf.length && !filterValuesInclude(filters.atf, productFacetValues(item, "atf"))) return false;
+  if (filters.oemAtf.length && !filterValuesInclude(filters.oemAtf, productFacetValues(item, "oemAtf"))) return false;
+  if (filters.packageVolume.length && !filterValuesInclude(filters.packageVolume, productFacetValues(item, "packageVolume"))) return false;
   if (filters.stock === "inStock" && item.totalAvailable <= 0) return false;
   if (filters.stock === "outOfStock" && item.totalAvailable > 0) return false;
   if (filters.markingProblems && !productHasMarkingProblem({
@@ -1057,28 +1081,17 @@ function facetOptions(items: CatalogSearchItem[], key: CatalogFacetKey): FacetOp
   return [...counts.values()].sort((a, b) => b.count - a.count || ruCollator.compare(a.value, b.value));
 }
 
-function buildFacets(items: CatalogSearchItem[], filters: CatalogSearchResult["meta"]["filters"]) {
-  const facetKeys = ["brand", "sae", "supplier", "group", "entityType", "apiSpec", "acea", "packageVolume"] as const;
-  const rowsForStock = items.filter((item) =>
-    facetKeys.every((key) => key === "entityType" ? filterValuesInclude(filters.entityType, item.entityType) : true)
-    && (!filters.markingProblems || productHasMarkingProblem({
-      markingEnabled: item.markingEnabled,
-      markingMode: item.markingMode,
-      markingStatus: item.markingStatus,
-      groupPath: item.groupPath,
-      uomName: item.uomName,
-      settings: item.markingSettings,
-    }))
+function buildFacets(items: CatalogSearchItem[], filters: CatalogSearchResult["meta"]["filters"], storeId?: string | null) {
+  // Each facet counts products matching the other conditions so alternatives remain selectable.
+  const options = (key: CatalogFacetKey) => facetOptions(
+    items.filter((item) => rowMatchesFilters(item, { ...filters, [key]: [] }, storeId)), key,
   );
+  const rowsForStock = items.filter((item) => rowMatchesFilters(item, { ...filters, stock: "all" }, storeId));
   return {
-    brands: facetOptions(items, "brand"),
-    sae: facetOptions(items, "sae"),
-    suppliers: facetOptions(items, "supplier"),
-    groups: facetOptions(items, "group"),
-    entityTypes: facetOptions(items, "entityType"),
-    apiSpecs: facetOptions(items, "apiSpec"),
-    acea: facetOptions(items, "acea"),
-    packageVolumes: facetOptions(items, "packageVolume"),
+    brands: options("brand"), sae: options("sae"), suppliers: options("supplier"),
+    groups: options("group"), entityTypes: options("entityType"), apiSpecs: options("apiSpec"),
+    acea: options("acea"), ilsac: options("ilsac"), engineOem: options("engineOem"),
+    atf: options("atf"), oemAtf: options("oemAtf"), packageVolumes: options("packageVolume"),
     stock: {
       all: rowsForStock.length,
       inStock: rowsForStock.filter((item) => item.totalAvailable > 0).length,
@@ -1305,6 +1318,10 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     entityType: type === "all" ? cleanFilterValues(params.entityType) : [type],
     apiSpec: cleanFilterValues(params.apiSpec),
     acea: cleanFilterValues(params.acea),
+    ilsac: cleanFilterValues(params.ilsac),
+    engineOem: cleanFilterValues(params.engineOem),
+    atf: cleanFilterValues(params.atf),
+    oemAtf: cleanFilterValues(params.oemAtf),
     packageVolume: cleanFilterValues(params.packageVolume),
     stock: params.inStock ? "inStock" : normalizeStockFilter(params.stock),
     markingProblems: params.markingProblems === true,
@@ -1388,7 +1405,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
       const score = matchedFields.reduce((sum, field) => sum + (field.field === "oemParts" ? 100 : 90), 0);
       return [mapProduct(product, score, matchedFields)];
     });
-    const facets = buildFacets(scored, filters);
+    const facets = buildFacets(scored, filters, storeId);
     const filtered = scored.filter((item) => rowMatchesFilters(item, filters, storeId));
     const sorted = filtered.sort((a, b) => compareItems(a, b, sort, direction, context));
     const items = sorted.slice(offset, offset + limit);
@@ -1421,6 +1438,10 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
           entityTypes: facets.entityTypes.map((item) => item.value),
           apiSpecs: facets.apiSpecs.map((item) => item.value),
           acea: facets.acea.map((item) => item.value),
+          ilsac: facets.ilsac.map((item) => item.value),
+          engineOem: facets.engineOem.map((item) => item.value),
+          atf: facets.atf.map((item) => item.value),
+          oemAtf: facets.oemAtf.map((item) => item.value),
           packageVolumes: facets.packageVolumes.map((item) => item.value),
         },
         facets,
@@ -1473,7 +1494,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     if (!score.ok) return [];
     return [mapProduct(product, score.score, score.matchedFields)];
   });
-  const facets = buildFacets(scored, filters);
+  const facets = buildFacets(scored, filters, storeId);
   const filtered = scored.filter((item) => rowMatchesFilters(item, filters, storeId));
   const matchedOutsideFilters = Math.max(0, scored.length - filtered.length);
   const sorted = filtered.sort((a, b) => compareItems(a, b, sort, direction, context));
@@ -1504,6 +1525,10 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
         entityTypes: facets.entityTypes.map((item) => item.value),
         apiSpecs: facets.apiSpecs.map((item) => item.value),
         acea: facets.acea.map((item) => item.value),
+        ilsac: facets.ilsac.map((item) => item.value),
+        engineOem: facets.engineOem.map((item) => item.value),
+        atf: facets.atf.map((item) => item.value),
+        oemAtf: facets.oemAtf.map((item) => item.value),
         packageVolumes: facets.packageVolumes.map((item) => item.value),
       },
       facets,
@@ -1557,6 +1582,10 @@ export function normalizeCatalogProductSelectionSnapshot(value: unknown): Catalo
     supplier: selectionValues(input.supplier),
     apiSpec: selectionValues(input.apiSpec),
     acea: selectionValues(input.acea),
+    ilsac: selectionValues(input.ilsac),
+    engineOem: selectionValues(input.engineOem),
+    atf: selectionValues(input.atf),
+    oemAtf: selectionValues(input.oemAtf),
     packageVolume: selectionValues(input.packageVolume),
     stock,
     markingProblems: input.markingProblems === true,

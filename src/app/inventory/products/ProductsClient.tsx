@@ -63,6 +63,7 @@ import {
   type ProductMarkingMode,
   type ProductMarkingSettings,
 } from "@/lib/product-marking";
+import { parseStoredAttributeValues } from "@/lib/product-attribute-values";
 import { resolveProductFluidAttributeProfile, type ProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 
 type StockRow = {
@@ -214,6 +215,10 @@ type ProductFilters = {
   entityType: string[];
   apiSpec: string[];
   acea: string[];
+  ilsac: string[];
+  engineOem: string[];
+  atf: string[];
+  oemAtf: string[];
   packageVolume: string[];
   stock: StockFilter;
   markingProblems: boolean;
@@ -236,6 +241,10 @@ type ProductFacets = {
   entityTypes: ProductFacetOption[];
   apiSpecs: ProductFacetOption[];
   acea: ProductFacetOption[];
+  ilsac: ProductFacetOption[];
+  engineOem: ProductFacetOption[];
+  atf: ProductFacetOption[];
+  oemAtf: ProductFacetOption[];
   packageVolumes: ProductFacetOption[];
   stock: Record<StockFilter, number>;
 };
@@ -248,6 +257,10 @@ type ProductFilterOptions = {
   entityTypes: string[];
   apiSpecs: string[];
   acea: string[];
+  ilsac: string[];
+  engineOem: string[];
+  atf: string[];
+  oemAtf: string[];
   packageVolumes: string[];
 };
 
@@ -675,6 +688,10 @@ const emptyFilters: ProductFilters = {
   entityType: [],
   apiSpec: [],
   acea: [],
+  ilsac: [],
+  engineOem: [],
+  atf: [],
+  oemAtf: [],
   packageVolume: [],
   stock: "all",
   markingProblems: false,
@@ -692,6 +709,10 @@ const emptyFilterOptions: ProductFilterOptions = {
   entityTypes: [],
   apiSpecs: [],
   acea: [],
+  ilsac: [],
+  engineOem: [],
+  atf: [],
+  oemAtf: [],
   packageVolumes: [],
 };
 
@@ -703,6 +724,10 @@ const emptyFacets: ProductFacets = {
   entityTypes: [],
   apiSpecs: [],
   acea: [],
+  ilsac: [],
+  engineOem: [],
+  atf: [],
+  oemAtf: [],
   packageVolumes: [],
   stock: { all: 0, inStock: 0, outOfStock: 0 },
 };
@@ -1014,7 +1039,7 @@ function uniqueGroupsByLabel(groups: string[]) {
 }
 
 type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems" | "priceMissing" | "qualityIssue" | "oemParts" | "publication">;
-type FacetKey = "group" | "brand" | "sae" | "supplier" | "apiSpec" | "acea" | "packageVolume" | "entityType";
+type FacetKey = "group" | "brand" | "sae" | "supplier" | "apiSpec" | "acea" | "ilsac" | "engineOem" | "atf" | "oemAtf" | "packageVolume" | "entityType";
 type FacetOrderState = Record<FacetKey, Map<string, number>>;
 type FacetPreviewPinState = Record<FacetKey, Set<string>>;
 
@@ -1025,6 +1050,10 @@ const facetLabels: Record<FacetKey, { title: string; search: string; all: string
   supplier: { title: "Поставщик", search: "Найти поставщика", all: "Показать всех поставщиков" },
   apiSpec: { title: "API", search: "Найти API", all: "Показать все API" },
   acea: { title: "ACEA", search: "Найти ACEA", all: "Показать все ACEA" },
+  ilsac: { title: "ILSAC", search: "Например, GF-6A", all: "Показать все ILSAC" },
+  engineOem: { title: "OEM · Двигатель", search: "Например, VW 504.00", all: "Показать все допуски OEM" },
+  atf: { title: "ATF", search: "Например, Dexron VI", all: "Показать все ATF" },
+  oemAtf: { title: "OEM · Трансмиссия", search: "Например, MB 236.14", all: "Показать все допуски трансмиссии" },
   packageVolume: { title: "Фасовка", search: "Найти фасовку", all: "Показать все фасовки" },
   entityType: { title: "Тип", search: "Найти тип", all: "Показать все типы" },
 };
@@ -1070,6 +1099,10 @@ function createFacetOrderState(): FacetOrderState {
     supplier: new Map(),
     apiSpec: new Map(),
     acea: new Map(),
+    ilsac: new Map(),
+    engineOem: new Map(),
+    atf: new Map(),
+    oemAtf: new Map(),
     packageVolume: new Map(),
     entityType: new Map(),
   };
@@ -1083,6 +1116,10 @@ function createFacetPreviewPinState(): FacetPreviewPinState {
     supplier: new Set(),
     apiSpec: new Set(),
     acea: new Set(),
+    ilsac: new Set(),
+    engineOem: new Set(),
+    atf: new Set(),
+    oemAtf: new Set(),
     packageVolume: new Set(),
     entityType: new Set(),
   };
@@ -1108,7 +1145,8 @@ function usefulProductMetaLines(row: ProductRow) {
   const compactMeta = [shortGroupLabel(row.groupPath), displayBrandLabel(row.brand), row.packageVolume]
     .filter((value) => value && value !== "-")
     .join(" · ");
-  return [compactMeta].filter(Boolean);
+  const specifications = [row.sae, [...new Set([...parseStoredAttributeValues(row.acea, "acea"), ...parseStoredAttributeValues(row.aceaExtra, "acea")])].join("; "), row.apiSpec ? `API ${row.apiSpec}` : "", row.ilsac ? `ILSAC ${row.ilsac}` : "", row.atf].filter(Boolean).join(" · ");
+  return [compactMeta, specifications].filter(Boolean);
 }
 
 function formatFileSize(value: number) {
@@ -1796,6 +1834,7 @@ export default function ProductsClient() {
   const [facetDialog, setFacetDialog] = useState<FacetKey | null>(null);
   const [facetDraftValues, setFacetDraftValues] = useState<string[]>([]);
   const [facetSearch, setFacetSearch] = useState("");
+  const [specSearch, setSpecSearch] = useState<Partial<Record<FacetKey, string>>>({});
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const [filtersSidebarReady, setFiltersSidebarReady] = useState(false);
   const [filtersDrawerOpen, setFiltersDrawerOpen] = useState(false);
@@ -2970,6 +3009,7 @@ export default function ProductsClient() {
   }
 
   function resetFilters() {
+    setSpecSearch({});
     setFilters(emptyFilters);
     setStorageCellFilter("all");
     setOriginFilter("all");
@@ -2983,6 +3023,7 @@ export default function ProductsClient() {
   }
 
   function resetAll() {
+    setSpecSearch({});
     setSearch("");
     setFilters(emptyFilters);
     setStorageCellFilter("all");
@@ -3628,13 +3669,19 @@ export default function ProductsClient() {
     const selected = selectedFilterValues(filters, key);
     const selectedSet = new Set(selected.map((value) => facetStableKey(key, value)));
     const pinnedSet = facetPreviewPinsRef.current[key];
-    const preview = options.filter((option, index) => {
+    const isSpecification = ["acea", "apiSpec", "ilsac", "engineOem", "atf", "oemAtf"].includes(key);
+    const needle = normalizeFieldSearch(specSearch[key] ?? "").replace(/с/g, "c");
+    const matchingOptions = isSpecification && needle
+      ? options.filter((option) => normalizeFieldSearch(option.value).replace(/с/g, "c").includes(needle))
+      : options;
+    const preview = matchingOptions.filter((option, index) => {
       const stableKey = facetStableKey(key, option.value);
-      return index < previewCount || selectedSet.has(stableKey) || pinnedSet.has(stableKey);
+      return (needle ? index < 20 : index < previewCount) || selectedSet.has(stableKey) || pinnedSet.has(stableKey);
     });
     return (
       <div className="eco-filter-group">
         <div className="eco-filter-title">{facetLabels[key].title}</div>
+        {isSpecification ? <input className="eco-input eco-spec-search" aria-label={`Поиск ${facetLabels[key].title}`} placeholder={key === "acea" ? "Например, C4" : facetLabels[key].search} value={specSearch[key] ?? ""} onChange={(event) => setSpecSearch((prev) => ({ ...prev, [key]: event.target.value }))} /> : null}
         {preview.length ? (
           <div className="eco-filter-list">
             {preview.map((option) => {
@@ -3643,6 +3690,7 @@ export default function ProductsClient() {
                 <button
                   key={option.value}
                   type="button"
+                  aria-pressed={active}
                   className={`eco-filter-row ${active ? "is-active" : ""}`}
                   onClick={() => toggleFilterValue(key, option.value)}
                 >
@@ -3656,9 +3704,9 @@ export default function ProductsClient() {
             })}
           </div>
         ) : (
-          <div className="eco-filter-empty">Нет значений</div>
+          <div className="eco-filter-empty">{needle ? "Допуск не найден. Попробуйте другой запрос." : "Нет значений для текущих условий"}</div>
         )}
-        {options.length > previewCount ? (
+        {matchingOptions.length > preview.length ? (
           <button type="button" className="eco-filter-more" onClick={() => openFacetDialog(key)}>
             {facetLabels[key].all}
           </button>
@@ -3672,7 +3720,7 @@ export default function ProductsClient() {
     if (search.trim()) {
       chips.push({ key: "search", label: `Поиск: ${search.trim()}`, onRemove: () => setSearch("") });
     }
-    (["group", "brand", "sae", "supplier", "apiSpec", "acea", "packageVolume", "entityType"] as FacetKey[]).forEach((key) => {
+    (["group", "brand", "sae", "supplier", "apiSpec", "acea", "ilsac", "engineOem", "atf", "oemAtf", "packageVolume", "entityType"] as FacetKey[]).forEach((key) => {
       selectedFilterValues(filters, key).forEach((value) => {
         chips.push({
           key: `${key}:${value}`,
@@ -6046,6 +6094,7 @@ export default function ProductsClient() {
                     <button
                       key={option.value}
                       type="button"
+                      aria-pressed={active}
                       className={`eco-filter-row ${active ? "is-active" : ""}`}
                       onClick={() => toggleFacetDraftValue(option.value)}
                     >
@@ -6546,7 +6595,8 @@ export default function ProductsClient() {
                   onKeyDown={(event) => {
                     if (event.key === "Escape") setSearch("");
                   }}
-                  placeholder="Название, артикул, OEM, бренд..."
+                  aria-label="Поиск товаров"
+                  placeholder="Название, артикул, допуск…"
                   className="eco-input"
                 />
                 {search.trim() ? (
@@ -6556,6 +6606,19 @@ export default function ProductsClient() {
                 ) : null}
               </div>
             </div>
+
+            <section className="eco-specifications" aria-label="Допуски и спецификации">
+              <h2>Допуски и спецификации</h2>
+              <p>Выберите стандарт, затем нужный допуск. Например: ACEA → C4.</p>
+              {renderFacetFilter("acea", 6)}
+              {(["apiSpec", "ilsac", "engineOem", "atf", "oemAtf"] as FacetKey[]).map((key) => (
+                <details key={key} className="eco-spec-details" open={filters[key].length > 0 || undefined}>
+                  <summary>{facetLabels[key].title}{filters[key].length > 0 ? <span>{filters[key].length}</span> : null}</summary>
+                  {renderFacetFilter(key, 5)}
+                </details>
+              ))}
+              <p className="eco-spec-rule">В одном стандарте — любой из выбранных. Между стандартами — все условия сразу.</p>
+            </section>
 
             <div className="eco-filter-group">
               <div className="eco-filter-title">Проблемные позиции</div>

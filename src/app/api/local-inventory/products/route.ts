@@ -36,6 +36,10 @@ export async function GET(request: NextRequest) {
   const entityType = readFilterValues(request, "entityType");
   const apiSpec = readFilterValues(request, "apiSpec");
   const acea = readFilterValues(request, "acea");
+  const ilsac = readFilterValues(request, "ilsac");
+  const engineOem = readFilterValues(request, "engineOem");
+  const atf = readFilterValues(request, "atf");
+  const oemAtf = readFilterValues(request, "oemAtf");
   const packageVolume = readFilterValues(request, "packageVolume");
   const stock = request.nextUrl.searchParams.get("stock") ?? "";
   const storeId = request.nextUrl.searchParams.get("storeId") ?? "";
@@ -59,6 +63,10 @@ export async function GET(request: NextRequest) {
     entityType,
     apiSpec,
     acea,
+    ilsac,
+    engineOem,
+    atf,
+    oemAtf,
     packageVolume,
     stock,
     storeId,

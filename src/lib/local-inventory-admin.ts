@@ -1269,6 +1269,10 @@ type ProductFilterParams = {
   entityType?: MultiProductFilterValue;
   apiSpec?: MultiProductFilterValue;
   acea?: MultiProductFilterValue;
+  ilsac?: MultiProductFilterValue;
+  engineOem?: MultiProductFilterValue;
+  atf?: MultiProductFilterValue;
+  oemAtf?: MultiProductFilterValue;
   packageVolume?: MultiProductFilterValue;
   stock?: string;
   storeId?: string;
@@ -1283,6 +1287,10 @@ type ProductFilterOptions = {
   entityTypes: string[];
   apiSpecs: string[];
   acea: string[];
+  ilsac: string[];
+  engineOem: string[];
+  atf: string[];
+  oemAtf: string[];
   packageVolumes: string[];
 };
 type ProductRowsCacheEntry = { key: string; expiresAt: number; rows: ProductSearchRow[] };
@@ -1522,7 +1530,7 @@ function compareProducts(a: ProductSearchRow, b: ProductSearchRow, sort: Product
   return compareText(a.name, b.name, "asc");
 }
 
-type ProductFacetKey = "brand" | "sae" | "supplier" | "group" | "entityType" | "apiSpec" | "acea" | "packageVolume";
+type ProductFacetKey = "brand" | "sae" | "supplier" | "group" | "entityType" | "apiSpec" | "acea" | "ilsac" | "engineOem" | "atf" | "oemAtf" | "packageVolume";
 type ProductFacetOption = { value: string; count: number };
 type ProductFacets = {
   brands: ProductFacetOption[];
@@ -1532,6 +1540,10 @@ type ProductFacets = {
   entityTypes: ProductFacetOption[];
   apiSpecs: ProductFacetOption[];
   acea: ProductFacetOption[];
+  ilsac: ProductFacetOption[];
+  engineOem: ProductFacetOption[];
+  atf: ProductFacetOption[];
+  oemAtf: ProductFacetOption[];
   packageVolumes: ProductFacetOption[];
   stock: Record<StockFilter, number>;
 };
@@ -1543,7 +1555,11 @@ function productFacetValues(row: ProductSearchRow, key: ProductFacetKey): string
   if (key === "group") return [row.groupPath];
   if (key === "entityType") return [row.entityType];
   if (key === "packageVolume") return [row.packageVolume];
-  if (key === "acea") return parseStoredAttributeValues(row.acea, "acea");
+  if (key === "acea") return [...new Set([...parseStoredAttributeValues(row.acea, "acea"), ...parseStoredAttributeValues(row.aceaExtra, "acea")])];
+  if (key === "ilsac") return parseStoredAttributeValues(row.ilsac, "ilsac");
+  if (key === "engineOem") return parseStoredAttributeValues(row.oem, "engineOem");
+  if (key === "atf") return parseStoredAttributeValues(row.atf, "atf");
+  if (key === "oemAtf") return parseStoredAttributeValues(row.oemAtf, "transmissionOem");
   const profile = resolveProductFluidAttributeProfile(row);
   return parseStoredAttributeValues(row.apiSpec, profile === "TRANSMISSION_FLUID" ? "transmissionApi" : "engineApi");
 }
@@ -1599,7 +1615,7 @@ function facetOptionsFromRows(rows: ProductSearchRow[], key: ProductFacetKey, pa
 }
 
 function buildProductFacets(searchRows: ProductSearchRow[], params: ProductFilterParams): ProductFacets {
-  const facetKeys: ProductFacetKey[] = ["brand", "sae", "supplier", "group", "entityType", "apiSpec", "acea", "packageVolume"];
+  const facetKeys: ProductFacetKey[] = ["brand", "sae", "supplier", "group", "entityType", "apiSpec", "acea", "ilsac", "engineOem", "atf", "oemAtf", "packageVolume"];
   const result = {
     brands: [],
     sae: [],
@@ -1608,6 +1624,10 @@ function buildProductFacets(searchRows: ProductSearchRow[], params: ProductFilte
     entityTypes: [],
     apiSpecs: [],
     acea: [],
+    ilsac: [],
+    engineOem: [],
+    atf: [],
+    oemAtf: [],
     packageVolumes: [],
     stock: { all: 0, inStock: 0, outOfStock: 0 },
   } as ProductFacets;
@@ -1863,6 +1883,10 @@ function rowMatchesProductFilters(row: ProductSearchRow, params: ProductFilterPa
   if (!filterValuesInclude(cleanFilterValues(params.entityType), productFacetValues(row, "entityType"))) return false;
   if (!filterValuesInclude(cleanFilterValues(params.apiSpec), productFacetValues(row, "apiSpec"))) return false;
   if (!filterValuesInclude(cleanFilterValues(params.acea), productFacetValues(row, "acea"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.ilsac), productFacetValues(row, "ilsac"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.engineOem), productFacetValues(row, "engineOem"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.atf), productFacetValues(row, "atf"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.oemAtf), productFacetValues(row, "oemAtf"))) return false;
   if (!filterValuesInclude(cleanFilterValues(params.packageVolume), productFacetValues(row, "packageVolume"))) return false;
   if (stock === "inStock" && row.totalAvailable <= 0) return false;
   if (stock === "outOfStock" && row.totalAvailable > 0) return false;
@@ -2574,6 +2598,10 @@ export async function listLocalAdminProducts(params: {
   entityType?: MultiProductFilterValue;
   apiSpec?: MultiProductFilterValue;
   acea?: MultiProductFilterValue;
+  ilsac?: MultiProductFilterValue;
+  engineOem?: MultiProductFilterValue;
+  atf?: MultiProductFilterValue;
+  oemAtf?: MultiProductFilterValue;
   packageVolume?: MultiProductFilterValue;
   stock?: string;
   storeId?: string;
@@ -2593,6 +2621,10 @@ export async function listLocalAdminProducts(params: {
     entityType: params.entityType,
     apiSpec: params.apiSpec,
     acea: params.acea,
+    ilsac: params.ilsac,
+    engineOem: params.engineOem,
+    atf: params.atf,
+    oemAtf: params.oemAtf,
     packageVolume: params.packageVolume,
     stock: normalizeStockFilter(params.stock),
     markingProblems: params.markingProblems === true,
@@ -2645,6 +2677,10 @@ export async function listLocalAdminProducts(params: {
     entityTypes: facets.entityTypes.map((item) => item.value),
     apiSpecs: facets.apiSpecs.map((item) => item.value),
     acea: facets.acea.map((item) => item.value),
+    ilsac: facets.ilsac.map((item) => item.value),
+    engineOem: facets.engineOem.map((item) => item.value),
+    atf: facets.atf.map((item) => item.value),
+    oemAtf: facets.oemAtf.map((item) => item.value),
     packageVolumes: facets.packageVolumes.map((item) => item.value),
   };
 
@@ -2665,6 +2701,10 @@ export async function listLocalAdminProducts(params: {
         entityType: cleanFilterValues(params.entityType),
         apiSpec: cleanFilterValues(params.apiSpec),
         acea: cleanFilterValues(params.acea),
+        ilsac: cleanFilterValues(params.ilsac),
+        engineOem: cleanFilterValues(params.engineOem),
+        atf: cleanFilterValues(params.atf),
+        oemAtf: cleanFilterValues(params.oemAtf),
         packageVolume: cleanFilterValues(params.packageVolume),
         stock: normalizeStockFilter(params.stock),
         storeId: storageStoreId,

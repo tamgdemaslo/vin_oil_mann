@@ -72069,3 +72069,23 @@ select[size="1"]::-ms-expand {
 .eco-return-queue .eco-return-queue__badge--processing,.eco-return-queue__delivery--processing { color:#244d79; background:#edf3fa; border-color:#567ba7; }
 .eco-return-queue .eco-return-queue__badge--errors,.eco-return-queue__delivery--errors { color:#8a3028; background:#fff0ed; border-color:#b64d40; }
 @media (max-width:760px) { .eco-return-queue__tabs { gap:0 14px; } .eco-return-queue__tabs button { font-size:13px; } }
+
+/* Product approval filters share the catalog's existing neutral and rust tokens. */
+.eco-specifications { padding: 14px 0; border-top: 1px solid var(--eco-border, #deded8); border-bottom: 1px solid var(--eco-border, #deded8); }
+.eco-specifications h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--eco-text, #292923); }
+.eco-specifications > p { margin: 6px 0 12px; color: var(--eco-muted, #62645c); font-size: 12px; line-height: 1.5; }
+.eco-specifications .eco-filter-group { border: 0; padding: 8px 0; margin: 0; }
+.eco-spec-search { width: 100%; margin: 0 0 8px; font-size: 12px; }
+.eco-spec-search::placeholder { color: #66665f; opacity: 1; }
+.eco-spec-details { border-top: 1px solid var(--eco-border, #deded8); }
+.eco-spec-details summary { display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; font-size: 12px; font-weight: 650; color: var(--eco-text, #292923); }
+.eco-spec-details summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); margin: 0 3px; }
+.eco-spec-details[open] > summary::before { transform: rotate(45deg); }
+.eco-spec-details summary span { margin-left: auto; color: var(--eco-rust, #a74927); }
+.eco-spec-details .eco-filter-title { display: none; }
+.eco-spec-details summary:focus-visible { outline: 2px solid var(--eco-rust, #a74927); outline-offset: 2px; }
+.eco-specifications > .eco-spec-rule { margin: 10px 0 0; font-size: 11px; }
+
+/* Keep catalog results visible below the shipment table breakpoint. */
+.eco-products-page .eco-inventory-layout, .eco-products-page .eco-inventory-main { min-width: 0; max-width: 100%; }
+.eco-products-page .eco-table-wrap { display: block; max-width: 100%; overflow-x: auto; }
