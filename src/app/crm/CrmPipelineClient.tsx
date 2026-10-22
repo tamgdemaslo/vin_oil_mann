@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CalendarClock, ChevronDown, Phone, Plus, Search } from "lucide-react";
+import { CalendarClock, ChevronDown, Phone, Plus, Search, X, ArrowRight, Archive } from "lucide-react";
 import { EcoButton } from "@/components/platform/EcoUI";
 import { formatServiceDate } from "@/lib/date-time";
 import { formatPhoneForDisplay, normalizePhoneKey } from "@/lib/phone-normalize";
@@ -63,7 +63,9 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   const [actionError, setActionError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
-  const [view, setView] = useState<SimpleCaseStatus>("calculation_needed");
+  const [view, setView] = useState<SimpleCaseStatus | "board">("board");
+  const [mobileFocus, setMobileFocus] = useState(true);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [urgentOnly, setUrgentOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [form, setForm] = useState<Form>(EMPTY_FORM);
@@ -115,7 +117,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
 
   const counts = useMemo(() => Object.fromEntries([...WORK_CASE_STATUSES, "closed"].map(status => [status, cases.filter(row => simpleCaseStatus(row) === status).length])), [cases]);
   const rows = useMemo(() => cases.filter(row => {
-    if (simpleCaseStatus(row) !== view) return false;
+    if (view === "board" ? simpleCaseStatus(row) === "closed" : simpleCaseStatus(row) !== view) return false;
     if (urgentOnly && !(simpleCaseDeadline(row) && simpleCaseDeadline(row)! < now)) return false;
     const haystack = [row.title, row.customerName, row.phoneNormalized, row.vehicle, row.notes, row.createdByLogin].join(" ").toLowerCase();
     const digits = query.replace(/\D/g, "");
@@ -124,8 +126,8 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     if (view === "closed") return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
     return (simpleCaseDeadline(a)?.getTime() ?? Date.parse(a.createdAt)) - (simpleCaseDeadline(b)?.getTime() ?? Date.parse(b.createdAt));
   }), [cases, view, query, urgentOnly, now]);
-  const overdue = rows.filter(row => { const due = simpleCaseDeadline(row); return due && due < now; });
-  const remaining = rows.filter(row => !overdue.includes(row));
+  const attentionCount = (counts.calculation_needed || 0) + (counts.parts_arrived || 0);
+  const openCount = WORK_CASE_STATUSES.reduce((total, status) => total + (counts[status] || 0), 0);
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -141,7 +143,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Не удалось добавить заявку");
-      setForm(EMPTY_FORM); setView("calculation_needed"); setQuery(""); setUrgentOnly(false);
+      setForm(EMPTY_FORM); dialogRef.current?.close(); setView("board"); setMobileFocus(true); setQuery(""); setUrgentOnly(false);
       setNotice("Заявка добавлена. Рассчитать сегодня.");
       await load();
     } catch (error) { setFormError(error instanceof Error ? error.message : "Не удалось добавить заявку. Попробуйте ещё раз."); }
@@ -182,30 +184,31 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     const isOverdue = due && due < now;
     const isEditing = editing === row.id;
     const hasBooking = Boolean(row.yclientsRecordId || row.appointmentId);
-    return <article className={styles.row} key={row.id} id={`case-${row.id}`}>
+    return <article className={`${styles.row} ${isOverdue ? styles.overdueCard : ""}`} key={row.id} id={`case-${row.id}`}>
+      <div className={styles.cardHeading}><strong>{row.vehicle || row.customerName || "Новый запрос"}</strong><span>{row.source === "client-site" || row.createdByLogin === "client-site" ? "С сайта" : "Звонок"}</span></div>
+      <div className={styles.request}><strong>{row.title}</strong></div>
       <div className={styles.client}>
-        <strong>{row.customerName || (row.phoneNormalized ? <a href={phoneHref(row.phoneNormalized)}>{formatPhoneForDisplay(row.phoneNormalized)}</a> : "Клиент")}</strong>
-        {row.customerName && row.phoneNormalized && <a href={phoneHref(row.phoneNormalized)}>{formatPhoneForDisplay(row.phoneNormalized)}</a>}
-        {!row.phoneNormalized && <span>Телефон не указан</span>}
+        {row.customerName && row.vehicle && <span>{row.customerName}</span>}
+        {row.phoneNormalized ? <a href={phoneHref(row.phoneNormalized)}><Phone size={13} />{formatPhoneForDisplay(row.phoneNormalized)}</a> : <span>Телефон не указан</span>}
       </div>
-      <div className={styles.vehicle}>{row.vehicle || "Авто не указано"}</div>
-      <div className={styles.request}><strong>{row.title}</strong><span>Создал: {creatorName(row.createdByLogin)} · {formatServiceDate(row.createdAt)}{row.source === "client-site" ? " · С сайта" : ""}</span></div>
       <div className={styles.deadline}>
         {status === "calculation_needed" && <span className={isOverdue ? styles.overdueBadge : styles.todayBadge}>{isOverdue ? "Просрочено" : "Сегодня"}</span>}
-        {status === "parts_arrived" && <span className={styles.todayBadge}>Позвонить и записать</span>}
+        {status === "parts_arrived" && <span className={styles.arrivedBadge}>Позвонить и записать</span>}
         {status === "waiting_parts" && <span>{row.suppliesExpectedAt ? `Ждём ${formatServiceDate(row.suppliesExpectedAt)}` : "Ждём поставку"}</span>}
-        {status === "calculation_sent" && <span>Ждём решения клиента</span>}
+        {status === "calculation_sent" && <span>Расчёт у клиента</span>}
         {status === "closed" && <span>{row.closeReason || "Закрыто"}</span>}
       </div>
       <div className={styles.actions}>
-        {status === "calculation_needed" && <><Link className="eco-btn" href={calculationHref(row)}>Рассчитать</Link><EcoButton variant="primary" disabled={Boolean(busy)} onClick={() => void action(row, "mark_calculation_sent")}>Расчёт отправлен</EcoButton></>}
-        {status === "calculation_sent" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "waiting_parts")}>Запчасти заказаны</EcoButton>}
-        {status === "waiting_parts" && <EcoButton variant="primary" disabled={Boolean(busy)} onClick={() => void action(row, "parts_arrived")}>Запчасти пришли</EcoButton>}
+        {status === "calculation_needed" && <Link className="eco-btn eco-btn--primary" href={calculationHref(row)}>Рассчитать <ArrowRight size={15} /></Link>}
+        {status === "calculation_sent" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "waiting_parts")}>Отметить заказ</EcoButton>}
+        {status === "waiting_parts" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "parts_arrived")}>Отметить поступление</EcoButton>}
         {status === "parts_arrived" && <>{row.phoneNormalized && <a className="eco-btn" href={phoneHref(row.phoneNormalized)}><Phone size={15} />Позвонить</a>}<Link className="eco-btn eco-btn--primary" href={recordsHref(row)}>{hasBooking ? "Открыть запись" : "Записать"}</Link>{hasBooking && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "close", { reason: "Клиент записан" })}>Клиент записан</EcoButton>}</>}
       </div>
+      <div className={styles.cardMeta}>Создал: {creatorName(row.createdByLogin)} · {formatServiceDate(row.createdAt)}</div>
       <details className={styles.details} open={isEditing || undefined}>
         <summary>Подробнее <ChevronDown size={14} /></summary>
         <div className={styles.detailsBody}>
+          <p className={styles.notes}>{row.title}</p>
           {row.notes && <p className={styles.notes}>{row.notes}</p>}
           {row.suppliesNote && <p>Запчасти: {row.suppliesNote}</p>}
           {row.source && <p>Источник: {row.source === "client-site" ? "Сайт" : row.source}</p>}
@@ -217,6 +220,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
             <label>Комментарий<textarea className="eco-input" value={edit.notes} onChange={e => setEdit({ ...edit, notes: e.target.value })} /></label>
             <div className={styles.actions}><EcoButton type="submit" variant="primary" disabled={Boolean(busy)}>Сохранить</EcoButton><EcoButton type="button" disabled={Boolean(busy)} onClick={() => setEditing(null)}>Отмена</EcoButton></div>
           </form> : <div className={styles.actions}>
+            {status === "calculation_needed" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "mark_calculation_sent")}>Расчёт уже отправлен</EcoButton>}
             <EcoButton onClick={() => { setEdit({ title: row.title, phone: row.phoneNormalized || "", customerName: row.customerName || "", vehicle: row.vehicle || "", notes: row.notes || "" }); setEditing(row.id); }}>Редактировать</EcoButton>
             {row.phoneNormalized && <a className="eco-btn" href={phoneHref(row.phoneNormalized)}><Phone size={15} />Позвонить</a>}
             {status !== "closed" && <>
@@ -234,34 +238,48 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   }
 
   return <main className={`eco-page ${styles.page}`}>
-    <header className={styles.header}><div><h1>Заявки клиентов</h1><p>Рассчитайте сегодня — ничего не потеряется.</p></div><label className={styles.search}><Search size={16} /><input aria-label="Поиск заявок" placeholder="Клиент, телефон, авто…" value={query} onChange={e => setQuery(e.target.value)} /></label></header>
-    <nav className={styles.tabs} aria-label="Статусы заявок">
-      {WORK_CASE_STATUSES.map(status => <button key={status} aria-current={view === status ? "page" : undefined} onClick={() => { setView(status); setUrgentOnly(false); }}>{WORK_CASE_LABELS[status]} <span>{counts[status] || 0}</span></button>)}
-      <button className={styles.archive} aria-current={view === "closed" ? "page" : undefined} onClick={() => { setView("closed"); setUrgentOnly(false); }}>Закрытые <span>{counts.closed || 0}</span></button>
-    </nav>
-    <label className={styles.mobileStatus}>Показать<select value={view} onChange={event => { setView(event.target.value as SimpleCaseStatus); setUrgentOnly(false); }}>
-      {[...WORK_CASE_STATUSES, "closed" as const].map(status => <option key={status} value={status}>{WORK_CASE_LABELS[status]} · {counts[status] || 0}</option>)}
-    </select></label>
+    <header className={styles.header}>
+      <div><div className={styles.eyebrow}>КЛИЕНТСКИЙ СЕРВИС</div><h1>Заявки клиентов</h1><p>{loading ? "Загружаем заявки…" : attentionCount ? "Расчёты — сегодня. Запчасти пришли — позвоните и запишите клиента." : "Новых расчётов и звонков нет. Заявки в ожидании остаются на доске."}</p>{!loading && attentionCount > 0 && <div className={styles.attentionLinks}><a href="#queue-calculation_needed" onClick={() => { setView("board"); setMobileFocus(true); setUrgentOnly(false); }}>Рассчитать <strong>{counts.calculation_needed || 0}</strong></a><a href="#queue-parts_arrived" onClick={() => { setView("board"); setMobileFocus(true); setUrgentOnly(false); }}>Позвонить <strong>{counts.parts_arrived || 0}</strong></a></div>}</div>
+      <EcoButton variant="primary" className={styles.newRequest} onClick={() => { dialogRef.current?.showModal(); requestAnimationFrame(() => phoneRef.current?.focus()); }}><Plus size={18} />Новый запрос</EcoButton>
+    </header>
+    <div className={styles.toolbar}>
+      <nav className={styles.views} aria-label="Вид заявок"><button aria-current={view !== "closed" ? "page" : undefined} onClick={() => { setView("board"); setUrgentOnly(false); }}>В работе <span>{openCount}</span></button><button aria-current={view === "closed" ? "page" : undefined} onClick={() => { setView("closed"); setUrgentOnly(false); }}><Archive size={15} />История <span>{counts.closed || 0}</span></button></nav>
+      <label className={styles.search}><Search size={17} /><input aria-label="Поиск заявок" placeholder="Телефон, авто или клиент" value={query} onChange={e => { setQuery(e.target.value); if(e.target.value) setMobileFocus(false); }} /></label>
+    </div>
+    {view !== "closed" && <nav className={styles.mobileSwitch} aria-label="Заявки на телефоне"><button aria-pressed={mobileFocus} onClick={() => { setMobileFocus(true); setView("board"); }}>Нужно сделать <span>{attentionCount}</span></button><button aria-pressed={!mobileFocus} onClick={() => { setMobileFocus(false); setView("board"); }}>Все заявки <span>{openCount}</span></button></nav>}
+    <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="new-request-title">
+      <div className={styles.dialogHeading}><div><h2 id="new-request-title">Новый запрос</h2><p>Запишите главное прямо во время звонка.</p></div><button aria-label="Закрыть форму" onClick={() => dialogRef.current?.close()}><X size={20} /></button></div>
     <form className={styles.quickForm} onSubmit={event => void create(event)} aria-label="Новая заявка">
-      <div className={styles.formHeading}><h2>Новая заявка</h2><span>Рассчитать сегодня</span></div>
+      <div className={styles.formHeading}>Срок расчёта — сегодня. Установим автоматически.</div>
       <label className={styles.phoneField}>Телефон<input ref={phoneRef} type="tel" inputMode="tel" autoComplete="tel" className="eco-input" placeholder="+7 900 000-00-00" required value={form.phone} disabled={saving} aria-invalid={Boolean(formError) || undefined} aria-describedby={formError ? "request-form-error" : undefined} onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
       <label className={styles.titleField}>Что рассчитать<input className="eco-input" placeholder="Например: замена масла в АКПП" required maxLength={500} value={form.title} disabled={saving} onChange={e => setForm({ ...form, title: e.target.value })} /></label>
       <details className={styles.optional}><summary>Имя и авто <ChevronDown size={14} /></summary><div><label>Имя · необязательно<input className="eco-input" autoComplete="name" value={form.customerName} disabled={saving} onChange={e => setForm({ ...form, customerName: e.target.value })} /></label><label>Авто / VIN · необязательно<input className="eco-input" value={form.vehicle} disabled={saving} onChange={e => setForm({ ...form, vehicle: e.target.value })} /></label></div></details>
-      <EcoButton className={styles.submit} type="submit" variant="primary" disabled={saving || Boolean(loadError) || loading}><Plus size={16} />{saving ? "Добавляем…" : "Добавить заявку"}</EcoButton>
+      <EcoButton className={styles.submit} type="submit" variant="primary" disabled={saving || Boolean(loadError) || loading}><Plus size={16} />{saving ? "Добавляем…" : "Сохранить запрос"}</EcoButton>
       {formError && <p className={styles.formError} role="alert" id="request-form-error">{formError}</p>}
       <small className={styles.creator}>Создаст: {userName || creatorName(userLogin)}</small>
     </form>
+    </dialog>
     {notice && <p className={styles.notice} role="status">{notice}</p>}
     {actionError && <p className={styles.formError} role="alert">{actionError}</p>}
     {loadError && <div role="alert" className={styles.formError}>{loadError} <EcoButton onClick={() => void load(true)}>Повторить загрузку</EcoButton></div>}
     {urgentOnly && <p className={styles.filterNote}>Только просроченные <button onClick={() => setUrgentOnly(false)}>Показать все</button></p>}
-    <section className={styles.list} aria-label={WORK_CASE_LABELS[view]} aria-busy={loading}>
-      {loading ? <p className={styles.empty}>Загружаем заявки…</p> : <>
-        {overdue.length > 0 && <><h3 className={styles.overdueHeading}><AlertCircle size={17} />Просроченные <span>{overdue.length}</span></h3>{overdue.map(renderRow)}</>}
-        {remaining.length > 0 && <>{view === "calculation_needed" && <h3 className={styles.todayHeading}>На сегодня <span>{remaining.length}</span></h3>}{remaining.map(renderRow)}</>}
-        {!rows.length && !loadError && <p className={styles.empty}>{query ? "По этому запросу ничего не найдено. Попробуйте телефон или имя." : view === "calculation_needed" ? "Все расчёты готовы. После звонка добавьте телефон и запрос в строку выше." : view === "parts_arrived" ? "Поступивших запчастей пока нет. Когда заказ придёт, отметьте «Запчасти пришли»." : "В этом разделе пока нет заявок."}</p>}
-      </>}
-    </section>
-    <footer className={styles.footer}><span>Звонки и заявки с сайта — в одном списке. {formatServiceDate(now)}</span><Link href="/records"><CalendarClock size={15} />Журнал записей</Link></footer>
+    {loading ? <p className={styles.empty} role="status">Загружаем заявки…</p> : <>
+      {view !== "closed" && <div className={styles.board} data-mobile-focus={mobileFocus}>
+        {WORK_CASE_STATUSES.filter(status => view === "board" || view === status).map(status => {
+          const index = WORK_CASE_STATUSES.indexOf(status);
+          const items = rows.filter(row => simpleCaseStatus(row) === status);
+          const titles = ["Нужно рассчитать", "Расчёт отправлен", "Запчасти заказаны", "Пришли — записать"];
+          const hints = ["Сделать сегодня", "Ждём решения клиента", "Ждём поставку", "Позвонить клиенту"];
+          const needsAction = status === "calculation_needed" || status === "parts_arrived";
+          return <section key={status} id={`queue-${status}`} className={`${styles.column} ${needsAction ? styles.activeColumn : ""}`} data-status={status} aria-label={WORK_CASE_LABELS[status]}>
+            <header className={styles.columnHeading}><div><h2>{titles[index]} <span>{items.length}</span></h2><p>{hints[index]}</p></div>{needsAction && <span className={styles.actionDot} aria-label="Требует действия" />}</header>
+            <div className={styles.columnCards}>{items.map(renderRow)}{!items.length && <p className={styles.columnEmpty}>{query ? "Совпадений нет" : status === "calculation_needed" ? "Все расчёты готовы" : status === "parts_arrived" ? "Поступлений пока нет" : "Пока нет заявок"}</p>}</div>
+          </section>;
+        })}
+      </div>}
+      {view === "closed" && <section className={styles.history} aria-label="История заявок">{rows.map(renderRow)}{!rows.length && <p className={styles.empty}>{query ? "Совпадений не найдено" : "Закрытые заявки появятся здесь после записи клиента."}</p>}</section>}
+      {view !== "board" && view !== "closed" && <button className={styles.resetFilter} onClick={() => { setView("board"); setUrgentOnly(false); }}>Показать всю доску</button>}
+    </>}
+    <footer className={styles.footer}><span>Звонки и заявки с сайта — на одной доске. {formatServiceDate(now)}</span><Link href="/records"><CalendarClock size={15} />Журнал записей</Link></footer>
   </main>;
 }

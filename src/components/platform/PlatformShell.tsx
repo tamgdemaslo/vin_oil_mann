@@ -981,7 +981,7 @@ export default function PlatformShell() {
         </div>
       )}
 
-      {deadlineToast && (
+      {deadlineToast && pathname !== "/crm" && (
         <div className={`eco-crm-deadline-toast is-${deadlineToast.urgency} ${deadlineExpanded ? "is-expanded" : ""}`} role="alert" aria-live="assertive">
           <button
             type="button"
