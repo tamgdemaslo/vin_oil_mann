@@ -126,6 +126,7 @@ function actionPatch(action: ClientCaseAction, body: Record<string, unknown>, no
   patch.nextActionAt = nextActionAt;
   patch.nextContactAt = nextActionAt;
   if (body.suppliesExpectedAt !== undefined) patch.suppliesExpectedAt = parseActionDate(body.suppliesExpectedAt);
+  if (body.suppliesSupplier !== undefined) patch.suppliesSupplier = typeof body.suppliesSupplier === "string" && body.suppliesSupplier.trim() ? body.suppliesSupplier.trim().slice(0, 200) : null;
   if (body.suppliesNote !== undefined) patch.suppliesNote = typeof body.suppliesNote === "string" && body.suppliesNote.trim() ? body.suppliesNote.trim() : null;
   if (closeReason) {
     patch.status = status === "closed" ? "won" : "lost";

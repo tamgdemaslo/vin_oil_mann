@@ -135,3 +135,10 @@
 @media(prefers-reduced-motion:no-preference) { .row { transition:opacity .12s; } }
 .column { position:relative; }
 .dropHint { position:absolute; z-index:1; top:-28px; left:0; padding:5px 8px; border-radius:4px; background:var(--eco-rust,#a34220); color:#fff; pointer-events:none; }
+.deadlineClock,.expiredDeadline { display:grid; gap:4px; padding:8px 9px; border-radius:4px; background:#faf3e6; color:#79501e; font-size:11px; line-height:1.5; }
+.expiredDeadline { color:#a13221; background:#fbece7; }
+.deadlineClock strong,.expiredDeadline strong { font-size:12px; font-weight:650; font-variant-numeric:tabular-nums; }
+.deadline { display:grid; gap:8px; }
+.orderNumber { display:block; color:var(--eco-ink,#25231f); font-size:12px; font-weight:650; overflow-wrap:anywhere; }
+.partsDialogActions { display:flex; justify-content:space-between; gap:12px; }
+@media(max-width:560px) { .quickForm input[type="datetime-local"] { max-width:100%; min-width:0; } }

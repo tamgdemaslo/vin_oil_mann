@@ -6,6 +6,9 @@ import { applyClientCaseAction } from "@/lib/client-case-workflow";
 import { canAccessCrm } from "@/lib/crm-access";
 import type { ClientCaseAction } from "@/lib/client-case-shared";
 
+import { validCaseRosskoOrder, withCaseRosskoOrder } from "@/lib/client-case-parts";
+import { parseServiceDateTime } from "@/lib/date-time";
+
 const ACTIONS = new Set<ClientCaseAction>([
   "calculate",
   "mark_calculation_sent",
@@ -40,13 +43,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (action === "create_appointment" || action === "create_shipment") {
     return NextResponse.json({ error: "Создайте запись или отгрузку через соответствующий раздел, затем обновите дело" }, { status: 400 });
   }
+  if (body.rosskoOrderNumber !== undefined && (action !== "waiting_parts" || !validCaseRosskoOrder(body.rosskoOrderNumber))) {
+    return NextResponse.json({ error: "Укажите номер заказа РОССКО цифрами, до 20 символов" }, { status: 400 });
+  }
+  if (typeof body.suppliesExpectedAt === "string" && !body.suppliesExpectedAt.trim()) body.suppliesExpectedAt = null;
+  if (body.suppliesExpectedAt !== undefined && body.suppliesExpectedAt !== null) {
+    const expected = typeof body.suppliesExpectedAt === "string" ? parseServiceDateTime(body.suppliesExpectedAt) : null;
+    if (!expected) return NextResponse.json({ error: "Проверьте дату и время поставки" }, { status: 400 });
+    body.suppliesExpectedAt = expected.toISOString();
+  }
   const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
   if (!branchAccess.ok) return branchAccess.response;
   return runWithBranchApiContext(branchAccess.context, async () => {
-    const existing = await prisma.crmDeal.findUnique({ where: { id }, select: { id: true, appointmentId: true, yclientsRecordId: true } });
+    const existing = await prisma.crmDeal.findUnique({ where: { id }, select: { id: true, appointmentId: true, yclientsRecordId: true, suppliesNote: true } });
     if (!existing) return NextResponse.json({ error: "Заявка не найдена" }, { status: 404 });
     if (action === "close" && !existing.appointmentId && !existing.yclientsRecordId) {
       return NextResponse.json({ error: "Сначала запишите клиента на обслуживание" }, { status: 400 });
+    }
+    if (typeof body.rosskoOrderNumber === "string") {
+      const order = body.rosskoOrderNumber.trim();
+      body.suppliesNote = withCaseRosskoOrder(existing.suppliesNote, order);
+      if (order) body.suppliesSupplier = "РОССКО";
     }
     try {
       const updated = await applyClientCaseAction(id, action, body, access.session!.user.login);

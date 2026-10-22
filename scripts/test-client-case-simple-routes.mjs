@@ -3,6 +3,7 @@ import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {createJiti} from 'jiti';
+process.env.APP_TIMEZONE='Europe/Kaliningrad';
 const dir=mkdtempSync(join(tmpdir(),'crm-routes-'));
 function stub(name,code){const file=join(dir,name+'.cjs');writeFileSync(file,code);return file;}
 const alias={
@@ -12,7 +13,7 @@ const alias={
  '@/lib/branch-sql-context':stub('sql','exports.requireSingleBranchSqlContext=()=>({branchId:"a"});'),
  '@/lib/crm':stub('stages','exports.ensureDefaultCrmStages=async()=>{};exports.getFirstCrmStage=async()=>({id:"first",name:"Нужно рассчитать"});exports.getCrmStageBySortOrder=async n=>({id:"stage-"+n});'),
  '@/lib/crm-deadline-notifications':stub('notify','exports.notifyClientCaseTaskAssigned=async()=>{throw Error("Unexpected assigned notification");};'),
- '@/lib/client-case-workflow':stub('workflow','exports.writeClientCaseEvent=async()=>{};exports.processClientCaseWorkflowTransitions=async()=>({});exports.applyClientCaseAction=async(id,action)=>({id,caseStatus:action});'),
+ '@/lib/client-case-workflow':stub('workflow','exports.writeClientCaseEvent=async()=>{};exports.processClientCaseWorkflowTransitions=async()=>({});exports.state={last:null};exports.applyClientCaseAction=async(id,action,body)=>{exports.state.last={id,action,body};return {id,caseStatus:action}};'),
  '@/lib/db':stub('db',`exports.state={existing:null,created:null};exports.prisma={crmDeal:{findUnique:async()=>exports.state.existing,findFirst:async()=>null,create:async({data})=>{exports.state.created=data;return {id:'new',...data}}},crmStage:{findUnique:async()=>({id:'first',name:'Нужно рассчитать'})}};`),
  '@':resolve('src'),
 };
@@ -34,5 +35,13 @@ try{
  res=await route.POST(actionRequest('close'),{params:Promise.resolve({id:'case-a'})});assert.equal(res.status,400,'Cannot complete an unbooked request');
  db.state.existing={id:'case-a',appointmentId:'booking-a',yclientsRecordId:null};
  res=await route.POST(actionRequest('close'),{params:Promise.resolve({id:'case-a'})});assert.equal(res.status,200);
+ const wf=await jiti.import(alias['@/lib/client-case-workflow']);
+ const requestBody=body=>new Request('http://example.test/action',{method:'POST',body:JSON.stringify(body)});
+ db.state.existing={id:'case-a',appointmentId:null,yclientsRecordId:null,suppliesNote:'Фильтр и прокладка\nЗаказ РОССКО № 999'};
+ res=await route.POST(requestBody({action:'waiting_parts',rosskoOrderNumber:'123456789',suppliesExpectedAt:'2026-10-24T15:30'}),{params:Promise.resolve({id:'case-a'})});
+ assert.equal(res.status,200);assert.equal(wf.state.last.body.suppliesNote,'Заказ РОССКО № 123456789\nФильтр и прокладка');assert.equal(wf.state.last.body.suppliesSupplier,'РОССКО');assert.equal(wf.state.last.body.suppliesExpectedAt,'2026-10-24T13:30:00.000Z');
+ res=await route.POST(requestBody({action:'waiting_parts',rosskoOrderNumber:'not-an-order'}),{params:Promise.resolve({id:'case-a'})});assert.equal(res.status,400);
+ res=await route.POST(requestBody({action:'waiting_parts',suppliesExpectedAt:'bad-date'}),{params:Promise.resolve({id:'case-a'})});assert.equal(res.status,400);
+ res=await route.POST(requestBody({action:'waiting_parts'}),{params:Promise.resolve({id:'case-a'})});assert.equal(res.status,200);assert.equal(wf.state.last.body.suppliesNote,undefined,'Skipping preserves existing supplier notes');
  console.log('Simple CRM routes: required phone/request, forced initial status, author without assignment, deadline, missing cases and booking-before-close passed');
 }finally{rmSync(dir,{recursive:true,force:true});}

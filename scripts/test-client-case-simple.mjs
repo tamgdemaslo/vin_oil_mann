@@ -30,6 +30,8 @@ try {
  assert.deepEqual(await workflow.processClientCaseWorkflowTransitions(new Date('2030-01-01')),{checkedResponses:0,clientReplies:0});
  updated=await workflow.applyClientCaseAction('case-a','waiting_parts',{},'vadim');
  assert.equal(updated.nextActionAt,null);assert.equal(updated.stageId,'stage-50');
+ updated=await workflow.applyClientCaseAction('case-a','waiting_parts',{suppliesSupplier:'РОССКО',suppliesNote:'Заказ РОССКО № 123',suppliesExpectedAt:'2026-10-24T13:30:00Z'},'vadim');
+ assert.equal(updated.suppliesSupplier,'РОССКО');assert.equal(updated.suppliesNote,'Заказ РОССКО № 123');assert.equal(updated.suppliesExpectedAt.toISOString(),'2026-10-24T13:30:00.000Z');
  updated=await workflow.applyClientCaseAction('case-a','parts_arrived',{},'vadim');
  assert.equal(updated.caseStatus,'parts_arrived');assert.match(updated.nextAction,/Позвонить.*записать/);
  updated=await workflow.applyClientCaseAction('case-a','calculate',{},'vadim');
