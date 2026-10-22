@@ -14,14 +14,26 @@ const alias={
  '@/lib/crm':stub('stages','exports.ensureDefaultCrmStages=async()=>{};exports.getFirstCrmStage=async()=>({id:"first",name:"Нужно рассчитать"});exports.getCrmStageBySortOrder=async n=>({id:"stage-"+n});'),
  '@/lib/crm-deadline-notifications':stub('notify','exports.notifyClientCaseTaskAssigned=async()=>{throw Error("Unexpected assigned notification");};'),
  '@/lib/client-case-workflow':stub('workflow','exports.writeClientCaseEvent=async()=>{};exports.processClientCaseWorkflowTransitions=async()=>({});exports.state={last:null};exports.applyClientCaseAction=async(id,action,body)=>{exports.state.last={id,action,body};return {id,caseStatus:action}};'),
- '@/lib/db':stub('db',`exports.state={existing:null,created:null,updated:null};exports.prisma={crmDeal:{findUnique:async()=>exports.state.existing,findFirst:async()=>null,update:async({data})=>{exports.state.updated=data;return {...exports.state.existing,...data}},create:async({data})=>{exports.state.created=data;return {id:'new',...data}}},crmStage:{findUnique:async()=>({id:'first',name:'Нужно рассчитать'})}};`),
+ '@/lib/db':stub('db',`exports.state={existing:null,created:null,updated:null,stages:[],clients:[],clientQuery:null};exports.prisma={crmDeal:{findUnique:async()=>exports.state.existing,findFirst:async()=>null,update:async({data})=>{exports.state.updated=data;return {...exports.state.existing,...data}},create:async({data})=>{exports.state.created=data;return {id:'new',...data}}},localCounterparty:{findMany:async args=>{exports.state.clientQuery=args;return exports.state.clients.filter(c=>c.branchId===args.where.branchId&&!c.archived&&args.where.normalizedPhone.in.includes(c.normalizedPhone))}},crmStage:{findMany:async()=>exports.state.stages,findUnique:async()=>({id:'first',name:'Нужно рассчитать'})}};`),
  '@':resolve('src'),
 };
 try{
  const jiti=createJiti(import.meta.url,{alias});
  const db=await jiti.import(alias['@/lib/db']);
- const {POST}=await jiti.import('../src/app/api/crm/deals/route.ts');
- let res=await POST(new Request('http://example.test/api/crm/deals',{method:'POST',body:JSON.stringify({quickRequest:true,title:'ТО',phone:'12'})}));
+ const {POST,GET}=await jiti.import('../src/app/api/crm/deals/route.ts');
+ const clientLinks=await jiti.import('../src/lib/client-case-counterparty.ts');
+ db.state.stages=[{id:'first',deals:[{id:'one',customerName:'Сергей',phoneNormalized:'79000000001'},{id:'shared',phoneNormalized:'79000000002'},{id:'no-phone',phoneNormalized:null,customerName:'Сергей'}]}];
+ db.state.clients=[{id:'local-client',normalizedPhone:'9000000001',branchId:'a',archived:false},{id:'other-branch',normalizedPhone:'79000000001',branchId:'b',archived:false},{id:'archived',normalizedPhone:'79000000001',branchId:'a',archived:true},{id:'shared-1',normalizedPhone:'79000000002',branchId:'a',archived:false},{id:'shared-2',normalizedPhone:'89000000002',branchId:'a',archived:false}];
+ let res=await GET();assert.equal(res.status,200);
+ const linked=(await res.json()).stages[0].deals;
+ assert.equal(linked[0].clientCounterpartyId,'local-client','Direct link uses exact phone match within the current branch');
+ assert.equal(linked[1].clientCounterpartyId,null,'Shared number must not open an arbitrary client');assert.equal(linked[2].clientCounterpartyId,null,'Names alone do not identify a client');
+ assert.equal(db.state.clientQuery.where.branchId,'a');assert.equal(db.state.clientQuery.where.archived,false);assert.ok(db.state.clientQuery.where.normalizedPhone.in.includes('89000000001'));
+ assert.equal(clientLinks.caseCounterpartyHref(linked[0]),'/clients/counterparties?counterparty=local-client');
+ assert.equal(clientLinks.caseCounterpartyHref(linked[1]),'/clients/counterparties?search=9000000002');
+ assert.equal(clientLinks.caseCounterpartyHref(linked[2]),'/clients/counterparties?search='+encodeURIComponent('Сергей'));
+ assert.equal(clientLinks.caseCounterpartyHref({}),null);
+ res=await POST(new Request('http://example.test/api/crm/deals',{method:'POST',body:JSON.stringify({quickRequest:true,title:'ТО',phone:'12'})}));
  assert.equal(res.status,400);assert.equal(db.state.created,null);
  res=await POST(new Request('http://example.test/api/crm/deals',{method:'POST',body:JSON.stringify({quickRequest:true,title:'ТО',phone:'8 900 000-00-01',responsibleLogin:'other',caseStatus:'calculation_sent',stageId:'wrong'})}));
  assert.equal(res.status,201);

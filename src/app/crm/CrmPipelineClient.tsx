@@ -10,11 +10,13 @@ import { formatPhoneForDisplay, normalizePhoneKey } from "@/lib/phone-normalize"
 import { simpleCaseDeadline, simpleCaseStatus, WORK_CASE_LABELS, WORK_CASE_STATUSES, type SimpleCaseStatus, type WorkCaseStatus } from "@/lib/client-case-simple";
 import { caseRosskoOrder, caseTimeRemaining, validCaseRosskoOrder } from "@/lib/client-case-parts";
 import { CASE_CORRESPONDENCE_CHANNELS, caseCorrespondence, withoutCaseCorrespondence } from "@/lib/client-case-correspondence";
+import { caseCounterpartyHref } from "@/lib/client-case-counterparty";
 import type { ClientCaseAction } from "@/lib/client-case-shared";
 import styles from "./simple-crm.module.css";
 
 type Deal = {
   id: string; title: string; customerName: string | null; phoneNormalized: string | null;
+  clientCounterpartyId?: string | null;
   vehicle: string | null; source: string | null; notes: string | null; createdByLogin: string;
   createdAt: string; updatedAt: string; status: string; caseStatus?: string | null;
   nextAction?: string | null; nextActionAt?: string | null; nextContactAt?: string | null;
@@ -321,6 +323,8 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     const orderNumber = caseRosskoOrder(row.suppliesNote);
     const partsDue = row.suppliesExpectedAt ? parseServiceDateTime(row.suppliesExpectedAt) : null;
     const hasBooking = Boolean(row.yclientsRecordId || row.appointmentId);
+    const clientHref = caseCounterpartyHref(row);
+    const clientLink = clientHref ? <Link className={styles.customerLink} href={clientHref} aria-label={`Открыть контрагента: ${row.customerName || row.phoneNormalized || "клиент"}`} title="Открыть карточку контрагента">{row.customerName || "Карточка клиента"}</Link> : null;
     return <article className={`${styles.row} ${isOverdue ? styles.overdueCard : ""} ${draggedId === row.id ? styles.draggedCard : ""}`} key={row.id} id={`case-${row.id}`} aria-busy={busy === row.id}
       draggable={status !== "closed" && !busy && !saving && !editing && !deadlineEdit && !loadError}
       onDragStart={event => startDrag(event, row)} onDragEnd={endDrag}>
@@ -334,10 +338,10 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
           card?.querySelector<HTMLSelectElement>("[data-stage-select]")?.focus();
         }}><GripVertical size={16} /></button>}
       {busy === row.id && <span className={styles.savingBadge} role="status">Сохраняем…</span>}
-      <div className={styles.cardHeading}><strong>{row.vehicle || row.customerName || "Новый запрос"}</strong><span>{row.source === "client-site" || row.createdByLogin === "client-site" ? "С сайта" : row.source || ""}</span></div>
+      <div className={styles.cardHeading}><strong>{row.vehicle || (row.customerName ? clientLink || row.customerName : "Новый запрос")}</strong><span>{row.source === "client-site" || row.createdByLogin === "client-site" ? "С сайта" : row.source || ""}</span></div>
       <div className={styles.request}><strong>{row.title}</strong></div>
       <div className={styles.client}>
-        {row.customerName && row.vehicle && <span>{row.customerName}</span>}
+        {((row.customerName && row.vehicle) || (!row.customerName && clientHref)) && clientLink}
         {row.phoneNormalized ? <a href={phoneHref(row.phoneNormalized)}><Phone size={13} />{formatPhoneForDisplay(row.phoneNormalized)}</a> : <span>Телефон не указан</span>}
       </div>
       <div className={styles.deadline}>

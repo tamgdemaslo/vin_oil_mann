@@ -1,3 +1,5 @@
+import { caseCounterpartyPhoneKeys, uniqueCaseCounterpartyId } from "@/lib/client-case-counterparty";
+import { anonymousRetailCounterpartyExclusion } from "@/lib/anonymous-retail-counterparty";
 import { validCaseCorrespondence, withCaseCorrespondence } from "@/lib/client-case-correspondence";
 import { caseDayDeadline } from "@/lib/client-case-simple";
 import { NextRequest, NextResponse } from "next/server";
@@ -296,7 +298,15 @@ export async function GET() {
         stages = await loadStagesWithLegacyDeals();
       }
 
-      return NextResponse.json({ stages });
+      const branchId = branchAccess.context.branchId!;
+      const phones = [...new Set(stages.flatMap(stage => stage.deals.flatMap(deal => caseCounterpartyPhoneKeys(deal.phoneNormalized))))];
+      const clients = phones.length ? await prisma.localCounterparty.findMany({
+        where: { branchId, archived: false, ...anonymousRetailCounterpartyExclusion(branchId), normalizedPhone: { in: phones } },
+        select: { id: true, normalizedPhone: true },
+      }) : [];
+      return NextResponse.json({ stages: stages.map(stage => ({ ...stage, deals: stage.deals.map(deal => ({
+        ...deal, clientCounterpartyId: uniqueCaseCounterpartyId(deal.phoneNormalized, clients),
+      })) })) });
     } catch (error) {
       console.error("[crm/deals GET]", error);
       return databaseHint(error);
