@@ -1,3 +1,4 @@
+import { caseDayDeadline } from "@/lib/client-case-simple";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
@@ -65,10 +66,6 @@ function parseDate(value: unknown): Date | null {
   if (!raw) return null;
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function defaultDeadline(hours = 1) {
-  return new Date(Date.now() + hours * 60 * 60 * 1000);
 }
 
 function parseClientType(value: unknown): string | null {
@@ -320,6 +317,9 @@ export async function POST(request: NextRequest) {
     const customerName = parseOptionalString(body.customerName);
     const phoneNormalized = normalizePhoneKey(parseOptionalString(body.phone));
     const clientType = parseClientType(body.clientType);
+    if (body.quickRequest === true && (!title || !phoneNormalized)) {
+      return NextResponse.json({ error: "Укажите телефон и что нужно рассчитать" }, { status: 400 });
+    }
     const firstStage = await getFirstCrmStage();
     let counterparty = parseCounterparty(body.legacyCounterparty);
     const yclientsRecordId = parseOptionalString(body.yclientsRecordId);
@@ -350,17 +350,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Укажите название, клиента или телефон сделки" }, { status: 400 });
     }
 
-    const requestedStageId = parseOptionalString(body.stageId);
+    const requestedStageId = body.quickRequest === true ? null : parseOptionalString(body.stageId);
     const stageId = requestedStageId ?? firstStage.id;
     const stage = await prisma.crmStage.findUnique({ where: { id: stageId } });
-    const caseStatus = parseCaseStatus(body.caseStatus, stage?.name);
+    const caseStatus = body.quickRequest === true ? "calculation_needed" : parseCaseStatus(body.caseStatus, stage?.name);
     const parsedNextActionAt = parseDate(body.nextActionAt);
     const parsedNextContactAt = parseDate(body.nextContactAt);
-    const defaultActionAt = caseStatus === "calculation_sent" ? defaultDeadline(24) : null;
-    const nextActionAt = parsedNextActionAt ?? parsedNextContactAt ?? defaultActionAt;
-    const nextContactAt = parsedNextContactAt ?? nextActionAt;
+    const nextActionAt = caseStatus === "calculation_sent" ? null : caseStatus === "calculation_needed" ? caseDayDeadline() : parsedNextActionAt ?? parsedNextContactAt;
+    const nextContactAt = nextActionAt;
     const parsedSuppliesExpectedAt = parseDate(body.suppliesExpectedAt);
-    const suppliesExpectedAt = caseStatus === "waiting_parts" && !parsedSuppliesExpectedAt ? defaultDeadline(24) : parsedSuppliesExpectedAt;
+    const suppliesExpectedAt = parsedSuppliesExpectedAt;
     const caseType = parseCaseType(body.type ?? body.caseType ?? (body.conversationId ? "message" : shipmentId ? "shipment" : "manual"));
     const lastOutboundMessageAt = parseDate(body.lastOutboundMessageAt) ?? (caseStatus === "calculation_sent" ? new Date() : null);
     const lastClientMessageAt = parseDate(body.lastClientMessageAt) ?? null;
@@ -376,7 +375,7 @@ export async function POST(request: NextRequest) {
       clientType: clientType ?? (counterparty ? "regular" : phoneNormalized || customerName ? "new_lead" : "unlinked"),
       nextAction: parseOptionalString(body.nextAction),
       stageId,
-      responsibleLogin: parseOptionalString(body.responsibleLogin) ?? session.user.login,
+      responsibleLogin: body.quickRequest === true ? null : parseOptionalString(body.responsibleLogin) ?? session.user.login,
       yclientsRecordId,
       shipmentId,
       conversationId: parseOptionalString(body.conversationId),

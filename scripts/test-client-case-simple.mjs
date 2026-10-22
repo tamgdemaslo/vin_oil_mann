@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import {mkdtempSync, writeFileSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join, resolve} from 'node:path';
+import {createJiti} from 'jiti';
+
+process.env.APP_TIMEZONE = 'Europe/Kaliningrad';
+const folder = mkdtempSync(join(tmpdir(), 'simple-crm-'));
+writeFileSync(join(folder,'db.cjs'), `exports.updates=[];exports.prisma={crmDeal:{update:async ({where,data})=>{exports.updates.push({id:where.id,...data});return {id:where.id,...data}},findMany:async ()=>exports.rows},clientCaseEvent:{create:async ()=>({})},$executeRaw:async ()=>0};exports.rows=[];`);
+writeFileSync(join(folder,'crm.cjs'), 'exports.getCrmStageBySortOrder=async order=>({id:"stage-"+order});');
+writeFileSync(join(folder,'scope.cjs'), 'exports.requireSingleBranchSqlContext=()=>({branchId:"branch-a"});');
+try {
+ const jiti=createJiti(import.meta.url,{alias:{'@/lib/db':join(folder,'db.cjs'),'@/lib/crm':join(folder,'crm.cjs'),'@/lib/branch-sql-context':join(folder,'scope.cjs'),'@':resolve('src')}});
+ const {caseDayDeadline,simpleCaseStatus,simpleCaseDeadline}=await jiti.import('../src/lib/client-case-simple.ts');
+ assert.equal(caseDayDeadline('2026-10-22T21:59:00Z').toISOString(),'2026-10-22T21:59:59.000Z');
+ assert.equal(caseDayDeadline('2026-10-22T22:01:00Z').toISOString(),'2026-10-23T21:59:59.000Z','Local midnight, not the server date');
+ assert.equal(caseDayDeadline('2026-12-31T23:00:00Z').toISOString(),'2027-01-01T21:59:59.000Z','Year rollover');
+ for(const caseStatus of ['check_response','client_replied']) assert.equal(simpleCaseStatus({caseStatus,status:'open'}),'calculation_sent');
+ assert.equal(simpleCaseStatus({caseStatus:'postponed',stage:{name:'Ожидает запчасти'},nextAction:'Ждать поставку запчастей'}),'waiting_parts');
+ assert.equal(simpleCaseStatus({caseStatus:'postponed',nextAction:'Вернуться к делу позже'}),'calculation_needed','Unclassified legacy cases remain visible');
+ assert.equal(simpleCaseStatus({caseStatus:'parts_arrived',status:'won'}),'closed');
+ for(const caseStatus of ['cancelled','duplicate','closed']) assert.equal(simpleCaseStatus({caseStatus,status:'open'}),'closed');
+ const pending={caseStatus:'calculation_needed',status:'open',createdAt:'2026-10-21T10:00:00Z'};
+ assert.equal(simpleCaseDeadline(pending).toISOString(),'2026-10-21T21:59:59.000Z','Old requests without deadlines remain overdue');
+ for(const caseStatus of ['calculation_sent','check_response','client_replied','waiting_parts']) assert.equal(simpleCaseDeadline({...pending,caseStatus,nextActionAt:'2026-10-01T12:00:00Z'}),null,'Old followup deadlines do not generate urgency');
+ const workflow=await jiti.import('../src/lib/client-case-workflow.ts');
+ const db=await jiti.import(join(folder,'db.cjs'));
+ let updated=await workflow.applyClientCaseAction('case-a','mark_calculation_sent',{},'vadim');
+ assert.equal(updated.caseStatus,'calculation_sent');assert.equal(updated.nextActionAt,null);assert.equal(updated.nextContactAt,null);
+ assert.deepEqual(await workflow.processClientCaseWorkflowTransitions(new Date('2030-01-01')),{checkedResponses:0,clientReplies:0});
+ updated=await workflow.applyClientCaseAction('case-a','waiting_parts',{},'vadim');
+ assert.equal(updated.nextActionAt,null);assert.equal(updated.stageId,'stage-50');
+ updated=await workflow.applyClientCaseAction('case-a','parts_arrived',{},'vadim');
+ assert.equal(updated.caseStatus,'parts_arrived');assert.match(updated.nextAction,/Позвонить.*записать/);
+ updated=await workflow.applyClientCaseAction('case-a','calculate',{},'vadim');
+ assert.equal(updated.closedAt,null);assert.equal(updated.closeReason,null);assert.equal(updated.status,'open');
+ assert.equal(updated.nextActionAt.toISOString(),caseDayDeadline().toISOString());
+ db.rows.push({id:'case-a',caseStatus:'calculation_needed',status:'open',stage:{name:'Нужно рассчитать'}});
+ await workflow.touchClientCaseMessageState({conversationId:'chat-a',direction:'outbound',text:'Уточните VIN'});
+ assert.deepEqual(Object.keys(db.updates.at(-1)).sort(),['id','lastOutboundMessageAt'],'An ordinary outgoing message does not mark a calculation sent');
+ await workflow.touchClientCaseMessageState({conversationId:'chat-a',direction:'inbound',text:'Спасибо'});
+ assert.deepEqual(Object.keys(db.updates.at(-1)).sort(),['id','lastClientMessageAt'],'An incoming message does not invent a workflow stage');
+ console.log('Simple CRM: service-day deadlines, legacy cases, idle estimates, explicit sending, parts and reopen passed');
+} finally {rmSync(folder,{recursive:true,force:true});}

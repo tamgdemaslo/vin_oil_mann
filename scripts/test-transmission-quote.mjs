@@ -16,6 +16,7 @@ process.env.PUBLIC_API_LEAD_LIMIT_PER_HOUR = '100';
 try {
   const {POST} = await jiti.import('../src/app/api/public/leads/route.ts');
   const db = await jiti.import(join(folder, 'db.cjs'));
+  const {caseDayDeadline} = await jiti.import('../src/lib/client-case-simple.ts');
   const payload = {intent: 'transmission_oil_quote', name: 'Иван', phone: '+7 (999) 123-45-67', vehicle: 'Toyota Camry, 2019', sourcePage: '/case/toyota-camry-70-u760', comment: '95000 км', vin: ''};
   const send = (body, origin = 'https://test.example') => POST(new NextRequest('https://test.example/api/public/leads', {method: 'POST', headers: {'content-type': 'application/json', origin, 'x-forwarded-for': 'quote-contract-test'}, body: JSON.stringify(body)}));
   const response = await send(payload);
@@ -28,6 +29,9 @@ try {
   assert.equal(db.rows[0].branchId, 'public-branch');
   assert.equal(db.rows[0].caseType, 'calculation');
   assert.equal(db.rows[0].caseStatus, 'calculation_needed');
+  assert.equal(db.rows[0].createdByLogin, 'client-site');
+  assert.equal(db.rows[0].nextActionAt.toISOString(), caseDayDeadline().toISOString());
+  assert.equal(db.rows[0].nextContactAt.toISOString(), db.rows[0].nextActionAt.toISOString());
   assert.match(db.rows[0].notes, /Toyota Camry, 2019/);
   assert.match(db.rows[0].notes, /case\/toyota-camry-70-u760/);
   assert.match(db.rows[0].nextAction, /Рассчитать/);
@@ -40,7 +44,7 @@ try {
   assert.equal((await send(payload, 'https://unrelated.example')).status, 403);
   const generic = await send({name: 'Анна', phone: '+79991234567', service: 'Двигатель'});
   assert.equal(generic.status, 201);
-  assert.equal(db.rows[2].title, 'Заявка с сайта', 'Existing callers preserve behavior');
+  assert.equal(db.rows[2].title, 'Двигатель', 'Show the requested service directly in the simplified queue');
   const previousError = console.error;
   console.error = () => {};
   try { assert.equal((await send({...payload, name: 'FAIL'})).status, 500); }

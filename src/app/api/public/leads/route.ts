@@ -1,3 +1,4 @@
+import { caseDayDeadline } from "@/lib/client-case-simple";
 import { NextRequest } from "next/server";
 import { resolvePublicStorefront } from "@/lib/public-storefront";
 import { getFirstCrmStage } from "@/lib/crm";
@@ -150,7 +151,7 @@ export async function POST(request: NextRequest) {
     }
 
     const responsibleLogin = process.env.PUBLIC_LEAD_RESPONSIBLE_LOGIN?.trim() || null;
-    const createdByLogin = responsibleLogin ?? "client-site";
+    const createdByLogin = "client-site";
     const notes = buildLeadNotes({
       name,
       phone,
@@ -163,21 +164,23 @@ export async function POST(request: NextRequest) {
       utm,
     });
 
+    const calculationDue = caseDayDeadline();
     const created = await prisma.crmDeal.create({
       data: {
         branchId: leadBranch.branchId,
         caseType: transmissionQuote ? "calculation" : "manual",
         caseStatus: "calculation_needed",
-        title: transmissionQuote ? "Расчёт замены масла в АКПП" : "Заявка с сайта",
+        title: transmissionQuote ? "Расчёт замены масла в АКПП" : service ?? comment?.slice(0, 160) ?? "Заявка с сайта",
         customerName: name,
         phoneNormalized,
         vehicle: vehicle ?? (vin ? `VIN ${vin}` : null),
         source: "client-site",
         clientType: "new_lead",
-        nextAction: transmissionQuote ? "Рассчитать стоимость и связаться с клиентом" : "Перезвонить клиенту",
+        nextAction: "Рассчитать стоимость и связаться с клиентом",
         stageId: firstStage.id,
         responsibleLogin,
-        nextContactAt: preferred.date,
+        nextActionAt: calculationDue,
+        nextContactAt: calculationDue,
         notes,
         createdByLogin,
       },

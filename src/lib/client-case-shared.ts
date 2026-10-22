@@ -36,7 +36,7 @@ export const CLIENT_CASE_STATUS_META: Record<
   calculation_sent: { label: "Расчёт отправлен", shortLabel: "Отправлен", tone: "info", rank: 50 },
   check_response: { label: "Проверить ответ", shortLabel: "Проверить", tone: "warning", rank: 20 },
   client_replied: { label: "Клиент ответил", shortLabel: "Есть ответ", tone: "success", rank: 10 },
-  waiting_parts: { label: "Ожидает запчасти", shortLabel: "Ждём запчасти", tone: "warning", rank: 40 },
+  waiting_parts: { label: "Запчасти заказаны", shortLabel: "Ждём запчасти", tone: "warning", rank: 40 },
   parts_arrived: { label: "Запчасти пришли", shortLabel: "Пришли", tone: "success", rank: 15 },
   postponed: { label: "Отложено", shortLabel: "Отложено", tone: "neutral", rank: 90 },
   cancelled: { label: "Клиент отказался", shortLabel: "Отказ", tone: "danger", rank: 120 },
@@ -48,7 +48,7 @@ const STATUS_WORDS: Array<[ClientCaseStatus, string[]]> = [
   ["calculation_sent", ["расчет отправлен", "расчёт отправлен", "отправлен"]],
   ["check_response", ["проверить ответ", "контроль ответа"]],
   ["client_replied", ["клиент ответил", "есть ответ", "ответил"]],
-  ["waiting_parts", ["ожидает запчаст", "ждем запчаст", "ждём запчаст", "ожидает расход", "ждем расход", "ждём расход"]],
+  ["waiting_parts", ["запчасти заказаны", "ожидает запчаст", "ждем запчаст", "ждём запчаст", "ожидает расход", "ждем расход", "ждём расход"]],
   ["parts_arrived", ["запчасти пришли", "расходники пришли"]],
   ["postponed", ["отлож"]],
   ["cancelled", ["отказ"]],
@@ -84,11 +84,11 @@ export function clientCaseStatusLabel(status: unknown, stageName?: string | null
 export function defaultNextActionForCaseStatus(status: unknown, stageName?: string | null) {
   const normalized = normalizeClientCaseStatus(status, stageName);
   if (normalized === "calculation_needed") return "Подготовить расчёт";
-  if (normalized === "calculation_sent") return "Проверить ответ клиента";
+  if (normalized === "calculation_sent") return "Ждать решения клиента";
   if (normalized === "check_response") return "Написать клиенту";
   if (normalized === "client_replied") return "Открыть диалог";
   if (normalized === "waiting_parts") return "Ждать поставку запчастей";
-  if (normalized === "parts_arrived") return "Сообщить клиенту, запчасти пришли";
+  if (normalized === "parts_arrived") return "Позвонить клиенту и записать на обслуживание";
   if (normalized === "postponed") return "Вернуться к делу позже";
   if (normalized === "cancelled") return "Клиент отказался";
   if (normalized === "duplicate") return "Дубль";
@@ -98,7 +98,7 @@ export function defaultNextActionForCaseStatus(status: unknown, stageName?: stri
 export function primaryActionForCaseStatus(status: unknown, stageName?: string | null): { action: ClientCaseAction; label: string } {
   const normalized = normalizeClientCaseStatus(status, stageName);
   if (normalized === "calculation_needed") return { action: "calculate", label: "Рассчитать" };
-  if (normalized === "calculation_sent") return { action: "check_response", label: "Проверить ответ" };
+  if (normalized === "calculation_sent") return { action: "waiting_parts", label: "Запчасти заказаны" };
   if (normalized === "check_response") return { action: "check_response", label: "Написать клиенту" };
   if (normalized === "client_replied") return { action: "client_agreed", label: "Клиент согласовал" };
   if (normalized === "waiting_parts") return { action: "parts_arrived", label: "Запчасти пришли" };

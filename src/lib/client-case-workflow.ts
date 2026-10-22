@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { defaultNextActionForCaseStatus, isClientCaseClosedStatus, normalizeClientCaseStatus, type ClientCaseAction, type ClientCaseStatus } from "@/lib/client-case-shared";
+import { caseDayDeadline } from "@/lib/client-case-simple";
 import { getCrmStageBySortOrder } from "@/lib/crm";
 import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
@@ -71,7 +72,7 @@ async function acknowledgeActiveReminders(caseId: string) {
 
 function actionPatch(action: ClientCaseAction, body: Record<string, unknown>, now: Date) {
   let status: ClientCaseStatus;
-  let nextActionAt: Date | null = now;
+  let nextActionAt: Date | null = caseDayDeadline(now);
   let nextAction = "";
   let closeReason: string | null = null;
   const patch: Record<string, unknown> = { snoozeUntil: null };
@@ -81,8 +82,8 @@ function actionPatch(action: ClientCaseAction, body: Record<string, unknown>, no
     nextAction = "Подготовить расчёт";
   } else if (action === "mark_calculation_sent") {
     status = "calculation_sent";
-    nextActionAt = addHours(now, 24);
-    nextAction = "Проверить ответ клиента";
+    nextActionAt = null;
+    nextAction = "Ждать решения клиента";
     patch.lastOutboundMessageAt = now;
   } else if (action === "check_response") {
     status = "check_response";
@@ -97,7 +98,7 @@ function actionPatch(action: ClientCaseAction, body: Record<string, unknown>, no
     nextActionAt = parseActionDate(body.nextActionAt) ?? parseActionDate(body.nextContactAt) ?? null;
   } else if (action === "parts_arrived") {
     status = "parts_arrived";
-    nextAction = "Сообщить клиенту, запчасти пришли";
+    nextAction = "Позвонить клиенту и записать на обслуживание";
   } else if (action === "postpone") {
     status = "postponed";
     nextActionAt = parseActionDate(body.nextActionAt) ?? parseActionDate(body.snoozeUntil) ?? addHours(now, 3);
@@ -133,6 +134,8 @@ function actionPatch(action: ClientCaseAction, body: Record<string, unknown>, no
     patch.snoozeUntil = null;
   } else {
     patch.status = "open";
+    patch.closedAt = null;
+    patch.closeReason = null;
   }
   return { status, patch };
 }
@@ -160,79 +163,11 @@ export async function applyClientCaseAction(caseId: string, action: ClientCaseAc
   return updated;
 }
 
-export async function processClientCaseWorkflowTransitions(now = new Date()) {
-  const checkStageId = await stageIdForStatus("check_response");
-  const replyStageId = await stageIdForStatus("client_replied");
-  const rows = await prisma.crmDeal.findMany({
-    where: { status: "open" },
-    include: { stage: true },
-    orderBy: [{ nextActionAt: "asc" }, { nextContactAt: "asc" }],
-    take: 500,
-  });
-  let checkedResponses = 0;
-  let clientReplies = 0;
-
-  for (const row of rows) {
-    const currentStatus = normalizeClientCaseStatus(row.caseStatus, row.stage?.name);
-    if (isClientCaseClosedStatus(currentStatus)) continue;
-    if (row.snoozeUntil && row.snoozeUntil > now) continue;
-
-    if (
-      (currentStatus === "calculation_sent" || currentStatus === "check_response") &&
-      row.lastClientMessageAt &&
-      row.lastOutboundMessageAt &&
-      row.lastClientMessageAt > row.lastOutboundMessageAt
-    ) {
-      await prisma.crmDeal.update({
-        where: { id: row.id },
-        data: {
-          caseStatus: "client_replied",
-          stageId: replyStageId ?? row.stageId,
-          nextAction: "Открыть диалог",
-          nextActionAt: row.lastClientMessageAt,
-          nextContactAt: row.lastClientMessageAt,
-          snoozeUntil: null,
-        },
-      });
-      await acknowledgeActiveReminders(row.id);
-      await writeClientCaseEvent({
-        caseId: row.id,
-        eventType: "client_replied",
-        title: "Клиент ответил",
-        metadata: { automatic: true },
-      });
-      clientReplies += 1;
-      continue;
-    }
-
-    if (currentStatus !== "calculation_sent") continue;
-    const sentAt = row.lastOutboundMessageAt ?? row.nextActionAt ?? row.nextContactAt;
-    const dueAt = row.nextActionAt ?? row.nextContactAt ?? (sentAt ? addHours(sentAt, 24) : null);
-    if (!sentAt || !dueAt || dueAt > now) continue;
-    if (row.lastClientMessageAt && row.lastClientMessageAt > sentAt) continue;
-
-    await prisma.crmDeal.update({
-      where: { id: row.id },
-      data: {
-        caseStatus: "check_response",
-        stageId: checkStageId ?? row.stageId,
-        nextAction: "Написать клиенту",
-        nextActionAt: now,
-        nextContactAt: now,
-        snoozeUntil: null,
-      },
-    });
-    await acknowledgeActiveReminders(row.id);
-    await writeClientCaseEvent({
-      caseId: row.id,
-      eventType: "auto_check_response",
-      title: "Автоматически переведено в «Проверить ответ»",
-      metadata: { automatic: true, sentAt: sentAt.toISOString() },
-    });
-    checkedResponses += 1;
-  }
-
-  return { checkedResponses, clientReplies };
+// Compatibility entry point for existing callers. Sent calculations stay idle;
+// messages are recorded below without inventing new workflow stages.
+export async function processClientCaseWorkflowTransitions(_now = new Date()) {
+  void _now;
+  return { checkedResponses: 0, clientReplies: 0 };
 }
 
 export async function touchClientCaseMessageState(input: {
@@ -258,38 +193,18 @@ export async function touchClientCaseMessageState(input: {
   for (const row of rows) {
     const currentStatus = normalizeClientCaseStatus(row.caseStatus, row.stage?.name);
     if (isClientCaseClosedStatus(currentStatus)) continue;
-    if (input.direction === "outbound") {
-      await prisma.crmDeal.update({
-        where: { id: row.id },
-        data: {
-          lastOutboundMessageAt: at,
-          caseStatus: currentStatus === "calculation_needed" ? "calculation_sent" : currentStatus,
-          nextAction: currentStatus === "calculation_needed" ? "Проверить ответ клиента" : row.nextAction,
-          nextActionAt: currentStatus === "calculation_needed" ? addHours(at, 24) : row.nextActionAt,
-          nextContactAt: currentStatus === "calculation_needed" ? addHours(at, 24) : row.nextContactAt,
-        },
-      });
-      continue;
-    }
-
     await prisma.crmDeal.update({
       where: { id: row.id },
-      data: {
-        lastClientMessageAt: at,
-        caseStatus: currentStatus === "calculation_sent" || currentStatus === "check_response" ? "client_replied" : currentStatus,
-        nextAction: currentStatus === "calculation_sent" || currentStatus === "check_response" ? "Открыть диалог" : row.nextAction,
-        nextActionAt: currentStatus === "calculation_sent" || currentStatus === "check_response" ? at : row.nextActionAt,
-        nextContactAt: currentStatus === "calculation_sent" || currentStatus === "check_response" ? at : row.nextContactAt,
-        snoozeUntil: null,
-      },
+      data: input.direction === "outbound" ? { lastOutboundMessageAt: at } : { lastClientMessageAt: at },
     });
-    await acknowledgeActiveReminders(row.id);
-    await writeClientCaseEvent({
-      caseId: row.id,
-      eventType: "client_message",
-      title: "Клиент ответил",
-      note: input.text ?? null,
-      metadata: { conversationId: input.conversationId },
-    });
+    if (input.direction === "inbound") {
+      await writeClientCaseEvent({
+        caseId: row.id,
+        eventType: "client_message",
+        title: "Клиент ответил",
+        note: input.text ?? null,
+        metadata: { conversationId: input.conversationId },
+      });
+    }
   }
 }

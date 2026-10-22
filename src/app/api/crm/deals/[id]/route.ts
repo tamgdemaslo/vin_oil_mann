@@ -1,3 +1,4 @@
+import { caseDayDeadline } from "@/lib/client-case-simple";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { caseStatusFromStageName, defaultNextActionForCaseStatus, isClientCaseStatus } from "@/lib/client-case-shared";
@@ -52,10 +53,6 @@ function parseDate(value: unknown): Date | null | undefined {
   if (!raw) return null;
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function defaultDeadline(hours = 1) {
-  return new Date(Date.now() + hours * 60 * 60 * 1000);
 }
 
 function parseClientType(value: unknown): string | null | undefined {
@@ -293,14 +290,14 @@ export async function PATCH(
     if (data.stageId || data.caseStatus) {
       const stage = data.stageId ? await prisma.crmStage.findUnique({ where: { id: String(data.stageId) } }) : null;
       const caseStatus = typeof data.caseStatus === "string" ? data.caseStatus : caseStatusFromStageName(stage?.name);
-      if (caseStatus === "calculation_sent" && data.nextContactAt == null) {
-        const due = defaultDeadline(24);
-        data.nextContactAt = due;
-        data.nextActionAt = due;
-        if (data.lastOutboundMessageAt === undefined) data.lastOutboundMessageAt = new Date();
-      }
-      if (caseStatus === "waiting_parts" && data.suppliesExpectedAt == null) {
-        data.suppliesExpectedAt = defaultDeadline(24);
+      if (caseStatus === "calculation_sent" || caseStatus === "closed" || caseStatus === "cancelled" || caseStatus === "duplicate") {
+        data.nextContactAt = null;
+        data.nextActionAt = null;
+        data.snoozeUntil = null;
+        if (caseStatus === "calculation_sent" && data.lastOutboundMessageAt === undefined) data.lastOutboundMessageAt = new Date();
+      } else if (caseStatus === "calculation_needed") {
+        data.nextActionAt = caseDayDeadline();
+        data.nextContactAt = data.nextActionAt;
       }
     }
 

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
+import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { applyClientCaseAction } from "@/lib/client-case-workflow";
 import { canAccessCrm } from "@/lib/crm-access";
@@ -38,6 +40,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (action === "create_appointment" || action === "create_shipment") {
     return NextResponse.json({ error: "Создайте запись или отгрузку через соответствующий раздел, затем обновите дело" }, { status: 400 });
   }
-  const updated = await applyClientCaseAction(id, action, body, access.session!.user.login);
-  return NextResponse.json({ case: updated });
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
+  return runWithBranchApiContext(branchAccess.context, async () => {
+    const existing = await prisma.crmDeal.findUnique({ where: { id }, select: { id: true, appointmentId: true, yclientsRecordId: true } });
+    if (!existing) return NextResponse.json({ error: "Заявка не найдена" }, { status: 404 });
+    if (action === "close" && !existing.appointmentId && !existing.yclientsRecordId) {
+      return NextResponse.json({ error: "Сначала запишите клиента на обслуживание" }, { status: 400 });
+    }
+    try {
+      const updated = await applyClientCaseAction(id, action, body, access.session!.user.login);
+      return NextResponse.json({ case: updated });
+    } catch (error) {
+      console.error("[client-cases/action]", error);
+      return NextResponse.json({ error: "Не удалось обновить заявку. Попробуйте ещё раз." }, { status: 500 });
+    }
+  });
 }

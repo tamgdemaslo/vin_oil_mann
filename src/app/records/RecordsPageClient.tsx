@@ -2128,19 +2128,28 @@ export default function RecordsPageClient() {
           await loadRecords();
           let successToast = "Запись создана";
           if (created && linkedCreateDealId) {
+            try {
             const linkRes = await fetch(`/api/crm/deals/${encodeURIComponent(linkedCreateDealId)}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 yclientsRecordId: created.booking_id,
-                nextAction: "Подготовить визит",
-                nextContactAt: form.datetime,
+                caseStatus: "closed",
+                status: "won",
+                closeReason: "Клиент записан на обслуживание",
+                nextAction: "Клиент записан",
+                nextActionAt: null,
+                nextContactAt: null,
+                snoozeUntil: null,
               }),
             });
             if (linkRes.ok) {
               await loadCrmDeals();
             } else {
-              successToast = "Запись создана, но дело не связалось автоматически";
+              successToast = "Запись создана, но заявка не закрылась автоматически. Закройте её из CRM после проверки записи.";
+            }
+            } catch {
+              successToast = "Запись создана, но связь с заявкой не сохранилась. Проверьте заявку в CRM.";
             }
           }
           setFormOpen(false);

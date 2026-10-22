@@ -1,3 +1,4 @@
+import { caseDayDeadline } from "@/lib/client-case-simple";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { clientCaseStatusLabel, defaultNextActionForCaseStatus, isClientCaseClosedStatus, isClientCaseStatus, normalizeClientCaseStatus } from "@/lib/client-case-shared";
@@ -154,7 +155,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const due = date(body.nextActionAt) ?? date(body.nextContactAt) ?? (requestedStatus === "calculation_sent" ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null);
+    const due = requestedStatus === "calculation_sent" ? null : requestedStatus === "calculation_needed" ? caseDayDeadline() : date(body.nextActionAt) ?? date(body.nextContactAt);
     const created = await prisma.crmDeal.create({
       data: {
         organizationId: text(body.organizationId),

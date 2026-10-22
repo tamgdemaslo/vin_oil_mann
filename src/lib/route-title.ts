@@ -77,7 +77,7 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/finance/shifts", title: () => `Зарплата | Финансы` },
   { match: (pathname) => pathname === "/salary", title: () => `Зарплата | Финансы` },
 
-  { match: (pathname) => pathname === "/crm", title: () => `Дела клиентов | Клиенты` },
+  { match: (pathname) => pathname === "/crm", title: () => `Заявки клиентов | Клиенты` },
   { match: (pathname) => pathname === "/crm/messages", title: () => `Сообщения | CRM` },
   { match: (pathname) => pathname === "/records", title: () => `Записи | Работа` },
   { match: (pathname) => pathname === "/clients", title: () => `Клиенты | CRM` },

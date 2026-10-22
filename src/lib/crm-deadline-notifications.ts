@@ -185,6 +185,7 @@ async function loadActiveCases(now: Date): Promise<CrmCaseRow[]> {
       AND (s.id IS NULL OR s.branch_id = ${branchId})
       AND (d.snooze_until IS NULL OR d.snooze_until <= ${now})
       AND d.status = 'open'
+      AND d.case_status NOT IN ('calculation_sent', 'check_response', 'client_replied', 'waiting_parts', 'closed', 'cancelled', 'duplicate')
     ORDER BY COALESCE(d.next_action_at, d.next_contact_at) ASC
     LIMIT 500
   `;
@@ -464,6 +465,7 @@ export async function listClientCaseNotificationsForUser(userId: string, branchI
       AND l.status = 'sent'
       AND (l.acknowledged_at IS NULL OR COALESCE(d.next_action_at, d.next_contact_at) < ${now})
       AND d.status = 'open'
+      AND d.case_status NOT IN ('calculation_sent', 'check_response', 'client_replied', 'waiting_parts', 'closed', 'cancelled', 'duplicate')
       AND (d.snooze_until IS NULL OR d.snooze_until <= ${now})
     ORDER BY l.case_id, l.type, l.sent_at DESC
     LIMIT 80

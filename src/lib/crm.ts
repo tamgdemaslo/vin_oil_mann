@@ -6,7 +6,7 @@ export const DEFAULT_CRM_STAGES = [
   { name: "Расчёт отправлен", sortOrder: 20, color: "sky" },
   { name: "Проверить ответ", sortOrder: 30, color: "blue" },
   { name: "Клиент ответил", sortOrder: 40, color: "violet" },
-  { name: "Ожидает запчасти", sortOrder: 50, color: "orange" },
+  { name: "Запчасти заказаны", sortOrder: 50, color: "orange" },
   { name: "Запчасти пришли", sortOrder: 60, color: "emerald" },
   { name: "Отложено", sortOrder: 70, color: "zinc" },
   { name: "Клиент отказался", sortOrder: 80, color: "rose" },
