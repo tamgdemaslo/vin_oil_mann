@@ -50,7 +50,7 @@ function recordsHref(deal: Deal) {
     params.set("new", "1");
     params.set("crmDealId", deal.id);
     params.set("source", "CRM");
-    params.set("comment", [deal.title, deal.notes].filter(Boolean).join("\n"));
+    params.set("comment", [deal.title, withoutCaseCorrespondence(deal.notes)].filter(Boolean).join("\n"));
     if (deal.phoneNormalized) params.set("phone", deal.phoneNormalized);
     if (deal.customerName) params.set("client", deal.customerName);
     if (deal.vehicle) params.set("vehicle", deal.vehicle);
@@ -60,7 +60,7 @@ function recordsHref(deal: Deal) {
 
 function calculationHref(deal: Deal) {
   if (deal.shipmentId) return `/shipment/${encodeURIComponent(deal.shipmentId)}/edit`;
-  const params = new URLSearchParams({ crmDealId: deal.id, comment: [deal.title, deal.notes].filter(Boolean).join("\n") });
+  const params = new URLSearchParams({ crmDealId: deal.id, comment: [deal.title, withoutCaseCorrespondence(deal.notes)].filter(Boolean).join("\n") });
   if (deal.customerName) params.set("counterparty", deal.customerName);
   if (deal.phoneNormalized) params.set("phone", deal.phoneNormalized);
   if (deal.vehicle) params.set("vehicle", deal.vehicle);
