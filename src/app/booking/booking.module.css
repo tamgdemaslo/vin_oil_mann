@@ -166,8 +166,6 @@
 .helpChoiceSelected { border-color: var(--booking-accent); background: #fff4ef; }
 
 .dateField { width: min(280px, 100%); margin-bottom: 20px; }
-.slotHeader { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin: 12px 0 10px; }
-.slotHeader button { border: 0; background: transparent; color: var(--booking-accent); font-size: 12px; font-weight: 700; }
 .slotGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); gap: 8px; }
 .slotGrid > button { display: grid; gap: 3px; min-height: 58px; border: 1px solid var(--booking-line); border-radius: 8px; background: #fff; color: var(--booking-ink); text-align: left; padding: 9px 11px; transition: border-color 150ms ease, background 150ms ease; }
 .slotGrid > button:hover { border-color: #969b96; background: #f8f9f7; }
