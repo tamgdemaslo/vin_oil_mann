@@ -998,3 +998,46 @@
   .mobileSummary { padding: 0; }
   .recordShell, .manageShell { width: 100%; padding: 20px 12px 40px; }
 }
+
+/* Month selection and grouped availability, shared by phone and desktop. */
+.calendar { margin: 0 0 26px; padding: 4px 0 22px; border-bottom: 1px solid var(--booking-line); }
+.calendarHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.calendarHeader h3 { margin: 0; font-family: inherit; font-size: 20px; font-weight: 650; text-transform: capitalize; }
+.calendarHeader > div { display: flex; gap: 8px; }
+.calendarHeader button { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--booking-ink); }
+.calendarHeader button:hover:not(:disabled) { background: var(--booking-soft); }
+.calendarHeader button:disabled { color: #c9c7c2; cursor: default; }
+.calendarWeekdays, .calendarDays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.calendarWeekdays { margin-bottom: 10px; color: var(--booking-muted); text-align: center; font-size: 14px; }
+.calendarWeekdays span { padding: 8px 0; }
+.calendarDays button { position: relative; min-width: 0; min-height: 48px; border: 0; border-radius: 10px; background: transparent; color: var(--booking-ink); font-size: 18px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.calendarDays button:disabled { color: #c6c5c1; cursor: default; }
+.calendarDays button.calendarOutside { color: #d7d6d2; }
+.calendarDays button:hover:not(:disabled):not(.calendarSelected) { background: var(--booking-soft); }
+.calendarDays button[aria-current="date"]::after { position: absolute; bottom: 5px; left: calc(50% - 10px); width: 20px; height: 3px; border-radius: 2px; background: var(--booking-ink); content: ""; }
+.calendarDays button.calendarSelected { background: var(--booking-ink); color: #fff; }
+.calendarDays button.calendarSelected::after { background: #fff; }
+.slotGroups { display: grid; gap: 26px; margin-top: 20px; }
+.slotGroup summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; font-size: 21px; font-weight: 650; list-style: none; cursor: pointer; }
+.slotGroup summary::-webkit-details-marker { display: none; }
+.slotGroup summary svg { color: var(--booking-muted); }
+.slotGroup[open] summary svg { transform: rotate(180deg); }
+.slotGroup .slotGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.slotGroup .slotGrid > button { min-height: 56px; padding: 12px 8px; border: 1px solid transparent; border-radius: 10px; background: #f0f0ee; }
+.slotGroup .slotGrid > button strong { font-size: 18px; font-weight: 500; }
+.slotGroup .slotGrid > button:hover { border-color: var(--booking-ink); background: #e8e8e5; }
+.slotGroup .slotGrid > button.selectedSlot { background: var(--booking-ink); color: #fff; }
+.slotGroup .slotGrid > button.selectedSlot span { color: #fff; }
+@media (max-width: 560px) {
+  .calendar { margin-bottom: 20px; padding-bottom: 20px; }
+  .calendarHeader { margin-bottom: 16px; }
+  .calendarHeader h3 { font-size: 18px; }
+  .calendarWeekdays, .calendarDays { gap: 3px; }
+  .calendarDays button { min-height: 44px; font-size: 16px; }
+  .slotGroups { gap: 24px; }
+  .slotGroup summary { font-size: 20px; }
+  .slotGroup .slotGrid { gap: 8px; }
+  .slotGroup .slotGrid > button { min-height: 48px; }
+  .slotGroup .slotGrid > button strong { font-size: 16px; }
+}
+.calendar summary:focus-visible, .slotGroup summary:focus-visible { outline: 3px solid rgba(197, 65, 22, .24); outline-offset: 4px; }
