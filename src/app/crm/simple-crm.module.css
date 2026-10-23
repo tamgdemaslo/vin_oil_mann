@@ -211,3 +211,11 @@ button.orderNumber { min-height:28px; padding:2px 0; border:0; background:none; 
  .details > summary { min-height:44px; }
  .row > .actions :global(.eco-btn) { padding:6px 8px; }
 }
+
+.mobileBoardEmpty { display:none; }
+@media(max-width:560px) {
+ .board .column[data-empty="true"] { display:none; }
+ .mobileBoardEmpty { display:grid; gap:10px; padding:16px; background:var(--eco-surface,#fff); border:1px solid var(--eco-line,#dedbd2); border-radius:6px; color:var(--eco-ink-3,#625e56); font-size:13px; }
+ .mobileBoardEmpty p { margin:0; line-height:1.5; }
+ .mobileBoardEmpty :global(.eco-btn) { min-height:44px; justify-content:center; }
+}

@@ -154,6 +154,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     if (view === "closed") return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
     return (simpleCaseDeadline(a)?.getTime() ?? Date.parse(a.createdAt)) - (simpleCaseDeadline(b)?.getTime() ?? Date.parse(b.createdAt));
   }), [cases, view, query, urgentOnly, now]);
+  const hasMobileRows = rows.some(row => !mobileFocus || ["calculation_needed", "parts_arrived"].includes(simpleCaseStatus(row)));
   const attentionCount = (counts.calculation_needed || 0) + (counts.parts_arrived || 0);
   const openCount = WORK_CASE_STATUSES.reduce((total, status) => total + (counts[status] || 0), 0);
 
@@ -499,7 +500,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
           const titles = ["Нужно рассчитать", "Расчёт отправлен", "Запчасти заказаны", "Пришли — записать"];
           const hints = ["Сделать сегодня", "Ждём решения клиента", "Ждём поставку", "Позвонить клиенту"];
           const needsAction = status === "calculation_needed" || status === "parts_arrived";
-          return <section key={status} id={`queue-${status}`} className={`${styles.column} ${needsAction ? styles.activeColumn : ""} ${dropTarget === status ? styles.dropTarget : ""}`} data-status={status} aria-label={WORK_CASE_LABELS[status]}
+          return <section key={status} id={`queue-${status}`} className={`${styles.column} ${needsAction ? styles.activeColumn : ""} ${dropTarget === status ? styles.dropTarget : ""}`} data-status={status} data-empty={items.length === 0} aria-label={WORK_CASE_LABELS[status]}
             onDragEnter={event => { if (canDrop(status)) event.preventDefault(); }}
             onDragOver={event => {
               if (!canDrop(status)) return;
@@ -515,6 +516,10 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
             <div className={styles.columnCards}>{items.map(renderRow)}{!items.length && <p className={styles.columnEmpty}>{query ? "Совпадений нет" : status === "calculation_needed" ? "Все расчёты готовы" : status === "parts_arrived" ? "Поступлений пока нет" : "Пока нет заявок"}</p>}</div>
           </section>;
         })}
+      </div>}
+      {view !== "closed" && !hasMobileRows && <div className={styles.mobileBoardEmpty} role="status">
+        <p>{query.trim() ? "В этом виде совпадений нет." : mobileFocus ? "Сейчас нет заявок, требующих действия." : "Заявок пока нет."}</p>
+        {mobileFocus && rows.length > 0 && <EcoButton onClick={() => setMobileFocus(false)}>Показать все заявки</EcoButton>}
       </div>}
       {view === "closed" && <section className={styles.history} aria-label="История заявок">{rows.map(renderRow)}{!rows.length && <p className={styles.empty}>{query ? "Совпадений не найдено" : "Закрытые заявки появятся здесь после записи клиента."}</p>}</section>}
       {view !== "board" && view !== "closed" && <button className={styles.resetFilter} onClick={() => { setView("board"); setUrgentOnly(false); }}>Показать всю доску</button>}
