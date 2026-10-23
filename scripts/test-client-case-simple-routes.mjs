@@ -14,7 +14,7 @@ const alias={
  '@/lib/crm':stub('stages','exports.ensureDefaultCrmStages=async()=>{};exports.getFirstCrmStage=async()=>({id:"first",name:"Нужно рассчитать"});exports.getCrmStageBySortOrder=async n=>({id:"stage-"+n});'),
  '@/lib/crm-deadline-notifications':stub('notify','exports.notifyClientCaseTaskAssigned=async()=>{throw Error("Unexpected assigned notification");};'),
  '@/lib/client-case-workflow':stub('workflow','exports.writeClientCaseEvent=async()=>{};exports.processClientCaseWorkflowTransitions=async()=>({});exports.state={last:null,error:null};exports.applyClientCaseAction=async(id,action,body,actorLogin)=>{if(exports.state.error)throw exports.state.error;exports.state.last={id,action,body,actorLogin};return {id,caseStatus:action}};'),
- '@/lib/db':stub('db',`exports.state={existing:null,created:null,updated:null,stages:[],clients:[],clientQuery:null};exports.prisma={crmDeal:{findUnique:async()=>exports.state.existing,findFirst:async()=>null,update:async({data})=>{exports.state.updated=data;return {...exports.state.existing,...data}},create:async({data})=>{exports.state.created=data;return {id:'new',...data}}},localCounterparty:{findMany:async args=>{exports.state.clientQuery=args;return exports.state.clients.filter(c=>c.branchId===args.where.branchId&&!c.archived&&args.where.normalizedPhone.in.includes(c.normalizedPhone))}},crmStage:{findMany:async()=>exports.state.stages,findUnique:async()=>({id:'first',name:'Нужно рассчитать'})}};`),
+ '@/lib/db':stub('db',`exports.state={existing:null,created:null,updated:null,stages:[],clients:[],clientQuery:null,events:[],eventQuery:null};exports.prisma={clientCaseEvent:{findMany:async args=>{exports.state.eventQuery=args;return exports.state.events}},crmDeal:{findUnique:async()=>exports.state.existing,findFirst:async()=>null,update:async({data})=>{exports.state.updated=data;return {...exports.state.existing,...data}},create:async({data})=>{exports.state.created=data;return {id:'new',...data}}},localCounterparty:{findMany:async args=>{exports.state.clientQuery=args;return exports.state.clients.filter(c=>c.branchId===args.where.branchId&&!c.archived&&args.where.normalizedPhone.in.includes(c.normalizedPhone))}},crmStage:{findMany:async()=>exports.state.stages,findUnique:async()=>({id:'first',name:'Нужно рассчитать'})}};`),
  '@':resolve('src'),
 };
 try{
@@ -33,6 +33,16 @@ try{
  assert.equal(clientLinks.caseCounterpartyHref(linked[1]),'/clients/counterparties?search=9000000002');
  assert.equal(clientLinks.caseCounterpartyHref(linked[2]),'/clients/counterparties?search='+encodeURIComponent('Сергей'));
  assert.equal(clientLinks.caseCounterpartyHref({}),null);
+ const closedAt=new Date('2026-10-23T22:04:00Z');
+ db.state.stages=[{id:'first',deals:[{id:'manual',status:'won',closedAt,createdByLogin:'vadim'},{id:'legacy',status:'lost',closedAt},{id:'reclosed',status:'won',closedAt},{id:'open',status:'open'}]}];
+ db.state.events=[{caseId:'manual',actorLogin:'ilya',createdAt:new Date('2026-10-23T22:04:00.500Z')},{caseId:'reclosed',actorLogin:'old-actor',createdAt:new Date('2026-10-22T22:04:00Z')},{caseId:'other-case',actorLogin:'other',createdAt:closedAt}];
+ res=await GET();assert.equal(res.status,200);const history=(await res.json()).stages[0].deals;
+ assert.deepEqual(history[0].closure,{actorLogin:'ilya',closedAt:closedAt.toISOString()},'Closing employee comes from the closing event, not the creator');
+ assert.deepEqual(history[1].closure,{actorLogin:null,closedAt:closedAt.toISOString()},'Legacy cases retain known dates without inventing an employee');
+ assert.equal(history[2].closure.actorLogin,null,'A previous closing cycle must not claim a newer closure');assert.equal(history[3].closure,null);
+ assert.equal(db.state.eventQuery.where.branchId,'a');assert.deepEqual(db.state.eventQuery.where.caseId.in,['manual','legacy','reclosed']);assert.ok(db.state.eventQuery.where.eventType.in.includes('confirm_manual_booking'));assert.ok(!db.state.eventQuery.where.eventType.in.includes('case_updated'),'Later edits cannot replace the closer');assert.deepEqual(db.state.eventQuery.distinct,['caseId']);
+ db.state.stages=[];db.state.events=[];
+
  assert.equal(clientLinks.caseCustomerTitle({customerName:'  Сергей  ',phoneNormalized:'79000000001',vehicle:'AUDI · VIN ABC'}),'Сергей','Customer always leads, never vehicle or VIN');
  assert.equal(clientLinks.caseCustomerTitle({customerName:null,phoneNormalized:'79000000001',vehicle:'VIN ABC'}),'+7 (900) 000-00-01');
  assert.equal(clientLinks.caseCustomerTitle({customerName:'  ',phoneNormalized:null,vehicle:'VIN ABC'}),'Клиент не указан');
