@@ -459,6 +459,12 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
       <EcoButton variant="primary" className={styles.newRequest} onClick={() => { dialogRef.current?.showModal(); requestAnimationFrame(() => phoneRef.current?.focus()); }}><Plus size={18} />Новый запрос</EcoButton>
     </header>
     <div className={styles.toolbar}>
+      <nav className={styles.phoneFilters} aria-label="Фильтры заявок на телефоне">
+        <button aria-current={view !== "closed" ? "page" : undefined} onClick={() => { setView("board"); setUrgentOnly(false); }}>В работе <span>{openCount}</span></button>
+        <button aria-current={view === "closed" ? "page" : undefined} onClick={() => { setView("closed"); setUrgentOnly(false); }}>История <span>{counts.closed || 0}</span></button>
+        <button className={styles.phoneFilterStart} aria-pressed={view !== "closed" && mobileFocus} onClick={() => { setMobileFocus(true); setView("board"); setUrgentOnly(false); }}>Нужно сделать <span>{attentionCount}</span></button>
+        <button aria-pressed={view !== "closed" && !mobileFocus} onClick={() => { setMobileFocus(false); setView("board"); setUrgentOnly(false); }}>Все заявки <span>{openCount}</span></button>
+      </nav>
       <nav className={styles.views} aria-label="Вид заявок"><button aria-current={view !== "closed" ? "page" : undefined} onClick={() => { setView("board"); setUrgentOnly(false); }}>В работе <span>{openCount}</span></button><button aria-current={view === "closed" ? "page" : undefined} onClick={() => { setView("closed"); setUrgentOnly(false); }}><Archive size={15} />История <span>{counts.closed || 0}</span></button></nav>
       <label className={styles.search}><Search size={17} /><input aria-label="Поиск заявок" placeholder="Телефон, авто или клиент" value={query} onChange={e => { setQuery(e.target.value); if(e.target.value) setMobileFocus(false); }} /></label>
     </div>

@@ -220,3 +220,14 @@ button.orderNumber { min-height:28px; padding:2px 0; border:0; background:none; 
  .mobileBoardEmpty p { margin:0; line-height:1.5; }
  .mobileBoardEmpty :global(.eco-btn) { min-height:44px; justify-content:center; }
 }
+
+.phoneFilters { display:none; }
+@media(max-width:560px) {
+ .toolbar > .views,.page > .mobileSwitch { display:none; }
+ .phoneFilters { display:flex; align-items:center; gap:2px; width:100%; min-width:0; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; }
+ .phoneFilters button { flex:1 0 auto; display:flex; align-items:center; justify-content:center; gap:4px; min-height:44px; padding:6px; border:0; border-bottom:2px solid transparent; border-radius:4px; background:none; color:var(--eco-ink-3,#625e56); font:inherit; font-size:11px; white-space:nowrap; cursor:pointer; }
+ .phoneFilters button span { font-size:10px; font-variant-numeric:tabular-nums; }
+ .phoneFilters button[aria-current="page"] { color:var(--eco-ink,#25231f); font-weight:700; border-bottom-color:var(--eco-rust,#a34220); }
+ .phoneFilters button[aria-pressed="true"] { color:var(--eco-ink,#25231f); font-weight:700; background:var(--eco-surface-sunk,#f1eee7); }
+ .phoneFilters .phoneFilterStart { border-left:1px solid var(--eco-line,#dedbd2); margin-left:3px; }
+}
