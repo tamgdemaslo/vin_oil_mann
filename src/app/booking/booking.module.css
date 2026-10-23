@@ -1051,3 +1051,14 @@
   .calendarExpand strong { flex-basis: calc(100% - 24px); font-size: 16px; }
   .calendarExpand > span { order: 1; flex-basis: 100%; }
 }
+
+.chosenVisit { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 28px; padding: 18px; border: 1px solid var(--booking-line); background: var(--booking-paper, #f8f5ef); }
+.chosenVisit > div { display: grid; gap: 6px; }
+.chosenVisit span { color: var(--booking-muted); font-size: 12px; }
+.chosenVisit strong { color: var(--booking-ink); font-size: 18px; line-height: 1.4; }
+.chosenVisit small { color: var(--booking-muted); font-size: 12px; }
+@media (max-width: 560px) {
+  .chosenVisit { gap: 12px; padding: 14px; margin-bottom: 24px; }
+  .chosenVisit strong { font-size: 17px; }
+  .chosenVisit .secondaryButton { min-height: 44px; }
+}
