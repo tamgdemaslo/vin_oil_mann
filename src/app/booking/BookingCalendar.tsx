@@ -1,7 +1,7 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
+import { useId, useRef, useState } from "react";
 import styles from "./booking.module.css";
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -14,8 +14,47 @@ function iso(date: Date) { return date.toISOString().slice(0, 10); }
 export default function BookingCalendar({ value, today, max, onChange }: {
   value: string; today: string; max: string; onChange: (date: string) => void;
 }) {
-  // The key keeps the visible month in sync with dates chosen through “nearest days”.
-  return <MonthCalendar key={value.slice(0, 7)} value={value} today={today} max={max} onChange={onChange} />;
+  const [expanded, setExpanded] = useState(true);
+  const calendarId = useId();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const selectedDate = new Intl.DateTimeFormat("ru-RU", {
+    weekday: "short", day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
+  }).format(new Date(`${value}T12:00:00Z`));
+
+  function collapseCalendar() {
+    setExpanded(false);
+    requestAnimationFrame(() => {
+      toggleRef.current?.focus({ preventScroll: true });
+      sectionRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+    });
+  }
+
+  function chooseDate(date: string) {
+    onChange(date);
+    collapseCalendar();
+  }
+
+  function toggleCalendar() {
+    if (expanded) { collapseCalendar(); return; }
+    setExpanded(true);
+    requestAnimationFrame(() => {
+      const selectedDay = sectionRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]');
+      selectedDay?.focus({ preventScroll: true });
+      sectionRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+    });
+  }
+
+  return <section ref={sectionRef} className={styles.calendar} aria-label="Дата визита">
+    <div id={calendarId} hidden={!expanded}>
+      {/* Keep the displayed month aligned with dates selected through nearest days. */}
+      <MonthCalendar key={value.slice(0, 7)} value={value} today={today} max={max} onChange={chooseDate} />
+    </div>
+    <button ref={toggleRef} type="button" className={expanded ? styles.calendarCollapse : styles.calendarExpand}
+      aria-expanded={expanded} aria-controls={calendarId} onClick={toggleCalendar}>
+      {expanded ? <><ChevronUp aria-hidden /><span>Свернуть календарь</span></> : <><strong>{selectedDate}</strong><span>Изменить дату</span><ChevronDown aria-hidden /></>}
+    </button>
+  </section>;
 }
 
 function MonthCalendar({ value, today, max, onChange }: {
@@ -27,7 +66,7 @@ function MonthCalendar({ value, today, max, onChange }: {
   const daysInMonth = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
   const cells = Math.ceil((offset + daysInMonth) / 7) * 7;
   const label = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric", timeZone: "UTC" }).format(first).replace(/ г\.$/u, "");
-  return <section className={styles.calendar} aria-label="Дата визита">
+  return <>
     <div className={styles.calendarHeader}>
       <h3 aria-live="polite">{label}</h3>
       <div>
@@ -48,5 +87,5 @@ function MonthCalendar({ value, today, max, onChange }: {
           onClick={() => onChange(dateValue)}>{date.getUTCDate()}</button>;
       })}
     </div>
-  </section>;
+  </>;
 }

@@ -1041,3 +1041,16 @@
   .slotGroup .slotGrid > button strong { font-size: 16px; }
 }
 .calendar summary:focus-visible, .slotGroup summary:focus-visible { outline: 3px solid rgba(197, 65, 22, .24); outline-offset: 4px; }
+
+.calendarCollapse, .calendarExpand { display: flex; align-items: center; gap: 10px; min-height: 44px; width: 100%; padding: 10px 0; border: 0; background: transparent; color: var(--booking-ink); }
+.calendarCollapse { justify-content: center; margin-top: 10px; color: var(--booking-muted); font-size: 13px; }
+.calendarExpand { text-align: left; }
+.calendarExpand strong { flex: 1; font-size: 17px; font-weight: 600; text-transform: capitalize; }
+.calendarExpand > span { color: var(--booking-accent); font-size: 13px; }
+.calendarCollapse:hover, .calendarExpand:hover { color: var(--booking-accent); }
+.calendar { scroll-margin-top: 16px; }
+@media (max-width: 560px) {
+  .calendarExpand { flex-wrap: wrap; gap: 6px; }
+  .calendarExpand strong { flex-basis: calc(100% - 24px); font-size: 16px; }
+  .calendarExpand > span { order: 1; flex-basis: 100%; }
+}
