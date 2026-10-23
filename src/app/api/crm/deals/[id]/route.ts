@@ -1,4 +1,5 @@
 import { validCaseChatLink } from "@/lib/client-case-chat-link";
+import { caseHistoryChanges } from "@/lib/client-case-history";
 import { caseCorrespondence, caseCorrespondenceLink, validCaseCorrespondence, withCaseCorrespondence } from "@/lib/client-case-correspondence";
 import { caseDayDeadline } from "@/lib/client-case-simple";
 import { NextRequest, NextResponse } from "next/server";
@@ -203,7 +204,7 @@ export async function PATCH(
     const data: Record<string, unknown> = {};
     const current = await prisma.crmDeal.findUnique({
       where: { id },
-      select: { id: true, responsibleLogin: true, stageId: true, notes: true },
+      select: { id: true, responsibleLogin: true, stageId: true, notes: true, status: true, caseStatus: true, nextAction: true, nextActionAt: true, nextContactAt: true, suppliesExpectedAt: true, stage: { select: { name: true } } },
     });
 
     if (!current) return NextResponse.json({ error: "Заявка не найдена" }, { status: 404 });
@@ -365,6 +366,7 @@ export async function PATCH(
         metadata: {
           stageChanged: Boolean(data.stageId && data.stageId !== current?.stageId),
           status: typeof data.caseStatus === "string" ? data.caseStatus : null,
+          changes: caseHistoryChanges(current, updated),
         },
       }).catch((error) => console.warn("[crm/deals PATCH] client case event failed", error));
     }

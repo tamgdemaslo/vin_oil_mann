@@ -6,7 +6,7 @@ import {createJiti} from 'jiti';
 
 process.env.APP_TIMEZONE = 'Europe/Kaliningrad';
 const folder = mkdtempSync(join(tmpdir(), 'simple-crm-'));
-writeFileSync(join(folder,'db.cjs'), `exports.updates=[];exports.wheres=[];exports.events=[];exports.state={rejectUpdate:false};exports.prisma={crmDeal:{update:async ({where,data})=>{if(exports.state.rejectUpdate)throw {code:"P2025"};exports.wheres.push(where);exports.updates.push({id:where.id,...data});return {id:where.id,...data}},findMany:async ()=>exports.rows},clientCaseEvent:{create:async ({data})=>{exports.events.push(data);return data}},$executeRaw:async ()=>0};exports.rows=[];`);
+writeFileSync(join(folder,'db.cjs'), `exports.updates=[];exports.wheres=[];exports.events=[];exports.state={rejectUpdate:false,current:{status:"open",caseStatus:"calculation_needed"}};exports.prisma={crmDeal:{findUnique:async()=>exports.state.current,update:async ({where,data})=>{if(exports.state.rejectUpdate)throw {code:"P2025"};exports.state.current={...exports.state.current,...data};exports.wheres.push(where);exports.updates.push({id:where.id,...data});return {id:where.id,...data}},findMany:async ()=>exports.rows},clientCaseEvent:{create:async ({data})=>{exports.events.push(data);return data}},$executeRaw:async ()=>0};exports.rows=[];`);
 writeFileSync(join(folder,'crm.cjs'), 'exports.getCrmStageBySortOrder=async order=>({id:"stage-"+order});');
 writeFileSync(join(folder,'scope.cjs'), 'exports.requireSingleBranchSqlContext=()=>({branchId:"branch-a"});');
 try {
@@ -34,6 +34,14 @@ try {
  assert.equal(updated.suppliesSupplier,'РОССКО');assert.equal(updated.suppliesNote,'Заказ РОССКО № 123');assert.equal(updated.suppliesExpectedAt.toISOString(),'2026-10-24T13:30:00.000Z');
  updated=await workflow.applyClientCaseAction('case-a','parts_arrived',{},'vadim');
  assert.equal(updated.caseStatus,'parts_arrived');assert.match(updated.nextAction,/Позвонить.*записать/);
+ assert.ok(db.events.at(-1).metadata.changes.some(c=>c.field==='status'&&c.before==='waiting_parts'&&c.after==='parts_arrived'));
+ const history=await jiti.import('../src/lib/client-case-history.ts');
+ const changes=history.caseHistoryChanges({caseStatus:'waiting_parts',status:'open',suppliesExpectedAt:'2026-10-24T10:00:00Z'},{caseStatus:'waiting_parts',status:'open',suppliesExpectedAt:'2026-10-25T13:00:00Z'});
+ assert.deepEqual(changes,[{field:'delivery',before:'2026-10-24T10:00:00.000Z',after:'2026-10-25T13:00:00.000Z'}]);
+ assert.deepEqual(history.caseHistoryLines({eventType:'case_updated',title:'Дело обновлено',metadata:{changes}}),['Срок поставки: 24.10.2026, 12:00 → 25.10.2026, 15:00']);
+ assert.deepEqual(history.caseHistoryChanges({caseStatus:'parts_arrived',nextActionAt:'2026-10-24T10:00:00Z'},{caseStatus:'parts_arrived',nextContactAt:'2026-10-24T10:00:00Z'}),[],'Equivalent deadline aliases do not invent a change');
+ assert.match(history.caseHistoryLines({eventType:'case_updated',title:'Дело обновлено',metadata:{}})[0],/не сохранялись/);
+ assert.deepEqual(history.caseHistoryLines({eventType:'case_updated',title:'Дело обновлено',metadata:{changes:[]}}),[]);
  const version='2026-10-23T12:00:00.000Z';
  updated=await workflow.applyClientCaseAction('case-a','confirm_manual_booking',{expectedUpdatedAt:version,reason:'Wrong reason',note:'Confirmed manually'},'vadim');
  assert.equal(updated.caseStatus,'closed');assert.equal(updated.status,'won');assert.equal(updated.closeReason,'Клиент записан вручную');assert.equal(updated.nextActionAt,null);assert.equal(updated.nextContactAt,null);assert.ok(updated.closedAt instanceof Date);

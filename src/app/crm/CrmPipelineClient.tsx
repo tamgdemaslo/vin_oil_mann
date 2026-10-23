@@ -14,6 +14,7 @@ import { caseCounterpartyHref, caseCustomerTitle } from "@/lib/client-case-count
 import { caseChatPhoneLink, validCaseChatLink } from "@/lib/client-case-chat-link";
 import type { ClientCaseAction } from "@/lib/client-case-shared";
 import styles from "./simple-crm.module.css";
+import CaseTimeline from "./CaseTimeline";
 
 type Deal = {
   id: string; title: string; customerName: string | null; phoneNormalized: string | null;
@@ -72,6 +73,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   const searchParams = useSearchParams();
   const router = useRouter();
   const [cases, setCases] = useState<Case[]>([]);
+  const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -457,7 +459,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
           </div>
         </>}
       </div>
-      <details className={styles.details} open={isEditing || undefined}>
+      <details className={styles.details} open={isEditing || undefined} onToggle={event => { const open = event.currentTarget.open; setExpandedHistory(current => current[row.id] === open ? current : { ...current, [row.id]: open }); }}>
         <summary><span className={styles.cardMeta}>Создал: {creatorName(row.createdByLogin)}</span><span className={styles.detailsToggle}>Подробнее <ChevronDown size={14} /></span></summary>
         <div className={styles.detailsBody}>
           <p className={styles.cardMeta}>Создано: {formatServiceDate(row.createdAt)}</p>
@@ -473,6 +475,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
           {withoutCaseCorrespondence(row.notes) && <p className={styles.notes}>{withoutCaseCorrespondence(row.notes)}</p>}
           {row.suppliesNote && <p>Запчасти: {row.suppliesNote}</p>}
           {row.source && <p>Источник: {row.source === "client-site" ? "Сайт" : row.source}</p>}
+          {expandedHistory[row.id] && <CaseTimeline caseId={row.id} version={row.updatedAt} employeeName={creatorName} />}
           {isEditing ? <form onSubmit={event => void saveDetails(event, row)} className={styles.editForm}>
             <label>Что рассчитать<input className="eco-input" value={edit.title} onChange={e => setEdit({ ...edit, title: e.target.value })} required /></label>
             <label>Телефон<input className="eco-input" type="tel" value={edit.phone} onChange={e => setEdit({ ...edit, phone: e.target.value })} /></label>
