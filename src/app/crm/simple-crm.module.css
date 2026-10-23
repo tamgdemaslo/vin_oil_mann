@@ -241,6 +241,7 @@ button.orderNumber { min-height:28px; padding:2px 0; border:0; background:none; 
 .bookingOptions > :is(a,button) { min-height:44px; padding:10px; border:0; border-radius:4px; background:none; color:var(--eco-ink,#25231f); font:inherit; font-size:12px; line-height:1.5; text-align:left; text-decoration:none; cursor:pointer; }
 .bookingOptions > :is(a,button):hover { background:var(--eco-surface-sunk,#f1eee7); }
 .bookingCloseNote { font-size:13px; line-height:1.6; color:var(--eco-ink-3,#625e56); }
+.closureMeta { margin:0; color:var(--eco-ink-3,#625e56); font-size:11px; line-height:1.6; overflow-wrap:anywhere; }
 @media(max-width:560px) {
  .vehicle { -webkit-line-clamp:1; }
  .bookingMenu[data-placement="above"] .bookingOptions { top:auto; bottom:auto; }

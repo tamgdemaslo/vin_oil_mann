@@ -18,6 +18,7 @@ import styles from "./simple-crm.module.css";
 type Deal = {
   id: string; title: string; customerName: string | null; phoneNormalized: string | null;
   clientCounterpartyId?: string | null;
+  closure?: { actorLogin: string | null; closedAt: string | null } | null;
   vehicle: string | null; source: string | null; notes: string | null; createdByLogin: string;
   createdAt: string; updatedAt: string; status: string; caseStatus?: string | null;
   nextAction?: string | null; nextActionAt?: string | null; nextContactAt?: string | null;
@@ -435,6 +436,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
         <div className={styles.actions}><EcoButton type="submit" variant="primary" disabled={Boolean(busy)}>{busy === row.id ? "Сохраняем…" : "Сохранить"}</EcoButton><EcoButton type="button" disabled={Boolean(busy)} onClick={() => { setCorrespondenceEdit(null); setQuickError(null); }}>Отмена</EcoButton></div>
       </form>}
       {quickError?.id === row.id && <p className={styles.formError} role="alert">{quickError.message}</p>}
+      {status === "closed" && <p className={styles.closureMeta}>Закрыл: {row.closure?.actorLogin ? creatorName(row.closure.actorLogin) : "сотрудник не указан"}<span> · {row.closure?.closedAt ? <time dateTime={row.closure.closedAt}>{formatServiceDateTime(row.closure.closedAt)}</time> : "время не сохранено"}</span></p>}
       <div className={styles.actions}>
         {status === "calculation_needed" && <Link className="eco-btn eco-btn--primary" href={calculationHref(row)}>Рассчитать <ArrowRight size={15} /></Link>}
         {status === "calculation_sent" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "waiting_parts")}>Отметить заказ</EcoButton>}
