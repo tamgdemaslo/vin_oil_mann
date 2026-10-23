@@ -6607,6 +6607,25 @@ export default function ProductsClient() {
               </div>
             </div>
 
+            <div className="eco-filter-group">
+              <div className="eco-filter-title">Наличие на складе</div>
+              {stockOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={filters.stock === option.value}
+                  className={`eco-filter-row ${filters.stock === option.value ? "is-active" : ""}`}
+                  onClick={() => changeStockFilter(option.value)}
+                >
+                  <span className="eco-filter-row-label">
+                    <span className={`eco-check ${filters.stock === option.value ? "is-checked" : ""}`} />
+                    {option.label}
+                  </span>
+                  <span className="ct">{(facets.stock[option.value] ?? 0).toLocaleString("ru-RU")}</span>
+                </button>
+              ))}
+            </div>
+
             <section className="eco-specifications" aria-label="Допуски и спецификации">
               <h2>Допуски и спецификации</h2>
               <p>Выберите стандарт, затем нужный допуск. Например: ACEA → C4.</p>
@@ -6739,23 +6758,6 @@ export default function ProductsClient() {
             {renderFacetFilter("brand", 8)}
             {renderFacetFilter("sae", 8)}
 
-            <div className="eco-filter-group">
-              <div className="eco-filter-title">Остаток</div>
-              {stockOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`eco-filter-row ${filters.stock === option.value ? "is-active" : ""}`}
-                  onClick={() => changeStockFilter(option.value)}
-                >
-                  <span className="eco-filter-row-label">
-                    <span className={`eco-check ${filters.stock === option.value ? "is-checked" : ""}`} />
-                    {option.label}
-                  </span>
-                  <span className="ct">{(facets.stock[option.value] ?? 0).toLocaleString("ru-RU")}</span>
-                </button>
-              ))}
-            </div>
             </aside>
           </div>
 
