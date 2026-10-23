@@ -375,7 +375,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
         }}><GripVertical size={16} /></button>}
       {busy === row.id && <span className={styles.savingBadge} role="status">Сохраняем…</span>}
       <div className={styles.cardHeading}><strong>{row.vehicle || (row.customerName ? clientLink || row.customerName : "Новый запрос")}</strong><span>{row.source === "client-site" || row.createdByLogin === "client-site" ? "С сайта" : row.source || ""}</span></div>
-      <div className={styles.request}><strong>{row.title}</strong></div>
+      <div className={styles.request} title={row.title}><strong>{row.title}</strong></div>
       <div className={styles.client}>
         {((row.customerName && row.vehicle) || (!row.customerName && clientHref)) && clientLink}
         {row.phoneNormalized ? <a href={phoneHref(row.phoneNormalized)}><Phone size={13} />{formatPhoneForDisplay(row.phoneNormalized)}</a> : <span>Телефон не указан</span>}
@@ -394,7 +394,6 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
         </form>}
       </div>
       <div className={styles.correspondence}>
-        <span>Где переписка</span>
         {caseCorrespondence(row.notes) ? <><button type="button" className={styles.chatLink} aria-busy={openingChat === row.id} disabled={Boolean(busy) || Boolean(openingChat) || correspondenceEdit?.id === row.id || Boolean(loadError)} aria-label={`Открыть переписку в ${caseCorrespondence(row.notes)}: ${row.customerName || row.vehicle || row.title}`} onClick={() => void openChat(row)}><MessageCircle size={14} />{openingChat === row.id ? "Открываем…" : caseCorrespondence(row.notes)}<ArrowRight size={13} /></button><button type="button" className={styles.editChat} aria-label="Изменить мессенджер и ссылку" title="Изменить мессенджер и ссылку" disabled={Boolean(busy) || Boolean(openingChat) || correspondenceEdit?.id === row.id} onClick={() => editCorrespondence(row)}><Pencil size={14} /></button></> : <button type="button" className={styles.chatLink} disabled={Boolean(busy)} onClick={() => editCorrespondence(row)}>Указать мессенджер</button>}
       </div>
       {correspondenceEdit?.id === row.id && <form className={styles.chatForm} aria-label="Настройка переписки" onSubmit={event => void saveCorrespondence(event, row)}>
@@ -410,10 +409,10 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
         {status === "waiting_parts" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "parts_arrived")}>Отметить поступление</EcoButton>}
         {status === "parts_arrived" && <>{row.phoneNormalized && <a className="eco-btn" href={phoneHref(row.phoneNormalized)}><Phone size={15} />Позвонить</a>}<Link className="eco-btn eco-btn--primary" href={recordsHref(row)}>{hasBooking ? "Открыть запись" : "Записать"}</Link>{hasBooking && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "close", { reason: "Клиент записан" })}>Клиент записан</EcoButton>}</>}
       </div>
-      <div className={styles.cardMeta}>Создал: {creatorName(row.createdByLogin)} · {formatServiceDate(row.createdAt)}</div>
       <details className={styles.details} open={isEditing || undefined}>
-        <summary>Подробнее <ChevronDown size={14} /></summary>
+        <summary><span className={styles.cardMeta}>Создал: {creatorName(row.createdByLogin)}</span><span className={styles.detailsToggle}>Подробнее <ChevronDown size={14} /></span></summary>
         <div className={styles.detailsBody}>
+          <p className={styles.cardMeta}>Создано: {formatServiceDate(row.createdAt)}</p>
           {status !== "closed" && !isEditing && <label className={styles.stageField}>Этап заявки
             <select data-stage-select aria-label="Этап заявки" value={status} disabled={Boolean(busy) || Boolean(loadError)}
               onChange={event => void moveTo(row, event.target.value as WorkCaseStatus)}>
