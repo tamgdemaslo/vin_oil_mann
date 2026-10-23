@@ -160,3 +160,15 @@
 .customerLink:hover,.client a.customerLink:hover { color:var(--eco-ink,#25231f); }
 .cardHeading .customerLink { display:inline-flex; align-items:center; min-height:32px; }
 @media(max-width:560px) { .cardHeading .customerLink,.client a.customerLink { min-height:44px; } }
+
+.chatLink { display:inline-flex; align-items:center; gap:6px; min-height:36px; border:0; background:none; color:var(--eco-rust,#a34220); padding:4px 0; font:inherit; font-size:12px; font-weight:600; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+.chatLink:hover { color:var(--eco-ink,#25231f); }
+.chatLink:disabled,.editChat:disabled { opacity:.5; cursor:default; }
+.editChat { display:grid; place-items:center; min-width:36px; min-height:36px; border:1px solid var(--eco-line,#dedbd2); border-radius:4px; background:var(--eco-surface,#fff); color:var(--eco-ink-3,#625e56); padding:6px; margin-left:auto; cursor:pointer; }
+.editChat:hover { background:var(--eco-surface-sunk,#f1eee7); }
+.chatForm { display:grid; gap:10px; padding-top:10px; border-top:1px solid var(--eco-line,#dedbd2); }
+.chatForm label { display:grid; gap:6px; font-size:12px; }
+.chatForm :is(input,select) { width:100%; min-width:0; min-height:44px; padding:8px; font-size:13px; }
+.chatForm small { font-size:11px; line-height:1.6; color:var(--eco-ink-3,#625e56); }
+.chatForm :global(.eco-btn) { min-height:38px; padding:8px; font-size:12px; }
+@media(max-width:560px) { .chatLink,.editChat,.chatForm :global(.eco-btn) { min-height:44px; } .editChat { min-width:44px; } .chatForm :is(input,select) { font-size:16px; } }

@@ -4,6 +4,12 @@ export type CaseCorrespondenceChannel = typeof CASE_CORRESPONDENCE_CHANNELS[numb
 // Keep optional correspondence metadata in the existing notes field, separate
 // from lead origin and linked messenger conversation IDs. No migration needed.
 const PREFIX = "Переписка: ";
+const LINK_PREFIX = "Ссылка на переписку: ";
+const isLinkLine = (line: string) => /^Ссылка на переписку: (https:\/\/\S+|\/messages\?conversationId=\S+)$/.test(line);
+
+export function caseCorrespondenceLink(notes: string | null | undefined): string {
+  return notes?.split(/\r?\n/).find(isLinkLine)?.slice(LINK_PREFIX.length) ?? "";
+}
 const isChannelLine = (line: string) => line.startsWith(PREFIX) && CASE_CORRESPONDENCE_CHANNELS.some(channel => line.slice(PREFIX.length).trim() === channel);
 
 export function validCaseCorrespondence(value: unknown): value is CaseCorrespondenceChannel {
@@ -16,9 +22,10 @@ export function caseCorrespondence(notes: string | null | undefined): CaseCorres
 }
 
 export function withoutCaseCorrespondence(notes: string | null | undefined): string {
-  return (notes ?? "").split(/\r?\n/).filter(line => !isChannelLine(line)).join("\n").trim();
+  return (notes ?? "").split(/\r?\n/).filter(line => !isChannelLine(line) && !isLinkLine(line)).join("\n").trim();
 }
 
-export function withCaseCorrespondence(notes: string | null | undefined, channel: CaseCorrespondenceChannel): string | null {
-  return [channel ? PREFIX + channel : "", withoutCaseCorrespondence(notes)].filter(Boolean).join("\n") || null;
+export function withCaseCorrespondence(notes: string | null | undefined, channel: CaseCorrespondenceChannel, link?: string): string | null {
+  const savedLink = channel ? link ?? (caseCorrespondence(notes) === channel ? caseCorrespondenceLink(notes) : "") : "";
+  return [channel ? PREFIX + channel : "", savedLink ? LINK_PREFIX + savedLink : "", withoutCaseCorrespondence(notes)].filter(Boolean).join("\n") || null;
 }

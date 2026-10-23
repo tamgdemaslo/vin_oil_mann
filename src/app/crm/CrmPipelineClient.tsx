@@ -1,16 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { type DragEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, ChevronDown, Phone, Plus, Search, X, ArrowRight, Archive, GripVertical } from "lucide-react";
+import { CalendarClock, ChevronDown, Phone, Plus, Search, X, ArrowRight, Archive, GripVertical, MessageCircle, Pencil } from "lucide-react";
 import { EcoButton } from "@/components/platform/EcoUI";
 import { formatServiceDate, formatServiceDateTime, parseServiceDateTime, toServiceMomentString } from "@/lib/date-time";
 import { formatPhoneForDisplay, normalizePhoneKey } from "@/lib/phone-normalize";
 import { simpleCaseDeadline, simpleCaseStatus, WORK_CASE_LABELS, WORK_CASE_STATUSES, type SimpleCaseStatus, type WorkCaseStatus } from "@/lib/client-case-simple";
 import { caseRosskoOrder, caseTimeRemaining, validCaseRosskoOrder } from "@/lib/client-case-parts";
-import { CASE_CORRESPONDENCE_CHANNELS, caseCorrespondence, withoutCaseCorrespondence } from "@/lib/client-case-correspondence";
+import { CASE_CORRESPONDENCE_CHANNELS, caseCorrespondence, caseCorrespondenceLink, withoutCaseCorrespondence } from "@/lib/client-case-correspondence";
 import { caseCounterpartyHref } from "@/lib/client-case-counterparty";
+import { caseChatPhoneLink, validCaseChatLink } from "@/lib/client-case-chat-link";
 import type { ClientCaseAction } from "@/lib/client-case-shared";
 import styles from "./simple-crm.module.css";
 
@@ -68,6 +69,7 @@ function calculationHref(deal: Deal) {
 
 export default function CrmPipelineClient({ userLogin, userName }: { userLogin: string; userName: string | null }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -84,6 +86,9 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   const [partsExpected, setPartsExpected] = useState("");
   const [partsError, setPartsError] = useState<string | null>(null);
   const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; status: SimpleCaseStatus; value: string } | null>(null);
+  const [correspondenceEdit, setCorrespondenceEdit] = useState<{ id: string; channel: string; url: string } | null>(null);
+  const [openingChat, setOpeningChat] = useState<string | null>(null);
+  const openingChatRef = useRef(false);
   const [quickError, setQuickError] = useState<{ id: string; message: string } | null>(null);
   const deadlineInputRef = useRef<HTMLInputElement>(null);
   const [urgentOnly, setUrgentOnly] = useState(false);
@@ -228,6 +233,37 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     } finally { mutationPending.current = false; setBusy(null); }
   }
 
+  function editCorrespondence(row: Case) {
+    setQuickError(null);
+    setCorrespondenceEdit({ id: row.id, channel: caseCorrespondence(row.notes), url: caseCorrespondenceLink(row.notes) });
+  }
+
+  async function saveCorrespondence(event: FormEvent<HTMLFormElement>, row: Case) {
+    event.preventDefault();
+    if (!correspondenceEdit || mutationPending.current) return;
+    const ok = await patchCard(row, { correspondenceChannel: correspondenceEdit.channel, correspondenceUrl: correspondenceEdit.url.trim() }, "Переписка сохранена");
+    if (ok) setCorrespondenceEdit(null);
+  }
+
+  async function openChat(row: Case) {
+    if (openingChatRef.current || busy || saving || loadError) return;
+    openingChatRef.current = true;
+    setOpeningChat(row.id); setQuickError(null);
+    try {
+      const res = await fetch(`/api/client-cases/${encodeURIComponent(row.id)}/conversation`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.needsLink) editCorrespondence(row);
+        throw new Error(data.error || "Не удалось открыть переписку");
+      }
+      const channel = caseCorrespondence(row.notes);
+      if (typeof data.url !== "string" || (!validCaseChatLink(data.url, channel, window.location.origin) && data.url !== caseChatPhoneLink(channel, row.phoneNormalized))) throw new Error("Не удалось получить ссылку на переписку");
+      if (data.url.startsWith("/messages?conversationId=") || new URL(data.url, window.location.origin).origin === window.location.origin) router.push(data.url);
+      else window.location.assign(data.url);
+    } catch (error) { setQuickError({ id: row.id, message: error instanceof Error ? error.message : "Не удалось открыть переписку" }); }
+    finally { openingChatRef.current = false; setOpeningChat(null); }
+  }
+
   function editDeadline(row: Case) {
     const status = simpleCaseStatus(row);
     const date = status === "waiting_parts" ? row.suppliesExpectedAt : row.nextActionAt || row.nextContactAt;
@@ -285,7 +321,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
 
   function startDrag(event: DragEvent<HTMLElement>, row: Case) {
     const target = event.target as Element;
-    if (busy || saving || editing || deadlineEdit || loadError || simpleCaseStatus(row) === "closed" ||
+    if (busy || saving || editing || deadlineEdit || correspondenceEdit || loadError || simpleCaseStatus(row) === "closed" ||
       (target.closest("a, button, input, textarea, select, summary") && !target.closest("[data-drag-handle]"))) {
       event.preventDefault();
       return;
@@ -326,10 +362,10 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     const clientHref = caseCounterpartyHref(row);
     const clientLink = clientHref ? <Link className={styles.customerLink} href={clientHref} aria-label={`Открыть контрагента: ${row.customerName || row.phoneNormalized || "клиент"}`} title="Открыть карточку контрагента">{row.customerName || "Карточка клиента"}</Link> : null;
     return <article className={`${styles.row} ${isOverdue ? styles.overdueCard : ""} ${draggedId === row.id ? styles.draggedCard : ""}`} key={row.id} id={`case-${row.id}`} aria-busy={busy === row.id}
-      draggable={status !== "closed" && !busy && !saving && !editing && !deadlineEdit && !loadError}
+      draggable={status !== "closed" && !busy && !saving && !editing && !deadlineEdit && !correspondenceEdit && !loadError}
       onDragStart={event => startDrag(event, row)} onDragEnd={endDrag}>
-      {status !== "closed" && <button type="button" className={styles.dragHandle} data-drag-handle draggable={!busy && !saving && !editing && !deadlineEdit && !loadError}
-        disabled={Boolean(busy) || saving || Boolean(editing) || Boolean(deadlineEdit) || Boolean(loadError)}
+      {status !== "closed" && <button type="button" className={styles.dragHandle} data-drag-handle draggable={!busy && !saving && !editing && !deadlineEdit && !correspondenceEdit && !loadError}
+        disabled={Boolean(busy) || saving || Boolean(editing) || Boolean(deadlineEdit) || Boolean(correspondenceEdit) || Boolean(loadError)}
         aria-label={`Переместить заявку: ${row.vehicle || row.customerName || row.title}`} title="Перетащите в другую колонку. Нажмите, чтобы выбрать этап."
         onClick={event => {
           const card = event.currentTarget.closest("article");
@@ -357,11 +393,16 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
           <div className={styles.actions}><EcoButton type="submit" variant="primary" disabled={Boolean(busy)}>{busy === row.id ? "Сохраняем…" : "Сохранить срок"}</EcoButton><EcoButton type="button" disabled={Boolean(busy)} onClick={() => { setDeadlineEdit(null); setQuickError(null); }}>Отмена</EcoButton></div>
         </form>}
       </div>
-      <label className={styles.correspondence}>Где переписка
-        <select aria-label={`Где переписка: ${row.customerName || row.vehicle || row.title}`} value={caseCorrespondence(row.notes)} disabled={Boolean(busy) || Boolean(loadError)} onChange={event => void patchCard(row, { correspondenceChannel: event.target.value }, "Мессенджер сохранён")}>
-          <option value="">Не указана</option>{CASE_CORRESPONDENCE_CHANNELS.map(channel => <option key={channel} value={channel}>{channel}</option>)}
-        </select>
-      </label>
+      <div className={styles.correspondence}>
+        <span>Где переписка</span>
+        {caseCorrespondence(row.notes) ? <><button type="button" className={styles.chatLink} aria-busy={openingChat === row.id} disabled={Boolean(busy) || Boolean(openingChat) || correspondenceEdit?.id === row.id || Boolean(loadError)} aria-label={`Открыть переписку в ${caseCorrespondence(row.notes)}: ${row.customerName || row.vehicle || row.title}`} onClick={() => void openChat(row)}><MessageCircle size={14} />{openingChat === row.id ? "Открываем…" : caseCorrespondence(row.notes)}<ArrowRight size={13} /></button><button type="button" className={styles.editChat} aria-label="Изменить мессенджер и ссылку" title="Изменить мессенджер и ссылку" disabled={Boolean(busy) || Boolean(openingChat) || correspondenceEdit?.id === row.id} onClick={() => editCorrespondence(row)}><Pencil size={14} /></button></> : <button type="button" className={styles.chatLink} disabled={Boolean(busy)} onClick={() => editCorrespondence(row)}>Указать мессенджер</button>}
+      </div>
+      {correspondenceEdit?.id === row.id && <form className={styles.chatForm} aria-label="Настройка переписки" onSubmit={event => void saveCorrespondence(event, row)}>
+        <label>Мессенджер · необязательно<select className="eco-input" value={correspondenceEdit.channel} disabled={Boolean(busy)} onChange={event => { setCorrespondenceEdit({ ...correspondenceEdit, channel: event.target.value, url: "" }); setQuickError(null); }}><option value="">Не указан</option>{CASE_CORRESPONDENCE_CHANNELS.map(channel => <option key={channel} value={channel}>{channel}</option>)}</select></label>
+        {correspondenceEdit.channel && <label>Ссылка на переписку · необязательно<input className="eco-input" inputMode="url" autoComplete="off" placeholder="https://…" maxLength={2000} value={correspondenceEdit.url} disabled={Boolean(busy)} onChange={event => setCorrespondenceEdit({ ...correspondenceEdit, url: event.target.value })} /></label>}
+        <small>Ссылка нужна, если диалог не найден на платформе. Telegram, WhatsApp и SMS можно открыть по телефону.</small>
+        <div className={styles.actions}><EcoButton type="submit" variant="primary" disabled={Boolean(busy)}>{busy === row.id ? "Сохраняем…" : "Сохранить"}</EcoButton><EcoButton type="button" disabled={Boolean(busy)} onClick={() => { setCorrespondenceEdit(null); setQuickError(null); }}>Отмена</EcoButton></div>
+      </form>}
       {quickError?.id === row.id && <p className={styles.formError} role="alert">{quickError.message}</p>}
       <div className={styles.actions}>
         {status === "calculation_needed" && <Link className="eco-btn eco-btn--primary" href={calculationHref(row)}>Рассчитать <ArrowRight size={15} /></Link>}

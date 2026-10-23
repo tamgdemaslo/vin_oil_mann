@@ -1,4 +1,5 @@
-import { caseCorrespondence, validCaseCorrespondence, withCaseCorrespondence } from "@/lib/client-case-correspondence";
+import { validCaseChatLink } from "@/lib/client-case-chat-link";
+import { caseCorrespondence, caseCorrespondenceLink, validCaseCorrespondence, withCaseCorrespondence } from "@/lib/client-case-correspondence";
 import { caseDayDeadline } from "@/lib/client-case-simple";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
@@ -209,6 +210,10 @@ export async function PATCH(
     if (body.correspondenceChannel !== undefined && !validCaseCorrespondence(body.correspondenceChannel)) {
       return NextResponse.json({ error: "Выберите мессенджер из списка" }, { status: 400 });
     }
+    const channel = body.correspondenceChannel === undefined ? caseCorrespondence(current.notes) : body.correspondenceChannel;
+    if (body.correspondenceUrl !== undefined && !validCaseChatLink(body.correspondenceUrl, channel, process.env.APP_ORIGIN || request.url)) {
+      return NextResponse.json({ error: "Укажите HTTPS-ссылку выбранного мессенджера" }, { status: 400 });
+    }
     for (const field of ["suppliesExpectedAt", "nextActionAt", "nextContactAt"] as const) {
       if (body[field] !== undefined && body[field] !== null && body[field] !== "" && !parseDate(body[field])) {
         return NextResponse.json({ error: "Проверьте дату и время" }, { status: 400 });
@@ -263,9 +268,9 @@ export async function PATCH(
     if (body.lastClientMessageAt !== undefined) data.lastClientMessageAt = parseDate(body.lastClientMessageAt);
     if (body.lastOutboundMessageAt !== undefined) data.lastOutboundMessageAt = parseDate(body.lastOutboundMessageAt);
     if (body.closeReason !== undefined) data.closeReason = parseOptionalString(body.closeReason);
-    if (body.notes !== undefined || body.correspondenceChannel !== undefined) {
+    if (body.notes !== undefined || body.correspondenceChannel !== undefined || body.correspondenceUrl !== undefined) {
       data.notes = withCaseCorrespondence(body.notes === undefined ? current.notes : parseOptionalString(body.notes),
-        body.correspondenceChannel === undefined ? caseCorrespondence(current.notes) : body.correspondenceChannel);
+        channel, body.correspondenceUrl === undefined ? (channel === caseCorrespondence(current.notes) ? caseCorrespondenceLink(current.notes) : "") : body.correspondenceUrl);
     }
     if (body.status !== undefined) {
       const status = parseOptionalString(body.status);

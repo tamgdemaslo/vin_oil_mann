@@ -60,6 +60,12 @@ try{
  assert.equal(channel.withCaseCorrespondence('Переписка: Telegram\nКомментарии','MAX'),'Переписка: MAX\nКомментарии');
  assert.equal(channel.withCaseCorrespondence('Переписка: Telegram',''),null);
  assert.equal(channel.withoutCaseCorrespondence('Переписка: обсудили масло\nКомментарии'),'Переписка: обсудили масло\nКомментарии','Unrelated prose remains intact');
+ db.state.existing={id:'case-a',notes:'Переписка: Telegram\nКомментарий'};
+ res=await PATCH(patchRequest({correspondenceUrl:'https://t.me/client'}),params);assert.equal(res.status,200);assert.equal(db.state.updated.notes,'Переписка: Telegram\nСсылка на переписку: https://t.me/client\nКомментарий');
+ db.state.existing.notes=db.state.updated.notes;
+ res=await PATCH(patchRequest({notes:'Новое примечание'}),params);assert.equal(res.status,200);assert.equal(db.state.updated.notes,'Переписка: Telegram\nСсылка на переписку: https://t.me/client\nНовое примечание');
+ res=await PATCH(patchRequest({correspondenceUrl:'javascript:alert(1)'}),params);assert.equal(res.status,400);
+ res=await PATCH(patchRequest({correspondenceChannel:'MAX'}),params);assert.equal(res.status,200);assert.equal(db.state.updated.notes,'Переписка: MAX\nКомментарий');
  const route=await jiti.import('../src/app/api/client-cases/[id]/action/route.ts');
  const actionRequest=action=>new Request('http://example.test/action',{method:'POST',body:JSON.stringify({action})});
  db.state.existing=null;
