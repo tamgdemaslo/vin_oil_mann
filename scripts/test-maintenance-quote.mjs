@@ -71,3 +71,18 @@ const dated = quoteRosskoFilters(realMann,'HU718/1K','branch-a',[{fromCents:0,to
 assert.equal(dated.length,1);assert.equal(dated[0].price,714.45);assert.equal(dated[0].available,104);
 assert.match(dated[0].deliveryLabel,/24\.10\.2026, 11:10.*12:35/);
 console.log('real ROSSKO stock shape and branch-local delivery window: ok');
+
+const analogue = {guid:'analogue-1',brand:'MECAFILTER',partnumber:'EL9322',stocks:{stock:{id:'fast',price:600,count:2,multiplicity:1,delivery:0,deliveryStart:'2026-10-24T09:10:00.000Z'}},crosses:{Part:{guid:'second-hop',brand:'OTHER',partnumber:'UNSAFE',stocks:{stock:{id:'s',price:1,count:1}}}}};
+const noMann = {...supplierPart,stocks:{stock:[]},crosses:{Part:[analogue,analogue,{...analogue,guid:'no-stock',stocks:{stock:{id:'x',price:200,count:0}}},{...analogue,guid:'bulk-only',stocks:{stock:{id:'x',price:200,count:10,multiplicity:4}}}]}};
+const linked=quoteRosskoFilters({PartsList:{Part:[noMann,{...analogue,guid:'unrelated-top'},{...supplierPart,partnumber:'WRONG',crosses:{Part:{...analogue,guid:'wrong-reference'}}}]}},'W712/95','branch-a',[{fromCents:0,toCents:null,marginPercent:30}]);
+assert.equal(linked.length,1);assert.equal(linked[0].name,'MECAFILTER EL9322');assert.equal(linked[0].price,780);assert.equal(linked[0].relation,'analogue');assert.equal(linked[0].referenceArticle,'W712/95');
+assert.equal(linked[0].deliveryAt,'2026-10-24T09:10:00.000Z');assert.doesNotMatch(JSON.stringify(linked),/purchasePrice|second-hop|unrelated-top|wrong-reference/);
+const mixed=quoteRosskoFilters({PartsList:{Part:{...supplierPart,crosses:{Part:analogue}}}},'W712/95','branch-a',[{fromCents:0,toCents:null,marginPercent:30}]);
+assert.equal(mixed.length,2);assert.equal(mixed[0].relation,'mann');
+const {sortQuoteFilterOffers}=await jiti.import('../src/lib/maintenance-quote.ts');
+const baseOffer={id:'base',name:'Filter',price:1000,available:1,orderable:true};
+const toSort=[{...baseOffer,id:'unknown',price:200,deliveryDays:null},{...baseOffer,id:'slow',price:500,deliveryDays:5},{...baseOffer,id:'fast',price:900,deliveryAt:'2026-10-24T09:10:00.000Z'},{...baseOffer,id:'today',price:800,deliveryDays:0}];
+assert.deepEqual(sortQuoteFilterOffers(toSort,'price',Date.parse('2026-10-24T00:00:00Z')).map(p=>p.id),['unknown','slow','today','fast']);
+assert.deepEqual(sortQuoteFilterOffers(toSort,'delivery',Date.parse('2026-10-24T00:00:00Z')).map(p=>p.id),['today','fast','slow','unknown']);
+assert.equal(toSort[0].id,'unknown');
+console.log('ROSSKO direct analogues, deduplication, fallback without MANN and offer ranking: ok');

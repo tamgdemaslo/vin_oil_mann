@@ -18,12 +18,22 @@ function deliveryWindows(raw: unknown) {
   return windows;
 }
 
-/** Only exact MANN articles; cross-references are not proof of fitment. */
+/** Only the requested MANN part and its direct ROSSKO cross-references.
+ * Other search results and cross-references of cross-references are excluded.
+ */
 export function quoteRosskoFilters(raw: unknown, article: string, branchId: string, rules: AIRosskoMarkupRule[], timeZone = "Europe/Kaliningrad"): QuoteFilterGroup["products"] {
-  const windows = deliveryWindows(raw);
+  const list = record(record(raw).PartsList);
+  if (!Object.hasOwn(list, "Part")) throw new Error("ROSSKO_PARSING_ERROR");
+  const references = array(list.Part).map(record).filter(part => /^MANN(?:[\s-]*FILTER)?$/i.test(String(part.brand ?? "")) && sameSupplierArticle(article, part.partnumber));
+  const parts = references.flatMap(part => [
+    {part, relation: "mann" as const},
+    ...array(record(part.crosses).Part).map(record).map(cross => ({part:cross, relation:"analogue" as const})),
+  ]);
+  const windows = deliveryWindows({PartsList:{Part:parts.map(item => item.part)}});
+  const seen = new Set<string>();
   const date = new Intl.DateTimeFormat("ru-RU", {timeZone, day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit"});
-  return parseAssistantRosskoOffers(raw, branchId).flatMap(offer => {
-    if (!/^MANN(?:[\s-]*FILTER)?$/i.test(offer.brand) || !sameSupplierArticle(article, offer.article) || !offer.id || !(offer.availableQuantity! >= 1) || !(offer.purchasePriceCents! > 0) || (offer.quantityMultiple != null && offer.quantityMultiple > 1)) return [];
+  return parts.flatMap(({part, relation}) => parseAssistantRosskoOffers({PartsList:{Part:part}}, branchId).flatMap(offer => {
+    if (!offer.id || seen.has(offer.id) || !(offer.availableQuantity! >= 1) || !(offer.purchasePriceCents! > 0) || (offer.quantityMultiple != null && offer.quantityMultiple > 1)) return [];
     const cents = offer.purchasePriceCents!;
     const rule = rules.find(item => cents >= item.fromCents && (item.toCents == null || cents < item.toCents)) ?? rules.at(-1);
     if (!rule) return [];
@@ -32,6 +42,7 @@ export function quoteRosskoFilters(raw: unknown, article: string, branchId: stri
     const days = offer.deliveryDays;
     const window = windows.get(`${offer.partId}|${offer.stockId}`);
     const deliveryLabel = window ? `доставка: ${date.format(window.start)}${window.end ? ` — ${date.format(window.end)}` : ""}` : days === 0 ? "в наличии у поставщика · срок 0 дн." : days != null && days > 0 ? `доставка: ${days} дн.` : "срок доставки не указан";
-    return [{id: `rossko:${offer.id}`, name: `MANN ${offer.article}`, article: offer.article, price, available: offer.availableQuantity!, orderable: true, source: "rossko" as const, deliveryLabel}];
-  });
+    seen.add(offer.id);
+    return [{brand:offer.brand, relation, referenceArticle:article, deliveryAt:window?.start.toISOString() ?? null, deliveryDays:days, id: `rossko:${offer.id}`, name: `${offer.brand} ${offer.article}`, article: offer.article, price, available: offer.availableQuantity!, orderable: true, source: "rossko" as const, deliveryLabel}];
+  }));
 }

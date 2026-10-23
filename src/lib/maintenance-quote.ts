@@ -7,7 +7,7 @@ export type QuoteStockProduct = {
   id: string; name: string; article: string; price: number; available: number;
   unit: string; litresPerUnit: number | null; sae: string; oem: string;
 };
-export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string };
+export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string };
 export function matchesQuoteOil(product: { groupPath?: string | null; entityType?: string; sae?: string | null; oem?: string | null; acea?: string | null; apiSpec?: string | null; ilsac?: string | null }, specification: string, viscosity: string) {
   if (resolveProductFluidAttributeProfile(product) !== "ENGINE_OIL") return false;
   const required = buildRequirementsNorm({ oem: specification, acea: specification, api: specification, ilsac: specification, sae: viscosity });
@@ -101,7 +101,7 @@ export function quoteClientText(vehicle: string, specification: string, litres: 
 
 export type QuoteFilterGroup = {
   key: string; label: string; article: string; condition?: string | null;
-  products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean; source?: "rossko"; deliveryLabel?: string }[];
+  products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean; source?: "rossko"; deliveryLabel?: string; brand?: string; relation?: "mann" | "analogue"; referenceArticle?: string; deliveryAt?: string | null; deliveryDays?: number | null }[];
 };
 
 export function quoteRequirementChoices(profile: import("@/lib/mann-unified-technical-profile").MannUnifiedTechnicalProfile | null, research: import("@/lib/mann-fluid-research").MannFluidResearchResult | null) {
@@ -115,4 +115,15 @@ export function quoteRequirementChoices(profile: import("@/lib/mann-unified-tech
   const volumes = [...new Set(capacities.flatMap(({capacity}) => [capacity.nominalLiters, capacity.minLiters, capacity.maxLiters]).filter((value): value is number => !!value && value > 0))];
   const trustedVolumes = [...new Set(capacities.filter(item => item.trusted).map(item => item.capacity.nominalLiters).filter((value): value is number => !!value))];
   return { specifications, viscosities, volumes, automaticVolume: trustedVolumes.length === 1 && volumes.length === 1 ? String(trustedVolumes[0]) : "" };
+}
+
+
+export function sortQuoteFilterOffers(products: QuoteFilterGroup["products"], priority: "price" | "delivery", now = Date.now()) {
+  const delivery = (product: QuoteFilterGroup["products"][number]) => {
+    const at = product.deliveryAt ? Date.parse(product.deliveryAt) : NaN;
+    if (Number.isFinite(at)) return at;
+    return product.deliveryDays != null && Number.isFinite(product.deliveryDays) && product.deliveryDays >= 0 ? now + product.deliveryDays * 86400000 : Infinity;
+  };
+  const compareDelivery = (a: QuoteFilterGroup["products"][number], b: QuoteFilterGroup["products"][number]) => delivery(a) === delivery(b) ? 0 : delivery(a) < delivery(b) ? -1 : 1;
+  return [...products].sort((a, b) => (priority === "delivery" ? compareDelivery(a, b) || a.price - b.price : a.price - b.price || compareDelivery(a, b)) || a.name.localeCompare(b.name, "ru") || a.id.localeCompare(b.id));
 }

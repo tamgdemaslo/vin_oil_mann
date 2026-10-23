@@ -5,6 +5,7 @@ import type { MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-p
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
 import { groupQuoteOils, quoteVariantAmount, quoteRequirementChoices, quoteClientText, quoteExtraCents, quoteRub, type QuoteFilterGroup, type QuoteExtra, type QuoteStockProduct } from "@/lib/maintenance-quote";
 import { getProductAttributeDictionary } from "@/lib/product-attribute-values";
+import { QuoteFilterOffers } from "./QuoteFilterOffers";
 import { QuoteSearchField } from "./QuoteSearchField";
 import styles from "./MaintenanceQuotePanel.module.css";
 
@@ -151,28 +152,29 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
         {filtersLoading ? <p role="status">Загружаем подбор MANN…</p> : !filters.length ? <p className={styles.note}>После выбора модификации здесь появятся масляный, воздушный и салонный фильтры из MANN.</p> : null}
         {filters.map(group => {
           const supplier = supplierResults[group.article];
-          const bestSupplier = supplier?.products.reduce<QuoteFilterGroup["products"][number] | undefined>((best, item) => !best || item.price < best.price ? item : best, undefined);
           const filterProducts = [...(warehouseId ? group.products : []), ...(supplier?.products ?? [])];
           const rowId = `mann:${group.key}`;
           const existingRow = extras.find(row => row.id === rowId);
-          const selectedId = filterSelection[group.key] ?? (existingRow && !existingRow.stockStoreId ? "reference" : "");
-          return <div key={group.key} className={styles.filterRow}>
-            <label>{group.label} · MANN {group.article}<select aria-label={`Товар для ${group.label} MANN ${group.article}`} value={selectedId} disabled={filtersLoading} onChange={event => {
-              const value=event.target.value;
+          const selectedId = filterSelection[group.key] ?? existingRow?.supplierProductId ?? (existingRow && !existingRow.stockStoreId ? "reference" : "");
+          function chooseFilter(value: string) {
               setFilterSelection(values => ({...values, [group.key]: value}));
               const chosen=filterProducts.find(item=>item.id===value);
               setExtras(rows => {
                 const others=rows.filter(row=>row.id!==rowId);
                 if (!value || (value!=="reference" && !chosen)) return others;
-                return [...others,{id:rowId,name:chosen ? `${chosen.name}${chosen.source === "rossko" ? ` (Роско: ${chosen.deliveryLabel})` : chosen.available<1 ? " (под заказ)" : ""}` : `${group.label} MANN ${group.article}`,quantity:1,price:chosen && chosen.price>0 ? chosen.price : NaN,...(chosen && warehouseId && chosen.source !== "rossko" ? {stockStoreId:warehouseId} : {})}];
+                return [...others,{id:rowId,name:chosen ? `${chosen.name}${chosen.source === "rossko" ? ` (${chosen.relation === "analogue" ? `аналог Роско для MANN ${group.article}; ` : "Роско: "}${chosen.deliveryLabel})` : chosen.available<1 ? " (под заказ)" : ""}` : `${group.label} MANN ${group.article}`,quantity:1,price:chosen && chosen.price>0 ? chosen.price : NaN,...(chosen?.source === "rossko" ? {supplierProductId:chosen.id} : {}),...(chosen && warehouseId && chosen.source !== "rossko" ? {stockStoreId:warehouseId} : {})}];
               });
-            }}>
+          }
+          return <div key={group.key} className={styles.filterRow}>
+            <label>{group.label} · MANN {group.article}<select aria-label={`Товар для ${group.label} MANN ${group.article}`} value={selectedId} disabled={filtersLoading} onChange={event => chooseFilter(event.target.value)}>
               <option value="">Выберите подходящий товар</option>
-              {filterProducts.map(item => <option key={item.id} value={item.id} disabled={item.available < 1 && !item.orderable}>{item.name} · {quoteRub(Math.round(item.price * 100))} · {item.source === "rossko" ? `Роско · ${item.available} шт. · ${item.deliveryLabel}` : item.available >= 1 ? `наш склад: ${item.available} шт.` : item.orderable ? "под заказ" : "нет в наличии"}</option>)}
+              {existingRow?.supplierProductId === selectedId && !filterProducts.some(item => item.id === selectedId) ? <option value={selectedId} disabled>{existingRow.name} — выбран ранее</option> : null}
+              {filterProducts.map(item => <option key={item.id} value={item.id} disabled={item.available < 1 && !item.orderable}>{item.name} · {quoteRub(Math.round(item.price * 100))} · {item.source === "rossko" ? `${item.relation === "analogue" ? "Аналог Роско" : "MANN · Роско"} · ${item.available} шт. · ${item.deliveryLabel}` : item.available >= 1 ? `наш склад: ${item.available} шт.` : item.orderable ? "под заказ" : "нет в наличии"}</option>)}
               <option value="reference">MANN {group.article} — указать цену</option>
             </select></label>
+            {supplier?.products.length ? <QuoteFilterOffers products={supplier.products} selectedId={selectedId} label={`${group.label} MANN ${group.article}`} disabled={filtersLoading} onSelect={chooseFilter} /> : null}
             {existingRow ? <><label className={styles.filterPrice}>Цена фильтра, ₽<input aria-label={`Цена ${group.label} MANN ${group.article}, ₽`} type="number" min="0" step="0.01" placeholder="Укажите цену" value={Number.isFinite(existingRow.price) ? existingRow.price : ""} onChange={event=>updateExtra(rowId,{price:event.target.value ? Number(event.target.value) : NaN})} /></label><button type="button" className="eco-btn" onClick={()=>{setExtras(rows=>rows.filter(row=>row.id!==rowId));setFilterSelection(values=>({...values,[group.key]:""}));}}>Убрать фильтр</button><small className={styles.filterAdded}>Добавлен в расчёт{!Number.isFinite(existingRow.price) ? " — укажите цену рядом" : ""}</small></> : null}
-            {!supplier ? <p className={styles.note} role="status">Проверяем цену и доставку в Роско…</p> : supplier.error ? <p className={styles.note} role="status">Роско: {supplier.error}</p> : !supplier.products.length ? <p className={styles.note}>В Роско нет доступных предложений MANN {group.article}.</p> : <p className={styles.note}>Роско: {quoteRub(Math.round(bestSupplier!.price * 100))} · {bestSupplier!.available} шт. · {bestSupplier!.deliveryLabel}. Выберите предложение в списке — цена и срок добавятся в расчёт.</p>}
+            {!supplier ? <p className={styles.note} role="status">Проверяем цену и доставку в Роско…</p> : supplier.error ? <p className={styles.note} role="status">Роско: {supplier.error}</p> : !supplier.products.length ? <p className={styles.note}>В Роско нет доступных предложений MANN {group.article} и его аналогов.</p> : null}
             {group.condition ? <p className={styles.note}>Условие MANN: {group.condition}</p> : null}
           </div>;
         })}
