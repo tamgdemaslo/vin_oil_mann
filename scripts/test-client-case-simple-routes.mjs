@@ -13,7 +13,7 @@ const alias={
  '@/lib/branch-sql-context':stub('sql','exports.requireSingleBranchSqlContext=()=>({branchId:"a"});'),
  '@/lib/crm':stub('stages','exports.ensureDefaultCrmStages=async()=>{};exports.getFirstCrmStage=async()=>({id:"first",name:"Нужно рассчитать"});exports.getCrmStageBySortOrder=async n=>({id:"stage-"+n});'),
  '@/lib/crm-deadline-notifications':stub('notify','exports.notifyClientCaseTaskAssigned=async()=>{throw Error("Unexpected assigned notification");};'),
- '@/lib/client-case-workflow':stub('workflow','exports.writeClientCaseEvent=async()=>{};exports.processClientCaseWorkflowTransitions=async()=>({});exports.state={last:null};exports.applyClientCaseAction=async(id,action,body)=>{exports.state.last={id,action,body};return {id,caseStatus:action}};'),
+ '@/lib/client-case-workflow':stub('workflow','exports.writeClientCaseEvent=async()=>{};exports.processClientCaseWorkflowTransitions=async()=>({});exports.state={last:null,error:null};exports.applyClientCaseAction=async(id,action,body,actorLogin)=>{if(exports.state.error)throw exports.state.error;exports.state.last={id,action,body,actorLogin};return {id,caseStatus:action}};'),
  '@/lib/db':stub('db',`exports.state={existing:null,created:null,updated:null,stages:[],clients:[],clientQuery:null};exports.prisma={crmDeal:{findUnique:async()=>exports.state.existing,findFirst:async()=>null,update:async({data})=>{exports.state.updated=data;return {...exports.state.existing,...data}},create:async({data})=>{exports.state.created=data;return {id:'new',...data}}},localCounterparty:{findMany:async args=>{exports.state.clientQuery=args;return exports.state.clients.filter(c=>c.branchId===args.where.branchId&&!c.archived&&args.where.normalizedPhone.in.includes(c.normalizedPhone))}},crmStage:{findMany:async()=>exports.state.stages,findUnique:async()=>({id:'first',name:'Нужно рассчитать'})}};`),
  '@':resolve('src'),
 };
@@ -33,6 +33,9 @@ try{
  assert.equal(clientLinks.caseCounterpartyHref(linked[1]),'/clients/counterparties?search=9000000002');
  assert.equal(clientLinks.caseCounterpartyHref(linked[2]),'/clients/counterparties?search='+encodeURIComponent('Сергей'));
  assert.equal(clientLinks.caseCounterpartyHref({}),null);
+ assert.equal(clientLinks.caseCustomerTitle({customerName:'  Сергей  ',phoneNormalized:'79000000001',vehicle:'AUDI · VIN ABC'}),'Сергей','Customer always leads, never vehicle or VIN');
+ assert.equal(clientLinks.caseCustomerTitle({customerName:null,phoneNormalized:'79000000001',vehicle:'VIN ABC'}),'+7 (900) 000-00-01');
+ assert.equal(clientLinks.caseCustomerTitle({customerName:'  ',phoneNormalized:null,vehicle:'VIN ABC'}),'Клиент не указан');
  res=await POST(new Request('http://example.test/api/crm/deals',{method:'POST',body:JSON.stringify({quickRequest:true,title:'ТО',phone:'12'})}));
  assert.equal(res.status,400);assert.equal(db.state.created,null);
  res=await POST(new Request('http://example.test/api/crm/deals',{method:'POST',body:JSON.stringify({quickRequest:true,title:'ТО',phone:'8 900 000-00-01',responsibleLogin:'other',caseStatus:'calculation_sent',stageId:'wrong'})}));
@@ -76,6 +79,19 @@ try{
  res=await route.POST(actionRequest('close'),{params:Promise.resolve({id:'case-a'})});assert.equal(res.status,200);
  const wf=await jiti.import(alias['@/lib/client-case-workflow']);
  const requestBody=body=>new Request('http://example.test/action',{method:'POST',body:JSON.stringify(body)});
+ const version=new Date('2026-10-23T12:00:00Z');
+ db.state.existing={id:'case-a',status:'open',caseStatus:'parts_arrived',updatedAt:version,appointmentId:null,yclientsRecordId:null};
+ res=await route.POST(requestBody({action:'confirm_manual_booking',reason:'Forged reason',suppliesNote:'Do not change',expectedUpdatedAt:'2000-01-01T00:00:00Z'}),{params:Promise.resolve({id:'case-a'})});
+ assert.equal(res.status,200);assert.equal(wf.state.last.action,'confirm_manual_booking');assert.equal(wf.state.last.actorLogin,'vadim');
+ assert.deepEqual(wf.state.last.body,{expectedUpdatedAt:version.toISOString(),note:'Сотрудник подтвердил, что клиент уже записан вне этой заявки.'},'Manual confirmation uses the server version and does not forward unrelated changes');
+ db.state.existing.caseStatus='waiting_parts';wf.state.last=null;
+ res=await route.POST(requestBody({action:'confirm_manual_booking'}),{params:Promise.resolve({id:'case-a'})});assert.equal(res.status,409);assert.equal(wf.state.last,null,'Wrong stage must not close');
+ db.state.existing.caseStatus='parts_arrived';db.state.existing.status='won';
+ res=await route.POST(requestBody({action:'confirm_manual_booking'}),{params:Promise.resolve({id:'case-a'})});assert.equal(res.status,409);assert.equal(wf.state.last,null,'Closed cases must not be confirmed again');
+ db.state.existing.status='open';wf.state.error={code:'P2025'};
+ res=await route.POST(requestBody({action:'confirm_manual_booking'}),{params:Promise.resolve({id:'case-a'})});assert.equal(res.status,409,'Concurrent changes must be reported as a conflict');wf.state.error=null;
+ db.state.existing.caseStatus='postponed';db.state.existing.nextAction='Запчасти пришли — позвонить';
+ res=await route.POST(requestBody({action:'confirm_manual_booking'}),{params:Promise.resolve({id:'case-a'})});assert.equal(res.status,200,'Visible legacy arrived cases can also be completed');
  db.state.existing={id:'case-a',appointmentId:null,yclientsRecordId:null,suppliesNote:'Фильтр и прокладка\nЗаказ РОССКО № 999'};
  res=await route.POST(requestBody({action:'waiting_parts',rosskoOrderNumber:'123456789',suppliesExpectedAt:'2026-10-24T15:30'}),{params:Promise.resolve({id:'case-a'})});
  assert.equal(res.status,200);assert.equal(wf.state.last.body.suppliesNote,'Заказ РОССКО № 123456789\nФильтр и прокладка');assert.equal(wf.state.last.body.suppliesSupplier,'РОССКО');assert.equal(wf.state.last.body.suppliesExpectedAt,'2026-10-24T13:30:00.000Z');

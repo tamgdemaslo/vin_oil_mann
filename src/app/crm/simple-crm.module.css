@@ -231,3 +231,19 @@ button.orderNumber { min-height:28px; padding:2px 0; border:0; background:none; 
  .phoneFilters button[aria-pressed="true"] { color:var(--eco-ink,#25231f); font-weight:700; background:var(--eco-surface-sunk,#f1eee7); }
  .phoneFilters .phoneFilterStart { border-left:1px solid var(--eco-line,#dedbd2); margin-left:3px; }
 }
+
+.vehicle { color:var(--eco-ink-3,#625e56); font-size:11px; line-height:1.45; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.cardHeading > span { max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bookingMenu { position:relative; flex:1; min-width:0; }
+.bookingMenu > :global(.eco-btn) { width:100%; }
+.bookingOptions { position:absolute; z-index:5; top:calc(100% + 4px); right:0; width:260px; max-width:calc(100vw - 48px); padding:4px; display:grid; border:1px solid var(--eco-line-strong,#cdc7ba); border-radius:6px; background:var(--eco-surface,#fff); box-shadow:0 5px 18px #29231a20; }
+.bookingMenu[data-placement="above"] .bookingOptions { top:auto; bottom:calc(100% + 4px); }
+.bookingOptions > :is(a,button) { min-height:44px; padding:10px; border:0; border-radius:4px; background:none; color:var(--eco-ink,#25231f); font:inherit; font-size:12px; line-height:1.5; text-align:left; text-decoration:none; cursor:pointer; }
+.bookingOptions > :is(a,button):hover { background:var(--eco-surface-sunk,#f1eee7); }
+.bookingCloseNote { font-size:13px; line-height:1.6; color:var(--eco-ink-3,#625e56); }
+@media(max-width:560px) {
+ .vehicle { -webkit-line-clamp:1; }
+ .bookingMenu[data-placement="above"] .bookingOptions { top:auto; bottom:auto; }
+ .bookingOptions { position:static; width:100%; max-width:none; margin-top:4px; box-shadow:none; }
+ .dialog .actions :global(.eco-btn) { min-height:44px; }
+}

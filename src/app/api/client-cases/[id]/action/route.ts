@@ -8,6 +8,7 @@ import type { ClientCaseAction } from "@/lib/client-case-shared";
 
 import { validCaseRosskoOrder, withCaseRosskoOrder } from "@/lib/client-case-parts";
 import { parseServiceDateTime } from "@/lib/date-time";
+import { simpleCaseStatus } from "@/lib/client-case-simple";
 
 const ACTIONS = new Set<ClientCaseAction>([
   "calculate",
@@ -21,6 +22,7 @@ const ACTIONS = new Set<ClientCaseAction>([
   "create_shipment",
   "postpone",
   "close",
+  "confirm_manual_booking",
   "refused",
   "duplicate",
 ]);
@@ -55,8 +57,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
   if (!branchAccess.ok) return branchAccess.response;
   return runWithBranchApiContext(branchAccess.context, async () => {
-    const existing = await prisma.crmDeal.findUnique({ where: { id }, select: { id: true, appointmentId: true, yclientsRecordId: true, suppliesNote: true } });
+    const existing = await prisma.crmDeal.findUnique({ where: { id }, select: { id: true, appointmentId: true, yclientsRecordId: true, suppliesNote: true, status: true, caseStatus: true, nextAction: true, updatedAt: true, stage: { select: { name: true } } } });
     if (!existing) return NextResponse.json({ error: "Заявка не найдена" }, { status: 404 });
+    if (action === "confirm_manual_booking" && (existing.status !== "open" || simpleCaseStatus(existing) !== "parts_arrived")) {
+      return NextResponse.json({ error: "Этап заявки изменился. Обновите доску перед закрытием." }, { status: 409 });
+    }
     if (action === "close" && !existing.appointmentId && !existing.yclientsRecordId) {
       return NextResponse.json({ error: "Сначала запишите клиента на обслуживание" }, { status: 400 });
     }
@@ -66,9 +71,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (order) body.suppliesSupplier = "РОССКО";
     }
     try {
-      const updated = await applyClientCaseAction(id, action, body, access.session!.user.login);
+      const actionBody = action === "confirm_manual_booking" ? {
+        expectedUpdatedAt: existing.updatedAt.toISOString(),
+        note: "Сотрудник подтвердил, что клиент уже записан вне этой заявки.",
+      } : body;
+      const updated = await applyClientCaseAction(id, action, actionBody, access.session!.user.login);
       return NextResponse.json({ case: updated });
     } catch (error) {
+      if (action === "confirm_manual_booking" && error && typeof error === "object" && "code" in error && error.code === "P2025") {
+        return NextResponse.json({ error: "Заявка изменилась. Обновите доску перед закрытием." }, { status: 409 });
+      }
       console.error("[client-cases/action]", error);
       return NextResponse.json({ error: "Не удалось обновить заявку. Попробуйте ещё раз." }, { status: 500 });
     }

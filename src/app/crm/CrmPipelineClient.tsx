@@ -10,7 +10,7 @@ import { formatPhoneForDisplay, normalizePhoneKey } from "@/lib/phone-normalize"
 import { simpleCaseDeadline, simpleCaseStatus, WORK_CASE_LABELS, WORK_CASE_STATUSES, type SimpleCaseStatus, type WorkCaseStatus } from "@/lib/client-case-simple";
 import { caseRosskoOrder, caseTimeRemaining, validCaseRosskoOrder } from "@/lib/client-case-parts";
 import { CASE_CORRESPONDENCE_CHANNELS, caseCorrespondence, caseCorrespondenceLink, withoutCaseCorrespondence } from "@/lib/client-case-correspondence";
-import { caseCounterpartyHref } from "@/lib/client-case-counterparty";
+import { caseCounterpartyHref, caseCustomerTitle } from "@/lib/client-case-counterparty";
 import { caseChatPhoneLink, validCaseChatLink } from "@/lib/client-case-chat-link";
 import type { ClientCaseAction } from "@/lib/client-case-shared";
 import styles from "./simple-crm.module.css";
@@ -80,6 +80,10 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   const [mobileFocus, setMobileFocus] = useState(true);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const partsDialogRef = useRef<HTMLDialogElement>(null);
+  const bookingCloseRef = useRef<HTMLDialogElement>(null);
+  const [closingBooking, setClosingBooking] = useState<Case | null>(null);
+  const [bookingMenuId, setBookingMenuId] = useState<string | null>(null);
+  const [bookingMenuPlacement, setBookingMenuPlacement] = useState<"above" | "below">("below");
   const partsOrderRef = useRef<HTMLInputElement>(null);
   const [partsRow, setPartsRow] = useState<Case | null>(null);
   const [partsOrder, setPartsOrder] = useState("");
@@ -121,6 +125,16 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   }, []);
 
   useEffect(() => { void load(true); }, [load]);
+  useEffect(() => {
+    if (!bookingMenuId) return;
+    const dismiss = (event: PointerEvent) => { if (!(event.target instanceof Element) || !event.target.closest("[data-booking-menu]")) setBookingMenuId(null); };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setBookingMenuId(null); document.getElementById(`booking-toggle-${bookingMenuId}`)?.focus(); }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
+  }, [bookingMenuId]);
   useEffect(() => {
     const timer = window.setInterval(() => { setNow(new Date()); if (!document.hidden) void load(); }, 60_000);
     const refresh = () => { setNow(new Date()); if (!document.hidden) void load(); };
@@ -187,7 +201,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     try {
       const res = await fetch(`/api/client-cases/${encodeURIComponent(row.id)}/action`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, action }) });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Не удалось обновить заявку");
+      if (!res.ok) { if (res.status === 409) await load(); throw new Error(data.error || "Не удалось обновить заявку"); }
       if (data.case?.id === row.id) setCases(current => current.map(item => item.id === row.id ? { ...item, ...data.case, stage: item.stage } : item));
       await load();
       setNotice(successMessage ?? (action === "mark_calculation_sent" ? "Расчёт отмечен отправленным. Напоминаний об ответе не будет." : "Заявка обновлена"));
@@ -307,6 +321,20 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     if (ok) partsDialogRef.current?.close();
   }
 
+  function openBookingClose(row: Case) {
+    setBookingMenuId(null); setClosingBooking(row); setActionError(null);
+    requestAnimationFrame(() => bookingCloseRef.current?.showModal());
+  }
+
+  async function confirmBookingClose() {
+    if (!closingBooking || mutationPending.current) return;
+    const current = cases.find(row => row.id === closingBooking.id);
+    if (!current || simpleCaseStatus(current) !== "parts_arrived") { setActionError("Этап заявки изменился. Обновите доску перед закрытием."); return; }
+    const linked = Boolean(current.appointmentId || current.yclientsRecordId);
+    const ok = await action(current, linked ? "close" : "confirm_manual_booking", linked ? { reason: "Клиент записан" } : {}, "Заявка закрыта: клиент записан");
+    if (ok) bookingCloseRef.current?.close();
+  }
+
   function deadlineInfo(deadline: Date, label: string) {
     const remaining = caseTimeRemaining(deadline, now);
     return <div className={remaining.expired ? styles.expiredDeadline : styles.deadlineClock}>
@@ -361,7 +389,8 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     const partsDue = row.suppliesExpectedAt ? parseServiceDateTime(row.suppliesExpectedAt) : null;
     const hasBooking = Boolean(row.yclientsRecordId || row.appointmentId);
     const clientHref = caseCounterpartyHref(row);
-    const clientLink = clientHref ? <Link className={styles.customerLink} href={clientHref} aria-label={`Открыть контрагента: ${row.customerName || row.phoneNormalized || "клиент"}`} title="Открыть карточку контрагента">{row.customerName || "Карточка клиента"}</Link> : null;
+    const customerTitle = caseCustomerTitle(row);
+    const clientLink = clientHref ? <Link className={styles.customerLink} href={clientHref} aria-label={`Открыть контрагента: ${row.customerName || row.phoneNormalized || "клиент"}`} title="Открыть карточку контрагента">{customerTitle}</Link> : null;
     return <article className={`${styles.row} ${isOverdue ? styles.overdueCard : ""} ${draggedId === row.id ? styles.draggedCard : ""}`} key={row.id} id={`case-${row.id}`} aria-busy={busy === row.id}
       draggable={status !== "closed" && !busy && !saving && !editing && !deadlineEdit && !correspondenceEdit && !loadError}
       onDragStart={event => startDrag(event, row)} onDragEnd={endDrag}>
@@ -375,12 +404,12 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
           card?.querySelector<HTMLSelectElement>("[data-stage-select]")?.focus();
         }}><GripVertical size={16} /></button>}
       {busy === row.id && <span className={styles.savingBadge} role="status">Сохраняем…</span>}
-      <div className={styles.cardHeading}><strong>{row.vehicle || (row.customerName ? clientLink || row.customerName : "Новый запрос")}</strong><span>{row.source === "client-site" || row.createdByLogin === "client-site" ? "С сайта" : row.source || ""}</span></div>
+      <div className={styles.cardHeading}><strong>{clientLink || customerTitle}</strong><span>{row.source === "client-site" || row.createdByLogin === "client-site" ? "С сайта" : row.source || ""}</span></div>
       <div className={styles.request} title={row.title}><strong>{row.title}</strong></div>
+      {row.vehicle?.trim() && <div className={styles.vehicle} title={row.vehicle}>Авто: {row.vehicle}</div>}
       <div className={styles.contactRow}>
       <div className={styles.client}>
-        {((row.customerName && row.vehicle) || (!row.customerName && clientHref)) && clientLink}
-        {row.phoneNormalized ? <a href={phoneHref(row.phoneNormalized)} aria-label={"Позвонить: " + formatPhoneForDisplay(row.phoneNormalized)} title={formatPhoneForDisplay(row.phoneNormalized)}><Phone size={13} /><span className={styles.phoneNumber}>{formatPhoneForDisplay(row.phoneNormalized)}</span></a> : <span>Телефон не указан</span>}
+        {row.phoneNormalized ? <a href={phoneHref(row.phoneNormalized)} aria-label={"Позвонить: " + formatPhoneForDisplay(row.phoneNormalized)} title={formatPhoneForDisplay(row.phoneNormalized)}><Phone size={13} /><span className={styles.phoneNumber}>{row.customerName?.trim() ? formatPhoneForDisplay(row.phoneNormalized) : "Позвонить"}</span></a> : <span>Телефон не указан</span>}
       </div>
       <div className={styles.correspondence}>
         {caseCorrespondence(row.notes) ? <><button type="button" className={styles.chatLink} aria-busy={openingChat === row.id} disabled={Boolean(busy) || Boolean(openingChat) || correspondenceEdit?.id === row.id || Boolean(loadError)} aria-label={`Открыть переписку в ${caseCorrespondence(row.notes)}: ${row.customerName || row.vehicle || row.title}`} onClick={() => void openChat(row)}><MessageCircle size={14} />{openingChat === row.id ? "Открываем…" : caseCorrespondence(row.notes)}<ArrowRight size={13} /></button><button type="button" className={styles.editChat} aria-label="Изменить мессенджер и ссылку" title="Изменить мессенджер и ссылку" disabled={Boolean(busy) || Boolean(openingChat) || correspondenceEdit?.id === row.id} onClick={() => editCorrespondence(row)}><Pencil size={14} /></button></> : <button type="button" className={styles.chatLink} disabled={Boolean(busy)} onClick={() => editCorrespondence(row)} aria-label="Указать мессенджер"><MessageCircle size={14} /><span className={styles.emptyChatLabel}>Указать мессенджер</span></button>}
@@ -410,7 +439,21 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
         {status === "calculation_needed" && <Link className="eco-btn eco-btn--primary" href={calculationHref(row)}>Рассчитать <ArrowRight size={15} /></Link>}
         {status === "calculation_sent" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "waiting_parts")}>Отметить заказ</EcoButton>}
         {status === "waiting_parts" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "parts_arrived")}>Отметить поступление</EcoButton>}
-        {status === "parts_arrived" && <>{row.phoneNormalized && <a className="eco-btn" href={phoneHref(row.phoneNormalized)}><Phone size={15} />Позвонить</a>}<Link className="eco-btn eco-btn--primary" href={recordsHref(row)}>{hasBooking ? "Открыть запись" : "Записать"}</Link>{hasBooking && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "close", { reason: "Клиент записан" })}>Клиент записан</EcoButton>}</>}
+        {status === "parts_arrived" && <>{row.phoneNormalized && <a className="eco-btn" href={phoneHref(row.phoneNormalized)}><Phone size={15} />Позвонить</a>}
+          <div className={styles.bookingMenu} data-booking-menu data-placement={bookingMenuPlacement} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBookingMenuId(null); }}>
+            <EcoButton id={`booking-toggle-${row.id}`} type="button" variant="primary" disabled={Boolean(busy) || Boolean(loadError)} aria-expanded={bookingMenuId === row.id} aria-controls={bookingMenuId === row.id ? `booking-options-${row.id}` : undefined} onClick={event => {
+              const opening = bookingMenuId !== row.id;
+              const rect = event.currentTarget.getBoundingClientRect();
+              setBookingMenuPlacement(window.innerHeight - rect.bottom < 150 && rect.top > 150 ? "above" : "below");
+              setBookingMenuId(opening ? row.id : null);
+              if (opening) requestAnimationFrame(() => document.getElementById(`booking-options-${row.id}`)?.scrollIntoView({ block: "nearest" }));
+            }}>{hasBooking ? "Запись" : "Записать"}<ChevronDown size={14} /></EcoButton>
+            {bookingMenuId === row.id && <div className={styles.bookingOptions} id={`booking-options-${row.id}`} aria-label="Действия по записи">
+              <Link href={recordsHref(row)} onClick={() => setBookingMenuId(null)}>{hasBooking ? "Открыть запись" : "Записать через платформу"}</Link>
+              <button type="button" onClick={() => openBookingClose(row)}>{hasBooking ? "Клиент записан — закрыть заявку" : "Уже записан — закрыть заявку"}</button>
+            </div>}
+          </div>
+        </>}
       </div>
       <details className={styles.details} open={isEditing || undefined}>
         <summary><span className={styles.cardMeta}>Создал: {creatorName(row.createdByLogin)}</span><span className={styles.detailsToggle}>Подробнее <ChevronDown size={14} /></span></summary>
@@ -423,6 +466,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
               {WORK_CASE_STATUSES.map(stage => <option key={stage} value={stage}>{WORK_CASE_LABELS[stage]}</option>)}
             </select>
           </label>}
+          {row.vehicle?.trim() && <p>Автомобиль: {row.vehicle}</p>}
           <p className={styles.notes}>{row.title}</p>
           {withoutCaseCorrespondence(row.notes) && <p className={styles.notes}>{withoutCaseCorrespondence(row.notes)}</p>}
           {row.suppliesNote && <p>Запчасти: {row.suppliesNote}</p>}
@@ -493,6 +537,12 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
         <EcoButton type="submit" variant="primary" className={styles.submit} disabled={Boolean(busy)}>{busy ? "Сохраняем…" : partsRow && simpleCaseStatus(partsRow) === "waiting_parts" ? "Сохранить" : "Сохранить и перенести"}</EcoButton>
         <div className={styles.partsDialogActions}><EcoButton type="button" disabled={Boolean(busy)} onClick={() => partsDialogRef.current?.close()}>Отмена</EcoButton>{partsRow && simpleCaseStatus(partsRow) !== "waiting_parts" && <EcoButton type="button" disabled={Boolean(busy)} onClick={() => void saveParts(true)}>Пропустить</EcoButton>}</div>
       </form>
+    </dialog>
+    <dialog ref={bookingCloseRef} className={styles.dialog} aria-labelledby="booking-close-title" aria-describedby="booking-close-description" onClose={() => setClosingBooking(null)} onCancel={event => { if (busy) event.preventDefault(); }}>
+      <div className={styles.dialogHeading}><div><h2 id="booking-close-title">Клиент уже записан?</h2><p id="booking-close-description">Если клиент уже записан администратором, закройте заявку. Она перейдёт в историю.</p></div><button type="button" aria-label="Отменить закрытие" disabled={Boolean(busy)} onClick={() => bookingCloseRef.current?.close()}><X size={20} /></button></div>
+      {closingBooking && <><div className={styles.formHeading}>{caseCustomerTitle(closingBooking)} · {closingBooking.title}</div><p className={styles.bookingCloseNote}>{closingBooking.appointmentId || closingBooking.yclientsRecordId ? "Закроем как «Клиент записан»." : "В истории сохраним: «Клиент записан вручную», кто подтвердил и время закрытия."}</p></>}
+      {actionError && <p className={styles.formError} role="alert">{actionError}</p>}
+      <div className={styles.actions}><EcoButton type="button" variant="primary" disabled={Boolean(busy)} onClick={() => void confirmBookingClose()}>{busy ? "Закрываем…" : "Да, закрыть заявку"}</EcoButton><EcoButton type="button" disabled={Boolean(busy)} onClick={() => bookingCloseRef.current?.close()}>Отмена</EcoButton></div>
     </dialog>
     {notice && <p className={styles.notice} role="status">{notice}</p>}
     {actionError && <p className={styles.formError} role="alert">{actionError}</p>}

@@ -1,6 +1,10 @@
-import { normalizePhone } from "@/lib/phone-normalize";
+import { formatPhoneForDisplay, normalizePhone } from "@/lib/phone-normalize";
 
 type CaseClient = { clientCounterpartyId?: string | null; phoneNormalized?: string | null; customerName?: string | null };
+
+export function caseCustomerTitle(row: CaseClient): string {
+  return row.customerName?.trim() || formatPhoneForDisplay(row.phoneNormalized) || "Клиент не указан";
+}
 
 export function caseCounterpartyHref(row: CaseClient): string | null {
   if (row.clientCounterpartyId) return `/clients/counterparties?counterparty=${encodeURIComponent(row.clientCounterpartyId)}`;

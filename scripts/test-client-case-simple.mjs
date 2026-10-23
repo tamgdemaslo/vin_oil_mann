@@ -6,7 +6,7 @@ import {createJiti} from 'jiti';
 
 process.env.APP_TIMEZONE = 'Europe/Kaliningrad';
 const folder = mkdtempSync(join(tmpdir(), 'simple-crm-'));
-writeFileSync(join(folder,'db.cjs'), `exports.updates=[];exports.prisma={crmDeal:{update:async ({where,data})=>{exports.updates.push({id:where.id,...data});return {id:where.id,...data}},findMany:async ()=>exports.rows},clientCaseEvent:{create:async ()=>({})},$executeRaw:async ()=>0};exports.rows=[];`);
+writeFileSync(join(folder,'db.cjs'), `exports.updates=[];exports.wheres=[];exports.events=[];exports.state={rejectUpdate:false};exports.prisma={crmDeal:{update:async ({where,data})=>{if(exports.state.rejectUpdate)throw {code:"P2025"};exports.wheres.push(where);exports.updates.push({id:where.id,...data});return {id:where.id,...data}},findMany:async ()=>exports.rows},clientCaseEvent:{create:async ({data})=>{exports.events.push(data);return data}},$executeRaw:async ()=>0};exports.rows=[];`);
 writeFileSync(join(folder,'crm.cjs'), 'exports.getCrmStageBySortOrder=async order=>({id:"stage-"+order});');
 writeFileSync(join(folder,'scope.cjs'), 'exports.requireSingleBranchSqlContext=()=>({branchId:"branch-a"});');
 try {
@@ -34,6 +34,16 @@ try {
  assert.equal(updated.suppliesSupplier,'РОССКО');assert.equal(updated.suppliesNote,'Заказ РОССКО № 123');assert.equal(updated.suppliesExpectedAt.toISOString(),'2026-10-24T13:30:00.000Z');
  updated=await workflow.applyClientCaseAction('case-a','parts_arrived',{},'vadim');
  assert.equal(updated.caseStatus,'parts_arrived');assert.match(updated.nextAction,/Позвонить.*записать/);
+ const version='2026-10-23T12:00:00.000Z';
+ updated=await workflow.applyClientCaseAction('case-a','confirm_manual_booking',{expectedUpdatedAt:version,reason:'Wrong reason',note:'Confirmed manually'},'vadim');
+ assert.equal(updated.caseStatus,'closed');assert.equal(updated.status,'won');assert.equal(updated.closeReason,'Клиент записан вручную');assert.equal(updated.nextActionAt,null);assert.equal(updated.nextContactAt,null);assert.ok(updated.closedAt instanceof Date);
+ assert.equal(updated.appointmentId,undefined,'Confirming a manual booking never fabricates an appointment');
+ assert.equal(db.wheres.at(-1).status,'open');assert.equal(db.wheres.at(-1).updatedAt.toISOString(),version,'Close uses an atomic version check');
+ assert.equal(db.events.at(-1).actorLogin,'vadim');assert.equal(db.events.at(-1).metadata.bookingConfirmation,'manual');assert.equal(db.events.at(-1).note,'Confirmed manually');
+ const eventCount=db.events.length;db.state.rejectUpdate=true;
+ await assert.rejects(workflow.applyClientCaseAction('case-a','confirm_manual_booking',{expectedUpdatedAt:version},'vadim'),error=>error.code==='P2025');
+ assert.equal(db.events.length,eventCount,'A conflicting close cannot write a success event');db.state.rejectUpdate=false;
+ await assert.rejects(workflow.applyClientCaseAction('case-a','confirm_manual_booking',{},'vadim'),/current case version/);
  updated=await workflow.applyClientCaseAction('case-a','calculate',{},'vadim');
  assert.equal(updated.closedAt,null);assert.equal(updated.closeReason,null);assert.equal(updated.status,'open');
  assert.equal(updated.nextActionAt.toISOString(),caseDayDeadline().toISOString());

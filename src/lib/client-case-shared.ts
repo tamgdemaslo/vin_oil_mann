@@ -25,6 +25,7 @@ export type ClientCaseAction =
   | "create_shipment"
   | "postpone"
   | "close"
+  | "confirm_manual_booking"
   | "refused"
   | "duplicate";
 

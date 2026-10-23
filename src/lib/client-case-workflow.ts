@@ -114,6 +114,11 @@ function actionPatch(action: ClientCaseAction, body: Record<string, unknown>, no
     nextActionAt = null;
     nextAction = "Дубль";
     closeReason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : "дубль";
+  } else if (action === "confirm_manual_booking") {
+    status = "closed";
+    nextActionAt = null;
+    nextAction = "Закрыто";
+    closeReason = "Клиент записан вручную";
   } else {
     status = "closed";
     nextActionAt = null;
@@ -142,13 +147,15 @@ function actionPatch(action: ClientCaseAction, body: Record<string, unknown>, no
 }
 
 export async function applyClientCaseAction(caseId: string, action: ClientCaseAction, body: Record<string, unknown> = {}, actorLogin?: string | null) {
+  const expectedUpdatedAt = action === "confirm_manual_booking" ? parseActionDate(body.expectedUpdatedAt) : null;
+  if (action === "confirm_manual_booking" && !expectedUpdatedAt) throw new Error("Manual booking confirmation requires the current case version");
   const now = new Date();
   const { status, patch } = actionPatch(action, body, now);
   const stageId = await stageIdForStatus(status);
   if (stageId) patch.stageId = stageId;
 
   const updated = await prisma.crmDeal.update({
-    where: { id: caseId },
+    where: { id: caseId, ...(action === "confirm_manual_booking" ? { status: "open", updatedAt: expectedUpdatedAt! } : {}) },
     data: patch,
   });
 
@@ -159,7 +166,7 @@ export async function applyClientCaseAction(caseId: string, action: ClientCaseAc
     eventType: action,
     title: defaultNextActionForCaseStatus(status),
     note: typeof body.note === "string" ? body.note : null,
-    metadata: { status, action },
+    metadata: { status, action, ...(action === "confirm_manual_booking" ? { bookingConfirmation: "manual" } : {}) },
   });
   return updated;
 }
