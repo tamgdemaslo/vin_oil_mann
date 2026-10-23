@@ -204,7 +204,7 @@ export async function PATCH(
     const data: Record<string, unknown> = {};
     const current = await prisma.crmDeal.findUnique({
       where: { id },
-      select: { id: true, responsibleLogin: true, stageId: true, notes: true, status: true, caseStatus: true, nextAction: true, nextActionAt: true, nextContactAt: true, suppliesExpectedAt: true, stage: { select: { name: true } } },
+      select: { id: true, updatedAt: true, responsibleLogin: true, stageId: true, notes: true, status: true, caseStatus: true, nextAction: true, nextActionAt: true, nextContactAt: true, suppliesExpectedAt: true, stage: { select: { name: true } } },
     });
 
     if (!current) return NextResponse.json({ error: "Заявка не найдена" }, { status: 404 });
@@ -324,7 +324,7 @@ export async function PATCH(
     let updated;
     try {
       updated = await prisma.crmDeal.update({
-        where: { id },
+        where: { id, updatedAt: current.updatedAt },
         data,
       });
     } catch (error) {
@@ -333,7 +333,7 @@ export async function PATCH(
       updated =
         Object.keys(legacyData).length > 0
           ? await prisma.crmDeal.update({
-              where: { id },
+              where: { id, updatedAt: current.updatedAt },
               data: legacyData,
               select: LEGACY_DEAL_SELECT,
             })
@@ -366,13 +366,14 @@ export async function PATCH(
         metadata: {
           stageChanged: Boolean(data.stageId && data.stageId !== current?.stageId),
           status: typeof data.caseStatus === "string" ? data.caseStatus : null,
-          changes: caseHistoryChanges(current, updated),
+          changes: caseHistoryChanges(current, updated, data),
         },
       }).catch((error) => console.warn("[crm/deals PATCH] client case event failed", error));
     }
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2025") return NextResponse.json({ error: "Заявка изменилась у другого сотрудника. Повторите действие после обновления доски." }, { status: 409 });
     console.error("[crm/deals PATCH]", error);
     return databaseHint(error);
   }

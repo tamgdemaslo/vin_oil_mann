@@ -9,13 +9,16 @@ const instant = (value: Date | string | null | undefined) => {
   return date && !Number.isNaN(date.getTime()) ? date.toISOString() : null;
 };
 
-export function caseHistoryChanges(before: State, after: State): Change[] {
+export function caseHistoryChanges(before: State, after: State, written?: Record<string, unknown>): Change[] {
   const pairs: Change[] = [
     { field: "status", before: simpleCaseStatus(before), after: simpleCaseStatus(after) },
     { field: "deadline", before: instant(before.nextActionAt ?? before.nextContactAt), after: instant(after.nextActionAt ?? after.nextContactAt) },
     { field: "delivery", before: instant(before.suppliesExpectedAt), after: instant(after.suppliesExpectedAt) },
   ];
-  return pairs.filter(change => change.before !== change.after);
+  return pairs.filter(change => change.before !== change.after && (!written || (change.field === "status"
+    ? written.status !== undefined || written.caseStatus !== undefined || written.stageId !== undefined
+    : change.field === "deadline" ? written.nextActionAt !== undefined || written.nextContactAt !== undefined
+    : written.suppliesExpectedAt !== undefined)));
 }
 
 export type CaseHistoryEvent = { id: string; actorLogin: string | null; createdAt: string; eventType: string; title: string; metadata: unknown };
