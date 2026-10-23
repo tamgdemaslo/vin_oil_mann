@@ -376,25 +376,27 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
       {busy === row.id && <span className={styles.savingBadge} role="status">Сохраняем…</span>}
       <div className={styles.cardHeading}><strong>{row.vehicle || (row.customerName ? clientLink || row.customerName : "Новый запрос")}</strong><span>{row.source === "client-site" || row.createdByLogin === "client-site" ? "С сайта" : row.source || ""}</span></div>
       <div className={styles.request} title={row.title}><strong>{row.title}</strong></div>
+      <div className={styles.contactRow}>
       <div className={styles.client}>
         {((row.customerName && row.vehicle) || (!row.customerName && clientHref)) && clientLink}
-        {row.phoneNormalized ? <a href={phoneHref(row.phoneNormalized)}><Phone size={13} />{formatPhoneForDisplay(row.phoneNormalized)}</a> : <span>Телефон не указан</span>}
+        {row.phoneNormalized ? <a href={phoneHref(row.phoneNormalized)} aria-label={"Позвонить: " + formatPhoneForDisplay(row.phoneNormalized)} title={formatPhoneForDisplay(row.phoneNormalized)}><Phone size={13} /><span className={styles.phoneNumber}>{formatPhoneForDisplay(row.phoneNormalized)}</span></a> : <span>Телефон не указан</span>}
+      </div>
+      <div className={styles.correspondence}>
+        {caseCorrespondence(row.notes) ? <><button type="button" className={styles.chatLink} aria-busy={openingChat === row.id} disabled={Boolean(busy) || Boolean(openingChat) || correspondenceEdit?.id === row.id || Boolean(loadError)} aria-label={`Открыть переписку в ${caseCorrespondence(row.notes)}: ${row.customerName || row.vehicle || row.title}`} onClick={() => void openChat(row)}><MessageCircle size={14} />{openingChat === row.id ? "Открываем…" : caseCorrespondence(row.notes)}<ArrowRight size={13} /></button><button type="button" className={styles.editChat} aria-label="Изменить мессенджер и ссылку" title="Изменить мессенджер и ссылку" disabled={Boolean(busy) || Boolean(openingChat) || correspondenceEdit?.id === row.id} onClick={() => editCorrespondence(row)}><Pencil size={14} /></button></> : <button type="button" className={styles.chatLink} disabled={Boolean(busy)} onClick={() => editCorrespondence(row)} aria-label="Указать мессенджер"><MessageCircle size={14} /><span className={styles.emptyChatLabel}>Указать мессенджер</span></button>}
+      </div>
       </div>
       <div className={styles.deadline}>
         {status === "calculation_needed" && due && deadlineInfo(due, "Рассчитать до")}
         {status === "parts_arrived" && <><span className={styles.arrivedBadge}>Позвонить и записать</span>{due && deadlineInfo(due, "Записать до")}</>}
-        {(status === "waiting_parts" || status === "parts_arrived") && orderNumber && <span className={styles.orderNumber}>РОССКО № {orderNumber}</span>}
+        {status === "waiting_parts" ? <button type="button" className={styles.orderNumber} disabled={Boolean(busy) || Boolean(loadError)} onClick={() => openPartsOrder(row)}>{orderNumber ? "РОССКО № " + orderNumber : "Указать № РОССКО"}</button> : status === "parts_arrived" && orderNumber && <span className={styles.orderNumber}>РОССКО № {orderNumber}</span>}
         {status === "waiting_parts" && (partsDue ? deadlineInfo(partsDue, "Поставка до") : <span>Срок поставки не указан</span>)}
         {status === "calculation_sent" && <span>Расчёт у клиента</span>}
         {status === "closed" && <span>{row.closeReason || "Закрыто"}</span>}
-        {(status === "waiting_parts" || status === "parts_arrived") && deadlineEdit?.id !== row.id && <button type="button" className={styles.changeDeadline} disabled={Boolean(busy) || Boolean(loadError)} onClick={() => editDeadline(row)}><CalendarClock size={14} />{(status === "waiting_parts" ? partsDue : due) ? "Изменить срок" : "Указать срок"}</button>}
+        {(status === "waiting_parts" || status === "parts_arrived") && deadlineEdit?.id !== row.id && <button type="button" className={styles.changeDeadline} title={(status === "waiting_parts" ? partsDue : due) ? "Изменить срок" : "Указать срок"} disabled={Boolean(busy) || Boolean(loadError)} onClick={() => editDeadline(row)}><CalendarClock size={16} /><span>{(status === "waiting_parts" ? partsDue : due) ? "Изменить срок" : "Указать срок"}</span></button>}
         {deadlineEdit?.id === row.id && <form className={styles.deadlineForm} aria-label="Изменение срока" onSubmit={event => void saveDeadline(event, row)}>
           <label>{deadlineEdit.status === "waiting_parts" ? "Когда ждём запчасти" : "Позвонить и записать до"}<input ref={deadlineInputRef} className="eco-input" type="datetime-local" required value={deadlineEdit.value} disabled={Boolean(busy)} onInput={event => setDeadlineEdit({ ...deadlineEdit, value: event.currentTarget.value })} onChange={event => setDeadlineEdit({ ...deadlineEdit, value: event.target.value })} /></label>
           <div className={styles.actions}><EcoButton type="submit" variant="primary" disabled={Boolean(busy)}>{busy === row.id ? "Сохраняем…" : "Сохранить срок"}</EcoButton><EcoButton type="button" disabled={Boolean(busy)} onClick={() => { setDeadlineEdit(null); setQuickError(null); }}>Отмена</EcoButton></div>
         </form>}
-      </div>
-      <div className={styles.correspondence}>
-        {caseCorrespondence(row.notes) ? <><button type="button" className={styles.chatLink} aria-busy={openingChat === row.id} disabled={Boolean(busy) || Boolean(openingChat) || correspondenceEdit?.id === row.id || Boolean(loadError)} aria-label={`Открыть переписку в ${caseCorrespondence(row.notes)}: ${row.customerName || row.vehicle || row.title}`} onClick={() => void openChat(row)}><MessageCircle size={14} />{openingChat === row.id ? "Открываем…" : caseCorrespondence(row.notes)}<ArrowRight size={13} /></button><button type="button" className={styles.editChat} aria-label="Изменить мессенджер и ссылку" title="Изменить мессенджер и ссылку" disabled={Boolean(busy) || Boolean(openingChat) || correspondenceEdit?.id === row.id} onClick={() => editCorrespondence(row)}><Pencil size={14} /></button></> : <button type="button" className={styles.chatLink} disabled={Boolean(busy)} onClick={() => editCorrespondence(row)}>Указать мессенджер</button>}
       </div>
       {correspondenceEdit?.id === row.id && <form className={styles.chatForm} aria-label="Настройка переписки" onSubmit={event => void saveCorrespondence(event, row)}>
         <label>Мессенджер · необязательно<select className="eco-input" value={correspondenceEdit.channel} disabled={Boolean(busy)} onChange={event => { setCorrespondenceEdit({ ...correspondenceEdit, channel: event.target.value, url: "" }); setQuickError(null); }}><option value="">Не указан</option>{CASE_CORRESPONDENCE_CHANNELS.map(channel => <option key={channel} value={channel}>{channel}</option>)}</select></label>
@@ -413,6 +415,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
         <summary><span className={styles.cardMeta}>Создал: {creatorName(row.createdByLogin)}</span><span className={styles.detailsToggle}>Подробнее <ChevronDown size={14} /></span></summary>
         <div className={styles.detailsBody}>
           <p className={styles.cardMeta}>Создано: {formatServiceDate(row.createdAt)}</p>
+          {row.phoneNormalized && <p className={styles.fullPhone}><a href={phoneHref(row.phoneNormalized)}>{formatPhoneForDisplay(row.phoneNormalized)}</a></p>}
           {status !== "closed" && !isEditing && <label className={styles.stageField}>Этап заявки
             <select data-stage-select aria-label="Этап заявки" value={status} disabled={Boolean(busy) || Boolean(loadError)}
               onChange={event => void moveTo(row, event.target.value as WorkCaseStatus)}>

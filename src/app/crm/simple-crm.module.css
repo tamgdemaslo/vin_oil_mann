@@ -174,3 +174,40 @@
 .chatForm small { font-size:11px; line-height:1.6; color:var(--eco-ink-3,#625e56); }
 .chatForm :global(.eco-btn) { min-height:38px; padding:8px; font-size:12px; }
 @media(max-width:560px) { .chatLink,.editChat,.chatForm :global(.eco-btn) { min-height:44px; } .editChat { min-width:44px; } .chatForm :is(input,select) { font-size:16px; } }
+
+.fullPhone { display:none; }
+.contactRow { display:contents; }
+.correspondence { order:1; }
+.row > .chatForm,.row > .formError { order:2; }
+.row > .actions { order:3; }
+.row > .details { order:4; }
+button.orderNumber { min-height:28px; padding:2px 0; border:0; background:none; color:var(--eco-rust,#a34220); text-decoration:underline; text-underline-offset:3px; text-align:left; cursor:pointer; }
+@media(max-width:560px) {
+ .row { gap:4px; padding-top:8px; }
+ .cardHeading strong { font-size:15px; }
+ .cardHeading .customerLink { min-height:32px; }
+ .request strong { font-size:13px; line-height:1.4; }
+ .contactRow { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:0 8px; }
+ .client { flex:1; justify-content:flex-start; gap:0 8px; }
+ .client a { min-height:44px; }
+ .client a[href^="tel:"] { justify-content:center; min-width:44px; flex-shrink:0; }
+ .phoneNumber { display:none; }
+ .client:not(:has(.customerLink)) .phoneNumber { display:inline; font-size:11px; }
+ .fullPhone { display:block; }
+ .fullPhone a { display:inline-flex; align-items:center; min-height:44px; color:inherit; }
+ .correspondence { flex-shrink:0; gap:0 4px; }
+ .emptyChatLabel { font-size:0; }
+ .emptyChatLabel::after { content:"Мессенджер"; font-size:12px; }
+ .editChat { margin-left:0; }
+ .deadline { display:grid; grid-template-columns:minmax(0,1fr) 44px; gap:2px 4px; }
+ .deadline > :is(.deadlineClock,.expiredDeadline) { grid-column:1; grid-row:1; padding:5px 7px; }
+ .deadline > span:not(.orderNumber):not(.arrivedBadge) { grid-column:1; grid-row:1; }
+ .deadline > .changeDeadline { grid-column:2; grid-row:1; width:44px; min-height:44px; justify-content:center; align-self:stretch; background:var(--eco-surface-sunk,#f1eee7); }
+ .changeDeadline > span { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+ .deadline > .orderNumber,.deadline > .deadlineForm { grid-column:1/-1; }
+ button.orderNumber { min-height:44px; font-size:12px; }
+ .deadline > .arrivedBadge { display:none; }
+ .details { border-top:0; }
+ .details > summary { min-height:44px; }
+ .row > .actions :global(.eco-btn) { padding:6px 8px; }
+}
