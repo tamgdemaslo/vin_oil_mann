@@ -13,8 +13,8 @@ const alias={
  '@/lib/branch-sql-context':stub('sql','exports.requireSingleBranchSqlContext=()=>({branchId:"a"});'),
  '@/lib/crm':stub('stages','exports.ensureDefaultCrmStages=async()=>{};exports.getFirstCrmStage=async()=>({id:"first",name:"Нужно рассчитать"});exports.getCrmStageBySortOrder=async n=>({id:"stage-"+n});'),
  '@/lib/crm-deadline-notifications':stub('notify','exports.notifyClientCaseTaskAssigned=async()=>{throw Error("Unexpected assigned notification");};'),
- '@/lib/client-case-workflow':stub('workflow','exports.writeClientCaseEvent=async()=>{};exports.processClientCaseWorkflowTransitions=async()=>({});exports.state={last:null,error:null};exports.applyClientCaseAction=async(id,action,body,actorLogin)=>{if(exports.state.error)throw exports.state.error;exports.state.last={id,action,body,actorLogin};return {id,caseStatus:action}};'),
- '@/lib/db':stub('db',`exports.state={existing:null,created:null,updated:null,stages:[],clients:[],clientQuery:null,events:[],eventQuery:null};exports.prisma={clientCaseEvent:{findMany:async args=>{exports.state.eventQuery=args;return exports.state.events}},crmDeal:{findUnique:async()=>exports.state.existing,findFirst:async()=>null,update:async({data})=>{exports.state.updated=data;return {...exports.state.existing,...data}},create:async({data})=>{exports.state.created=data;return {id:'new',...data}}},localCounterparty:{findMany:async args=>{exports.state.clientQuery=args;return exports.state.clients.filter(c=>c.branchId===args.where.branchId&&!c.archived&&args.where.normalizedPhone.in.includes(c.normalizedPhone))}},crmStage:{findMany:async()=>exports.state.stages,findUnique:async()=>({id:'first',name:'Нужно рассчитать'})}};`),
+ '@/lib/client-case-workflow':stub('workflow','exports.writeClientCaseEvent=async event=>{exports.state.lastEvent=event};exports.processClientCaseWorkflowTransitions=async()=>({});exports.state={last:null,error:null};exports.applyClientCaseAction=async(id,action,body,actorLogin)=>{if(exports.state.error)throw exports.state.error;exports.state.last={id,action,body,actorLogin};return {id,caseStatus:action}};'),
+ '@/lib/db':stub('db',`exports.state={existing:null,created:null,updated:null,stages:[],clients:[],clientQuery:null,events:[],eventQuery:null,timelineCase:null,caseQuery:null};exports.prisma={clientCaseEvent:{findMany:async args=>{exports.state.eventQuery=args;return exports.state.events}},crmDeal:{findUnique:async()=>exports.state.existing,findFirst:async args=>{exports.state.caseQuery=args;return exports.state.timelineCase&&args.where.id===exports.state.timelineCase.id&&args.where.branchId===exports.state.timelineCase.branchId?exports.state.timelineCase:null},update:async({data})=>{exports.state.updated=data;return {...exports.state.existing,...data}},create:async({data})=>{exports.state.created=data;return {id:'new',...data}}},localCounterparty:{findMany:async args=>{exports.state.clientQuery=args;return exports.state.clients.filter(c=>c.branchId===args.where.branchId&&!c.archived&&args.where.normalizedPhone.in.includes(c.normalizedPhone))}},crmStage:{findMany:async()=>exports.state.stages,findUnique:async()=>({id:'first',name:'Нужно рассчитать'})}};`),
  '@':resolve('src'),
 };
 try{
@@ -42,6 +42,14 @@ try{
  assert.equal(history[2].closure.actorLogin,null,'A previous closing cycle must not claim a newer closure');assert.equal(history[3].closure,null);
  assert.equal(db.state.eventQuery.where.branchId,'a');assert.deepEqual(db.state.eventQuery.where.caseId.in,['manual','legacy','reclosed']);assert.ok(db.state.eventQuery.where.eventType.in.includes('confirm_manual_booking'));assert.ok(!db.state.eventQuery.where.eventType.in.includes('case_updated'),'Later edits cannot replace the closer');assert.deepEqual(db.state.eventQuery.distinct,['caseId']);
  db.state.stages=[];db.state.events=[];
+ const timelineRoute=await jiti.import('../src/app/api/client-cases/[id]/timeline/route.ts');
+ db.state.timelineCase={id:'manual',branchId:'b'};
+ res=await timelineRoute.GET(new Request('http://example.test/timeline'),{params:Promise.resolve({id:'manual'})});assert.equal(res.status,404,'Another branch cannot read the timeline');
+ db.state.timelineCase.branchId='a';db.state.events=[{id:'event',caseId:'manual',actorLogin:'ilya',createdAt:closedAt,eventType:'confirm_manual_booking',title:'Закрыто',metadata:{status:'closed'}}];
+ res=await timelineRoute.GET(new Request('http://example.test/timeline'),{params:Promise.resolve({id:'manual'})});assert.equal(res.status,200);assert.equal((await res.json()).events[0].actorLogin,'ilya');
+ assert.equal(db.state.eventQuery.where.branchId,'a');assert.equal(db.state.eventQuery.where.caseId,'manual');assert.deepEqual(db.state.eventQuery.orderBy,[{createdAt:'desc'},{id:'desc'}]);assert.equal(db.state.eventQuery.select.note,undefined,'Private notes are not needed for the change history');
+ db.state.timelineCase=null;db.state.events=[];
+
 
  assert.equal(clientLinks.caseCustomerTitle({customerName:'  Сергей  ',phoneNormalized:'79000000001',vehicle:'AUDI · VIN ABC'}),'Сергей','Customer always leads, never vehicle or VIN');
  assert.equal(clientLinks.caseCustomerTitle({customerName:null,phoneNormalized:'79000000001',vehicle:'VIN ABC'}),'+7 (900) 000-00-01');
@@ -63,7 +71,9 @@ try{
  db.state.existing.notes='Переписка: WhatsApp\nМасло клиента';
  res=await PATCH(patchRequest({notes:'Новый комментарий'}),params);assert.equal(res.status,200);assert.equal(db.state.updated.notes,'Переписка: WhatsApp\nНовый комментарий','Editing notes preserves messenger');
  res=await PATCH(patchRequest({correspondenceChannel:''}),params);assert.equal(res.status,200);assert.deepEqual(db.state.updated,{notes:'Масло клиента'},'Clearing optional messenger preserves notes');
+ db.state.existing.suppliesExpectedAt=new Date('2026-10-24T10:00:00Z');
  res=await PATCH(patchRequest({suppliesExpectedAt:'2026-10-25T13:45:00.000Z'}),params);assert.equal(res.status,200);assert.deepEqual(Object.keys(db.state.updated),['suppliesExpectedAt']);assert.equal(db.state.updated.suppliesExpectedAt.toISOString(),'2026-10-25T13:45:00.000Z');
+ const historyWorkflow=await jiti.import(alias['@/lib/client-case-workflow']);assert.equal(historyWorkflow.state.lastEvent.actorLogin,'vadim');assert.deepEqual(historyWorkflow.state.lastEvent.metadata.changes,[{field:'delivery',before:'2026-10-24T10:00:00.000Z',after:'2026-10-25T13:45:00.000Z'}]);
  res=await PATCH(patchRequest({nextActionAt:'2026-10-25T13:45:00.000Z'}),params);assert.equal(res.status,200);assert.equal(+db.state.updated.nextActionAt,+db.state.updated.nextContactAt);
  res=await PATCH(patchRequest({suppliesExpectedAt:'bad-date'}),params);assert.equal(res.status,400);
  res=await PATCH(patchRequest({correspondenceChannel:'invalid'}),params);assert.equal(res.status,400);
