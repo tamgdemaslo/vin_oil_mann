@@ -244,6 +244,7 @@ button.orderNumber { min-height:28px; padding:2px 0; border:0; background:none; 
 @media(max-width:560px) {
  .vehicle { -webkit-line-clamp:1; }
  .bookingMenu[data-placement="above"] .bookingOptions { top:auto; bottom:auto; }
+ .row > .actions:has([data-booking-menu]) { align-items:flex-start; }
  .bookingOptions { position:static; width:100%; max-width:none; margin-top:4px; box-shadow:none; }
  .dialog .actions :global(.eco-btn) { min-height:44px; }
 }
