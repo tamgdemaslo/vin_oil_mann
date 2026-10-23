@@ -105,15 +105,16 @@
 .column { scroll-margin-top:16px; }
 @media(max-width:560px) { .attentionLinks a { min-height:36px; } }
 @media(max-width:560px) {
- .page { padding-bottom:30px; }
- .header { margin-bottom:14px; gap:12px; }
- .header .eyebrow,.header p { display:none; }
- .header h1 { margin:0; font-size:27px; }
- .attentionLinks { margin-top:10px; }
- .newRequest { width:100%; min-height:46px; }
- .toolbar { gap:8px; padding-bottom:12px; margin-bottom:12px; }
- .views button { min-height:34px; }
- .mobileSwitch { margin-bottom:16px; }
+ .page { padding-top:12px; padding-bottom:30px; }
+ .header { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; margin-bottom:8px; gap:8px; }
+ .header > div { min-width:0; }
+ .header .eyebrow,.header p,.header .attentionLinks { display:none; }
+ .header h1 { margin:0; font-size:20px; line-height:1.15; }
+ .newRequest { width:auto; min-height:44px; gap:5px; padding:8px 10px; font-size:12px; white-space:nowrap; }
+ .newRequest svg { width:15px; height:15px; }
+ .toolbar { gap:4px; padding-bottom:8px; margin-bottom:8px; }
+ .views button { min-height:40px; }
+ .mobileSwitch { margin-bottom:10px; }
 }
 
 .row { position:relative; }
