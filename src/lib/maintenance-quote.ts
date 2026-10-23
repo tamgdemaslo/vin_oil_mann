@@ -101,7 +101,7 @@ export function quoteClientText(vehicle: string, specification: string, litres: 
 
 export type QuoteFilterGroup = {
   key: string; label: string; article: string; condition?: string | null;
-  products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean }[];
+  products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean; source?: "rossko"; deliveryLabel?: string }[];
 };
 
 export function quoteRequirementChoices(profile: import("@/lib/mann-unified-technical-profile").MannUnifiedTechnicalProfile | null, research: import("@/lib/mann-fluid-research").MannFluidResearchResult | null) {

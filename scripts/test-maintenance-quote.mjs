@@ -44,3 +44,30 @@ assert.equal(groupQuoteOils([ngn4,{...ngn1,name:ngn1.name.replace('A-Line','Futu
 const combined=quoteClientText('KIA K5','GF-6A',5,[ngn4,ngn1],[{id:'filter',name:'Фильтр',quantity:1,price:1370}]);
 assert.match(combined,/6\s870/);assert.doesNotMatch(combined,/Вариант 2/);
 console.log('oil package combinations: ok');
+
+const {quoteRosskoFilters} = await jiti.import('../src/lib/maintenance-quote-rossko.ts');
+const supplierPart = {guid:'part-1', brand:'MANN-FILTER', partnumber:'W 712/95', stocks:{stock:[{id:'stock-1',price:1000,count:4,delivery:2},{id:'stock-2',price:900,count:0,delivery:0}]}};
+const supplierRaw = {PartsList:{Part:[supplierPart,{...supplierPart,brand:'OTHER'},{...supplierPart,partnumber:'W 999/99'}]}};
+const offers = quoteRosskoFilters(supplierRaw,'W712/95','branch-a',[{fromCents:0,toCents:null,marginPercent:30}]);
+assert.equal(offers.length,1);
+assert.equal(offers[0].price,1300);
+assert.equal(offers[0].available,4);
+assert.equal(offers[0].deliveryLabel,'доставка: 2 дн.');
+assert.equal(offers[0].source,'rossko');
+assert.ok(!JSON.stringify(offers).includes('purchasePrice'));
+assert.notEqual(offers[0].id,quoteRosskoFilters(supplierRaw,'W712/95','branch-b',[{fromCents:0,toCents:null,marginPercent:30}])[0].id);
+assert.equal(quoteRosskoFilters(supplierRaw,'W712/95','branch-a',[]).length,0);
+for (const stock of [{price:1000,count:3,multiplicity:2},{price:0,count:3},{price:1000,count:0}]) {
+  assert.equal(quoteRosskoFilters({PartsList:{Part:{...supplierPart,stocks:{stock:{id:'s',...stock}}}}},'W712/95','branch-a',[{fromCents:0,toCents:null,marginPercent:30}]).length,0);
+}
+assert.match(quoteRosskoFilters({PartsList:{Part:{...supplierPart,stocks:{stock:{id:'s',price:1000,count:3}}}}},'W712/95','branch-a',[{fromCents:0,toCents:null,marginPercent:30}])[0].deliveryLabel,/не указан/);
+assert.equal(matchesQuoteOil({...product,oem:'',apiSpec:'SP'},'API SP','5W-30'),true);
+assert.equal(matchesQuoteOil({...product,oem:''},'ACEA C3','5W-30'),true);
+console.log('maintenance ROSSKO offers and standards: ok');
+
+const realMannStock = {id:'HST196613472',price:'549.58',count:104,multiplicity:1,delivery:0,deliveryStart:'2026-10-24T09:10:00.000Z',deliveryEnd:'2026-10-24T10:35:00.000Z'};
+const realMann = {PartsList:{Part:{guid:'NSIN0000486293',brand:'Mann',partnumber:'HU 718/1 K',stocks:{stock:realMannStock}}}};
+const dated = quoteRosskoFilters(realMann,'HU718/1K','branch-a',[{fromCents:0,toCents:null,marginPercent:30}]);
+assert.equal(dated.length,1);assert.equal(dated[0].price,714.45);assert.equal(dated[0].available,104);
+assert.match(dated[0].deliveryLabel,/24\.10\.2026, 11:10.*12:35/);
+console.log('real ROSSKO stock shape and branch-local delivery window: ok');
