@@ -155,10 +155,10 @@ export async function applyClientCaseAction(caseId: string, action: ClientCaseAc
   const stageId = await stageIdForStatus(status);
   if (stageId) patch.stageId = stageId;
 
-  const previous = await prisma.crmDeal.findUnique({ where: { id: caseId }, select: { status: true, caseStatus: true, nextAction: true, nextActionAt: true, nextContactAt: true, suppliesExpectedAt: true, stage: { select: { name: true } } } });
+  const previous = await prisma.crmDeal.findUnique({ where: { id: caseId }, select: { updatedAt: true, status: true, caseStatus: true, nextAction: true, nextActionAt: true, nextContactAt: true, suppliesExpectedAt: true, stage: { select: { name: true } } } });
 
   const updated = await prisma.crmDeal.update({
-    where: { id: caseId, ...(action === "confirm_manual_booking" ? { status: "open", updatedAt: expectedUpdatedAt! } : {}) },
+    where: { id: caseId, updatedAt: action === "confirm_manual_booking" ? expectedUpdatedAt! : previous?.updatedAt, ...(action === "confirm_manual_booking" ? { status: "open" } : {}) },
     data: patch,
   });
 
@@ -169,7 +169,7 @@ export async function applyClientCaseAction(caseId: string, action: ClientCaseAc
     eventType: action,
     title: defaultNextActionForCaseStatus(status),
     note: typeof body.note === "string" ? body.note : null,
-    metadata: { status, action, ...(previous ? { changes: caseHistoryChanges(previous, updated) } : {}), ...(action === "confirm_manual_booking" ? { bookingConfirmation: "manual" } : {}) },
+    metadata: { status, action, ...(previous ? { changes: caseHistoryChanges(previous, updated, patch) } : {}), ...(action === "confirm_manual_booking" ? { bookingConfirmation: "manual" } : {}) },
   });
   return updated;
 }

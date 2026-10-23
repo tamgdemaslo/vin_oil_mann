@@ -6,7 +6,7 @@ import {createJiti} from 'jiti';
 
 process.env.APP_TIMEZONE = 'Europe/Kaliningrad';
 const folder = mkdtempSync(join(tmpdir(), 'simple-crm-'));
-writeFileSync(join(folder,'db.cjs'), `exports.updates=[];exports.wheres=[];exports.events=[];exports.state={rejectUpdate:false,current:{status:"open",caseStatus:"calculation_needed"}};exports.prisma={crmDeal:{findUnique:async()=>exports.state.current,update:async ({where,data})=>{if(exports.state.rejectUpdate)throw {code:"P2025"};exports.state.current={...exports.state.current,...data};exports.wheres.push(where);exports.updates.push({id:where.id,...data});return {id:where.id,...data}},findMany:async ()=>exports.rows},clientCaseEvent:{create:async ({data})=>{exports.events.push(data);return data}},$executeRaw:async ()=>0};exports.rows=[];`);
+writeFileSync(join(folder,'db.cjs'), `exports.updates=[];exports.wheres=[];exports.events=[];exports.state={rejectUpdate:false,current:{status:"open",caseStatus:"calculation_needed",updatedAt:new Date("2026-10-23T12:00:00Z")}};exports.prisma={crmDeal:{findUnique:async()=>exports.state.current,update:async ({where,data})=>{if(exports.state.rejectUpdate)throw {code:"P2025"};exports.state.current={...exports.state.current,...data};exports.wheres.push(where);exports.updates.push({id:where.id,...data});return {id:where.id,...data}},findMany:async ()=>exports.rows},clientCaseEvent:{create:async ({data})=>{exports.events.push(data);return data}},$executeRaw:async ()=>0};exports.rows=[];`);
 writeFileSync(join(folder,'crm.cjs'), 'exports.getCrmStageBySortOrder=async order=>({id:"stage-"+order});');
 writeFileSync(join(folder,'scope.cjs'), 'exports.requireSingleBranchSqlContext=()=>({branchId:"branch-a"});');
 try {
@@ -33,7 +33,7 @@ try {
  updated=await workflow.applyClientCaseAction('case-a','waiting_parts',{suppliesSupplier:'РОССКО',suppliesNote:'Заказ РОССКО № 123',suppliesExpectedAt:'2026-10-24T13:30:00Z'},'vadim');
  assert.equal(updated.suppliesSupplier,'РОССКО');assert.equal(updated.suppliesNote,'Заказ РОССКО № 123');assert.equal(updated.suppliesExpectedAt.toISOString(),'2026-10-24T13:30:00.000Z');
  updated=await workflow.applyClientCaseAction('case-a','parts_arrived',{},'vadim');
- assert.equal(updated.caseStatus,'parts_arrived');assert.match(updated.nextAction,/Позвонить.*записать/);
+ assert.equal(updated.caseStatus,'parts_arrived');assert.match(updated.nextAction,/Позвонить.*записать/);assert.equal(db.wheres.at(-1).updatedAt.toISOString(),'2026-10-23T12:00:00.000Z','Status changes check the read version');
  assert.ok(db.events.at(-1).metadata.changes.some(c=>c.field==='status'&&c.before==='waiting_parts'&&c.after==='parts_arrived'));
  const history=await jiti.import('../src/lib/client-case-history.ts');
  const changes=history.caseHistoryChanges({caseStatus:'waiting_parts',status:'open',suppliesExpectedAt:'2026-10-24T10:00:00Z'},{caseStatus:'waiting_parts',status:'open',suppliesExpectedAt:'2026-10-25T13:00:00Z'});
@@ -42,6 +42,7 @@ try {
  assert.deepEqual(history.caseHistoryChanges({caseStatus:'parts_arrived',nextActionAt:'2026-10-24T10:00:00Z'},{caseStatus:'parts_arrived',nextContactAt:'2026-10-24T10:00:00Z'}),[],'Equivalent deadline aliases do not invent a change');
  assert.match(history.caseHistoryLines({eventType:'case_updated',title:'Дело обновлено',metadata:{}})[0],/не сохранялись/);
  assert.deepEqual(history.caseHistoryLines({eventType:'case_updated',title:'Дело обновлено',metadata:{changes:[]}}),[]);
+ assert.deepEqual(history.caseHistoryChanges({caseStatus:'waiting_parts'},{caseStatus:'parts_arrived'},{suppliesExpectedAt:null}),[],'An unrelated status change cannot be attributed to a deadline-only writer');
  const version='2026-10-23T12:00:00.000Z';
  updated=await workflow.applyClientCaseAction('case-a','confirm_manual_booking',{expectedUpdatedAt:version,reason:'Wrong reason',note:'Confirmed manually'},'vadim');
  assert.equal(updated.caseStatus,'closed');assert.equal(updated.status,'won');assert.equal(updated.closeReason,'Клиент записан вручную');assert.equal(updated.nextActionAt,null);assert.equal(updated.nextContactAt,null);assert.ok(updated.closedAt instanceof Date);
@@ -50,6 +51,7 @@ try {
  assert.equal(db.events.at(-1).actorLogin,'vadim');assert.equal(db.events.at(-1).metadata.bookingConfirmation,'manual');assert.equal(db.events.at(-1).note,'Confirmed manually');
  const eventCount=db.events.length;db.state.rejectUpdate=true;
  await assert.rejects(workflow.applyClientCaseAction('case-a','confirm_manual_booking',{expectedUpdatedAt:version},'vadim'),error=>error.code==='P2025');
+ await assert.rejects(workflow.applyClientCaseAction('case-a','parts_arrived',{},'vadim'),error=>error.code==='P2025');
  assert.equal(db.events.length,eventCount,'A conflicting close cannot write a success event');db.state.rejectUpdate=false;
  await assert.rejects(workflow.applyClientCaseAction('case-a','confirm_manual_booking',{},'vadim'),/current case version/);
  updated=await workflow.applyClientCaseAction('case-a','calculate',{},'vadim');

@@ -78,7 +78,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const updated = await applyClientCaseAction(id, action, actionBody, access.session!.user.login);
       return NextResponse.json({ case: updated });
     } catch (error) {
-      if (action === "confirm_manual_booking" && error && typeof error === "object" && "code" in error && error.code === "P2025") {
+      if (error && typeof error === "object" && "code" in error && error.code === "P2025") {
         return NextResponse.json({ error: "Заявка изменилась. Обновите доску перед закрытием." }, { status: 409 });
       }
       console.error("[client-cases/action]", error);

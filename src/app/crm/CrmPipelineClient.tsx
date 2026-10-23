@@ -228,7 +228,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     try {
       const res = await fetch(`/api/crm/deals/${encodeURIComponent(row.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(edit) });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Не удалось сохранить изменения");
+      if (!res.ok) { if (res.status === 409) await load(); throw new Error(data.error || "Не удалось сохранить изменения"); }
       setEditing(null); await load(); setNotice("Изменения сохранены");
     } catch (error) { setActionError(error instanceof Error ? error.message : "Не удалось сохранить изменения"); }
     finally { mutationPending.current = false; setBusy(null); }
@@ -241,7 +241,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     try {
       const res = await fetch(`/api/crm/deals/${encodeURIComponent(row.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Не удалось сохранить изменения");
+      if (!res.ok) { if (res.status === 409) await load(); throw new Error(data.error || "Не удалось сохранить изменения"); }
       setCases(current => current.map(item => item.id === row.id ? { ...item, ...data, stage: item.stage } : item));
       await load(); setNotice(message);
       return true;
