@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, useCallback, useRef } from "react";
+import { Fragment, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { ExternalLink, Pencil, Plus, Search, Trash2 } from "lucide-react";
@@ -8,6 +8,8 @@ import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import QuantityInput from "@/components/QuantityInput";
 import MoneyInput from "@/components/MoneyInput";
+import { MaintenanceQuotePanel } from "@/components/shipment/MaintenanceQuotePanel";
+import { shipmentQuoteFilters, shipmentQuoteRequirements } from "@/lib/maintenance-quote-shipment";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 import { clientSessionUnavailableMessage, readClientSessionResponse } from "@/lib/client-session-response";
@@ -175,24 +177,6 @@ type OilGroup = {
   bestTotalLiters?: number;
   bestTotalPrice?: number;
   bestExcessLiters?: number;
-};
-
-type MaintenanceOfferLine = {
-  name: string;
-  article?: string;
-  quantity: number;
-  unitPrice: number;
-  total: number;
-  currency: string;
-};
-
-type MaintenanceOffer = {
-  key: string;
-  title: string;
-  note: string;
-  lines: MaintenanceOfferLine[];
-  total: number;
-  currency: string;
 };
 
 type DemandAttribute = {
@@ -546,141 +530,6 @@ function buildOilGroups(items: VinLookupItem[], targetLiters?: number): OilGroup
     });
 }
 
-function getVehicleSummary(result: VinLookupResult): string {
-  const decoded = result.decoded;
-  const title = [decoded?.make, decoded?.model, decoded?.modelYear].filter(Boolean).join(" ");
-  return title || "не определен";
-}
-
-function getRepresentativeFilterItem(items: VinLookupItem[]): VinLookupItem | undefined {
-  if (items.length === 0) return undefined;
-  const inStock = items.filter((item) => item.quantity > 0);
-  const pool = inStock.length > 0 ? inStock : items;
-  return [...pool].sort((a, b) => a.price - b.price || a.name.localeCompare(b.name, "ru"))[0];
-}
-
-function getFilterLinePrefix(kind: FilterSectionKind): string {
-  switch (kind) {
-    case "oil-filter":
-      return "Масляный фильтр";
-    case "air-filter":
-      return "Воздушный фильтр";
-    case "cabin-filter":
-      return "Салонный фильтр";
-    case "fuel-filter":
-      return "Топливный фильтр";
-  }
-}
-
-function getOilOfferLines(group?: OilGroup): MaintenanceOfferLine[] {
-  if (!group) return [];
-  if (group.bestBundle.length > 0) {
-    return group.bestBundle.map((line) => ({
-      name: `${group.baseName} ${formatVolume(line.variant.volumeLiters)}`,
-      article: line.variant.article,
-      quantity: line.quantity,
-      unitPrice: line.variant.price,
-      total: line.variant.price * line.quantity,
-      currency: line.variant.currency,
-    }));
-  }
-  const variant = group.variants[0];
-  if (!variant) return [];
-  return [
-    {
-      name: `${group.baseName} ${formatVolume(variant.volumeLiters)}`,
-      article: variant.article,
-      quantity: 1,
-      unitPrice: variant.price,
-      total: variant.price,
-      currency: variant.currency,
-    },
-  ];
-}
-
-function buildMaintenanceOffer(
-  key: string,
-  title: string,
-  note: string,
-  oilGroup: OilGroup | undefined,
-  filterSections: { kind: FilterSectionKind; title: string; items: VinLookupItem[] }[]
-): MaintenanceOffer | null {
-  const lines = [
-    ...getOilOfferLines(oilGroup),
-    ...filterSections.flatMap((section) => {
-      const item = getRepresentativeFilterItem(section.items);
-      if (!item) return [];
-      return [
-        {
-          name: `${getFilterLinePrefix(section.kind)}: ${item.name}`,
-          article: item.article,
-          quantity: 1,
-          unitPrice: item.price,
-          total: item.price,
-          currency: item.currency,
-        },
-      ];
-    }),
-  ];
-
-  if (lines.length === 0) return null;
-  const total = lines.reduce((sum, line) => sum + line.total, 0);
-  return {
-    key,
-    title,
-    note,
-    lines,
-    total,
-    currency: lines[0]?.currency ?? "руб.",
-  };
-}
-
-function buildMaintenanceMessage(result: VinLookupResult, offers: MaintenanceOffer[]): string {
-  const oilInfo = result.oilInfo;
-  const header = [
-    "Добрый день! Рассчитали варианты ТО по VIN.",
-    "",
-    `Автомобиль: ${getVehicleSummary(result)}`,
-    `VIN: ${result.vin}`,
-  ];
-
-  if (
-    hasText(oilInfo?.approval) ||
-    (oilInfo?.acea?.length ?? 0) > 0 ||
-    (oilInfo?.api?.length ?? 0) > 0 ||
-    hasText(oilInfo?.fillVolumeLiters) ||
-    (oilInfo?.sae?.length ?? 0) > 0
-  ) {
-    header.push(
-      [
-        hasText(oilInfo?.approval)
-          ? `допуск ${oilInfo?.approval}`
-          : (oilInfo?.acea?.length ?? 0) > 0
-            ? `ACEA ${oilInfo!.acea!.join(", ")}`
-            : (oilInfo?.api?.length ?? 0) > 0
-              ? `API ${oilInfo!.api!.join(", ")}`
-              : null,
-        hasText(oilInfo?.fillVolumeLiters) ? `объем масла ${oilInfo?.fillVolumeLiters}` : null,
-        oilInfo?.sae?.length ? `SAE ${oilInfo.sae.join(", ")}` : null,
-      ]
-        .filter(Boolean)
-        .join(", ")
-    );
-  }
-
-  const body = offers.flatMap((offer, index) => [
-    "",
-    `Вариант ${index + 1}: ${offer.title}`,
-    offer.note,
-    ...offer.lines.map((line) => {
-      return `${line.name} — ${line.quantity} шт. x ${formatMoney(line.unitPrice, line.currency)} = ${formatMoney(line.total, line.currency)}`;
-    }),
-    `Итого по запчастям: ${formatMoney(offer.total, offer.currency)}`,
-  ]);
-
-  return [...header, ...body, "", "Цены актуальны на момент расчета, наличие лучше подтвердить перед заказом."].join("\n");
-}
-
 export default function ShipmentDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -708,8 +557,10 @@ export default function ShipmentDetailPage() {
   const [vin, setVin] = useState("");
   const [vinLookupLoading, setVinLookupLoading] = useState(false);
   const [vinLookupResult, setVinLookupResult] = useState<VinLookupResult | null>(null);
+  const currentQuoteLookup = vinLookupResult?.vin.replace(/\s/g, "").toUpperCase() === vin.replace(/\s/g, "").toUpperCase() ? vinLookupResult : null;
+  const quoteRequirements = useMemo(() => shipmentQuoteRequirements(currentQuoteLookup?.oilInfo), [currentQuoteLookup]);
+  const quoteFilters = useMemo(() => shipmentQuoteFilters(currentQuoteLookup?.legacyItems ?? [], data?.header.storeName), [currentQuoteLookup, data?.header.storeName]);
   const [showAllOilGroups, setShowAllOilGroups] = useState(false);
-  const [maintenanceCopyStatus, setMaintenanceCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [activeDetailTab, setActiveDetailTab] = useState<"positions" | "vin" | "diagnostic" | "history" | "precheck">("positions");
   const [vehicleEditing, setVehicleEditing] = useState(false);
   const [manualEngineVolume, setManualEngineVolume] = useState("");
@@ -1067,7 +918,6 @@ export default function ShipmentDetailPage() {
     setVinLookupLoading(true);
     setVinLookupResult(null);
     setShowAllOilGroups(false);
-    setMaintenanceCopyStatus("idle");
     setShowVehicleOverrideDialog(false);
     setError(null);
     try {
@@ -1129,17 +979,6 @@ export default function ShipmentDetailPage() {
       setVinLookupLoading(false);
     }
   }, [vin]);
-
-  const copyMaintenanceMessage = useCallback(async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setMaintenanceCopyStatus("copied");
-      window.setTimeout(() => setMaintenanceCopyStatus("idle"), 2500);
-    } catch {
-      setMaintenanceCopyStatus("error");
-      window.setTimeout(() => setMaintenanceCopyStatus("idle"), 3500);
-    }
-  }, []);
 
   async function saveShipment(): Promise<boolean> {
     if (applicable) {
@@ -1878,6 +1717,18 @@ export default function ShipmentDetailPage() {
 	              )}
             </div>
           </section>
+
+          <MaintenanceQuotePanel
+            key={`${id}:${documentVin}`}
+            vehicleTitle={clientVehicleSummary}
+            warehouseId={data.header.storeId}
+            profile={null}
+            research={null}
+            requirements={quoteRequirements}
+            filters={quoteFilters}
+            filtersLoading={vinLookupLoading}
+            onChooseWarehouse={() => router.push(`/shipment/${id}/edit#shipment-maintenance-quote`)}
+          />
 
           <section className="eco-shipment-detail-tabs">
             <button
@@ -2784,18 +2635,6 @@ export default function ShipmentDetailPage() {
                           const standardCandidates = rankingPool.filter((g) => hasBrand(g, brandStandard));
                           const standardGroup = pickClosestToMedian(standardCandidates.length ? standardCandidates : rankingPool);
 
-                          const maintenanceOffers = [
-                            { key: "standard", title: "Оптимальный", note: "Сбалансированный вариант по цене и качеству.", group: standardGroup },
-                            { key: "economy", title: "Эконом", note: "Более доступный вариант расходников.", group: economyGroup },
-                            { key: "premium", title: "Премиум", note: "Вариант с более дорогим маслом.", group: premiumGroup },
-                          ].flatMap((offer, _idx, list) => {
-                            const firstSameOilIndex = list.findIndex((candidate) => candidate.group?.key === offer.group?.key);
-                            if (firstSameOilIndex >= 0 && list[firstSameOilIndex]?.key !== offer.key) return [];
-                            const built = buildMaintenanceOffer(offer.key, offer.title, offer.note, offer.group, filterSections);
-                            return built ? [built] : [];
-                          });
-                          const maintenanceMessage = buildMaintenanceMessage(vinLookupResult, maintenanceOffers);
-
                           const rankedOilGroups = oilGroups
                             .map((g, idx) => ({
                               g,
@@ -2811,71 +2650,6 @@ export default function ShipmentDetailPage() {
                           const oilGroupsInStock = oilGroups.filter((g) => g.variants.some((v) => v.available > 0));
                           return oilGroups.length > 0 ? (
                             <div>
-                              {maintenanceOffers.length > 0 && (
-                                <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-800 dark:bg-emerald-950/20">
-                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                    <div>
-                                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                        Готовый расчет ТО для клиента
-                                      </h3>
-                                      <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                                        Система собрала варианты из подобранного масла и фильтров (при наличии остатков — берутся самые дешёвые варианты).
-                                      </p>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => copyMaintenanceMessage(maintenanceMessage)}
-                                      className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
-                                    >
-                                      Скопировать весь расчет
-                                    </button>
-                                  </div>
-                                  {maintenanceCopyStatus !== "idle" && (
-                                    <p className={`mt-2 text-xs ${maintenanceCopyStatus === "copied" ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"}`}>
-                                      {maintenanceCopyStatus === "copied" ? "Текст скопирован." : "Не удалось скопировать автоматически."}
-                                    </p>
-                                  )}
-                                  <div className="mt-3 grid gap-2 lg:grid-cols-3">
-                                    {maintenanceOffers.map((offer) => (
-                                      <div key={offer.key} className="rounded-lg border border-white/70 bg-white/90 p-3 dark:border-zinc-700 dark:bg-zinc-900/50">
-                                        <div className="flex items-start justify-between gap-2">
-                                          <div>
-                                            <div className="font-semibold text-zinc-900 dark:text-zinc-100">
-                                              {offer.title}
-                                            </div>
-                                            <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                                              {offer.lines.length} поз. · {offer.note}
-                                            </div>
-                                          </div>
-                                          <div className="text-right text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                            {formatMoney(offer.total, offer.currency)}
-                                          </div>
-                                        </div>
-                                        <ul className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
-                                          {offer.lines.slice(0, 4).map((line) => (
-                                            <li key={`${offer.key}-${line.name}-${line.article ?? ""}`} className="truncate">
-                                              {line.quantity} x {line.name}
-                                            </li>
-                                          ))}
-                                          {offer.lines.length > 4 && <li>+ еще {offer.lines.length - 4} поз.</li>}
-                                        </ul>
-                                        <button
-                                          type="button"
-                                          onClick={() => copyMaintenanceMessage(buildMaintenanceMessage(vinLookupResult, [offer]))}
-                                          className="mt-3 rounded-lg border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950"
-                                        >
-                                          Скопировать вариант
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <textarea
-                                    readOnly
-                                    value={maintenanceMessage}
-                                    className="mt-3 h-44 w-full rounded-lg border border-emerald-200 bg-white/80 p-2 text-xs text-zinc-700 dark:border-emerald-800 dark:bg-zinc-950/60 dark:text-zinc-300"
-                                  />
-                                </div>
-                              )}
                               <div className="mb-2 flex items-center justify-between gap-2">
                                 <span className="text-zinc-600 dark:text-zinc-400">
                                   Масла подобрано: {oilGroups.length}
@@ -3080,55 +2854,6 @@ export default function ShipmentDetailPage() {
                             </div>
                           );
                         })()}
-                        {oils.length === 0 &&
-                          filterSections.length > 0 &&
-                          (() => {
-                            const filterOnlyOffers = (() => {
-                              const built = buildMaintenanceOffer(
-                                "filters",
-                                "Фильтры по OEM",
-                                "Масло в каталоге не сопоставилось; в расчёт включены только подобранные фильтры (остатки на складе уточняйте).",
-                                undefined,
-                                filterSections
-                              );
-                              return built ? [built] : [];
-                            })();
-                            const filterOnlyMessage = buildMaintenanceMessage(vinLookupResult, filterOnlyOffers);
-                            if (filterOnlyOffers.length === 0) return null;
-                            return (
-                              <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-800 dark:bg-emerald-950/20">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                  <div>
-                                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                      Готовый расчет ТО для клиента
-                                    </h3>
-                                    <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                                      Масло по допуску не найдено в каталоге; в текст включены фильтры с подбором по OEM (при нулевом остатке указаны цены для ориентира).
-                                    </p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => copyMaintenanceMessage(filterOnlyMessage)}
-                                    className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
-                                  >
-                                    Скопировать расчет
-                                  </button>
-                                </div>
-                                {maintenanceCopyStatus !== "idle" && (
-                                  <p
-                                    className={`mt-2 text-xs ${maintenanceCopyStatus === "copied" ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"}`}
-                                  >
-                                    {maintenanceCopyStatus === "copied" ? "Текст скопирован." : "Не удалось скопировать автоматически."}
-                                  </p>
-                                )}
-                                <textarea
-                                  readOnly
-                                  value={filterOnlyMessage}
-                                  className="mt-3 h-44 w-full rounded-lg border border-emerald-200 bg-white/80 p-2 text-xs text-zinc-700 dark:border-emerald-800 dark:bg-zinc-950/60 dark:text-zinc-300"
-                                />
-                              </div>
-                            );
-                          })()}
                         {others.length > 0 && (
                           <div>
                             <div className="mb-1 flex items-center justify-between gap-2">

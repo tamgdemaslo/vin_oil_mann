@@ -86,3 +86,19 @@ assert.deepEqual(sortQuoteFilterOffers(toSort,'price',Date.parse('2026-10-24T00:
 assert.deepEqual(sortQuoteFilterOffers(toSort,'delivery',Date.parse('2026-10-24T00:00:00Z')).map(p=>p.id),['today','fast','slow','unknown']);
 assert.equal(toSort[0].id,'unknown');
 console.log('ROSSKO direct analogues, deduplication, fallback without MANN and offer ranking: ok');
+
+const {shipmentQuoteRequirements, shipmentQuoteFilters}=await jiti.import('../src/lib/maintenance-quote-shipment.ts');
+const shipmentRequirements=shipmentQuoteRequirements({approval:'VW 504.00',sae:['5W-30'],fillVolumeLiters:'4,5 л'});
+assert.deepEqual(shipmentRequirements.specifications,['VW 504.00']);
+assert.deepEqual(shipmentRequirements.viscosities,['5W-30']);
+assert.deepEqual(shipmentRequirements.volumes,[4.5]);
+assert.equal(shipmentRequirements.automaticVolume,'');
+assert.deepEqual(shipmentQuoteRequirements({fillVolumeLiters:'4–5 л'}).volumes,[]);
+const filterItem={name:'MANN CU 3172/1',article:'CU 3172/1',lookupKind:'cabin-filter',productId:'filter-local',price:1744,quantity:2,store:'Main'};
+const shipmentFilters=shipmentQuoteFilters([filterItem,{...filterItem,productId:'other-store',store:'Other'},{...filterItem,name:'Other brand',article:'OEM123'},{...filterItem,lookupKind:'oil',article:'5W30'},filterItem],'Main');
+assert.equal(shipmentFilters.length,1);
+assert.deepEqual(shipmentFilters[0].products.map(product=>product.id),['filter-local']);
+assert.equal(shipmentQuoteFilters([filterItem])[0].products.length,0);
+const filterOnlyText=quoteClientText('Car','',0,[],[{id:'supplier-filter',name:'Comline EKF139 (аналог Роско для MANN CU3172/1; доставка: завтра)',quantity:1,price:1704},{id:'work',name:'Замена фильтра',quantity:1,price:300}]);
+assert.match(filterOnlyText,/Comline EKF139/);assert.match(filterOnlyText,/Итого: 2\s*004/);assert.doesNotMatch(filterOnlyText,/Моторное масло|Вариант/);
+console.log('Shipment quote suggestions, MANN reference safety, warehouse isolation and filter-only quote: ok');

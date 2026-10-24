@@ -24,7 +24,7 @@ export function QuoteFilterOffers({products, selectedId, label, onSelect, disabl
     </div>
     <div className={styles.supplierOfferList} role="group" aria-label={`Предложения Роско: ${label}`}>
       {sorted.map(item => <div key={item.id} className={styles.supplierOffer} data-selected={selectedId === item.id}>
-        <div><strong>{item.name}</strong><small>{item.relation === "analogue" ? `Аналог Роско для MANN ${item.referenceArticle}` : "MANN по подбору автомобиля"}</small><p>{item.available} шт. у поставщика · {item.deliveryLabel}</p></div>
+        <div><strong>{item.name}</strong><small>{item.relation === "analogue" ? `Аналог Роско для MANN ${item.referenceArticle}` : "Исходный артикул MANN"}</small><p>{item.available} шт. у поставщика · {item.deliveryLabel}</p></div>
         <div className={styles.supplierOfferAction}><strong>{quoteRub(Math.round(item.price * 100))}</strong><button type="button" className="eco-btn" aria-label={`Выбрать ${item.name}, ${quoteRub(Math.round(item.price * 100))}, ${item.deliveryLabel}`} aria-pressed={selectedId === item.id} disabled={disabled || selectedId === item.id} onClick={() => onSelect(item.id)}>{selectedId === item.id ? "Выбран" : "Выбрать"}</button></div>
       </div>)}
     </div>

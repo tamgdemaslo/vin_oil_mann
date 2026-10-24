@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, CircleStop, Cog, Droplet, Gauge, GitBranch, Info, Link2, RefreshCw, Settings, Snowflake, type LucideIcon } from "lucide-react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import type { MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
@@ -11,10 +11,9 @@ import { mannCapacityLabel as capacityLabel } from "@/lib/mann-capacity-label";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
 import { canConfirmVehicleDestinationMarket, unsupportedVehicleMarketLabels, mannTechnicalContextFromVehicle, type MannTechnicalContextDetails } from "@/lib/mann-technical-request-context";
 import { isVehicleDestinationMarket, type VehicleDestinationMarket } from "@/lib/vehicle-market";
-import { MaintenanceQuotePanel } from "./MaintenanceQuotePanel";
+import type { MaintenanceQuoteVehicleContext } from "./MaintenanceQuotePanel";
 import { mannEquipmentChoiceKey } from "@/lib/mann-equipment-scope";
 
-import type { QuoteFilterGroup } from "@/lib/maintenance-quote";
 
 type LookupTab = "vin" | "plate" | "manual";
 type LookupFeedbackTone = "neutral" | "success" | "warning";
@@ -26,9 +25,7 @@ export type VehicleLookupManualContext = {
 };
 
 type Props = {
-  onChooseQuoteWarehouse?: () => void;
-  quoteFilters?: QuoteFilterGroup[];
-  quoteFiltersLoading?: boolean;
+  onQuoteContextChange?: (context: MaintenanceQuoteVehicleContext | null) => void;
   organizationId?: string | null;
   warehouseId?: string | null;
   initialVin?: string;
@@ -459,7 +456,7 @@ export function TechnicalProfile({
   );
 }
 
-export function VehicleLookupPanel({ onChooseQuoteWarehouse, quoteFilters, quoteFiltersLoading, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
+export function VehicleLookupPanel({ onQuoteContextChange, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
   const [tab, setTab] = useState<LookupTab>("vin");
   const [input, setInput] = useState(initialVin ?? "");
   const [loading, setLoading] = useState(false);
@@ -498,6 +495,19 @@ export function VehicleLookupPanel({ onChooseQuoteWarehouse, quoteFilters, quote
   const confirmedTechnicalCandidateRef = useRef<MannVehicleCandidate | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastAutomaticLookupRef = useRef("");
+
+  const quoteContextPublishedRef = useRef(false);
+  const quoteVehicleKey = appliedVehicle ? `${appliedVehicle.vin ?? appliedVehicle.licensePlate ?? vehicleTitle(appliedVehicle)}:${technicalProfileVariantKeys.join(",")}` : "";
+  useEffect(() => {
+    if (!appliedVehicle && !quoteContextPublishedRef.current) return;
+    quoteContextPublishedRef.current = Boolean(appliedVehicle);
+    onQuoteContextChange?.(appliedVehicle ? {
+      key: quoteVehicleKey,
+      vehicleTitle: `${vehicleTitle(appliedVehicle)} · ${vehicleDetails(appliedVehicle)}`,
+      profile: technicalProfile,
+      research: fluidResearch,
+    } : null);
+  }, [appliedVehicle, quoteVehicleKey, technicalProfile, fluidResearch, onQuoteContextChange]);
 
   const selectedVehicle = lookup && lookup.candidates.length > 1
     ? lookup.candidates.find((candidate) => candidate.key === selectedKey)?.vehicle ?? null
@@ -1059,16 +1069,7 @@ export function VehicleLookupPanel({ onChooseQuoteWarehouse, quoteFilters, quote
             void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, transmissionType, { confirmedEngineCode, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
         />
-        <MaintenanceQuotePanel
-          key={`${appliedVehicle.vin ?? appliedVehicle.licensePlate ?? vehicleTitle(appliedVehicle)}:${technicalProfileVariantKeys.join(",")}`}
-          vehicleTitle={`${vehicleTitle(appliedVehicle)} · ${vehicleDetails(appliedVehicle)}`}
-          warehouseId={warehouseId}
-          profile={technicalProfile}
-          research={fluidResearch}
-          filters={quoteFilters}
-          filtersLoading={quoteFiltersLoading}
-          onChooseWarehouse={onChooseQuoteWarehouse}
-        />
+
       </section>
     );
   }

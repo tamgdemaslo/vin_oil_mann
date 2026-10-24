@@ -92,6 +92,7 @@ export function quoteVariantAmount(variant: QuoteOilVariant, litres: number) {
   return {quantity:lines.reduce((sum,line)=>sum+line.quantity,0),suppliedLitres:solution.suppliedLitres,cents:solution.state.cents,enough:Boolean(inStock),lines};
 }
 export function quoteClientText(vehicle: string, specification: string, litres: number, oils: QuoteStockProduct[], extras: QuoteExtra[]) {
+  if (!oils.length) return [`Расчёт ТО: ${vehicle}`, ...extras.map(row => `${row.name}: ${row.quantity} × ${quoteRub(Math.round(row.price * 100))} = ${quoteRub(Math.round(row.quantity * Math.round(row.price * 100)))}`), `Итого: ${quoteRub(quoteExtraCents(extras))}`, "", "Предварительный расчёт. Наличие и цены уточняются при записи."].join("\n");
   return [`Расчёт ТО: ${vehicle}`, `Моторное масло: ${specification}; объём замены ${litres} л.`, ...groupQuoteOils(oils).flatMap((variant, index) => {
     const amount = quoteVariantAmount(variant, litres);
     if (!amount) return [];
