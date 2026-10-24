@@ -463,7 +463,6 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
         <summary><span className={styles.cardMeta}>Создал: {creatorName(row.createdByLogin)}</span><span className={styles.detailsToggle}>Подробнее <ChevronDown size={14} /></span></summary>
         <div className={styles.detailsBody}>
           <p className={styles.cardMeta}>Создано: {formatServiceDate(row.createdAt)}</p>
-          {row.phoneNormalized && <p className={styles.fullPhone}><a href={phoneHref(row.phoneNormalized)}>{formatPhoneForDisplay(row.phoneNormalized)}</a></p>}
           {status !== "closed" && !isEditing && <label className={styles.stageField}>Этап заявки
             <select data-stage-select aria-label="Этап заявки" value={status} disabled={Boolean(busy) || Boolean(loadError)}
               onChange={event => void moveTo(row, event.target.value as WorkCaseStatus)}>
@@ -471,7 +470,6 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
             </select>
           </label>}
           {row.vehicle?.trim() && <p>Автомобиль: {row.vehicle}</p>}
-          <p className={styles.notes}>{row.title}</p>
           {withoutCaseCorrespondence(row.notes) && <p className={styles.notes}>{withoutCaseCorrespondence(row.notes)}</p>}
           {row.suppliesNote && <p>Запчасти: {row.suppliesNote}</p>}
           {row.source && <p>Источник: {row.source === "client-site" ? "Сайт" : row.source}</p>}

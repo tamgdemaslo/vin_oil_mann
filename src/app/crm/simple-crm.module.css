@@ -176,7 +176,6 @@
 .chatForm :global(.eco-btn) { min-height:38px; padding:8px; font-size:12px; }
 @media(max-width:560px) { .chatLink,.editChat,.chatForm :global(.eco-btn) { min-height:44px; } .editChat { min-width:44px; } .chatForm :is(input,select) { font-size:16px; } }
 
-.fullPhone { display:none; }
 .contactRow { display:contents; }
 .correspondence { order:1; }
 .row > .chatForm,.row > .formError { order:2; }
@@ -194,8 +193,6 @@ button.orderNumber { min-height:28px; padding:2px 0; border:0; background:none; 
  .client a[href^="tel:"] { justify-content:center; min-width:44px; flex-shrink:0; }
  .phoneNumber { display:none; }
  .client:not(:has(.customerLink)) .phoneNumber { display:inline; font-size:11px; }
- .fullPhone { display:block; }
- .fullPhone a { display:inline-flex; align-items:center; min-height:44px; color:inherit; }
  .correspondence { flex-shrink:0; gap:0 4px; }
  .emptyChatLabel { font-size:0; }
  .emptyChatLabel::after { content:"Мессенджер"; font-size:12px; }
