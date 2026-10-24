@@ -7,7 +7,7 @@ import styles from "./MaintenanceQuotePanel.module.css";
 type Props = { products: QuoteFilterGroup["products"]; selectedId: string; label: string; onSelect: (id: string) => void; disabled?: boolean };
 
 export function QuoteFilterOffers({products, selectedId, label, onSelect, disabled}: Props) {
-  const [priority, setPriority] = useState<"price" | "delivery">("price");
+  const [priority, setPriority] = useState<"price" | "delivery">("delivery");
   const hasMann = products.some(item => item.relation !== "analogue");
   const hasAnalogues = products.some(item => item.relation === "analogue");
   const [expanded, setExpanded] = useState(!hasMann);
