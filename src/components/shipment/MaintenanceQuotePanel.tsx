@@ -9,7 +9,7 @@ import { QuoteFilterOffers } from "./QuoteFilterOffers";
 import { QuoteSearchField } from "./QuoteSearchField";
 import styles from "./MaintenanceQuotePanel.module.css";
 
-export type MaintenanceQuoteVehicleContext = { key: string; vehicleTitle: string; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null };
+export type MaintenanceQuoteVehicleContext = { key: string; vin: string | null; vehicleTitle: string; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null };
 type Props = { vehicleTitle: string; warehouseId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; requirements?: ReturnType<typeof quoteRequirementChoices>; filters?: QuoteFilterGroup[]; filtersLoading?: boolean; onChooseWarehouse?: () => void };
 const number = (value: string) => Number(value.replace(",", "."));
 

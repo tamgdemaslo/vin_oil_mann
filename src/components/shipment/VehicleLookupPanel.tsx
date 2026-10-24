@@ -503,6 +503,7 @@ export function VehicleLookupPanel({ onQuoteContextChange, organizationId, wareh
     quoteContextPublishedRef.current = Boolean(appliedVehicle);
     onQuoteContextChange?.(appliedVehicle ? {
       key: quoteVehicleKey,
+      vin: appliedVehicle.vin ?? null,
       vehicleTitle: `${vehicleTitle(appliedVehicle)} · ${vehicleDetails(appliedVehicle)}`,
       profile: technicalProfile,
       research: fluidResearch,

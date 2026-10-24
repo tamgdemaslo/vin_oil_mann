@@ -4579,6 +4579,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       document.querySelector(".eco-shipment-mann-kit, .eco-shipment-mann-filter-list")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 80);
   };
+  const activeQuoteVehicleContext = quoteVehicleContext?.vin && quoteVehicleContext.vin.replace(/\s/g, "").toUpperCase() !== documentVin.replace(/\s/g, "").toUpperCase() ? null : quoteVehicleContext;
+
   const mannSortedFilters = mannFilters
     .slice()
     .sort((left, right) => mannFilterGroupOrder(left.filterType) - mannFilterGroupOrder(right.filterType) || left.mannArticle.localeCompare(right.mannArticle, "ru"));
@@ -5446,11 +5448,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           <p>Найдите позиции, затем проверьте количество, скидку и доступный остаток.</p>
         </header>
       <MaintenanceQuotePanel
-          key={`${demandId ?? "new"}:${quoteVehicleContext?.key ?? documentVin ?? "manual"}`}
-          vehicleTitle={quoteVehicleContext?.vehicleTitle || vehicleTitle || documentVin || "Автомобиль не указан"}
+          key={`${demandId ?? "new"}:${activeQuoteVehicleContext?.key ?? documentVin ?? "manual"}`}
+          vehicleTitle={activeQuoteVehicleContext?.vehicleTitle || vehicleTitle || documentVin || "Автомобиль не указан"}
           warehouseId={selectedStore?.id}
-          profile={quoteVehicleContext?.profile ?? null}
-          research={quoteVehicleContext?.research ?? null}
+          profile={activeQuoteVehicleContext?.profile ?? null}
+          research={activeQuoteVehicleContext?.research ?? null}
           filtersLoading={!!mannLoading}
           onChooseWarehouse={() => setDocumentParamsOpen(true)}
           filters={mannSortedFilters.filter(filter => ["oil", "air", "cabin"].includes(filter.filterType)).map(filter => ({
@@ -6075,7 +6077,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               onUseVehicle={applyIdentifiedVehicle}
               onConfirmMannCandidate={confirmMannCandidate}
               onConfirmTransmission={confirmVehicleTransmission}
-              onLookupStart={() => { setQuoteVehicleContext(null); resetMannVehicleSelection(); }}
+              onLookupStart={resetMannVehicleSelection}
               onManualMode={openMannManualPicker}
             />
 
