@@ -341,6 +341,9 @@ try {
     assert.equal(products[0].name, source.name, "template saves never mutate product cards");
     const automaticTemplateFeed = await feedRoute.GET(new Request("https://crm.example.ru/feed.csv"), { params: Promise.resolve({ token }) });
     assert.equal(automaticTemplateFeed.status, 200);
+    assert.match(automaticTemplateFeed.headers.get("Content-Type"), /^application\/xml/);
+    assert.equal(automaticTemplateFeed.headers.get("X-Avito-Feed-Format"), "xml");
+    assert.equal(automaticTemplateFeed.headers.get("X-Avito-Feed-Alias"), "feed.csv");
     assert.equal(automaticTemplateFeed.headers.get("X-Avito-Skipped-Invalid"), "1");
     assert.ok((await automaticTemplateFeed.text()).includes("Моторные\n"), "Avito receives the same templates as manual export");
     products.pop();
@@ -363,6 +366,7 @@ try {
     const readyHead = await publicHead();
     assert.equal(readyHead.status, 200);
     assert.equal(readyHead.headers.get("X-Avito-Feed-Status"), "ready");
+    assert.match(readyHead.headers.get("Content-Type"), /^application\/xml/);
     assert.equal(await readyHead.text(), "");
     assert.deepEqual(await storage.readAvitoValue(scope, "snapshot"), snapshotBeforeHead, "HEAD never modifies the reviewed/exported snapshot");
     assert.equal(audit.length, auditCountBeforeHead, "HEAD does not pretend that Avito downloaded a CSV");
@@ -386,11 +390,12 @@ try {
     const mixedExport = await service.generateAvitoExport();
     assert.equal(mixedExport.stats.invalid, 1);
     const mixedCsv = (await service.downloadAvitoExport(mixedExport.id)).toString("utf8");
+    assert.ok(mixedCsv.startsWith("\uFEFF"), "table downloads remain real CSV with BOM");
     const mixedPublic = await request();
     assert.equal(mixedPublic.status, 200, "a bad selected item cannot block healthy items in the public feed");
     assert.equal(mixedPublic.headers.get("X-Avito-Feed-Policy"), "skip-invalid");
     assert.equal(mixedPublic.headers.get("X-Avito-Skipped-Invalid"), "1");
-    assert.deepEqual(Buffer.from(await mixedPublic.arrayBuffer()), Buffer.from(mixedCsv, "utf8"), "manual and automatic exports contain exactly the same CSV bytes, including BOM");
+    assert.deepEqual(Buffer.from(await mixedPublic.arrayBuffer()), await service.downloadAvitoExport(mixedExport.id, "xml"), "the existing CSV address serves the same valid XML as the canonical link");
     assert.equal((await publicHead()).status, 200);
     assert.equal(audit.at(-1).metadataJson.stats.invalid, 1, "download history reports skipped items");
     assert.equal(products[0].avito, true);
@@ -507,6 +512,23 @@ try {
       globalThis.fetch = async (url, ...args) => url.includes("/autoload/v4/uploads?") ? Response.json({ error: "provider unavailable" }, { status: 503 }) : beforeReportFetch(url, ...args);
       assert.equal((await post({ operation: "api", action: "reports" })).status, 502);
       assert.equal(audit.at(-1).action, "reports_failed", "async report failures must be caught and recorded in history");
+      const currentProfile = await service.getAvitoProfile(scope);
+      const legacyLinkedUrl = service.avitoFeedUrl(currentProfile, "csv");
+      let uploadCalls = 0;
+      let linkedUrl = legacyLinkedUrl;
+      globalThis.fetch = async (url, init, ...args) => {
+        if (url.endsWith("/autoload/v2/profile")) {
+          assert.equal(init.method, "GET", "processing a compatible old link never needs profile write access");
+          return Response.json({ ...providerProfile, feeds_data: [{ feed_name: "Existing", feed_url: linkedUrl }] });
+        }
+        if (url.endsWith("/autoload/v1/upload")) { uploadCalls++; return new Response(null, { status: 204 }); }
+        return beforeReportFetch(url, init, ...args);
+      };
+      assert.equal((await post({ operation: "api", action: "upload" })).status, 200, "the exact existing branch CSV alias can be processed as XML");
+      assert.equal(uploadCalls, 1);
+      linkedUrl = "https://crm.example.ru/api/avito-autoload/feeds/another-branch/feed.csv";
+      assert.equal((await post({ operation: "api", action: "upload" })).status, 422, "an arbitrary CSV URL does not satisfy the branch's connection guard");
+      assert.equal(uploadCalls, 1, "a foreign link cannot launch publication");
       globalThis.fetch = beforeReportFetch;
       products.push({ ...products[0], id: "api-invalid-selected", brand: "Unsupported manufacturer" });
       const mixedApiExport = await post({ operation: "generate" });

@@ -346,7 +346,8 @@ export async function performAvitoApiAction(action: "test" | "connect" | "upload
       else {
         const providerProfile = await client.profile();
         const feeds = Array.isArray(providerProfile.feeds_data) ? providerProfile.feeds_data : [];
-        if (!feeds.some((feed) => feed && typeof feed === "object" && (feed as Record<string, unknown>).feed_url === url)) throw new AvitoAutoloadError("Сначала подключите ссылку XML к профилю Авито");
+        const acceptedUrls = [url, avitoFeedUrl(profile, "csv")!];
+        if (!feeds.some((feed) => feed && typeof feed === "object" && acceptedUrls.includes(String((feed as Record<string, unknown>).feed_url)))) throw new AvitoAutoloadError("Сначала подключите ссылку XML к профилю Авито");
         await client.upload();
       }
       const message = action === "connect" ? "Ссылка добавлена в профиль автозагрузки Авито" : "Авито принял запрос на обработку файла. Публикацию подтвердит отчёт";
