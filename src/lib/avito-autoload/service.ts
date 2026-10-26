@@ -353,7 +353,7 @@ export async function performAvitoApiAction(action: "test" | "connect" | "upload
       await avitoAudit(scope, action === "connect" ? "feed_connected" : "upload_requested", "ok", message);
       return { message };
     }
-    return syncAvitoReports(scope, client);
+    return await syncAvitoReports(scope, client);
   } catch (error) {
     const message = error instanceof AvitoAutoloadError ? error.message : "Не удалось связаться с Авито. Перед повторным запуском проверьте отчёт";
     if (action === "test" && !(error instanceof AvitoAutoloadError && error.code === "AVITO_CREDENTIALS_CHANGED")) {
@@ -369,17 +369,30 @@ export async function performAvitoApiAction(action: "test" | "connect" | "upload
 
 async function syncAvitoReports(scope: AvitoScope, client: AvitoAutoloadClient) {
   const data = await client.reports();
-  if (!Array.isArray(data.reports)) throw new AvitoAutoloadError("Авито вернул отчёт неизвестного формата", 502, "AVITO_INVALID_REPORT");
-  const reports = data.reports.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === "object" && !Array.isArray(row)));
+  if (!Array.isArray(data.uploads)) throw new AvitoAutoloadError("Авито вернул отчёт неизвестного формата", 502, "AVITO_INVALID_REPORT");
+  const reports = data.uploads.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === "object" && !Array.isArray(row)));
   if (!reports.length) return { message: "Авито пока не сформировал отчёт автозагрузки" };
   const report = reports[0];
-  const reportId = String(report.id ?? "");
-  const items = await client.reportItems(reportId);
+  const reportId = String(report.upload_id ?? "");
+  if (!/^\d+$/.test(reportId)) throw new AvitoAutoloadError("Авито вернул некорректный номер загрузки", 502, "AVITO_INVALID_REPORT");
+  const reportState = String(report.status ?? "unknown");
+  const reportMessages = Array.isArray(report.events) ? report.events.flatMap((event) => event && typeof event === "object" && typeof (event as Record<string, unknown>).description === "string" ? [String((event as Record<string, unknown>).description).replace(/https?:\/\/[^\s<>"']+/gi, "[ссылка на файл]").slice(0, 1000)] : []).slice(0, 20) : [];
+  const stats = report.stats && typeof report.stats === "object" ? report.stats as Record<string, unknown> : {};
+  // Failed downloads/invalid whole files often contain zero items. Their reason
+  // belongs to the upload itself, not the current/previous successful items.
+  let items: Record<string, unknown>[] = [];
+  let detailsMessage = "";
+  if (typeof stats.count === "number" && stats.count > 0) {
+    try { items = await client.reportItems(reportId); }
+    catch (error) {
+      if (!(error instanceof AvitoAutoloadError) || !["AVITO_REPORT_DETAILS_CHANGED", "AVITO_HTTP_404"].includes(error.code)) throw error;
+      detailsMessage = " Подробности объявлений этой загрузки пока недоступны.";
+    }
+  }
   const products = await prisma.localProduct.findMany({ where: { branchId: scope.branchId, entityType: "product" }, select: { id: true }, take: AVITO_MAX_ADS + 1 });
   const byAdId = new Map(products.map((product) => [avitoAdId(scope, product.id), product.id]));
   const checkedAt = new Date().toISOString();
   let matched = 0;
-  const reportState = String(report.status ?? "unknown");
   for (const item of items) {
     const productId = byAdId.get(String(item.ad_id ?? ""));
     if (!productId) continue;
@@ -392,7 +405,8 @@ async function syncAvitoReports(scope: AvitoScope, client: AvitoAutoloadClient) 
     await writeAvitoValue(scope, `status:${productId}`, status);
     matched++;
   }
-  const message = `Получен отчёт №${reportId}: сопоставлено ${matched} объявлений`;
-  await avitoAudit(scope, "report_received", ["pending", "in_progress"].includes(reportState) ? "pending" : "ok", message, { reportId, reportState, matched });
-  return { message, matched, reportId };
+  const stateLabel = reportState === "error" ? "загрузка не удалась" : reportState === "processing" ? "загрузка обрабатывается" : reportState === "success_warning" ? "загрузка завершена с замечаниями" : reportState === "success" ? "загрузка завершена" : `статус ${reportState}`;
+  const message = `Отчёт №${reportId}: ${stateLabel}. Сопоставлено ${matched} объявлений.${reportMessages.length ? ` ${reportMessages.join(" ")}` : ""}${detailsMessage}`;
+  await avitoAudit(scope, "report_received", reportState === "error" ? "error" : reportState === "processing" ? "pending" : "ok", message, { reportId, reportState, matched, messages: reportMessages, processed: stats.count ?? null, startedAt: report.started_at ?? null });
+  return { message, matched, reportId, reportState };
 }

@@ -66,24 +66,42 @@ export class AvitoAutoloadClient {
     feeds.push({ feed_name: feedName, feed_url: feedUrl });
     // Keep paid-placement limits, schedule and other provider-owned settings.
     // A missing schedule must be set in Avito rather than silently enabling every slot.
-    const payload = Object.fromEntries(Object.entries({ ...current, feeds_data: feeds, autoload_enabled: true }).filter(([, value]) => value !== null));
-    return this.call("/autoload/v2/profile", "POST", payload);
+    // GET may return null here; POST requires the report_email string even
+    // when delivery by email is disabled. Omitting it makes Avito reject 400.
+    const payload = Object.fromEntries(Object.entries({ ...current, feeds_data: feeds, autoload_enabled: true, report_email: typeof current.report_email === "string" ? current.report_email : "" }).filter(([, value]) => value !== null));
+    await this.call("/autoload/v2/profile", "POST", payload);
+    const updated = await this.profile();
+    const updatedFeeds = Array.isArray(updated.feeds_data) ? updated.feeds_data : [];
+    if (!updatedFeeds.some((feed) => feed && typeof feed === "object" && (feed as Record<string, unknown>).feed_url === feedUrl)) {
+      throw new AvitoAutoloadError("Авито принял запрос, но XML-ссылка ещё не появилась в профиле. Проверьте настройки подключения", 502, "AVITO_FEED_NOT_CONNECTED");
+    }
+    return updated;
   }
 
-  reports() { return this.call("/autoload/v3/reports"); }
+  reports() { return this.call("/autoload/v4/uploads?perPage=10&page=1"); }
 
   async reportItems(reportId: string) {
     if (!/^\d+$/.test(reportId)) throw new AvitoAutoloadError("Авито вернул некорректный номер отчёта", 502);
+    const checkCurrent = async () => {
+      const current = await this.call("/autoload/v4/uploads/current");
+      if (String(current.upload_id ?? "") !== reportId) throw new AvitoAutoloadError("Подробности этой загрузки пока недоступны. Повторите получение отчёта позже", 409, "AVITO_REPORT_DETAILS_CHANGED");
+    };
+    // 'current' can refer to an older upload if the newest one failed before
+    // processing any items. Never attach those old results to the latest one.
+    await checkCurrent();
     const items: Record<string, unknown>[] = [];
-    for (let page = 0; page < 251; page++) {
-      const data = await this.call(`/autoload/v3/reports/${reportId}/items?page=${page}&per_page=200`);
+    for (let page = 1; page <= 501; page++) {
+      const data = await this.call(`/autoload/v4/uploads/current/items?page=${page}&perPage=100`);
       if (!Array.isArray(data.items)) throw new AvitoAutoloadError("В ответе Авито отсутствует список объявлений", 502, "AVITO_INVALID_REPORT");
       const batch = data.items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item)));
       items.push(...batch);
       if (items.length > 50_000) throw new AvitoAutoloadError("Отчёт Авито превышает 50 000 объявлений", 502, "AVITO_REPORT_TOO_LARGE");
       const meta = data.meta && typeof data.meta === "object" ? data.meta as Record<string, unknown> : {};
       const pages = Number(meta.pages);
-      if (Number.isSafeInteger(pages) && pages > 0 ? page + 1 >= pages : batch.length < 200) return items;
+      if (Number.isSafeInteger(pages) && pages > 0 ? page >= pages : batch.length < 100) {
+        await checkCurrent();
+        return items;
+      }
     }
     throw new AvitoAutoloadError("Отчёт Авито превышает 50 000 объявлений", 502, "AVITO_REPORT_TOO_LARGE");
   }
