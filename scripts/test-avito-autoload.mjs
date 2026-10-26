@@ -230,11 +230,13 @@ try {
   assert.throws(() => storage.avitoScope(), /Branch context/);
 
   const requests = [];
-  const providerProfile = { feeds_data: [{ feed_name: "Existing", feed_url: "https://other.example.ru/feed.xml" }, { feed_name: "Manually added", feed_url: "https://crm.example.ru/feed.csv" }], schedule: [{ weekdays: [1], time_slots: [9] }], allow_pay_over_limit: false, uploadMode: "full" };
+  const providerProfile = { feeds_data: [{ feed_name: "Existing", feed_url: "https://other.example.ru/feed.xml" }, { feed_name: "Manually added", feed_url: "https://crm.example.ru/feed.csv" }], schedule: [{ weekdays: [1], time_slots: [9], rate: 20 }], report_email: null, allow_pay_over_limit: false, uploadMode: "full" };
+  let remoteProfile = providerProfile;
   const client = new AvitoAutoloadClient("test-client-A", "test-secret-A", async (url, init) => {
     requests.push({ url, init });
     if (url.endsWith("/token")) return Response.json({ access_token: "mock-token", expires_in: 3600 });
-    if (init.method === "GET") return Response.json(providerProfile);
+    if (init.method === "GET") return Response.json(remoteProfile);
+    if (url.endsWith("/autoload/v2/profile")) remoteProfile = JSON.parse(init.body);
     return new Response(null, { status: 204 });
   });
   await client.connectFeed("https://crm.example.ru/feed.xml", "Eco", "https://crm.example.ru/feed.csv");
@@ -242,15 +244,34 @@ try {
   const payload = JSON.parse(requests.find((r) => r.url.endsWith("/autoload/v2/profile") && r.init.method === "POST").init.body);
   assert.deepEqual(payload.schedule, providerProfile.schedule);
   assert.equal(payload.allow_pay_over_limit, false);
+  assert.equal(payload.report_email, "", "POST requires a string even when GET returns a null report email");
+  assert.equal(payload.agreement, undefined, "updating an existing profile must not accept new terms");
   assert.equal(payload.feeds_data.length, 2, "other feed must survive connecting ours");
   assert.ok(!payload.feeds_data.some((feed) => feed.feed_url.endsWith(".csv")), "the same branch's old CSV is replaced even if manually named");
   assert.equal(requests.filter((r) => r.url.endsWith("/token")).length, 1);
   const pages = [];
   const paginated = new AvitoAutoloadClient("test-pages", "test-pages-secret", async (url) => {
     if (url.endsWith("/token")) return Response.json({ access_token: "page-token" });
+    if (url.endsWith("/autoload/v4/uploads/current")) return Response.json({ upload_id: 42 });
+    if (url.includes("/autoload/v4/uploads?")) return Response.json({ uploads: [] });
     pages.push(url); return Response.json({ items: [{ ad_id: `p${pages.length}` }], meta: { pages: 2 } });
   });
+  assert.deepEqual(await paginated.reports(), { uploads: [] });
   assert.equal((await paginated.reportItems("42")).length, 2, "honor page metadata even when provider returns short pages");
+  assert.ok(pages[0].endsWith("/autoload/v4/uploads/current/items?page=1&perPage=100"));
+  assert.ok(pages[1].endsWith("page=2&perPage=100"));
+  let currentReads = 0;
+  const changingUpload = new AvitoAutoloadClient("test-changing-upload", "test-changing-secret", async (url) => {
+    if (url.endsWith("/token")) return Response.json({ access_token: "changing-token" });
+    if (url.endsWith("/current")) return Response.json({ upload_id: ++currentReads === 1 ? 42 : 43 });
+    return Response.json({ items: [{ ad_id: "old-result" }], meta: { pages: 1 } });
+  });
+  await assert.rejects(changingUpload.reportItems("42"), (e) => e.code === "AVITO_REPORT_DETAILS_CHANGED", "a changing current upload must not attach another report's statuses");
+  const notUpdated = new AvitoAutoloadClient("test-not-updated", "test-not-updated-secret", async (url, init) => {
+    if (url.endsWith("/token")) return Response.json({ access_token: "not-updated-token" });
+    return init.method === "GET" ? Response.json(providerProfile) : new Response(null, { status: 204 });
+  });
+  await assert.rejects(notUpdated.connectFeed("https://crm.example.ru/feed.xml", "Eco"), (e) => e.code === "AVITO_FEED_NOT_CONNECTED", "provider acknowledgement alone must not claim the feed is connected");
   let failedPosts = 0;
   const failed = new AvitoAutoloadClient("test-failure", "test-failure-secret", async (url) => {
     if (url.endsWith("/token")) return Response.json({ access_token: "failure-token" });
@@ -320,6 +341,9 @@ try {
     assert.equal(products[0].name, source.name, "template saves never mutate product cards");
     const automaticTemplateFeed = await feedRoute.GET(new Request("https://crm.example.ru/feed.csv"), { params: Promise.resolve({ token }) });
     assert.equal(automaticTemplateFeed.status, 200);
+    assert.match(automaticTemplateFeed.headers.get("Content-Type"), /^application\/xml/);
+    assert.equal(automaticTemplateFeed.headers.get("X-Avito-Feed-Format"), "xml");
+    assert.equal(automaticTemplateFeed.headers.get("X-Avito-Feed-Alias"), "feed.csv");
     assert.equal(automaticTemplateFeed.headers.get("X-Avito-Skipped-Invalid"), "1");
     assert.ok((await automaticTemplateFeed.text()).includes("Моторные\n"), "Avito receives the same templates as manual export");
     products.pop();
@@ -342,6 +366,7 @@ try {
     const readyHead = await publicHead();
     assert.equal(readyHead.status, 200);
     assert.equal(readyHead.headers.get("X-Avito-Feed-Status"), "ready");
+    assert.match(readyHead.headers.get("Content-Type"), /^application\/xml/);
     assert.equal(await readyHead.text(), "");
     assert.deepEqual(await storage.readAvitoValue(scope, "snapshot"), snapshotBeforeHead, "HEAD never modifies the reviewed/exported snapshot");
     assert.equal(audit.length, auditCountBeforeHead, "HEAD does not pretend that Avito downloaded a CSV");
@@ -365,11 +390,12 @@ try {
     const mixedExport = await service.generateAvitoExport();
     assert.equal(mixedExport.stats.invalid, 1);
     const mixedCsv = (await service.downloadAvitoExport(mixedExport.id)).toString("utf8");
+    assert.ok(mixedCsv.startsWith("\uFEFF"), "table downloads remain real CSV with BOM");
     const mixedPublic = await request();
     assert.equal(mixedPublic.status, 200, "a bad selected item cannot block healthy items in the public feed");
     assert.equal(mixedPublic.headers.get("X-Avito-Feed-Policy"), "skip-invalid");
     assert.equal(mixedPublic.headers.get("X-Avito-Skipped-Invalid"), "1");
-    assert.deepEqual(Buffer.from(await mixedPublic.arrayBuffer()), Buffer.from(mixedCsv, "utf8"), "manual and automatic exports contain exactly the same CSV bytes, including BOM");
+    assert.deepEqual(Buffer.from(await mixedPublic.arrayBuffer()), await service.downloadAvitoExport(mixedExport.id, "xml"), "the existing CSV address serves the same valid XML as the canonical link");
     assert.equal((await publicHead()).status, 200);
     assert.equal(audit.at(-1).metadataJson.stats.invalid, 1, "download history reports skipped items");
     assert.equal(products[0].avito, true);
@@ -454,6 +480,56 @@ try {
       const result = await post({ operation: "api", action: "test" });
       assert.equal(result.status, 200, "outer operation and nested provider action must not overwrite each other");
       assert.equal(mockedUrls.length, 3);
+      const beforeReportFetch = globalThis.fetch;
+      const reportRequests = [];
+      globalThis.fetch = async (url, ...args) => {
+        reportRequests.push(url);
+        if (url.includes("/autoload/v4/uploads?")) return Response.json({ uploads: [{ upload_id: 42, status: "error", stats: { count: 57 }, events: [{ type: "error", description: "<p>Не удалось прочитать файл <a href=\"https://crm.example.ru/private-feed-token/feed.csv\">документация</a></p>" }] }] });
+        return beforeReportFetch(url, ...args);
+      };
+      const failedUploadReport = await post({ operation: "api", action: "reports" });
+      assert.equal(failedUploadReport.status, 200, "a failed upload with no items must still return the provider's file error");
+      const failedReport = await failedUploadReport.json();
+      assert.match(failedReport.message, /Не удалось прочитать файл/);
+      assert.ok(!failedReport.message.includes("private-feed-token"), "file capability URLs are not exposed in report messages");
+      assert.ok(!failedReport.message.includes("<p>"), "provider HTML is converted to readable text, not rendered");
+      assert.equal(failedReport.reportState, "error");
+      assert.equal(audit.at(-1).action, "report_received");
+      assert.equal(audit.at(-1).status, "error");
+      assert.equal(audit.at(-1).metadataJson.processed, null, "a failed XML file may return the previous valid file's statistics");
+      assert.ok(!reportRequests.some((url) => url.includes("/current")), "file errors must not import stale item results even when reported count is nonzero");
+      globalThis.fetch = async (url, ...args) => {
+        if (url.includes("/autoload/v4/uploads?")) return Response.json({ uploads: [{ upload_id: 43, status: "success", stats: { count: 1 }, events: [] }] });
+        if (url.endsWith("/autoload/v4/uploads/current")) return Response.json({ upload_id: 43 });
+        if (url.includes("/autoload/v4/uploads/current/items?")) return Response.json({ items: [{ ad_id: storage.avitoAdId(scope, products[0].id), avito_id: 987, avito_status: "active", url: "https://www.avito.ru/kaliningrad/987", messages: [] }], meta: { pages: 1 } });
+        return beforeReportFetch(url, ...args);
+      };
+      const successfulReport = await post({ operation: "api", action: "reports" });
+      assert.equal(successfulReport.status, 200);
+      assert.equal((await successfulReport.json()).matched, 1);
+      assert.equal((await storage.readAvitoValue(scope, `status:${products[0].id}`)).reportId, "43");
+      assert.equal(audit.at(-1).status, "ok");
+      globalThis.fetch = async (url, ...args) => url.includes("/autoload/v4/uploads?") ? Response.json({ error: "provider unavailable" }, { status: 503 }) : beforeReportFetch(url, ...args);
+      assert.equal((await post({ operation: "api", action: "reports" })).status, 502);
+      assert.equal(audit.at(-1).action, "reports_failed", "async report failures must be caught and recorded in history");
+      const currentProfile = await service.getAvitoProfile(scope);
+      const legacyLinkedUrl = service.avitoFeedUrl(currentProfile, "csv");
+      let uploadCalls = 0;
+      let linkedUrl = legacyLinkedUrl;
+      globalThis.fetch = async (url, init, ...args) => {
+        if (url.endsWith("/autoload/v2/profile")) {
+          assert.equal(init.method, "GET", "processing a compatible old link never needs profile write access");
+          return Response.json({ ...providerProfile, feeds_data: [{ feed_name: "Existing", feed_url: linkedUrl }] });
+        }
+        if (url.endsWith("/autoload/v1/upload")) { uploadCalls++; return new Response(null, { status: 204 }); }
+        return beforeReportFetch(url, init, ...args);
+      };
+      assert.equal((await post({ operation: "api", action: "upload" })).status, 200, "the exact existing branch CSV alias can be processed as XML");
+      assert.equal(uploadCalls, 1);
+      linkedUrl = "https://crm.example.ru/api/avito-autoload/feeds/another-branch/feed.csv";
+      assert.equal((await post({ operation: "api", action: "upload" })).status, 422, "an arbitrary CSV URL does not satisfy the branch's connection guard");
+      assert.equal(uploadCalls, 1, "a foreign link cannot launch publication");
+      globalThis.fetch = beforeReportFetch;
       products.push({ ...products[0], id: "api-invalid-selected", brand: "Unsupported manufacturer" });
       const mixedApiExport = await post({ operation: "generate" });
       assert.equal(mixedApiExport.status, 200, "the real export API allows a mixed selection");
