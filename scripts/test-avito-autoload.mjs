@@ -479,7 +479,7 @@ try {
       const reportRequests = [];
       globalThis.fetch = async (url, ...args) => {
         reportRequests.push(url);
-        if (url.includes("/autoload/v4/uploads?")) return Response.json({ uploads: [{ upload_id: 42, status: "error", stats: { count: 0 }, events: [{ type: "error", description: "Не удалось прочитать файл https://crm.example.ru/private-feed-token/feed.csv" }] }] });
+        if (url.includes("/autoload/v4/uploads?")) return Response.json({ uploads: [{ upload_id: 42, status: "error", stats: { count: 57 }, events: [{ type: "error", description: "<p>Не удалось прочитать файл <a href=\"https://crm.example.ru/private-feed-token/feed.csv\">документация</a></p>" }] }] });
         return beforeReportFetch(url, ...args);
       };
       const failedUploadReport = await post({ operation: "api", action: "reports" });
@@ -487,10 +487,12 @@ try {
       const failedReport = await failedUploadReport.json();
       assert.match(failedReport.message, /Не удалось прочитать файл/);
       assert.ok(!failedReport.message.includes("private-feed-token"), "file capability URLs are not exposed in report messages");
+      assert.ok(!failedReport.message.includes("<p>"), "provider HTML is converted to readable text, not rendered");
       assert.equal(failedReport.reportState, "error");
       assert.equal(audit.at(-1).action, "report_received");
       assert.equal(audit.at(-1).status, "error");
-      assert.ok(!reportRequests.some((url) => url.includes("/current")), "zero-item file errors must not fetch statuses of an older current upload");
+      assert.equal(audit.at(-1).metadataJson.processed, null, "a failed XML file may return the previous valid file's statistics");
+      assert.ok(!reportRequests.some((url) => url.includes("/current")), "file errors must not import stale item results even when reported count is nonzero");
       globalThis.fetch = async (url, ...args) => {
         if (url.includes("/autoload/v4/uploads?")) return Response.json({ uploads: [{ upload_id: 43, status: "success", stats: { count: 1 }, events: [] }] });
         if (url.endsWith("/autoload/v4/uploads/current")) return Response.json({ upload_id: 43 });

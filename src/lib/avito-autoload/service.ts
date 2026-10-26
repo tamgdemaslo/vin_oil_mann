@@ -376,13 +376,13 @@ async function syncAvitoReports(scope: AvitoScope, client: AvitoAutoloadClient) 
   const reportId = String(report.upload_id ?? "");
   if (!/^\d+$/.test(reportId)) throw new AvitoAutoloadError("Авито вернул некорректный номер загрузки", 502, "AVITO_INVALID_REPORT");
   const reportState = String(report.status ?? "unknown");
-  const reportMessages = Array.isArray(report.events) ? report.events.flatMap((event) => event && typeof event === "object" && typeof (event as Record<string, unknown>).description === "string" ? [String((event as Record<string, unknown>).description).replace(/https?:\/\/[^\s<>"']+/gi, "[ссылка на файл]").slice(0, 1000)] : []).slice(0, 20) : [];
+  const reportMessages = Array.isArray(report.events) ? report.events.flatMap((event) => event && typeof event === "object" && typeof (event as Record<string, unknown>).description === "string" ? [String((event as Record<string, unknown>).description).replace(/https?:\/\/[^\s<>"']+/gi, "[ссылка на файл]").replace(/<[^>]*>/g, " ").replace(/\s+/gu, " ").trim().slice(0, 1000)] : []).slice(0, 20) : [];
   const stats = report.stats && typeof report.stats === "object" ? report.stats as Record<string, unknown> : {};
-  // Failed downloads/invalid whole files often contain zero items. Their reason
-  // belongs to the upload itself, not the current/previous successful items.
+  // A format error can reuse stats/items from the previous valid XML even under
+  // the new upload ID. Only the upload's events describe the failed new file.
   let items: Record<string, unknown>[] = [];
   let detailsMessage = "";
-  if (typeof stats.count === "number" && stats.count > 0) {
+  if (reportState !== "error" && typeof stats.count === "number" && stats.count > 0) {
     try { items = await client.reportItems(reportId); }
     catch (error) {
       if (!(error instanceof AvitoAutoloadError) || !["AVITO_REPORT_DETAILS_CHANGED", "AVITO_HTTP_404"].includes(error.code)) throw error;
@@ -407,6 +407,6 @@ async function syncAvitoReports(scope: AvitoScope, client: AvitoAutoloadClient) 
   }
   const stateLabel = reportState === "error" ? "загрузка не удалась" : reportState === "processing" ? "загрузка обрабатывается" : reportState === "success_warning" ? "загрузка завершена с замечаниями" : reportState === "success" ? "загрузка завершена" : `статус ${reportState}`;
   const message = `Отчёт №${reportId}: ${stateLabel}. Сопоставлено ${matched} объявлений.${reportMessages.length ? ` ${reportMessages.join(" ")}` : ""}${detailsMessage}`;
-  await avitoAudit(scope, "report_received", reportState === "error" ? "error" : reportState === "processing" ? "pending" : "ok", message, { reportId, reportState, matched, messages: reportMessages, processed: stats.count ?? null, startedAt: report.started_at ?? null });
+  await avitoAudit(scope, "report_received", reportState === "error" ? "error" : reportState === "processing" ? "pending" : "ok", message, { reportId, reportState, matched, messages: reportMessages, processed: reportState === "error" ? null : stats.count ?? null, startedAt: report.started_at ?? null });
   return { message, matched, reportId, reportState };
 }
