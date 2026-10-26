@@ -3290,6 +3290,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     const prefilledYear = prefill?.year != null ? String(prefill.year) : vehicle.year != null ? String(vehicle.year) : "";
     setMannYear(isValidMannYear(prefilledYear) ? prefilledYear : "");
     setMannPickerExpanded(false);
+    if(resolution?.status==="resolved")setVehicleLookupOpen(false);
     setMannManualCue("idle");
     setPositionAddMode("mann");
     setProductAddNotice(
@@ -3318,6 +3319,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     if (isValidMannYear(year)) setMannYear(year);
     setPositionAddMode("mann");
     setMannPickerExpanded(false);
+    setVehicleLookupOpen(false);
     setMannManualCue("idle");
     setProductAddNotice("MANN-модификация подтверждена, подбираем фильтры");
     void fetch("/api/mann-catalog/save-vehicle-mapping", {
@@ -6149,7 +6151,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       </section>
 
       </details>
-      <ShipmentComposition positions={positions.map(p=>({...p,stock:getPositionStock(p)}))} vehicleTitle={vehicleTitle||documentVin||"Автомобиль не указан"} total={positionsTotal} quoteOpen={compositionQuoteOpen} onQuoteClose={()=>setCompositionQuoteOpen(false)} onChange={(index,update)=>{setPositions(current=>current.map((p,i)=>i===index?{...p,...update,quantity:Math.max(.001,update.quantity??p.quantity),price:Math.max(0,update.price??p.price),discount:Math.min(100,Math.max(0,update.discount??p.discount??0)),discountMode:"percent"}:p));markDraftDirty();}} onRemove={removePosition} onEditNonstock={index=>{setManualAddOpen(true);openNonstockProductForm(index);}} onChooseFilter={setMaintenanceFilterOpen} onAdd={()=>{setManualAddOpen(true);focusProductSearch();}}/>
+      <ShipmentComposition positions={positions.map(p=>({...p,stock:getPositionStock(p)??undefined}))} vehicleTitle={vehicleTitle||documentVin||"Автомобиль не указан"} total={positionsTotal} quoteOpen={compositionQuoteOpen} onQuoteClose={()=>setCompositionQuoteOpen(false)} onChange={(index,update)=>{setPositions(current=>current.map((p,i)=>i===index?{...p,...update,quantity:Math.max(.001,update.quantity??p.quantity),price:Math.max(0,update.price??p.price),discount:Math.min(100,Math.max(0,update.discount??p.discount??0)),discountMode:"percent"}:p));markDraftDirty();}} onRemove={removePosition} onEditNonstock={index=>{setManualAddOpen(true);openNonstockProductForm(index);}} onChooseFilter={setMaintenanceFilterOpen} onAdd={()=>{setManualAddOpen(true);focusProductSearch();}}/>
 
 		      </section>
 
