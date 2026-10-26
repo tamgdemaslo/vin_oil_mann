@@ -33,6 +33,6 @@ export default function CaseTimeline({ caseId, version, employeeName }: { caseId
     {error ? <p role="alert">{error} <button type="button" className="eco-btn" onClick={() => setRetry(value => value + 1)}>Повторить</button></p> : events === null ? <p role="status">Загружаем историю…</p> : entries.length ? <><ol id={listId}>{visibleEntries.map(event => <li key={event.id}>
       <div className={styles.timelineMeta}><strong>{event.actorLogin ? employeeName(event.actorLogin) : "Автор не указан"}</strong><time dateTime={event.createdAt}>{formatServiceDateTime(event.createdAt)}</time></div>
       {event.lines.map((line, index) => <p key={index}>{line}</p>)}
-    </li>)}</ol>{entries.length > 3 && <button type="button" className={`eco-btn ${styles.timelineToggle}`} aria-expanded={showAll} aria-controls={listId} onClick={() => setShowAll(value => !value)}>{showAll ? "Свернуть историю" : "Вся история"}</button>}</> : <p>Изменений статуса или срока пока не зафиксировано.</p>}
+    </li>)}</ol>{entries.length > 3 && <button type="button" className={styles.timelineToggle} aria-expanded={showAll} aria-controls={listId} onClick={() => setShowAll(value => !value)}>{showAll ? "Свернуть историю" : "Вся история"}</button>}</> : <p>Изменений статуса или срока пока не зафиксировано.</p>}
   </section>;
 }
