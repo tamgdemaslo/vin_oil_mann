@@ -31,7 +31,10 @@ import { EcoBadge, EcoButton, type EcoBadgeTone } from "@/components/platform/Ec
 import QuantityInput from "@/components/QuantityInput";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
-import { MaintenanceQuotePanel, type MaintenanceQuoteVehicleContext } from "@/components/shipment/MaintenanceQuotePanel";
+import { type MaintenanceQuoteVehicleContext } from "@/components/shipment/MaintenanceQuotePanel";
+import { ShipmentMaintenancePicker, type MaintenanceApplyLine } from "@/components/shipment/ShipmentMaintenancePicker";
+import { ShipmentComposition } from "@/components/shipment/ShipmentComposition";
+import { readShipmentMaintenance, shipmentCompositionCents, type ShipmentMaintenanceSelection } from "@/lib/shipment-maintenance";
 import { VehicleLookupPanel } from "@/components/shipment/VehicleLookupPanel";
 import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 import { clientSessionUnavailableMessage, readClientSessionResponse } from "@/lib/client-session-response";
@@ -117,6 +120,7 @@ type Product = {
 };
 
 type Position = {
+  maintenance?: ShipmentMaintenanceSelection;
   id?: string;
   name: string;
   quantity: number;
@@ -532,6 +536,7 @@ function demandPositionPayload(position: Position, options: { priceIsCents: bool
       : undefined,
     oneOffService: position.oneOffService,
     copyMeta: position.copyMeta,
+    maintenance: position.maintenance,
   };
 }
 
@@ -1338,6 +1343,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [vehicleProfileError, setVehicleProfileError] = useState("");
   const [identifiedVehicle, setIdentifiedVehicle] = useState<NormalizedVehicleIdentity | null>(null);
   const [quoteVehicleContext, setQuoteVehicleContext] = useState<MaintenanceQuoteVehicleContext | null>(null);
+  const [maintenanceFilterOpen,setMaintenanceFilterOpen]=useState<string|null>(null);
+  const [compositionQuoteOpen,setCompositionQuoteOpen]=useState(false);
+  const [vehicleLookupOpen,setVehicleLookupOpen]=useState(true);
+  const [manualAddOpen,setManualAddOpen]=useState(false);
+  const maintenanceRestoredRef=useRef(false);
   const [positionAddMode, setPositionAddMode] = useState<PositionAddMode>("mann");
 
   const [showCreateAgentForm, setShowCreateAgentForm] = useState(false);
@@ -2425,6 +2435,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     };
   }, [authChecked, mannMakes.length, positionAddMode]);
 
+  useEffect(()=>{if(maintenanceRestoredRef.current||!positions.length)return;const saved=positions.map(p=>readShipmentMaintenance(p.maintenance)).find(m=>m?.vehicle)?.vehicle;if(!saved)return;maintenanceRestoredRef.current=true;mannAutoSelectionRef.current={make:saved.make,model:saved.model,variantId:saved.variantId};setSelectedMannMake(saved.make);setMannMakeQuery(saved.make);setSelectedMannModel(saved.model);setMannModelQuery(saved.model);setMannYear(saved.year||"");setVehicleLookupOpen(false);},[positions]);
   useEffect(() => {
     if (!selectedMannMake) {
       mannModelsRequestIdRef.current += 1;
@@ -3279,6 +3290,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     const prefilledYear = prefill?.year != null ? String(prefill.year) : vehicle.year != null ? String(vehicle.year) : "";
     setMannYear(isValidMannYear(prefilledYear) ? prefilledYear : "");
     setMannPickerExpanded(false);
+    if(resolution?.status==="resolved")setVehicleLookupOpen(false);
     setMannManualCue("idle");
     setPositionAddMode("mann");
     setProductAddNotice(
@@ -3307,6 +3319,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     if (isValidMannYear(year)) setMannYear(year);
     setPositionAddMode("mann");
     setMannPickerExpanded(false);
+    setVehicleLookupOpen(false);
     setMannManualCue("idle");
     setProductAddNotice("MANN-модификация подтверждена, подбираем фильтры");
     void fetch("/api/mann-catalog/save-vehicle-mapping", {
@@ -3816,17 +3829,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     (position: Position) => {
       if (isServiceMeta(position.assortmentMeta)) return position.stock ?? { cost: 0 };
       const href = position.assortmentMeta?.href ?? "";
-      return position.stock ?? stockByAssortment[href] ?? null;
+      return stockByAssortment[href] ? {...position.stock,...stockByAssortment[href]} : position.stock ?? null;
     },
     [stockByAssortment]
   );
   const positionsQty = positions.reduce((sum, p) => sum + (p.quantity || 0), 0);
-  const positionsSubtotal = positions.reduce((sum, p) => sum + (p.quantity || 0) * (p.price || 0), 0);
-  const positionsTotal = positions.reduce((sum, p) => {
-    const base = (p.quantity || 0) * (p.price || 0);
-    const disc = typeof p.discount === "number" ? p.discount : 0;
-    return sum + base * (1 - disc / 100);
-  }, 0);
+  const positionsSubtotal = shipmentCompositionCents(positions.map(p=>({...p,discount:0})))/100;
+  const positionsTotal = shipmentCompositionCents(positions)/100;
   const indexedPositions = positions.map((position, index) => ({ position, index }));
   const collapsedPositionLimit = 4;
   const latestIndexedPositions = indexedPositions.slice(-collapsedPositionLimit);
@@ -4572,12 +4581,27 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     : [selectedMannMake, selectedMannModel].filter(Boolean).join(" ");
   const mannManualReady = Boolean(selectedMannMake && selectedMannModel && selectedMannVariantId);
   const handleMannManualSubmit = () => {
-    if (!mannManualReady) return;
-    setMannPickerExpanded(false);
-    setMannManualCue("idle");
-    window.setTimeout(() => {
-      document.querySelector(".eco-shipment-mann-kit, .eco-shipment-mann-filter-list")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }, 80);
+    if (!mannManualReady||!selectedMannVariant) return;
+    setAttributes(current=>{let next=current;for(const [name,value] of [["Марка",selectedMannMake],["Модель",selectedMannModel],["Модель авто",`${selectedMannMake} ${selectedMannModel}`],["Год",mannYear],["Двигатель",selectedMannVariant.effectiveVehicleText||selectedMannVariant.vehicleText||""],["Код двигателя",selectedMannVariant.engineCode||""]]) if(value) next=setVisitAttribute(next,{name,value,source:"mann"});return next;});
+    void persistVehicleProfile({mode:"confirmed",values:{make:selectedMannMake,model:selectedMannModel,year:mannYear?Number(mannYear):null,engineName:selectedMannVariant.effectiveVehicleText||selectedMannVariant.vehicleText||null,engineCode:selectedMannVariant.engineCode||null},mannVariantIds:[selectedMannVariantId]});
+    setMannPickerExpanded(false);setVehicleLookupOpen(false);setMannManualCue("idle");markDraftDirty();
+    window.setTimeout(()=>document.getElementById("shipment-maintenance-quote")?.scrollIntoView({behavior:"smooth",block:"start"}),80);
+  };
+  const applyMaintenanceLines = (lines:MaintenanceApplyLine[]) => {
+    const next:Position[]=lines.map(line=>{
+      const offer=line.offer;
+      if(offer?.source==="rossko"){
+        const groups:Record<string,string>={"Масляный фильтр":"OIL_FILTER","Воздушный фильтр":"AIR_FILTER","Салонный фильтр":"CABIN_FILTER","Топливный фильтр":"FUEL_FILTER"};
+        const input:NonstockProductInput={groupCode:groups[line.filter?.label??""]||"SPARE_PART",brand:offer.brand||"MANN",article:offer.article||line.filter!.article,uomCode:"PCS",purchasePrice:null,purchaseSourceLabel:"Роско",clarification:null};
+        const normalized=normalizeNonstockProductInput(input);
+        return {name:normalized.name,quantity:line.quantity,price:offer.price,discount:0,discountMode:"percent",discountAmount:0,lineKind:"nonstock_product",oneOffProduct:input,assortmentMeta:{href:`local://one-off-product/${crypto.randomUUID()}`,type:NONSTOCK_PRODUCT_ASSORTMENT_TYPE,mediaType:"application/json"},maintenance:line.maintenance};
+      }
+      const product=line.product;const id=product?.id??offer?.id;if(!id)throw Error("Не найден товар для добавления");
+      return {name:product?.name??offer!.name,quantity:line.quantity,price:product?.price??offer!.price,discount:0,discountMode:"percent",discountAmount:0,assortmentMeta:{href:`local://${product?.entityType||"product"}/${id}`,type:product?.entityType||"product",mediaType:"application/json"},stock:{available:product?.available??offer!.available},product:{id,name:product?.name??offer!.name,uomName:product?.unit||"шт.",packageVolume:product?.litresPerUnit?String(product.litresPerUnit):undefined},maintenance:line.maintenance};
+    });
+    const keys=new Set(lines.map(l=>l.maintenance.key));
+    setPositions(current=>[...current.filter(p=>!p.maintenance||(!keys.has(p.maintenance.key)&&!lines.some(line=>line.filter&&line.maintenance.label===p.maintenance?.label))),...next]);
+    markDraftDirty();setProductAddNotice("Позиция выбрана. Общий состав и итог обновлены.");
   };
   const activeQuoteVehicleContext = quoteVehicleContext?.vin && quoteVehicleContext.vin.replace(/\s/g, "").toUpperCase() !== documentVin.replace(/\s/g, "").toUpperCase() ? null : quoteVehicleContext;
 
@@ -4658,14 +4682,12 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     ? isExistingDraft
       ? "Сохранение..."
       : "Создание..."
-    : isExistingDraft
-      ? "Сохранить изменения"
-      : "Сохранить отгрузку";
+    : applicable ? "Провести отгрузку" : "Сохранить черновик";
   const compactSaveButtonLabel = submitLoading ? (isExistingDraft ? "Сохранение..." : "Создание...") : "Сохранить";
 
   if (existingDemandLoading) {
     return (
-      <main className="eco-page eco-page--wide eco-shipment-new-page">
+      <main className="eco-page eco-page--wide eco-shipment-new-page eco-shipment-unified">
         <section className="eco-card eco-card--padded">
           <p className="eco-shipment-new-empty">Загрузка редактируемого черновика…</p>
         </section>
@@ -4674,7 +4696,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   }
 
   return (
-    <main className="eco-page eco-page--wide eco-shipment-new-page">
+    <main className="eco-page eco-page--wide eco-shipment-new-page eco-shipment-unified">
       {showVehicleOverrideDialog && (
         <div className="eco-shipment-new-modal fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="eco-card eco-card--padded w-full max-w-md text-sm">
@@ -5006,11 +5028,12 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         <header className="eco-shipment-workflow-section-head">
           <div>
             <span>Шаг 1</span>
-            <h2 id="shipment-parties-title">Клиент и автомобиль</h2>
+            <h2 id="shipment-parties-title">Автомобиль</h2>
           </div>
-          <p>Без данных клиента можно сразу перейти к товарам. Для сервисной истории укажите клиента.</p>
+          <p>VIN, госномер или ручной ввод — одна карточка автомобиля.</p>
         </header>
         <div className="eco-shipment-entity-grid">
+        <details className="eco-shipment-client-disclosure" open={!selectedAgent||replacingAgent}><summary>Клиент · {selectedAgent?.name||"Выбрать клиента"}</summary>
         <article id="shipment-client-card" className="eco-card eco-shipment-entity-card eco-shipment-client-card">
           <EntityCardHeader
             title={replacingAgent ? "Указать клиента" : selectedAgent ? "Клиент" : "Выберите клиента"}
@@ -5210,6 +5233,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           </div>
         </article>
 
+        </details>
         <article id="shipment-vehicle-card" className={`eco-card eco-shipment-entity-card eco-shipment-vehicle-card ${vehicleEditorOpen ? "is-editing" : ""}`}>
           <EntityCardHeader
             title={vehicleEditorOpen ? "Редактирование" : "Автомобиль"}
@@ -5219,7 +5243,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               <button
                 type="button"
                 className="eco-shipment-entity-edit-button"
-                onClick={openVehicleEditor}
+                onClick={()=>setVehicleLookupOpen(true)}
                 title={vehicleActionLabel}
                 aria-label={vehicleActionLabel}
               >
@@ -5260,7 +5284,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 </div>
               </fieldset>
               <details className="eco-shipment-vehicle-more-fields">
-                <summary>Технические данные</summary>
+                <summary>Технические данные</summary><button type="button" className="eco-btn" onClick={openVehicleEditor}>Редактировать данные вручную</button>
                 <div className="eco-shipment-vehicle-technical-body">
                   {vehicleTechnicalSummaryItems.length > 0 ? (
                     <KeyValueGrid items={vehicleTechnicalSummaryItems} />
@@ -5335,6 +5359,96 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   <p>{vehicleHelpText}</p>
                 )}
               </div>
+              <details className="eco-shipment-vehicle-picker" open={vehicleLookupOpen} onToggle={event=>setVehicleLookupOpen(event.currentTarget.open)}><summary>{vehicleTitle?"Изменить / уточнить автомобиль":"Определить автомобиль"}</summary><div className="eco-shipment-unified-vehicle-picker">            <VehicleLookupPanel
+              organizationId={selectedOrg?.id}
+              warehouseId={selectedStore?.id}
+              initialVin={vin}
+              onQuoteContextChange={setQuoteVehicleContext}
+              onUseVehicle={applyIdentifiedVehicle}
+              onConfirmMannCandidate={confirmMannCandidate}
+              onConfirmTransmission={confirmVehicleTransmission}
+              onLookupStart={resetMannVehicleSelection}
+              onManualMode={openMannManualPicker}
+            />
+
+            {mannPickerExpanded ? (
+              <section className={`eco-shipment-mann-manual ${mannManualCue !== "idle" ? "is-guided" : ""}`} id="shipment-mann-manual">
+                <div className="eco-shipment-mann-manual-head">
+                  <div>
+                    <strong>Выберите автомобиль вручную</strong>
+                    <span>Марка, модель и модификация обязательны. Год можно не указывать.</span>
+                  </div>
+                </div>
+                <div className="eco-shipment-mann-controls" id="shipment-mann-manual-controls">
+                  <MannCombobox
+                    inputId="shipment-mann-make-combobox"
+                    label="Марка"
+                    placeholder="Выберите марку"
+                    value={selectedMannMake}
+                    query={mannMakeQuery}
+                    options={mannMakeOptions}
+                    loading={mannLoading === "makes"}
+                    onSelect={(value) => {
+                      setMannManualCue("idle");
+                      setSelectedMannMake(value);
+                      setMannMakeQuery(mannMakeOptions.find((option) => option.value === value)?.label ?? value);
+                    }}
+                    onQueryChange={setMannMakeQuery}
+                    onClear={() => {
+                      mannAutoSelectionRef.current = null;
+                      setSelectedMannMake("");
+                      setMannModelQuery("");
+                      setMannVariantQuery("");
+                    }}
+                  />
+                  <MannCombobox
+                    inputId="shipment-mann-model-combobox"
+                    label="Модель"
+                    placeholder={selectedMannMake ? "Выберите модель" : "Выберите сначала марку"}
+                    value={selectedMannModel}
+                    query={mannModelQuery}
+                    options={mannModelOptions}
+                    loading={mannLoading === "models"}
+                    disabled={!selectedMannMake}
+                    onSelect={(value) => {
+                      mannAutoSelectionRef.current = null;
+                      setSelectedMannModel(value);
+                      setMannModelQuery(mannModelOptions.find((option) => option.value === value)?.label ?? value);
+                    }}
+                    onQueryChange={setMannModelQuery}
+                    onClear={() => {
+                      mannAutoSelectionRef.current = null;
+                      setSelectedMannModel("");
+                      setMannVariantQuery("");
+                    }}
+                  />
+                  <label className="eco-field eco-shipment-mann-year">
+                    <span>Год</span>
+                    <input
+                      className="eco-input"
+                      type="text"
+                      inputMode="numeric"
+                      value={mannYear}
+                      maxLength={4}
+                      aria-invalid={mannYear.length > 0 && !isValidMannYear(mannYear)}
+                      onChange={(event) => setMannYear(normalizeMannYearInput(event.target.value))}
+                      placeholder={attrYear || "необязательно"}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="eco-field"><span>Модификация / двигатель</span><select id="shipment-mann-variant-combobox" className="eco-input" value={selectedMannVariantId} disabled={!selectedMannModel || mannLoading === "variants"} onChange={event=>{const value=event.target.value;setSelectedMannVariantId(value);setMannVariantQuery(mannVariantOptions.find(option=>option.value===value)?.label??"");}}><option value="">{mannLoading === "variants"?"Загружаем модификации…":"Выберите двигатель"}</option>{mannVariantOptions.map(option=><option key={option.value} value={option.value}>{option.label}{option.meta?` · ${option.meta}`:""}</option>)}</select></label>
+                  <div className="eco-shipment-mann-submit">
+                    <button type="button" className="eco-btn eco-btn--primary" disabled={!mannManualReady} onClick={handleMannManualSubmit}>
+                      Использовать автомобиль
+                    </button>
+                    <span>{mannManualReady ? "Готово к подбору." : "Заполните обязательные поля."}</span>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+{mannError?<p role="alert" className="eco-vin-alert">{mannError}</p>:null}{mannLoading&&!["filters","matches"].includes(mannLoading)?<p role="status">{mannLoading==="makes"?"Загружаем марки…":mannLoading==="models"?"Загружаем модели…":"Загружаем модификации…"}</p>:null}</div></details>
+              <details className="eco-shipment-completion-fields"><summary>После выполнения работ: заливка и пробег</summary>
               <div className="eco-shipment-visit-summary eco-shipment-visit-summary--editable">
                 <div className="eco-shipment-visit-summary-head">
                   <span>Что залили</span>
@@ -5423,6 +5537,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   </button>
                 </div>
               </div>
+              </details>
               <details className="eco-shipment-vehicle-summary-more">
                 <summary>Технические данные</summary>
                 {vehicleTechnicalSummaryItems.length > 0 ? (
@@ -5445,26 +5560,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             <span>Шаг 2</span>
             <h2 id="shipment-positions-title">Состав отгрузки</h2>
           </div>
-          <p>Найдите позиции, затем проверьте количество, скидку и доступный остаток.</p>
+          <p>Подберите ТО, затем проверьте единый состав и общий итог.</p>
         </header>
-      <MaintenanceQuotePanel
-          key={`${demandId ?? "new"}:${activeQuoteVehicleContext?.key ?? documentVin ?? "manual"}`}
-          vehicleTitle={activeQuoteVehicleContext?.vehicleTitle || vehicleTitle || documentVin || "Автомобиль не указан"}
-          warehouseId={selectedStore?.id}
-          profile={activeQuoteVehicleContext?.profile ?? null}
-          research={activeQuoteVehicleContext?.research ?? null}
-          filtersLoading={!!mannLoading}
-          onChooseWarehouse={() => setDocumentParamsOpen(true)}
-          filters={mannSortedFilters.filter(filter => ["oil", "air", "cabin"].includes(filter.filterType)).map(filter => ({
-                key: `${filter.filterType}:${filter.mannArticleNormalized}`,
-                label: getMannFilterTypeLabel(filter.filterType),
-                article: filter.mannArticle,
-                condition: filter.condition,
-                products: (mannMatches[filter.mannArticleNormalized]?.compatibleProducts ?? mannMatches[filter.mannArticleNormalized]?.localMatches ?? []).map(product => ({
-                  id: product.id, name: product.name, article: product.article, price: product.price, available: product.available, orderable: product.orderable,
-                })),
-              }))}
-      />
+      <ShipmentMaintenancePicker warehouseId={selectedStore?.id} vehicleContext={activeQuoteVehicleContext} vehicle={selectedMannVariantId?{make:selectedMannMake,model:selectedMannModel,variantId:selectedMannVariantId,year:mannYear}:undefined} loading={mannLoading === "filters"?"Подбираем фильтры MANN…":mannLoading === "matches"?"Проверяем наш склад…":null} error={mannError} selections={positions.flatMap(p=>p.maintenance?[p.maintenance]:[])} activeFilter={maintenanceFilterOpen} onCloseFilter={()=>setMaintenanceFilterOpen(null)} onApply={applyMaintenanceLines} onChooseVehicle={()=>{setVehicleLookupOpen(true);setPositionAddMode("mann");document.getElementById("shipment-vehicle-card")?.scrollIntoView({behavior:"smooth",block:"start"});}} onChooseWarehouse={()=>setDocumentParamsOpen(true)} filters={mannSortedFilters.filter(filter=>["oil","air","cabin","fuel"].includes(filter.filterType)).map(filter=>({key:`${filter.filterType}:${filter.mannArticleNormalized}`,label:getMannFilterTypeLabel(filter.filterType),article:filter.mannArticle,condition:filter.condition,products:(mannMatches[filter.mannArticleNormalized]?.compatibleProducts??mannMatches[filter.mannArticleNormalized]?.localMatches??[]).map(product=>({id:product.id,name:product.name,article:product.article,price:product.price,available:product.available,orderable:product.orderable}))}))}/>
+      <details className="eco-shipment-manual-add" open={manualAddOpen} onToggle={event=>setManualAddOpen(event.currentTarget.open)}><summary>Добавить товар, услугу или комплект вручную</summary>
       <section id="shipment-positions-add" className="eco-shipment-new-add" aria-label="Поиск и подбор позиций">
         <h3 className="sr-only">Поиск и подбор позиций</h3>
         {(positionAddMode === "catalog" || positionAddMode === "mann") && (
@@ -5510,22 +5609,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	              className="eco-input"
 	            />
             </label>
-            <button
-              type="button"
-              className={`eco-shipment-link-btn ${positionAddMode === "mann" ? "is-active" : ""}`}
-              onClick={() => {
-                const opening = positionAddMode !== "mann";
-                setPositionAddMode(opening ? "mann" : "catalog");
-                if (opening) {
-                  setMannPickerExpanded(false);
-                  setMannManualCue("idle");
-                }
-              }}
-              aria-expanded={positionAddMode === "mann"}
-            >
-                <Sparkles className="eco-icon" aria-hidden />
-                {positionAddMode === "mann" ? "Скрыть автоподбор" : "Подбор по автомобилю"}
-            </button>
             <button type="button" className={`eco-shipment-link-btn ${kitPickerOpen ? "is-active" : ""}`} onClick={() => setKitPickerOpen((open) => !open)} aria-expanded={kitPickerOpen} aria-controls="shipment-kit-picker">
               <Plus className="eco-icon" aria-hidden /> Добавить комплект
             </button>
@@ -6065,827 +6148,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         )}
           </>
         )}
-        {positionAddMode === "mann" && (
-          <div className="eco-shipment-position-mann-panel">
-            <div className="eco-shipment-mann-panel-body">
-
-            <VehicleLookupPanel
-              organizationId={selectedOrg?.id}
-              warehouseId={selectedStore?.id}
-              initialVin={vin}
-              onQuoteContextChange={setQuoteVehicleContext}
-              onUseVehicle={applyIdentifiedVehicle}
-              onConfirmMannCandidate={confirmMannCandidate}
-              onConfirmTransmission={confirmVehicleTransmission}
-              onLookupStart={resetMannVehicleSelection}
-              onManualMode={openMannManualPicker}
-            />
-
-            {mannPickerExpanded ? (
-              <section className={`eco-shipment-mann-manual ${mannManualCue !== "idle" ? "is-guided" : ""}`} id="shipment-mann-manual">
-                <div className="eco-shipment-mann-manual-head">
-                  <div>
-                    <strong>Выберите автомобиль вручную</strong>
-                    <span>Марка, модель и модификация обязательны. Год можно не указывать.</span>
-                  </div>
-                </div>
-                <div className="eco-shipment-mann-controls" id="shipment-mann-manual-controls">
-                  <MannCombobox
-                    inputId="shipment-mann-make-combobox"
-                    label="Марка"
-                    placeholder="Выберите марку"
-                    value={selectedMannMake}
-                    query={mannMakeQuery}
-                    options={mannMakeOptions}
-                    loading={mannLoading === "makes"}
-                    onSelect={(value) => {
-                      setMannManualCue("idle");
-                      setSelectedMannMake(value);
-                      setMannMakeQuery(mannMakeOptions.find((option) => option.value === value)?.label ?? value);
-                    }}
-                    onQueryChange={setMannMakeQuery}
-                    onClear={() => {
-                      mannAutoSelectionRef.current = null;
-                      setSelectedMannMake("");
-                      setMannModelQuery("");
-                      setMannVariantQuery("");
-                    }}
-                  />
-                  <MannCombobox
-                    inputId="shipment-mann-model-combobox"
-                    label="Модель"
-                    placeholder={selectedMannMake ? "Выберите модель" : "Выберите сначала марку"}
-                    value={selectedMannModel}
-                    query={mannModelQuery}
-                    options={mannModelOptions}
-                    loading={mannLoading === "models"}
-                    disabled={!selectedMannMake}
-                    onSelect={(value) => {
-                      mannAutoSelectionRef.current = null;
-                      setSelectedMannModel(value);
-                      setMannModelQuery(mannModelOptions.find((option) => option.value === value)?.label ?? value);
-                    }}
-                    onQueryChange={setMannModelQuery}
-                    onClear={() => {
-                      mannAutoSelectionRef.current = null;
-                      setSelectedMannModel("");
-                      setMannVariantQuery("");
-                    }}
-                  />
-                  <label className="eco-field eco-shipment-mann-year">
-                    <span>Год</span>
-                    <input
-                      className="eco-input"
-                      type="text"
-                      inputMode="numeric"
-                      value={mannYear}
-                      maxLength={4}
-                      aria-invalid={mannYear.length > 0 && !isValidMannYear(mannYear)}
-                      onChange={(event) => setMannYear(normalizeMannYearInput(event.target.value))}
-                      placeholder={attrYear || "необязательно"}
-                      autoComplete="off"
-                    />
-                  </label>
-                  <MannCombobox
-                    inputId="shipment-mann-variant-combobox"
-                    label="Модификация / двигатель"
-                    placeholder={selectedMannModel ? "Объём, код, мощность..." : "Выберите сначала модель"}
-                    value={selectedMannVariantId}
-                    query={mannVariantQuery}
-                    options={mannVariantOptions}
-                    loading={mannLoading === "variants"}
-                    disabled={!selectedMannModel}
-                    onSelect={(value) => {
-                      setSelectedMannVariantId(value);
-                      setMannVariantQuery(mannVariantOptions.find((option) => option.value === value)?.label ?? value);
-                    }}
-                    onQueryChange={setMannVariantQuery}
-                    onClear={() => setSelectedMannVariantId("")}
-                  />
-                  <div className="eco-shipment-mann-submit">
-                    <button type="button" className="eco-btn eco-btn--primary" disabled={!mannManualReady} onClick={handleMannManualSubmit}>
-                      Подобрать фильтры
-                    </button>
-                    <span>{mannManualReady ? "Готово к подбору." : "Заполните обязательные поля."}</span>
-                  </div>
-                </div>
-              </section>
-            ) : null}
-
-            {mannError && <p className="eco-vin-alert">{mannError}</p>}
-            {mannLoading && mannLoading !== "makes" && (
-              <div className="eco-product-results-state">
-                <div className="eco-product-loading-copy">
-                  <span className="eco-product-loading-spinner" aria-hidden />
-                  <div>
-                    <strong>Загружаем MANN-подбор...</strong>
-                    <span>Проверяем совместимость и наличие товаров.</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {selectedMannVariant && mannPickerExpanded && (
-              <div className="eco-shipment-mann-variant-summary">
-                <strong>{describeMannVariant(selectedMannVariant)}</strong>
-                {selectedMannVariant.condition ? <span>Условие из каталога MANN: {selectedMannVariant.condition}</span> : null}
-              </div>
-            )}
-
-            {mannSortedFilters.length > 0 ? (
-              <div className="eco-shipment-mann-filter-list">
-                <div className="eco-shipment-mann-results-head">
-                  <div>
-                    <strong>Фильтры для автомобиля</strong>
-                    <span>{mannVehicleModificationLabel || "Товары из локального каталога и склада"}</span>
-                  </div>
-                  <span>{formatMannCategoryCount(mannSortedFilters.length)}</span>
-                </div>
-                {mannSortedFilters.map((filter) => {
-                  const match = mannMatches[filter.mannArticleNormalized];
-                  const status = match?.status ?? "not_found";
-                  const compatibleProducts = match?.compatibleProducts ?? match?.localMatches ?? [];
-                  const availableProducts = compatibleProducts.filter((product) => product.available > 0);
-                  const orderableProducts = compatibleProducts.filter((product) => product.available <= 0 && product.orderable);
-                  const unavailableProducts = compatibleProducts.filter((product) => product.available <= 0 && !product.orderable);
-                  const categoryLabel = getMannFilterTypeLabel(filter.filterType);
-                  const filterMeta = [
-                    filter.engineCode,
-                    filter.vehicleYears,
-                    filter.kw ? `${filter.kw} kW` : "",
-                    filter.hp ? `${filter.hp} hp` : "",
-                  ].filter(Boolean).join(" · ");
-                  const filterApplicability = mannVehicleModificationLabel || (filter.vehicleText === "All models"
-                    ? "Для всех двигателей этой модели"
-                    : filterMeta);
-                  const categoryAvailability = [
-                    availableProducts.length > 0 ? `${formatMannVariantCount(availableProducts.length)} в наличии` : "",
-                    orderableProducts.length > 0 ? `${formatMannVariantCount(orderableProducts.length)} под заказ` : "",
-                    unavailableProducts.length > 0 && availableProducts.length === 0 && orderableProducts.length === 0 ? "Нет вариантов в наличии" : "",
-                  ].filter(Boolean).join(" · ") || "Товар в базе не найден";
-                  const renderProductGroup = (label: string, products: MannLocalMatch[]) => products.length > 0 ? (
-                    <section className="eco-shipment-mann-product-group" aria-label={`${label}: MANN ${filter.mannArticle}`}>
-                      <h4>{label} <span>{products.length}</span></h4>
-                      <div className="eco-shipment-mann-choice-list">
-                        {products.map((local) => {
-                          const localMeta = [local.article ? `арт. ${local.article}` : "", local.code ? `код ${local.code}` : "", local.brand].filter(Boolean).join(" · ");
-                          const addedPositionIndex = positions.findIndex((position) => position.assortmentMeta?.href === `local://product/${local.id}`);
-                          const addedPosition = addedPositionIndex >= 0 ? positions[addedPositionIndex] : null;
-                          const isRecommended = match?.bestMatch?.id === local.id;
-                          const isAvailable = local.available > 0;
-                          const availabilityLabel = isAvailable
-                            ? `${formatQuantityInput(local.available)} шт.`
-                            : local.orderable ? "Под заказ" : "Недоступно";
-                          const stockLabel = isAvailable && local.reserve
-                            ? `Остаток ${formatQuantityInput(local.stock)} · резерв ${formatQuantityInput(local.reserve)}`
-                            : "";
-                          return (
-                            <div key={local.id} className={`eco-shipment-mann-choice-option ${isRecommended ? "is-recommended" : ""}`}>
-                              <div className="eco-shipment-mann-sku-copy">
-                                <div className="eco-shipment-mann-sku-title">
-                                  <strong title={local.name}>{local.name}</strong>
-                                  {isRecommended && isAvailable ? <span>В наличии</span> : null}
-                                </div>
-                                {localMeta ? <small>{localMeta}</small> : null}
-                              </div>
-                              <div className={`eco-shipment-mann-sku-availability ${isAvailable ? "is-available" : local.orderable ? "is-order" : "is-unavailable"}`}>
-                                <strong>{availabilityLabel}</strong>
-                                {stockLabel ? <span>{stockLabel}</span> : null}
-                              </div>
-                              <span className="eco-shipment-mann-sku-cell" aria-label={`Ячейка: ${local.cell || "не указана"}`}><span className="eco-shipment-mann-mobile-label">Ячейка </span>{local.cell || "—"}</span>
-                              <strong className="eco-shipment-mann-sku-price">{formatShipmentMoney(local.price)}</strong>
-                              {addedPosition ? (
-                                <div className="eco-shipment-mann-added" role="status" aria-label={`${local.name} добавлен в отгрузку`}>
-                                  <span>✓ Добавлено</span>
-                                  <div aria-label="Количество в отгрузке">
-                                    <button
-                                      type="button"
-                                      onClick={() => changePositionQuantity(addedPositionIndex, -1)}
-                                      disabled={(addedPosition.quantity || 1) <= 1}
-                                      aria-label="Уменьшить количество"
-                                    >−</button>
-                                    <b>{formatQuantityInput(addedPosition.quantity || 1)}</b>
-                                    <button
-                                      type="button"
-                                      onClick={() => changePositionQuantity(addedPositionIndex, 1)}
-                                      aria-label="Увеличить количество"
-                                    >+</button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className={`eco-shipment-mann-add ${isAvailable ? "is-primary" : local.orderable ? "is-order" : "is-unavailable"}`}
-                                  onClick={() => addMannMatchesToPositions([{ filter, match: local }])}
-                                  disabled={!isAvailable && !local.orderable}
-                                >
-                                  {isAvailable ? "Добавить" : local.orderable ? "Добавить под заказ" : "Недоступно"}
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  ) : null;
-                  return (
-                    <div
-                      key={`${filter.filterType}-${filter.filterSubtype ?? ""}-${filter.mannArticleNormalized}`}
-                      className="eco-shipment-mann-filter-shell"
-                    >
-                      <article
-                        className={`eco-shipment-mann-filter is-${status}`}
-                      >
-                        <MannFilterTypeIcon type={filter.filterType} />
-                        <div className="eco-shipment-mann-filter-main">
-                          <div>
-                            <strong>{categoryLabel}</strong>
-                            <span>MANN {filter.mannArticle}</span>
-                          </div>
-                        </div>
-                        <div className="eco-shipment-mann-local">
-                          <b>По каталогу MANN</b>
-                          <span>{categoryAvailability}</span>
-                        </div>
-                        <div className="eco-shipment-mann-actions">
-                          <details className="eco-shipment-mann-more">
-                            <summary aria-label={`Дополнительные действия: ${categoryLabel}`} title="Дополнительные действия">⋯</summary>
-                            <div>
-                              <div className="eco-shipment-mann-more-copy">
-                                <strong>Техническая информация</strong>
-                                {filterApplicability ? <span>{filterApplicability}</span> : null}
-                                {filter.condition ? <span>Условие MANN: {filter.condition}</span> : null}
-                                {filter.filterSubtype || filter.filterNote ? <span>{[filter.filterSubtype ? `Тип ${filter.filterSubtype}` : "", filter.filterNote].filter(Boolean).join(" · ")}</span> : null}
-                                {match ? <span>Совместимость подтверждена по {formatMannMatchCount(match.diagnostics.compatibleCount)}.</span> : null}
-                              </div>
-                              <Link href={mannCreateProductHref(filter)} target="_blank" rel="noreferrer">
-                                Создать товар
-                              </Link>
-                              <Link href={mannRestockHref(filter)} target="_blank" rel="noreferrer">
-                                В закупку
-                              </Link>
-                              <Link href={mannRosskoHref(filter)} target="_blank" rel="noreferrer">
-                                ROSSKO
-                              </Link>
-                              <button type="button" onClick={() => startMannManualSearch(filter)}>
-                                Найти другой товар
-                              </button>
-                              {match ? (
-                                <div className="eco-shipment-mann-more-copy">
-                                  <strong>Диагностика сопоставления</strong>
-                                  <span>Канонический артикул: {match.diagnostics.canonicalArticle}</span>
-                                  <span>Кандидатов: {match.diagnostics.candidateCount} · совместимых: {match.diagnostics.compatibleCount}</span>
-                                  <span>Поиск: {match.diagnostics.totalMs.toFixed(1)} мс</span>
-                                  {match.diagnostics.compactCollisionBlocked ? <span>Компактное сравнение заблокировано защитой от коллизий.</span> : null}
-                                </div>
-                              ) : null}
-                            </div>
-                          </details>
-                        </div>
-                      </article>
-                      <div className="eco-shipment-mann-choice-panel" role="region" aria-label={`Подходящие товары для MANN ${filter.mannArticle}`}>
-                        {availableProducts.length ? <div className="eco-shipment-mann-columns" aria-hidden="true"><span>Товар</span><span>Наличие</span><span>Ячейка</span><span>Цена</span><span /></div> : null}
-                        {renderProductGroup("В наличии", availableProducts)}
-                        {!availableProducts.length && compatibleProducts.length > 0 ? <p className="eco-shipment-mann-stock-empty">В наличии нет подходящих фильтров.</p> : null}
-                        {orderableProducts.length + unavailableProducts.length > 0 ? (
-                          <details className="eco-shipment-mann-order-options">
-                            <summary>
-                              <span className="eco-shipment-mann-order-show">{unavailableProducts.length ? "Показать варианты без наличия" : "Показать варианты под заказ"}</span>
-                              <span className="eco-shipment-mann-order-hide">Скрыть дополнительные варианты</span>
-                              <span className="eco-shipment-mann-order-count">{orderableProducts.length + unavailableProducts.length}</span>
-                            </summary>
-                            <div className="eco-shipment-mann-columns" aria-hidden="true"><span>Товар</span><span>Наличие</span><span>Ячейка</span><span>Цена</span><span /></div>
-                            {renderProductGroup("Под заказ", orderableProducts)}
-                            {renderProductGroup("Нет на складе", unavailableProducts)}
-                          </details>
-                        ) : null}
-                        {compatibleProducts.length === 0 ? (
-                          <div className="eco-shipment-mann-choice-empty">
-                            <strong>Подходящий товар ещё не связан с каталогом</strong>
-                            <span>Можно найти существующий товар вручную или создать новую карточку через меню ⋯.</span>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : selectedMannVariantId && !mannLoading ? (
-              <div className="eco-shipment-vin-empty">
-                <strong>Фильтры MANN для выбранной модификации не найдены</strong>
-                <span>Попробуйте выбрать модификацию без фильтра по году или проверить другую модель.</span>
-              </div>
-            ) : null}
-            </div>
-          </div>
-        )}
-        {VIN_FILTER_PICKER_ENABLED && positionAddMode === "mann" && (
-          <details className="eco-shipment-direct-vin">
-            <summary>Расширенный подбор по VIN</summary>
-            <div className="eco-shipment-position-vin-panel">
-            <div className="eco-shipment-position-vin-copy">
-              <strong>Подбор показывает подходящие товары из локального каталога и склада.</strong>
-              <span>VIN можно взять из карточки автомобиля или ввести только для текущего подбора.</span>
-            </div>
-            <div className="eco-shipment-position-vin-controls">
-              <label className="eco-field">
-                <span>VIN</span>
-                <input
-                  type="text"
-                  maxLength={17}
-                  value={vin}
-                  onChange={(e) => {
-                    const v = formatVehicleAttributeInput("vin", e.target.value);
-                    setVin(v);
-                    setManualEngineVolume("");
-                    setManualEnginePower("");
-                    setShowVehicleOverrideDialog(false);
-                    const vinControl = vehicleAttributeControls.find((control) => control.key === "vin");
-                    if (vinControl?.attrIndex != null && vinControl.attrIndex >= 0) {
-                      const next = [...attributes];
-                      const current = next[vinControl.attrIndex];
-                      if (current) next[vinControl.attrIndex] = { ...current, value: v };
-                      setAttributes(next);
-                    }
-                    markDraftDirty();
-                  }}
-                  className="eco-input eco-shipment-new-vin-input"
-                  placeholder="Например: WBAXXXXX5JZ123456"
-                />
-              </label>
-              <div className="eco-shipment-position-vin-actions">
-                <button
-                  type="button"
-                  disabled={vin.replace(/\s/g, "").length < 8 || vinLookupLoading}
-                  onClick={() => runVinLookup()}
-                  className="eco-btn eco-btn--primary"
-                >
-                  <Sparkles className="eco-icon" aria-hidden />
-                  {vinLookupLoading ? "Подбор..." : "Подобрать по VIN"}
-                </button>
-                <button type="button" className="eco-shipment-link-btn" onClick={openVehicleEditor}>
-                  Изменить VIN автомобиля
-                </button>
-              </div>
-            </div>
-            {submitError && <p className="eco-shipment-new-error">{submitError}</p>}
-            {vinLookupLoading && (
-              <div className="eco-product-results-state">
-                <div className="eco-product-loading-copy">
-                  <span className="eco-product-loading-spinner" aria-hidden />
-                  <div>
-                    <strong>Подбираем позиции по VIN...</strong>
-                    <span>Проверяем локальный каталог и остатки выбранного склада.</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            {vinLookupResult && !vinLookupLoading && (
-              <div className="eco-shipment-vin-result">
-                {vinLookupResult.decodeError && <p className="eco-vin-alert">{vinLookupResult.decodeError}</p>}
-                {vinLookupResult.openaiError && <p className="eco-vin-alert">{vinLookupResult.openaiError}</p>}
-                {vinLookupResult.decoded && (
-                  <p className="eco-shipment-vin-decoded">
-                    {[vinLookupResult.decoded.make, vinLookupResult.decoded.model, vinLookupResult.decoded.modelYear].filter(Boolean).join(", ")}
-                    {vinLookupResult.decoded.modification ? ` · ${vinLookupResult.decoded.modification}` : ""}
-                    {vinLookupResult.decoded.engineSeries ? ` · ${vinLookupResult.decoded.engineSeries}` : ""}
-                    {vinLookupResult.decoded.displacementL ? ` · ${vinLookupResult.decoded.displacementL} л` : ""}
-                  </p>
-                )}
-                {vinLookupResult.legacyItems.length > 0 ? (
-                  <div className="eco-shipment-vin-offer-list">
-                    {vinLookupResult.legacyItems.map((item, idx) => (
-                      <div key={item.productId ?? `${item.name}-${idx}`} className="eco-shipment-vin-offer-row">
-                        <span className="eco-shipment-vin-kind">{getVinLookupItemTypeLabel(item)}</span>
-                        <div>
-                          <strong>{item.name}</strong>
-                          <span>{item.article || item.productId || "локальная позиция"}</span>
-                        </div>
-                        <span>{item.cell || "ячейка не указана"}</span>
-                        <b>Остаток {item.quantity}</b>
-                        <b>Доступно {item.quantity}</b>
-                        <em>{formatShipmentMoney(item.price)}</em>
-                        <button
-                          type="button"
-                          disabled={item.quantity <= 0}
-                          onClick={() => addFromVinLookup([item])}
-                        >
-                          Добавить
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="eco-shipment-vin-empty">
-                    <strong>В локальном каталоге подходящих позиций не найдено</strong>
-                    <div>
-                      <button type="button" onClick={() => setPositionAddMode("catalog")}>Перейти к обычному поиску</button>
-                      <Link href="/inventory/products">Создать новый товар</Link>
-                      <button type="button" onClick={() => setPositionAddMode("catalog")}>Открыть расширенный поиск</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            </div>
-          </details>
-        )}
       </section>
 
-      {positions.length === 0 && (
-        <section id="shipment-position-list" className="eco-card eco-card--padded eco-shipment-new-positions" aria-live="polite">
-          <div className="eco-card__head">
-            <div className="eco-position-title-stack">
-              <div className="eco-position-title-row">
-                <h2>Текущая отгрузка</h2>
-              </div>
-            </div>
-            <div className="eco-shipment-position-summary">
-              <span>0 поз. · 0 ед.</span>
-              <strong>{formatShipmentMoney(0)}</strong>
-            </div>
-          </div>
-          <div className="eco-shipment-empty-state">
-            <strong>Позиции пока не добавлены</strong>
-            <span>Найдите товар выше, добавьте услугу или разовый товар.</span>
-          </div>
-        </section>
-      )}
+      </details>
+      <ShipmentComposition positions={positions.map(p=>({...p,stock:getPositionStock(p)??undefined}))} vehicleTitle={vehicleTitle||documentVin||"Автомобиль не указан"} total={positionsTotal} quoteOpen={compositionQuoteOpen} onQuoteClose={()=>setCompositionQuoteOpen(false)} onChange={(index,update)=>{setPositions(current=>current.map((p,i)=>i===index?{...p,...update,quantity:Math.max(.001,update.quantity??p.quantity),price:Math.max(0,update.price??p.price),discount:Math.min(100,Math.max(0,update.discount??p.discount??0)),discountMode:"percent"}:p));markDraftDirty();}} onRemove={removePosition} onEditNonstock={index=>{setManualAddOpen(true);openNonstockProductForm(index);}} onChooseFilter={setMaintenanceFilterOpen} onAdd={()=>{setManualAddOpen(true);focusProductSearch();}}/>
 
-      {positions.length > 0 && (
-        <section id="shipment-position-list" className="eco-card eco-shipment-new-positions" aria-live="polite">
-          <div className="eco-card__head">
-            <div className="eco-position-title-stack">
-              <div className="eco-position-title-row">
-                <h2>Текущая отгрузка</h2>
-              </div>
-            </div>
-            <div className="eco-shipment-position-summary">
-              <span>{positions.length} поз. · {positionsQty} ед.</span>
-              <strong>{formatShipmentMoney(positionsTotal)}</strong>
-            </div>
-          </div>
-          <div className="eco-position-cards">
-            {positionGroups.map((group) => (
-              <Fragment key={group.key}>
-                <div className="eco-position-card-group-title">
-                  <span>{group.title}</span>
-                  <b>{group.items.length}</b>
-                </div>
-	            {group.items.map(({ position: p, index }) => {
-	              const isService = isServiceMeta(p.assortmentMeta);
-	              const isNonstock = isNonstockProduct(p);
-	              const productHref = positionProductHref(p);
-	              const stock = getPositionStock(p);
-	              const available = isService || isNonstock ? undefined : stock?.available;
-	              const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
-	              const lineTotal = p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100);
-	              const slot = isService || isNonstock ? undefined : p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
-	              const nonstockCost = isNonstock && p.oneOffProduct?.purchasePrice != null
-	                ? p.oneOffProduct.purchasePrice * p.quantity
-	                : null;
-	              const nonstockProfit = nonstockCost == null ? null : lineTotal - nonstockCost;
-              return (
-                <article
-                  key={p.assortmentMeta?.href ?? index}
-                  className={["eco-position-card", overAvailable ? "is-warning" : "", recentlyAddedPositionIndex === index ? "is-new" : ""].filter(Boolean).join(" ")}
-                >
-                  <div className="eco-position-card-head">
-                    <div>
-	                      {productHref ? (
-	                        <Link href={productHref} className="eco-linked-entity" title={isService ? "Открыть услугу" : "Открыть товар"}>
-                            <strong>{p.name}</strong>
-                            <ExternalLink className="eco-icon" aria-hidden />
-                          </Link>
-	                      ) : <strong>{p.name}</strong>}
-		                      <span>{isService ? "локальная услуга" : isNonstock ? "Разовый товар · не учитывается в остатках" : p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}</span>
-		                      {p.copyMeta?.priceUpdated && (
-		                        <span className="eco-position-copy-note is-updated">
-		                          Цена обновлена: было {formatCents(p.copyMeta.originalPriceCents)} → стало {formatCents(p.copyMeta.currentPriceCents)}
-		                        </span>
-		                      )}
-		                      {["unlinked", "ambiguous", "archived", "one_off_price_check"].includes(String(p.copyMeta?.status ?? "")) && (
-		                        <span className="eco-position-copy-note is-warning">
-		                          {p.copyMeta?.message ?? "Позиция требует проверки"}
-		                        </span>
-		                      )}
-	                    </div>
-                    <div className="eco-position-card-actions">
-                      {isNonstock ? (
-                        <button type="button" onClick={() => openNonstockProductForm(index)} aria-label="Редактировать разовый товар" title="Редактировать разовый товар">
-                          <Pencil className="eco-icon" aria-hidden />
-                        </button>
-                      ) : null}
-                      <button type="button" onClick={() => removePosition(index)} aria-label="Удалить позицию" title="Удалить позицию">
-                        <Trash2 className="eco-icon" aria-hidden />
-                      </button>
-                    </div>
-                  </div>
-                  <PositionAvailabilityView
-                    isService={isService}
-                    isNonstock={isNonstock}
-                    slot={slot}
-                    quantity={stock?.quantity}
-                    reserve={stock?.reserve}
-                    available={available}
-                    needed={p.quantity || 0}
-                  />
-                  {isNonstock ? (
-                    <dl className="eco-position-nonstock-details">
-                      <div><dt>Купили</dt><dd>{nonstockCost == null ? "Не указано" : formatShipmentMoney(nonstockCost)}</dd></div>
-                      <div><dt>Продали</dt><dd>{formatShipmentMoney(lineTotal)}</dd></div>
-                      <div><dt>Прибыль</dt><dd>{nonstockProfit == null ? "Не рассчитана" : formatShipmentMoney(nonstockProfit)}</dd></div>
-                      {p.oneOffProduct?.purchaseSourceLabel ? <div><dt>Где купили</dt><dd>{p.oneOffProduct.purchaseSourceLabel}</dd></div> : null}
-                    </dl>
-                  ) : null}
-                  {overAvailable && <p className="eco-position-warning">Количество больше доступного остатка.</p>}
-                  <div className="eco-position-card-controls">
-                    <label>
-                      <span>Скидка</span>
-                      <div className="eco-position-discount">
-                        {p.discountMode === "amount" ? (
-                          <MoneyInput
-                            value={p.discountAmount ?? 0}
-                            onValueChange={(val) => {
-                              const lineBase = (p.quantity || 0) * (p.price || 0);
-                              const percent = lineBase > 0 ? Math.min(100, (val / lineBase) * 100) : 0;
-                              const next = [...positions];
-                              next[index] = { ...p, discountMode: "amount", discountAmount: val, discount: percent };
-                              setPositions(next);
-                              markDraftDirty();
-                            }}
-                            className="eco-position-edit-input is-discount"
-                          />
-                        ) : (
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            step={0.1}
-                            inputMode="decimal"
-                            value={p.discount ?? 0}
-                            onChange={(e) => {
-                              const percent = Math.max(0, Math.min(100, Number(e.target.value) || 0));
-                              const lineBase = (p.quantity || 0) * (p.price || 0);
-                              const amount = lineBase * (percent / 100);
-                              const next = [...positions];
-                              next[index] = { ...p, discountMode: "percent", discount: percent, discountAmount: amount };
-                              setPositions(next);
-                              markDraftDirty();
-                            }}
-                            className="eco-position-edit-input is-discount"
-                          />
-                        )}
-                        <select
-                          value={p.discountMode ?? "percent"}
-                          onChange={(e) => {
-                            const next = [...positions];
-                            next[index] = { ...p, discountMode: e.target.value as "percent" | "amount" };
-                            setPositions(next);
-                            markDraftDirty();
-                          }}
-                          aria-label="Тип скидки"
-                        >
-                          <option value="percent">%</option>
-                          <option value="amount">₽</option>
-                        </select>
-                      </div>
-                    </label>
-                    <label>
-                      <span>Кол-во</span>
-                      <QuantityInput
-                        value={p.quantity}
-                        onValueChange={(quantity) => {
-                          const next = [...positions];
-                          next[index] = { ...p, quantity };
-                          setPositions(next);
-                          markDraftDirty();
-                        }}
-                        className="eco-position-edit-input is-qty"
-                      />
-                    </label>
-                    <label>
-                      <span>Цена ₽</span>
-                      <MoneyInput
-                        value={p.price}
-                        onValueChange={(price) => {
-                          const next = [...positions];
-                          next[index] = { ...p, price };
-                          setPositions(next);
-                          markDraftDirty();
-                        }}
-                        className="eco-position-edit-input is-price"
-                      />
-                    </label>
-                  </div>
-                  <div className="eco-position-card-total">
-                    <span>Сумма</span>
-                    <strong>{formatShipmentMoney(lineTotal)}</strong>
-                  </div>
-                </article>
-              );
-            })}
-              </Fragment>
-            ))}
-          </div>
-          <div className="eco-table-wrap">
-            <table className="eco-table eco-shipment-new-table">
-              <thead>
-                <tr>
-                  <th>№</th>
-                  <th>Товар</th>
-                  <th>Наличие</th>
-                  <th className="is-num">Скидка</th>
-                  <th className="is-num">Кол-во</th>
-                  <th className="is-num">Цена</th>
-                  <th className="is-num">Сумма</th>
-                  <th className="is-action">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positionGroups.map((group) => (
-                  <Fragment key={group.key}>
-                    <tr className="eco-position-group-row">
-                      <td colSpan={8}>
-                        <div className="eco-position-group-label">
-                          <span>{group.title}</span>
-                          <b>{group.items.length}</b>
-                        </div>
-                      </td>
-                    </tr>
-	                {group.items.map(({ position: p, index }, groupRowIndex) => {
-	                  const isService = isServiceMeta(p.assortmentMeta);
-	                  const isNonstock = isNonstockProduct(p);
-	                  const productHref = positionProductHref(p);
-	                  const stock = getPositionStock(p);
-	                  const available = isService || isNonstock ? undefined : stock?.available;
-	                  const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
-	                  const slot = isService || isNonstock ? undefined : p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
-                  const lineTotal = p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100);
-                  return (
-                  <tr
-                    key={p.assortmentMeta?.href ?? index}
-                    className={[overAvailable ? "is-warning" : "", recentlyAddedPositionIndex === index ? "is-new" : ""].filter(Boolean).join(" ") || undefined}
-                  >
-                    <td className="eco-position-row-number">{String(groupRowIndex + 1).padStart(2, "0")}</td>
-                    <td className="eco-position-product-cell" title={p.name}>
-	                      {productHref ? (
-	                        <Link href={productHref} className="eco-position-product-name eco-position-product-link" title={isService ? "Открыть услугу" : "Открыть товар"}>
-                            <span>{p.name}</span>
-                            <ExternalLink className="eco-icon" aria-hidden />
-                          </Link>
-	                      ) : <span className="eco-position-product-name">{p.name}</span>}
-	                      <span className="eco-position-product-code">
-		                        {isService ? "локальная услуга" : isNonstock ? "Разовый товар · не учитывается в остатках" : p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}
-	                      </span>
-	                      {p.copyMeta?.priceUpdated && (
-	                        <span className="eco-position-copy-note is-updated">
-	                          Цена обновлена: было {formatCents(p.copyMeta.originalPriceCents)} → стало {formatCents(p.copyMeta.currentPriceCents)}
-	                        </span>
-	                      )}
-	                      {["unlinked", "ambiguous", "archived", "one_off_price_check"].includes(String(p.copyMeta?.status ?? "")) && (
-	                        <span className="eco-position-copy-note is-warning">
-	                          {p.copyMeta?.message ?? "Позиция требует проверки"}
-	                        </span>
-	                      )}
-                    </td>
-                    <td>
-                      <PositionAvailabilityView
-                        isService={isService}
-                        isNonstock={isNonstock}
-                        slot={slot}
-                        quantity={stock?.quantity}
-                        reserve={stock?.reserve}
-                        available={available}
-                        needed={p.quantity || 0}
-                      />
-                    </td>
-                    <td className="is-num">
-                      <div className="eco-position-discount">
-                        {p.discountMode === "amount" ? (
-                          <MoneyInput
-                            value={p.discountAmount ?? 0}
-                            onValueChange={(val) => {
-                              const lineBase = (p.quantity || 0) * (p.price || 0);
-                              const percent = lineBase > 0 ? Math.min(100, (val / lineBase) * 100) : 0;
-                              const next = [...positions];
-                              next[index] = { ...p, discountMode: "amount", discountAmount: val, discount: percent };
-                              setPositions(next);
-                              markDraftDirty();
-                            }}
-                            className="eco-position-edit-input is-discount"
-                          />
-                        ) : (
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            step={0.1}
-                            value={p.discount ?? 0}
-                            onChange={(e) => {
-                              const percent = Math.max(0, Math.min(100, Number(e.target.value) || 0));
-                              const lineBase = (p.quantity || 0) * (p.price || 0);
-                              const amount = lineBase * (percent / 100);
-                              const next = [...positions];
-                              next[index] = { ...p, discountMode: "percent", discount: percent, discountAmount: amount };
-                              setPositions(next);
-                              markDraftDirty();
-                            }}
-                            className="eco-position-edit-input is-discount"
-                          />
-                        )}
-                        <select
-                          value={p.discountMode ?? "percent"}
-                          onChange={(e) => {
-                            const mode = e.target.value as "percent" | "amount";
-                            const next = [...positions];
-                            next[index] = { ...p, discountMode: mode };
-                            setPositions(next);
-                            markDraftDirty();
-                          }}
-                          aria-label="Тип скидки"
-                        >
-                          <option value="percent">%</option>
-                          <option value="amount">₽</option>
-                        </select>
-                      </div>
-                    </td>
-                    <td className="is-num">
-                      <QuantityInput
-                        value={p.quantity}
-                        onValueChange={(quantity) => {
-                          const next = [...positions];
-                          next[index] = { ...p, quantity };
-                          setPositions(next);
-                          markDraftDirty();
-                        }}
-                        className="eco-position-edit-input is-qty"
-                      />
-                    </td>
-                    <td className="is-num">
-                      <MoneyInput
-                        value={p.price}
-                        onValueChange={(price) => {
-                          const next = [...positions];
-                          next[index] = { ...p, price };
-                          setPositions(next);
-                          markDraftDirty();
-                        }}
-                        className="eco-position-edit-input is-price"
-                      />
-                    </td>
-                    <td className="is-num">
-                      <strong className="eco-position-line-total">{formatShipmentMoney(lineTotal)}</strong>
-                    </td>
-                    <td className="is-action">
-                      {isNonstock ? (
-                        <button
-                          type="button"
-                          onClick={() => openNonstockProductForm(index)}
-                          className="eco-position-row-action"
-                          aria-label="Редактировать разовый товар"
-                          title="Редактировать разовый товар"
-                        >
-                          <Pencil className="eco-icon" aria-hidden />
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => removePosition(index)}
-                        className="eco-position-row-action"
-                        aria-label="Удалить позицию"
-                        title="Удалить позицию"
-                      >
-                        <Trash2 className="eco-icon" aria-hidden />
-                      </button>
-                    </td>
-                  </tr>
-                  );
-                })}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {positions.length > collapsedPositionLimit && (
-            <button
-              type="button"
-              className="eco-shipment-position-reveal"
-              onClick={() => setPositionsExpanded((current) => !current)}
-              aria-expanded={positionsExpanded}
-            >
-              {positionsExpanded ? "Свернуть список" : `Показать ещё ${hiddenPositionsCount}`}
-            </button>
-          )}
-          <div className="eco-shipment-new-table-foot">
-            <span>Позиций: {positions.length}</span>
-            <span>Кол-во всего: {positionsQty}</span>
-            <strong>
-              Итого: {formatShipmentMoney(positionsTotal)}
-            </strong>
-          </div>
-		        </section>
-		      )}
 		      </section>
 
 		        </div>
@@ -6895,7 +6162,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	            <div className="eco-shipment-card-head">
 	              <div>
 	                <span className="eco-page-kicker">Шаг 3</span>
-	                <h2 id="shipment-finalize-title">Проверка и сохранение</h2>
+	                <h2 id="shipment-finalize-title">Общий итог</h2>
 	              </div>
 	              <EcoBadge tone={finalStepReady ? "success" : "warning"} dot>
 	                {finalStepReady ? "Готово" : "Проверьте"}
@@ -6951,6 +6218,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	                </a>
 	              </div>
 	              <div className="eco-shipment-final-actions">
+                <button type="button" className="eco-btn" disabled={!positions.length} onClick={()=>setCompositionQuoteOpen(true)}>Предложение клиенту</button>
+                {positions.some(p=>p.maintenance?.source==="rossko")?<p className="eco-shipment-supplier-note">Есть позиции Роско под заказ. Срок указан в составе; заказ поставщику оформляется отдельно.</p>:null}
 	                <label className="eco-shipment-new-check">
 	                  <input id="applicable" type="checkbox" checked={applicable} onChange={(e) => { setApplicable(e.target.checked); markDraftDirty(); }} />
 	                  <span>Провести отгрузку. Складские товары будут списаны; разовые товары остатки не изменят.</span>
