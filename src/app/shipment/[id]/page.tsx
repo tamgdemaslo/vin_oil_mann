@@ -8,7 +8,7 @@ import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import QuantityInput from "@/components/QuantityInput";
 import MoneyInput from "@/components/MoneyInput";
-import { MaintenanceQuotePanel } from "@/components/shipment/MaintenanceQuotePanel";
+import { shipmentCompositionQuote, type ShipmentMaintenanceSelection } from "@/lib/shipment-maintenance";
 import { shipmentQuoteFilters, shipmentQuoteRequirements } from "@/lib/maintenance-quote-shipment";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
@@ -64,6 +64,7 @@ const REOPEN_REASON_OPTIONS = [
 ];
 
 type Position = {
+  maintenance?: ShipmentMaintenanceSelection;
   id?: string;
   name: string;
   quantity: number;
@@ -1718,17 +1719,7 @@ export default function ShipmentDetailPage() {
             </div>
           </section>
 
-          <MaintenanceQuotePanel
-            key={`${id}:${documentVin}`}
-            vehicleTitle={clientVehicleSummary}
-            warehouseId={data.header.storeId}
-            profile={null}
-            research={null}
-            requirements={quoteRequirements}
-            filters={quoteFilters}
-            filtersLoading={vinLookupLoading}
-            onChooseWarehouse={() => router.push(`/shipment/${id}/edit#shipment-maintenance-quote`)}
-          />
+          <details className="eco-card eco-card--padded"><summary>Предложение по составу отгрузки</summary><label className="eco-field"><span>Позиции и итог сохранённого документа</span><textarea readOnly className="eco-input" rows={12} value={shipmentCompositionQuote(clientVehicleSummary, data.positions, true)}/></label></details>
 
           <section className="eco-shipment-detail-tabs">
             <button

@@ -1,3 +1,4 @@
+import { readShipmentMaintenance, type ShipmentMaintenanceSelection } from "@/lib/shipment-maintenance";
 import { lockBarrelProducts, syncBulkOilWarehouseTx, shipmentBulkOilWithdrawals } from "@/lib/bulk-oil-barrels";
 import { resolveServicePositionName } from "@/lib/demand-position-name";
 import { Prisma, type LocalCounterparty } from "@prisma/client";
@@ -83,6 +84,7 @@ type UpdateDemandBody = {
     oneOffProduct?: NonstockProductInput;
     oneOffService?: OneOffServiceInput;
     copyMeta?: unknown;
+    maintenance?: ShipmentMaintenanceSelection;
   }[];
 };
 
@@ -555,6 +557,7 @@ type NonstockPositionInput = {
   oneOffProduct?: NonstockProductInput;
   oneOffService?: OneOffServiceInput;
   copyMeta?: unknown;
+  maintenance?: ShipmentMaintenanceSelection;
 };
 
 function isNonstockPositionInput(position: NonstockPositionInput): boolean {
@@ -694,6 +697,7 @@ async function buildNonstockResolvedPosition(
       comment: cleanRecordText(position.comment) || null,
       copyMeta: position.copyMeta ?? null,
       oneOffProduct: structured,
+      maintenance: readShipmentMaintenance(position.maintenance),
     }),
   };
 }
@@ -2655,6 +2659,7 @@ export async function loadLocalDemandDetailPayload(
           }
         : undefined,
       copyMeta,
+      maintenance: readShipmentMaintenance(positionRaw.maintenance),
     };
   });
 

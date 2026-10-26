@@ -85,6 +85,9 @@ jobs:
       - name: Verify customer management insights
         run: npm run test:customer-management-insights
 
+      - name: Verify shared maintenance composition and ROSSKO quote rules
+        run: npm run test:maintenance-quote && npm run test:shipment-maintenance
+
       - name: TypeScript check
         run: npx tsc --noEmit
 
