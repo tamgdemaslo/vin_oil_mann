@@ -22,6 +22,9 @@ export function readShipmentMaintenance(value: unknown): ShipmentMaintenanceSele
   return {version: 1, key: row.key, label: text("label", 200) ?? "Подбор ТО", source: row.source as "stock" | "rossko", referenceArticle: text("referenceArticle", 80), offerId: text("offerId", 300), deliveryLabel: text("deliveryLabel", 500), selectedAt: text("selectedAt", 80) ?? "", specification: text("specification"), viscosity: text("viscosity", 80), volume: text("volume", 30), ...(vehicle && typeof vehicle.make === "string" && typeof vehicle.model === "string" && typeof vehicle.variantId === "string" ? {vehicle: {make: vehicle.make.slice(0,200), model: vehicle.model.slice(0,200), variantId: vehicle.variantId.slice(0,200), year: typeof vehicle.year === "string" ? vehicle.year.slice(0,4) : undefined}} : {})};
 }
 export type ShipmentQuoteLine = {name: string; quantity: number; price: number; discount?: number; maintenance?: ShipmentMaintenanceSelection};
+export function shipmentCompositionCents(positions: ShipmentQuoteLine[], priceIsCents = false) {
+  return positions.reduce((sum,row)=>sum+Math.round(row.quantity*(priceIsCents?Math.round(row.price):Math.round(row.price*100))*(1-(row.discount??0)/100)),0);
+}
 export function shipmentCompositionQuote(vehicle: string, positions: ShipmentQuoteLine[], priceIsCents = false) {
   const money = (cents: number) => new Intl.NumberFormat("ru-RU", {style:"currency", currency:"RUB", maximumFractionDigits:2}).format(cents / 100);
   const lines = positions.map(row => {
@@ -29,5 +32,5 @@ export function shipmentCompositionQuote(vehicle: string, positions: ShipmentQuo
     const cents = Math.round(row.quantity * unitCents * (1 - (row.discount ?? 0) / 100));
     return {row, cents, unitCents};
   });
-  return [`Расчёт ТО: ${vehicle || "Автомобиль не указан"}`, ...lines.map(({row,cents,unitCents}) => `${row.name}: ${row.quantity} × ${money(unitCents)}${row.discount ? ` · скидка ${row.discount}%` : ""} = ${money(cents)}${row.maintenance?.source === "rossko" ? ` · Роско: ${row.maintenance.deliveryLabel || "срок уточняется"}` : ""}`), `Итого: ${money(lines.reduce((sum,line)=>sum+line.cents,0))}`, "", "Предварительный расчёт. Позиции Роско требуют отдельного заказа; наличие, цена и срок подтверждаются перед заказом."].join("\n");
+  return [`Расчёт ТО: ${vehicle || "Автомобиль не указан"}`, ...lines.map(({row,cents,unitCents}) => `${row.name}: ${row.quantity} × ${money(unitCents)}${row.discount ? ` · скидка ${row.discount}%` : ""} = ${money(cents)}${row.maintenance?.source === "rossko" ? ` · Роско: ${row.maintenance.deliveryLabel || "срок уточняется"}` : ""}`), `Итого: ${money(shipmentCompositionCents(positions,priceIsCents))}`, "", "Предварительный расчёт. Позиции Роско требуют отдельного заказа; наличие, цена и срок подтверждаются перед заказом."].join("\n");
 }

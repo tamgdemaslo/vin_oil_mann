@@ -34,7 +34,7 @@ import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { type MaintenanceQuoteVehicleContext } from "@/components/shipment/MaintenanceQuotePanel";
 import { ShipmentMaintenancePicker, type MaintenanceApplyLine } from "@/components/shipment/ShipmentMaintenancePicker";
 import { ShipmentComposition } from "@/components/shipment/ShipmentComposition";
-import { readShipmentMaintenance, type ShipmentMaintenanceSelection } from "@/lib/shipment-maintenance";
+import { readShipmentMaintenance, shipmentCompositionCents, type ShipmentMaintenanceSelection } from "@/lib/shipment-maintenance";
 import { VehicleLookupPanel } from "@/components/shipment/VehicleLookupPanel";
 import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 import { clientSessionUnavailableMessage, readClientSessionResponse } from "@/lib/client-session-response";
@@ -3827,17 +3827,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     (position: Position) => {
       if (isServiceMeta(position.assortmentMeta)) return position.stock ?? { cost: 0 };
       const href = position.assortmentMeta?.href ?? "";
-      return position.stock ?? stockByAssortment[href] ?? null;
+      return stockByAssortment[href] ? {...position.stock,...stockByAssortment[href]} : position.stock ?? null;
     },
     [stockByAssortment]
   );
   const positionsQty = positions.reduce((sum, p) => sum + (p.quantity || 0), 0);
-  const positionsSubtotal = positions.reduce((sum, p) => sum + (p.quantity || 0) * (p.price || 0), 0);
-  const positionsTotal = positions.reduce((sum, p) => {
-    const base = (p.quantity || 0) * (p.price || 0);
-    const disc = typeof p.discount === "number" ? p.discount : 0;
-    return sum + base * (1 - disc / 100);
-  }, 0);
+  const positionsSubtotal = shipmentCompositionCents(positions.map(p=>({...p,discount:0})))/100;
+  const positionsTotal = shipmentCompositionCents(positions)/100;
   const indexedPositions = positions.map((position, index) => ({ position, index }));
   const collapsedPositionLimit = 4;
   const latestIndexedPositions = indexedPositions.slice(-collapsedPositionLimit);
