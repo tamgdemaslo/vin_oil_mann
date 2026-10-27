@@ -693,6 +693,24 @@ button:disabled {
 .services-price-row:first-child { padding-top: 0; }
 .services-price-row span { font-size: 16px; line-height: 1.45; }
 .services-price-row strong { color: var(--paper); font: 700 21px/1 var(--f-display); white-space: nowrap; }
+.transmission-prices { min-width: 0; margin-bottom: 24px; }
+.transmission-prices__method + .transmission-prices__method { margin-top: 32px; }
+.transmission-prices__method h3 { margin: 0; font: 700 25px/1.2 var(--f-display); text-transform: uppercase; }
+.transmission-prices__branches { margin: 8px 0 16px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.transmission-prices__table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.transmission-prices__table caption { text-align: left; margin-bottom: 10px; color: var(--muted); font-size: 13px; }
+.transmission-prices__table th, .transmission-prices__table td { padding: 14px 10px; border-bottom: 1px dashed var(--line); text-align: right; vertical-align: top; }
+.transmission-prices__table th:first-child { width: 42%; padding-left: 0; text-align: left; }
+.transmission-prices__table thead th { color: var(--muted); font-size: 12px; line-height: 1.5; font-weight: 500; }
+.transmission-prices__table tbody th { font-size: 15px; line-height: 1.45; font-weight: 400; }
+.transmission-prices__table td { color: var(--paper); font: 700 21px/1.2 var(--f-display); white-space: nowrap; }
+.transmission-prices__terms { margin: 20px 0 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+@media (max-width: 600px) {
+  .transmission-prices__table th, .transmission-prices__table td { padding: 12px 5px; }
+  .transmission-prices__table th:first-child { width: 38%; }
+  .transmission-prices__table tbody th { font-size: 13px; }
+  .transmission-prices__table td { font-size: 19px; }
+}
 .services-page__note { display: flex; justify-content: space-between; align-items: center; gap: 40px; margin-top: 56px; padding: 34px 38px; background: var(--paper); color: var(--ink); }
 .services-page__note h2 { margin: 0 0 10px; font: 700 30px/1 var(--f-display); text-transform: uppercase; }
 .services-page__note p { max-width: 70ch; margin: 0; color: var(--steel); font-size: 15px; line-height: 1.55; }

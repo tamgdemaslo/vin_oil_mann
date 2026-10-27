@@ -4,6 +4,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useId } from "react";
 import { Phone, X } from "lucide-react";
 import type { ClientOil } from "@/lib/client-site-api";
+import TransmissionPriceTables from "./TransmissionPriceTables";
 
 // ====================================================================
 //  data.jsx — все мок-данные сайта
@@ -482,13 +483,11 @@ const SERVICE_PRICE_GROUPS = [
   {
     title: 'Трансмиссия',
     items: [
-      ['Частичная замена масла в АКПП', 'от 2 990 ₽'],
-      ['Полная аппаратная замена масла в АКПП', 'от 4 990 ₽'],
       ['Замена масла в МКПП', 'от 1 090 ₽'],
       ['Замена масла в редукторе', 'от 1 490 ₽'],
       ['Замена масла в раздаточной коробке', 'от 1 490 ₽'],
       ['Замена масла в муфте Haldex', 'от 1 690 ₽'],
-      ['Выставление уровня масла в АКПП', 'от 1 990 ₽'],
+      ['Выставление уровня масла в АКПП как отдельная услуга', '2 490 ₽'],
     ],
   },
   {
@@ -3247,6 +3246,7 @@ function ServicesPage() {
                 <h2>{group.title}</h2>
               </div>
               <div className="services-price-list">
+                {group.title === 'Трансмиссия' && <TransmissionPriceTables />}
                 {group.items.map(([name, price]) => (
                   <div key={name} className="services-price-row">
                     <span>{name}</span>
