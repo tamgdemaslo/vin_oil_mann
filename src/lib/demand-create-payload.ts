@@ -1,4 +1,3 @@
-import type { ShipmentMaintenanceSelection } from "@/lib/shipment-maintenance";
 import type { LocalEntityMeta } from "@/lib/local-entity-meta";
 import type { NonstockProductInput } from "@/lib/one-off-product";
 import type { OneOffServiceInput } from "@/lib/one-off-service";
@@ -15,7 +14,6 @@ export type DemandPositionInput = {
   copyMeta?: unknown;
   lineKind?: "catalog" | "one_off_service" | "nonstock_product";
   oneOffProduct?: NonstockProductInput;
-  maintenance?: ShipmentMaintenanceSelection;
   oneOffService?: OneOffServiceInput;
 };
 
@@ -57,7 +55,6 @@ export function buildDemandCreatePayload(body: CreateDemandBody): Record<string,
       vat: p.vat ?? 0,
       vatEnabled: p.vatEnabled ?? false,
       copyMeta: p.copyMeta,
-      maintenance: p.maintenance,
       lineKind: p.lineKind,
       oneOffProduct: p.oneOffProduct,
       oneOffService: p.oneOffService,

@@ -1,4 +1,3 @@
-import type { ShipmentMaintenanceSelection } from "@/lib/shipment-maintenance";
 import type { LocalEntityMeta } from "@/lib/local-entity-meta";
 import type { NonstockProductInput } from "@/lib/one-off-product";
 import type { OneOffServiceInput } from "@/lib/one-off-service";
@@ -55,7 +54,6 @@ export type DemandDetailPosition = {
   };
   oneOffService?: OneOffServiceInput;
   comment?: string;
-  maintenance?: ShipmentMaintenanceSelection;
   product?: {
     id: string;
     name: string;

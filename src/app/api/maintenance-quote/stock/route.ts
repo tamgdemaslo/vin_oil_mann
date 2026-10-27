@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       orderBy: { name: "asc" }, ...(extras ? { take: 30 } : {}),
     });
     const products = rows.filter(row => extras ? row.entityType === "service" || row.stockBalances.some(stock => Number(stock.available) > 0) : matchesQuoteOil(row, specification, viscosity)).map(row => ({
-      id: row.id, entityType: row.entityType, name: row.name, article: row.article ?? "", price: row.salePriceCents / 100,
+      id: row.id, name: row.name, article: row.article ?? "", price: row.salePriceCents / 100,
       available: row.stockBalances.reduce((sum, stock) => sum + Number(stock.available), 0),
       unit: row.uomName ?? "шт.", litresPerUnit: quoteLitresPerUnit(row), sae: row.sae ?? "", oem: row.oem ?? "",
     }));
