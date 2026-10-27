@@ -138,8 +138,7 @@
     "test:barrel-marking-input": "node scripts/test-barrel-marking-input.mjs",
     "test:client-site-domain": "node scripts/test-client-site-domain.mjs",
     "test:maintenance-quote": "node scripts/test-maintenance-quote.mjs",
-    "test:client-cases": "node scripts/test-client-case-simple.mjs && node scripts/test-client-case-simple-routes.mjs && node scripts/test-client-case-attention.mjs && node scripts/test-client-case-parts.mjs && node scripts/test-client-case-chat.mjs",
-    "test:shipment-maintenance": "node scripts/test-shipment-maintenance.mjs"
+    "test:client-cases": "node scripts/test-client-case-simple.mjs && node scripts/test-client-case-simple-routes.mjs && node scripts/test-client-case-attention.mjs && node scripts/test-client-case-parts.mjs && node scripts/test-client-case-chat.mjs"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",

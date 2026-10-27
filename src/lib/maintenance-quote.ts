@@ -4,7 +4,7 @@ import { parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
 import { isLiterSaleUnit } from "@/lib/product-marking";
 
 export type QuoteStockProduct = {
-  id: string; entityType?: string; name: string; article: string; price: number; available: number;
+  id: string; name: string; article: string; price: number; available: number;
   unit: string; litresPerUnit: number | null; sae: string; oem: string;
 };
 export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string };

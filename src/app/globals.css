@@ -72062,34 +72062,3 @@ select[size="1"]::-ms-expand {
 /* Keep catalog results visible below the shipment table breakpoint. */
 .eco-products-page .eco-inventory-layout, .eco-products-page .eco-inventory-main { min-width: 0; max-width: 100%; }
 .eco-products-page .eco-table-wrap { display: block; max-width: 100%; overflow-x: auto; }
-
-/* One vehicle -> maintenance selection -> persisted shipment composition. */
-.eco-shipment-unified .eco-shipment-entity-grid{display:flex;flex-direction:column;gap:12px}
-.eco-shipment-unified .eco-shipment-vehicle-card{order:0;width:100%}
-.eco-shipment-unified .eco-shipment-client-disclosure{order:1;border:1px solid var(--eco-line);border-radius:7px;background:var(--eco-surface);padding:12px 16px}
-.eco-shipment-unified .eco-shipment-client-disclosure>summary{cursor:pointer;font-size:12px;color:var(--eco-ink-3);font-weight:600}
-.eco-shipment-unified .eco-shipment-client-disclosure .eco-shipment-client-card{border:0;box-shadow:none;margin-top:12px}
-.eco-shipment-unified .eco-shipment-vehicle-summary{padding:16px}
-.eco-shipment-unified .eco-shipment-vehicle-primary-summary{padding-bottom:8px}
-.eco-shipment-unified .eco-shipment-vehicle-primary-summary>strong{font-size:17px}
-.eco-shipment-unified .eco-shipment-vehicle-picker{margin-top:8px}
-.eco-shipment-unified .eco-shipment-vehicle-picker>summary,.eco-shipment-unified .eco-shipment-completion-fields>summary{cursor:pointer;font-size:12px;color:var(--eco-ink-3);font-weight:600;padding:8px 0}
-.eco-shipment-unified .eco-shipment-vehicle-picker>div{padding-top:10px}
-.eco-shipment-unified .eco-shipment-unified-vehicle-picker .eco-shipment-mann-controls{display:grid;grid-template-columns:1fr 1fr .7fr;gap:12px}
-.eco-shipment-unified .eco-shipment-unified-vehicle-picker .eco-shipment-mann-controls>label:last-of-type{grid-column:1/-1}
-.eco-shipment-unified .eco-shipment-mann-submit{grid-column:1/-1;display:flex;align-items:center;gap:12px}
-.eco-shipment-unified .eco-shipment-mann-submit>span{font-size:12px;color:var(--eco-ink-3)}
-.eco-shipment-unified .eco-shipment-completion-fields{border-top:1px solid var(--eco-line);margin-top:10px}
-.eco-shipment-unified .eco-shipment-visit-summary{margin-top:5px}
-.eco-shipment-unified .eco-shipment-workflow-section-head{margin-bottom:12px}
-.eco-shipment-unified .eco-shipment-workflow-section-head p{font-size:12px}
-.eco-shipment-unified .eco-shipment-manual-add{border:1px solid var(--eco-line);border-radius:7px;background:var(--eco-surface);padding:12px 16px;margin-bottom:16px}
-.eco-shipment-unified .eco-shipment-manual-add>summary{font-size:12px;font-weight:650;color:var(--eco-ink-3);cursor:pointer}
-.eco-shipment-unified .eco-shipment-manual-add>.eco-shipment-new-add{margin-top:12px}
-.eco-shipment-unified .eco-shipment-new-table-foot{font-size:12px}
-.eco-shipment-unified .eco-shipment-supplier-note{background:var(--eco-warning-tint);color:#713f12;border-radius:6px;padding:12px;font-size:12px;line-height:1.6}
-.eco-shipment-unified .eco-shipment-final-checklist{display:none}
-.eco-shipment-unified .eco-shipment-new-total-card .eco-shipment-new-total-body{gap:12px}
-.eco-shipment-unified .eco-shipment-vehicle-summary-more{margin-top:8px}
-@media(min-width:1000px){.eco-shipment-unified .eco-shipment-new-draft-layout{grid-template-columns:minmax(0,1fr) 290px;gap:20px}.eco-shipment-unified .eco-shipment-new-aside{position:sticky;top:16px;align-self:start}}
-@media(max-width:700px){.eco-shipment-unified .eco-shipment-unified-vehicle-picker .eco-shipment-mann-controls{grid-template-columns:1fr 1fr}.eco-shipment-unified .eco-shipment-mann-year{grid-column:1/-1}.eco-shipment-unified .eco-shipment-mann-submit{flex-wrap:wrap}.eco-shipment-unified .eco-shipment-vehicle-primary-summary>strong{font-size:16px}.eco-shipment-unified .eco-shipment-new-aside{position:static}.eco-shipment-unified .eco-shipment-workflow-section-head{align-items:flex-start}}
