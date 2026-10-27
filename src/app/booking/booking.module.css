@@ -85,6 +85,7 @@
 .choiceList label > svg, .serviceList label > svg, .vehicleList label > svg { width: 19px; height: 19px; opacity: 0; color: var(--booking-accent); }
 .choiceList .selectedChoice, .serviceList .selectedChoice, .vehicleList .selectedChoice { border-color: var(--booking-accent); background: #fff4ef; }
 .choiceList .selectedChoice > svg, .serviceList .selectedChoice > svg, .vehicleList .selectedChoice > svg { opacity: 1; }
+.serviceList label:has(input:disabled) { cursor: default; background: #f3f4f1; }
 .serviceCatalog { display: grid; gap: 24px; }
 .serviceGroup { display: grid; gap: 10px; }
 .groupHeading { display: grid; gap: 3px; }

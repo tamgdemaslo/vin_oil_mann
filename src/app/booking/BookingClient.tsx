@@ -9,6 +9,7 @@ import { isValidBookingCustomerName } from "@/lib/booking/customer-name";
 import { trackClientBookingSuccess } from "@/lib/client-site-analytics";
 import { publicBookingBranchFromSearch } from "@/lib/booking/public-link";
 import type { PublicServiceGroup } from "@/lib/booking/public-service-presentation";
+import { isStandaloneTransmissionLevel, isTransmissionOilVariant, normalizeBookingServiceSelection, toggleBookingServiceSelection } from "@/lib/booking/transmission-selection";
 import BookingRecordCard from "./BookingRecordCard";
 import PublicBookingHeader from "./PublicBookingHeader";
 import BookingCalendar from "./BookingCalendar";
@@ -68,7 +69,7 @@ const FULL_STEPS = [
 const BRANCH_STEPS = FULL_STEPS.slice(1);
 const SERVICE_GROUPS: Array<{ key: PublicServiceGroup; title: string; intro: string }> = [
   { key: "engine", title: "Моторное масло", intro: "Обслуживание двигателя" },
-  { key: "transmission", title: "Коробка передач и полный привод", intro: "Коробка, редукторы, раздатка и Haldex" },
+  { key: "transmission", title: "Коробка передач и полный привод", intro: "Для АКПП выберите один вариант. Выставление уровня включено в замену." },
   { key: "fluids", title: "Фильтры и другие жидкости", intro: "Фильтры и технические жидкости" },
   { key: "other", title: "Диагностика и дополнительные работы", intro: "Проверки и отдельные работы" },
 ];
@@ -183,6 +184,7 @@ export default function BookingClient() {
 
   const branch = branches.find((item) => item.id === branchId) ?? null;
   const selectedServices = useMemo(() => services.filter((service) => serviceIds.includes(service.id)), [services, serviceIds]);
+  const transmissionOilSelected = selectedServices.some(service => isTransmissionOilVariant(service.name));
   const totalDuration = selectedServices.reduce((sum, service) => sum + service.durationMinutes, 0);
   const requiresVin = selectedServices.some((service) => service.requiresVin || service.requiredFields.includes("vin"));
   const requiresConfirmation = selectedServices.some((service) => service.requiresConfirmation) || (requiresVin && needsVinHelp);
@@ -255,8 +257,8 @@ export default function BookingClient() {
     const controller = new AbortController(); servicesAbortRef.current = controller; setServicesLoading(true); setServices([]);
     fetch(`/api/public/booking/services?branchId=${encodeURIComponent(branchId)}`, { signal: controller.signal })
       .then((response) => readJson<{ services: Service[] }>(response)).then((data) => {
-        setServices(data.services); const ids = new Set(data.services.map((service) => service.id));
-        setServiceIds((current) => current.filter((id) => ids.has(id)));
+        setServices(data.services);
+        setServiceIds((current) => normalizeBookingServiceSelection(current, data.services));
       }).catch((error) => { if (!(error instanceof DOMException && error.name === "AbortError")) setFormError(errorCopy(error)); })
       .finally(() => { if (!controller.signal.aborted) setServicesLoading(false); });
     return () => controller.abort();
@@ -291,7 +293,7 @@ export default function BookingClient() {
   }
   function toggleService(id: string) {
     const hadSlot = Boolean(selectedSlot);
-    setServiceIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
+    setServiceIds((current) => toggleBookingServiceSelection(current, id, services));
     setAvailability(null); setAvailabilityError(""); setNearestDays([]); setSelectedSlot(null);
     setSlotNotice(hadSlot ? "Состав работ изменился, поэтому прежнее время больше не закреплено. Выберите новое окно." : "");
     setFormError(""); setSubmissionUnknown(false);
@@ -390,11 +392,12 @@ export default function BookingClient() {
   function serviceRows(group: PublicServiceGroup) {
     return services.filter((service) => service.group === group).map((service) => {
       const requirements = requirementLabels(service), selected = serviceIds.includes(service.id);
+      const includedLevel = transmissionOilSelected && isStandaloneTransmissionLevel(service.name);
       return <label key={service.id} className={selected ? styles.selectedChoice : ""}>
-        <input type="checkbox" checked={selected} onChange={() => toggleService(service.id)} />
+        <input type="checkbox" checked={selected} disabled={includedLevel} onChange={() => toggleService(service.id)} />
         <span><strong>{service.customerName}</strong>{service.customerDescription && <small>{service.customerDescription}</small>}
           <small>{durationLabel(service.durationMinutes)}{requirements.length ? ` · Понадобится: ${requirements.join(", ")}` : ""}</small>
-          <small className={styles.priceLine}>{pricingLabel(service)}</small>
+          <small className={styles.priceLine}>{includedLevel ? "Включено в выбранную замену масла в АКПП" : pricingLabel(service)}</small>
           {service.requiresConfirmation && <em>Время будет предварительным до проверки администратором</em>}</span><Check aria-hidden />
       </label>;
     });
