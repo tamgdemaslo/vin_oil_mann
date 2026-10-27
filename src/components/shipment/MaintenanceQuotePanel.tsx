@@ -15,7 +15,7 @@ const number = (value: string) => Number(value.replace(",", "."));
 
 export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, research, requirements, filters: vehicleFilters = [], filtersLoading = false, onChooseWarehouse }: Props) {
   const choices = useMemo(() => profile || research ? quoteRequirementChoices(profile, research) : requirements ?? quoteRequirementChoices(null, null), [profile, research, requirements]);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [manualFilters, setManualFilters] = useState<QuoteFilterGroup[]>([]);
   const [manualArticle, setManualArticle] = useState("");
   const [manualFilterType, setManualFilterType] = useState("Масляный фильтр");
