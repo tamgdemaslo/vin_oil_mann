@@ -38,6 +38,7 @@ import {
   journalLocalTime,
   utcInstantToJournalLocal,
 } from "@/lib/booking/journal-time";
+import { visibleJournalStaff } from "@/lib/booking/journal-staff";
 import { formatLocalDate } from "@/lib/booking/timezone";
 import {
   DEFAULT_BOOKING_STEP_MINUTES,
@@ -920,14 +921,10 @@ export default function RecordsPageClient() {
 
   const canAccess = useMemo(() => Boolean(user), [user]);
 
-  const timelineStaff = useMemo(() => {
-    if (timelineStaffId) {
-      const selected = staff.find((s) => String(s.id) === timelineStaffId);
-      return selected ? [selected] : [];
-    }
-    const bookable = staff.filter((s) => s.bookable !== false);
-    return (bookable.length > 0 ? bookable : staff).slice(0, 4);
-  }, [staff, timelineStaffId]);
+  const timelineStaff = useMemo(
+    () => visibleJournalStaff(staff, records, timelineStaffId),
+    [staff, records, timelineStaffId],
+  );
 
   const serviceById = useMemo(() => {
     const map = new Map<string, Service>();
@@ -1118,32 +1115,20 @@ export default function RecordsPageClient() {
 
   const loadRecords = useCallback(async (): Promise<RecordItem[]> => {
     if (!companyId) return [];
-    const activeStaffIds = timelineStaffId
-      ? [timelineStaffId]
-      : (staff.filter((s) => s.bookable !== false).length > 0 ? staff.filter((s) => s.bookable !== false) : staff)
-          .slice(0, 4)
-          .map((s) => String(s.id));
-    if (activeStaffIds.length === 0) return [];
     setRecordsLoading(true);
     setError(null);
     try {
-      const responses = await Promise.all(
-        activeStaffIds.map(async (staffIdOne) => {
-          const params = new URLSearchParams({
-            action: "records",
-            company_id: companyId,
-            start_date: scheduleDate,
-            end_date: scheduleDate,
-            count: "100",
-            staff_id: staffIdOne,
-          });
-          const res = await fetch(`/api/booking-journal?${params.toString()}`, { cache: "no-store" });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error ?? "Ошибка загрузки записей");
-          return Array.isArray(data.data) ? (data.data as RecordItem[]) : [];
-        })
-      );
-      const next = responses.flat();
+      const params = new URLSearchParams({
+        action: "records",
+        company_id: companyId,
+        start_date: scheduleDate,
+        end_date: scheduleDate,
+      });
+      if (timelineStaffId) params.set("staff_id", timelineStaffId);
+      const res = await fetch(`/api/booking-journal?${params}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Ошибка загрузки записей");
+      const next = Array.isArray(data.data) ? (data.data as RecordItem[]) : [];
       setRecords(next);
       return next;
     } catch (e) {
@@ -1152,7 +1137,7 @@ export default function RecordsPageClient() {
     } finally {
       setRecordsLoading(false);
     }
-  }, [companyId, scheduleDate, staff, timelineStaffId]);
+  }, [companyId, scheduleDate, timelineStaffId]);
 
   const refreshRecords = useCallback(async () => {
     setRefreshing(true);
@@ -1161,41 +1146,30 @@ export default function RecordsPageClient() {
   }, [loadRecords]);
 
   const loadMonthRecords = useCallback(async () => {
-    if (!companyId || staff.length === 0) return;
-    const bookable = staff.filter((s) => s.bookable !== false);
-    const activeStaffIds = timelineStaffId
-      ? [timelineStaffId]
-      : (bookable.length > 0 ? bookable : staff).slice(0, 4).map((s) => String(s.id));
-    if (activeStaffIds.length === 0) return;
+    if (!companyId) return;
     setMonthLoading(true);
     setMonthError(null);
     try {
       const start = monthStart(calendarMonth);
       const end = monthEnd(calendarMonth);
-      const responses = await Promise.all(
-        activeStaffIds.map(async (staffIdOne) => {
-          const params = new URLSearchParams({
-            action: "records",
-            company_id: companyId,
-            start_date: start,
-            end_date: end,
-            count: "500",
-            staff_id: staffIdOne,
-          });
-          const res = await fetch(`/api/booking-journal?${params.toString()}`, { cache: "no-store" });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error ?? "Ошибка загрузки календаря месяца");
-          return Array.isArray(data.data) ? (data.data as RecordItem[]) : [];
-        })
-      );
-      setMonthRecords(responses.flat());
+      const params = new URLSearchParams({
+        action: "records",
+        company_id: companyId,
+        start_date: start,
+        end_date: end,
+      });
+      if (timelineStaffId) params.set("staff_id", timelineStaffId);
+      const res = await fetch(`/api/booking-journal?${params}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Ошибка загрузки календаря месяца");
+      setMonthRecords(Array.isArray(data.data) ? (data.data as RecordItem[]) : []);
     } catch (e) {
       setMonthError(e instanceof Error ? e.message : "Не удалось загрузить календарь месяца");
       setMonthRecords([]);
     } finally {
       setMonthLoading(false);
     }
-  }, [calendarMonth, companyId, staff, timelineStaffId]);
+  }, [calendarMonth, companyId, timelineStaffId]);
 
   const loadCrmDeals = useCallback(async () => {
     setCrmDealsLoading(true);
@@ -1470,7 +1444,7 @@ export default function RecordsPageClient() {
   const calendarDays = useMemo(() => getMonthGridDays(calendarMonth), [calendarMonth]);
 
   const monthLoadByDate = useMemo(() => {
-    const activeStaff = timelineStaff.length > 0 ? timelineStaff : staff.filter((item) => item.bookable !== false).slice(0, 4);
+    const activeStaff = visibleJournalStaff(staff, monthRecords, timelineStaffId);
     const staffCount = Math.max(1, activeStaff.length);
     const defaultWorkingMinutes = (DEFAULT_TIMELINE_END - DEFAULT_TIMELINE_START) * staffCount;
     const grouped = new Map<string, RecordItem[]>();
@@ -1538,7 +1512,7 @@ export default function RecordsPageClient() {
       });
     }
     return out;
-  }, [branchTimeZone, calendarDays, monthRecords, staff, timelineStaff]);
+  }, [branchTimeZone, calendarDays, monthRecords, staff, timelineStaffId]);
 
   const branchDayWindow = useMemo(
     () => bookingWorkingWindow(bookingWorkingHours, scheduleDate),

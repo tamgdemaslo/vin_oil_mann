@@ -223,15 +223,17 @@ async function resolveServiceIds(branchId: string, numericIds: number[]) {
   return resolved;
 }
 
-async function resolveMembershipId(branchId: string, numericId: unknown) {
+async function resolveMembershipId(branchId: string, numericId: unknown, includeArchived = false) {
   const id = number(numericId);
   if (!id) throw new BookingError("Мастер не выбран", "booking_master_required");
   const memberships = await prisma.branchMembership.findMany({
     where: {
       branchId,
-      roleId: BOOKING_MASTER_ROLE_ID,
-      status: "active",
-      user: { status: "active" },
+      ...(includeArchived ? {} : {
+        roleId: BOOKING_MASTER_ROLE_ID,
+        status: "active",
+        user: { status: "active" },
+      }),
     },
     select: { id: true },
   });
@@ -283,17 +285,18 @@ export async function GET(request: NextRequest) {
         const memberships = await prisma.branchMembership.findMany({
           where: {
             branchId,
-            roleId: BOOKING_MASTER_ROLE_ID,
-            status: "active",
-            user: { status: "active" },
+            OR: [
+              { roleId: BOOKING_MASTER_ROLE_ID, status: "active", user: { status: "active" } },
+              { assignedBookings: { some: { branchId } } },
+            ],
             ...(bookingViewIsSelfOnly(access.context) ? { id: ownMembership?.id ?? "__none__" } : {}),
           },
-          include: { user: { select: { name: true } }, bookingServices: { select: { serviceId: true } } },
+          include: { user: { select: { name: true, status: true } }, bookingServices: { select: { serviceId: true } } },
           orderBy: [{ position: "asc" }, { user: { name: "asc" } }],
         });
         const hasUnassignedArchive = bookingViewIsSelfOnly(access.context) ? 0 : await prisma.booking.count({ where: { branchId, source: "LEGACY_YCLIENTS", masterMembershipId: null } });
         return NextResponse.json({ success: true, data: [
-          ...memberships.map((membership) => ({ id: journalId(membership.id), membership_id: membership.id, name: membership.user.name, specialization: membership.position || membership.roleId, bookable: membership.bookingServices.length > 0 })),
+          ...memberships.map((membership) => ({ id: journalId(membership.id), membership_id: membership.id, name: membership.user.name, specialization: membership.position || membership.roleId, bookable: membership.roleId === BOOKING_MASTER_ROLE_ID && membership.status === "active" && membership.user.status === "active" && membership.bookingServices.length > 0 })),
           ...(hasUnassignedArchive ? [{ id: legacyUnassignedId(branchId), name: "Архив Yclients", specialization: "Исторические записи без сопоставленного сотрудника", bookable: true }] : []),
         ] });
       }
@@ -340,7 +343,7 @@ export async function GET(request: NextRequest) {
         const staffRaw = request.nextUrl.searchParams.get("staff_id");
         const isUnassignedArchive = Number(staffRaw) === legacyUnassignedId(branchId);
         const requestedMembershipId = !bookingViewIsSelfOnly(access.context) && staffRaw && !isUnassignedArchive
-          ? await resolveMembershipId(branchId, staffRaw)
+          ? await resolveMembershipId(branchId, staffRaw, true)
           : null;
         const membershipId = bookingViewIsSelfOnly(access.context) ? ownMembership?.id ?? "__none__" : requestedMembershipId;
         const bookings = await prisma.booking.findMany({
