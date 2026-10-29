@@ -1,6 +1,8 @@
 import { randomUUID } from "crypto";
-import { canonicalizeLogin, getUsersFromEnv } from "@/lib/auth";
+import { canonicalizeLogin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { listPayrollEmployees } from "@/lib/payroll-employees";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { getCachedPayrollSummary, type PayrollSummary } from "@/lib/payroll";
 import { listPayrollAdjustments } from "@/lib/payroll-settlements";
 import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
@@ -417,7 +419,7 @@ export async function closePayrollPeriod(params: {
   }
 
   const periodId = randomUUID();
-  const users = await getUsersFromEnv();
+  const users = await listPayrollEmployees(getScopedBranchId());
   const userByLogin = new Map(users.map((user) => [normalizeLogin(user.login), user]));
   const canonicalLoginByLower = new Map(users.map((user) => [normalizeLogin(user.login), user.login]));
   const legacyAdjustments = await prisma.bonusPenalty.findMany({

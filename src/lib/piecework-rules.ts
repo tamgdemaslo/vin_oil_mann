@@ -3,8 +3,8 @@ import { getBranchContext } from "@/lib/branch-context";
 
 export type PieceworkRole = "master" | "admin";
 /**
- * A master is paid for an exact service card; an administrator is paid for an
- * exact product group. Both identifiers are stable catalog IDs, never names.
+ * Role defaults can cover services and product groups. Individual employee
+ * rules are stored separately on the branch membership. IDs are stable catalog IDs.
  */
 export type PieceworkTargetType = "service" | "product_group";
 export type PieceworkMode = "fixed" | "percent";
@@ -38,7 +38,7 @@ function toKey(targetType: PieceworkTargetType, targetId: string, role: Piecewor
 }
 
 export function isAllowedPieceworkRule(targetType: PieceworkTargetType, role: PieceworkRole) {
-  return (targetType === "service" && role === "master") || (targetType === "product_group" && role === "admin");
+  return (targetType === "service" || targetType === "product_group") && isPieceworkRole(role);
 }
 
 export function isPieceworkRole(role: string): role is PieceworkRole {
@@ -89,10 +89,8 @@ export async function listPieceworkRules(branchId?: string): Promise<PieceworkRu
   const savedRules = await prisma.pieceworkRule.findMany({
     where: {
       branchId: scopedBranchId,
-      OR: [
-        { targetType: "service", role: "master" },
-        { targetType: "product_group", role: "admin" },
-      ],
+      targetType: { in: ["service", "product_group"] },
+      role: { in: ["master", "admin"] },
     },
     orderBy: [{ targetType: "asc" }, { targetName: "asc" }],
   });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getUsersFromEnv } from "@/lib/auth";
+import { requireBranchApi } from "@/lib/branch-api";
+import { listPayrollEmployees } from "@/lib/payroll-employees";
 
 /** GET: список сотрудников (логин + имя). Только для владельца. */
 export async function GET() {
@@ -10,7 +11,9 @@ export async function GET() {
     return NextResponse.json({ error: "Доступ только для владельца" }, { status: 403 });
   }
 
-  const envUsers = await getUsersFromEnv();
-  const users = envUsers.map((u) => ({ login: u.login, name: u.name || u.login, role: u.role }));
+  const access = await requireBranchApi();
+  if (!access.ok) return access.response;
+  const employees = await listPayrollEmployees(access.context.branchId!);
+  const users = employees.map(({ settings, ...employee }) => ({ ...employee, employmentEnd: settings.employmentEnd ?? null }));
   return NextResponse.json({ users });
 }

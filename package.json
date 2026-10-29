@@ -6,6 +6,7 @@
     "node": ">=20.9.0"
   },
   "scripts": {
+    "test:employee-payroll": "node scripts/test-employee-payroll.mjs && node scripts/test-employee-payroll-api.mjs",
     "test:product-kits": "node scripts/test-product-kits.mjs",
     "test:product-kits-db": "node scripts/test-product-kits-db.mjs",
     "dev": "next dev --hostname 127.0.0.1 --webpack",

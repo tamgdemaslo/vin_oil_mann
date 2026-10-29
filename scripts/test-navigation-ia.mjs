@@ -21,9 +21,9 @@ const owner = resolveNavigationForUser({
   activeBranchId: "branch-1",
 });
 
-scenario("1. Владелец видит семь целевых разделов", () => {
+scenario("1. Владелец видит восемь целевых разделов", () => {
   assert.deepEqual(owner.sections.map((section) => section.label), [
-    "Главное", "Работа", "Клиенты", "Склад", "Финансы", "ИИ-помощник", "Управление",
+    "Главное", "Работа", "Клиенты", "Склад", "Финансы", "Сотрудники", "ИИ-помощник", "Управление",
   ]);
 });
 
@@ -48,7 +48,7 @@ scenario("4. Бухгалтер видит финансы", () => {
 scenario("5. Администратор филиала может управлять сотрудниками", () => {
   const administrator = resolveNavigationForUser({ user: { role: "admin" }, branchMemberships: [{ branchId: "branch-1", roleId: "administrator" }], activeBranchId: "branch-1" });
   assert.equal(administrator.canManageBranches, true);
-  assert.equal(administrator.managementActions.some((entry) => entry.label === "Сотрудники и роли"), true);
+  assert.equal(administrator.sections.find((section) => section.id === "employees")?.items.some((entry) => entry.href === "/employees/roles"), true);
 });
 
 scenario("6. Доступ к филиалам вычисляется из membership", () => {

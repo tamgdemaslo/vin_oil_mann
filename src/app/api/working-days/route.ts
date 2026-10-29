@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { canonicalizeLogin, getLoginVariants, getUsersFromEnv } from "@/lib/auth";
+import { canonicalizeLogin, getLoginVariants } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
+import { listPayrollEmployees } from "@/lib/payroll-employees";
+import { employedOn } from "@/lib/employee-pay-settings";
 
 const MAX_BULK_SHIFT_CHANGES = 500;
 
@@ -108,12 +110,13 @@ export async function GET(request: NextRequest) {
         where,
         orderBy: [{ date: "desc" }],
       }),
-      getUsersFromEnv(),
+      listPayrollEmployees(access.context.branchId!),
     ]);
     const payrollLogins = new Set(
       users.filter((user) => user.role === "master" || user.role === "admin").map((user) => canonicalizeLogin(user.login).toLowerCase())
     );
 
+    const employeeByLogin = new Map(users.map((user) => [user.login.toLowerCase(), user]));
     const list = scheduledShifts
       .map((row) => ({
         id: row.id,
@@ -121,7 +124,7 @@ export async function GET(request: NextRequest) {
         date: row.date,
         createdByLogin: canonicalizeLogin(row.createdByLogin),
       }))
-      .filter((row) => payrollLogins.has(row.userLogin.toLowerCase()))
+      .filter((row) => { const employee = employeeByLogin.get(row.userLogin.toLowerCase()); return payrollLogins.has(row.userLogin.toLowerCase()) && employee && employedOn(employee.settings, row.date, employee.employmentStart); })
       .sort((a, b) => b.date.localeCompare(a.date));
     return NextResponse.json(list);
   });
@@ -147,7 +150,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Укажите от 1 до ${MAX_BULK_SHIFT_CHANGES} корректных назначений смен` }, { status: 400 });
     }
 
-    const users = await getUsersFromEnv();
+    const users = await listPayrollEmployees(access.context.branchId!);
     const payrollUsers = new Map(
       users
         .filter((user) => user.role === "master" || user.role === "admin")
@@ -156,6 +159,12 @@ export async function POST(request: NextRequest) {
     if (assignments.some((assignment) => !payrollUsers.has(assignment.userLogin.toLowerCase()))) {
       return NextResponse.json({ error: "Смены для зарплаты назначаются только мастерам и администраторам" }, { status: 400 });
     }
+
+    const employeeByLogin = new Map(users.map((user) => [user.login.toLowerCase(), user]));
+    if (assignments.some((assignment) => {
+      const employee = employeeByLogin.get(assignment.userLogin.toLowerCase());
+      return !employee || !employedOn(employee.settings, assignment.date, employee.employmentStart);
+    })) return NextResponse.json({ error: "Нельзя назначить смену вне периода работы сотрудника" }, { status: 400 });
 
     const normalizedAssignments = assignments.map((assignment) => ({
       userLogin: payrollUsers.get(assignment.userLogin.toLowerCase())!,

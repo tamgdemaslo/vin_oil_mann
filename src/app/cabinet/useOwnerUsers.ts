@@ -7,10 +7,9 @@ export type OwnerUser = {
   login: string;
   name: string;
   role?: "owner" | "admin" | "master";
+  employmentEnd?: string | null;
+  employmentStart?: string | null;
 };
-
-let cachedOwnerUsers: OwnerUser[] | null = null;
-let ownerUsersPromise: Promise<OwnerUser[]> | null = null;
 
 export function toLocalDateInputValue(value: Date) {
   return toServiceDateInput(value);
@@ -33,44 +32,17 @@ export function getCurrentMonthRange() {
 }
 
 export function useOwnerUsers(enabled: boolean) {
-  const [users, setUsers] = useState<OwnerUser[]>(() => cachedOwnerUsers ?? []);
-  const [loading, setLoading] = useState(enabled && !cachedOwnerUsers);
-
+  const [users, setUsers] = useState<OwnerUser[]>([]);
+  const [loading, setLoading] = useState(enabled);
   useEffect(() => {
     if (!enabled) return;
-
-    let cancelled = false;
-    if (cachedOwnerUsers) {
-      return;
-    }
-
-    const request =
-      ownerUsersPromise ??
-      (ownerUsersPromise = fetch("/api/users")
-        .then((r) => r.json())
-        .then((data) => {
-          const nextUsers = Array.isArray(data?.users) ? data.users : [];
-          cachedOwnerUsers = nextUsers;
-          return nextUsers;
-        })
-        .finally(() => {
-          ownerUsersPromise = null;
-        }));
-
-    request
-      .then((nextUsers) => {
-        if (!cancelled) {
-          setUsers(nextUsers);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    const controller = new AbortController();
+    fetch("/api/users", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => { if (!response.ok) throw new Error("Не удалось загрузить сотрудников"); return response.json(); })
+      .then((data) => setUsers(Array.isArray(data.users) ? data.users : []))
+      .catch(() => { if (!controller.signal.aborted) setUsers([]); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [enabled]);
-
   return { users, loading };
 }

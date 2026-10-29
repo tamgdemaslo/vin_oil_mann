@@ -11,6 +11,10 @@ import {
 } from "@/lib/piecework-rules";
 import { logChange } from "@/lib/change-log";
 import { requireBranchApi } from "@/lib/branch-api";
+import { canonicalizeLogin } from "@/lib/auth";
+import { listPayrollEmployees } from "@/lib/payroll-employees";
+import { readEmployeePaySettings, type EmployeeRule } from "@/lib/employee-pay-settings";
+import { invalidatePayrollCache } from "@/lib/payroll";
 
 function isRole(value: string): value is PieceworkRole {
   return value === "master" || value === "admin";
@@ -53,7 +57,11 @@ export async function GET() {
   if (!branchAccess.ok) return branchAccess.response;
   const branchId = branchAccess.context.branchId!;
   const [rules, targets] = await Promise.all([listPieceworkRules(branchId), listPieceworkTargets(branchId)]);
-  return NextResponse.json({ rules, targets });
+  const employees = await listPayrollEmployees(branchId);
+  const individualRules = employees.flatMap((employee) => (employee.settings.pieceworkRules ?? []).map((rule) => ({
+    ...rule, role: employee.role === "admin" ? "admin" : "master", employeeLogin: employee.login, isConfigured: true, isDefault: false,
+  })));
+  return NextResponse.json({ rules: [...rules, ...individualRules], targets, employeeModes: Object.fromEntries(employees.map((employee) => [employee.login, Boolean(employee.settings.individualPiecework)])) });
 }
 
 export async function POST(request: NextRequest) {
@@ -70,12 +78,14 @@ export async function POST(request: NextRequest) {
   const fixedRaw = body.fixedCents == null ? null : Number(body.fixedCents);
   const percentRaw = body.percentBasisPoints == null ? null : Number(body.percentBasisPoints);
 
-  if (!isTargetType(targetType) || !targetId || !isRole(role) || !isMode(mode)) {
+  const employeeLogin = typeof body.employeeLogin === "string" ? canonicalizeLogin(body.employeeLogin) : "";
+  const allTarget = employeeLogin && (targetType === "all_services" || targetType === "all_products");
+  if ((!isTargetType(targetType) && !allTarget) || !targetId || !isRole(role) || !isMode(mode)) {
     return NextResponse.json({ error: "Некорректные данные правила" }, { status: 400 });
   }
-  if (!isAllowedPieceworkRule(targetType, role)) {
+  if (!allTarget && !isAllowedPieceworkRule(targetType as PieceworkTargetType, role)) {
     return NextResponse.json(
-      { error: "Для мастера задайте конкретную услугу, для администратора — конкретную группу товаров" },
+      { error: "Выберите услугу или группу товаров" },
       { status: 400 }
     );
   }
@@ -92,12 +102,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Для процента укажите значение от 0 до 100" }, { status: 400 });
   }
 
-  const target = await resolveTarget(branchId, targetType, targetId);
+  const target = allTarget
+    ? { id: "*", name: targetType === "all_services" ? "Все услуги" : "Все товары" }
+    : await resolveTarget(branchId, targetType as PieceworkTargetType, targetId);
   if (!target) {
     return NextResponse.json(
       { error: targetType === "service" ? "Услуга не найдена в активном филиале" : "Группа товаров не найдена в активном филиале" },
       { status: 400 }
     );
+  }
+
+  if (employeeLogin) {
+    const member = await prisma.branchMembership.findFirst({ where: { branchId, user: { login: { equals: employeeLogin, mode: "insensitive" } } } });
+    if (!member) return NextResponse.json({ error: "Сотрудник не найден в филиале" }, { status: 404 });
+    const settings = readEmployeePaySettings(member.paySettingsJson);
+    if (settings.employmentEnd) return NextResponse.json({ error: "Сотрудник уволен. Его правила сохранены в истории." }, { status: 400 });
+    const rule: EmployeeRule = { targetType: targetType as EmployeeRule["targetType"], targetId: target.id, targetName: target.name, mode, fixedCents: mode === "fixed" ? fixedCents : null, percentBasisPoints: mode === "percent" ? percentBasisPoints : null };
+    const rules = (settings.pieceworkRules ?? []).filter((item) => item.targetType !== rule.targetType || item.targetId !== rule.targetId);
+    rules.push(rule);
+    const next = { ...settings, individualPiecework: true, pieceworkRules: rules };
+    const saved = await prisma.$transaction(async (tx) => {
+      const result = await tx.branchMembership.updateMany({ where: { id: member.id, branchId, updatedAt: member.updatedAt }, data: { paySettingsJson: next } });
+      if (result.count) await tx.changeLog.create({ data: { branchId, entityType: "employee_piecework", entityId: member.id, action: "update", oldValue: settings as never, newValue: next as never, performedByLogin: owner.session.user.login } });
+      return result.count;
+    });
+    if (!saved) return NextResponse.json({ error: "Настройки изменились. Обновите страницу и повторите." }, { status: 409 });
+    invalidatePayrollCache();
+    return NextResponse.json(rule);
   }
 
   const existing = await prisma.pieceworkRule.findUnique({
@@ -132,6 +163,7 @@ export async function POST(request: NextRequest) {
     performedByLogin: owner.session.user.login,
   });
 
+  invalidatePayrollCache();
   return NextResponse.json(saved);
 }
 
@@ -144,8 +176,27 @@ export async function DELETE(request: NextRequest) {
   const targetType = request.nextUrl.searchParams.get("targetType") ?? "";
   const targetId = request.nextUrl.searchParams.get("targetId")?.trim() ?? "";
   const role = request.nextUrl.searchParams.get("role") ?? "";
-  if (!isTargetType(targetType) || !targetId || !isRole(role) || !isAllowedPieceworkRule(targetType, role)) {
+  const employeeLogin = canonicalizeLogin(request.nextUrl.searchParams.get("employeeLogin") ?? "");
+  const allTarget = employeeLogin && (targetType === "all_services" || targetType === "all_products");
+  if ((!isTargetType(targetType) && !allTarget) || !targetId || !isRole(role)) {
     return NextResponse.json({ error: "Некорректные параметры удаления" }, { status: 400 });
+  }
+
+  if (employeeLogin) {
+    const member = await prisma.branchMembership.findFirst({ where: { branchId, user: { login: { equals: employeeLogin, mode: "insensitive" } } } });
+    if (!member) return NextResponse.json({ error: "Сотрудник не найден" }, { status: 404 });
+    const settings = readEmployeePaySettings(member.paySettingsJson);
+    if (settings.employmentEnd) return NextResponse.json({ error: "Правила уволенного сотрудника доступны только для просмотра" }, { status: 400 });
+    const reset = request.nextUrl.searchParams.get("reset") === "true";
+    const next = { ...settings, individualPiecework: !reset, pieceworkRules: reset ? [] : (settings.pieceworkRules ?? []).filter((rule) => rule.targetType !== targetType || rule.targetId !== targetId) };
+    const saved = await prisma.$transaction(async (tx) => {
+      const result = await tx.branchMembership.updateMany({ where: { id: member.id, branchId, updatedAt: member.updatedAt }, data: { paySettingsJson: next } });
+      if (result.count) await tx.changeLog.create({ data: { branchId, entityType: "employee_piecework", entityId: member.id, action: "update", oldValue: settings as never, newValue: next as never, performedByLogin: owner.session.user.login } });
+      return result.count;
+    });
+    if (!saved) return NextResponse.json({ error: "Настройки изменились. Обновите страницу." }, { status: 409 });
+    invalidatePayrollCache();
+    return NextResponse.json({ removed: true });
   }
 
   const existing = await prisma.pieceworkRule.findUnique({
@@ -169,5 +220,6 @@ export async function DELETE(request: NextRequest) {
     },
     performedByLogin: owner.session.user.login,
   });
+  invalidatePayrollCache();
   return NextResponse.json({ removed: true });
 }

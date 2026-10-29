@@ -199,7 +199,8 @@ type PayrollShiftItem = {
 };
 
 type PieceworkRuleItem = {
-  targetType: "service" | "product_group";
+  targetType: "service" | "product_group" | "all_services" | "all_products";
+  employeeLogin?: string;
   targetId: string;
   targetName: string;
   role: "master" | "admin";
@@ -701,11 +702,11 @@ function getWeekRangeKeys(dateKey: string, monthDate: Date) {
   });
 }
 
-function ruleKey(rule: Pick<PieceworkRuleItem, "targetType" | "targetId" | "role">) {
-  return `${rule.targetType}:${rule.targetId}:${rule.role}`;
+function ruleKey(rule: Pick<PieceworkRuleItem, "targetType" | "targetId" | "role" | "employeeLogin">) {
+  return `${rule.targetType}:${rule.targetId}:${rule.employeeLogin ? `employee:${rule.employeeLogin}` : rule.role}`;
 }
 
-function ruleValueInputId(rule: Pick<PieceworkRuleItem, "targetType" | "targetId" | "role">) {
+function ruleValueInputId(rule: Pick<PieceworkRuleItem, "targetType" | "targetId" | "role" | "employeeLogin">) {
   return `piecework-rule-value-${ruleKey(rule)}`;
 }
 
@@ -717,12 +718,12 @@ function makeRuleDraft(rule: PieceworkRuleItem): DraftRule {
 }
 
 function targetTypeLabel(targetType: PieceworkRuleItem["targetType"]) {
-  return targetType === "service" ? "Услуга" : "Группа товаров";
+  return ({ service: "Услуга", product_group: "Группа товаров", all_services: "Все услуги", all_products: "Все товары" })[targetType];
 }
 
 function ruleBasisLabel(rule: Pick<PieceworkRuleItem, "targetType">, mode: DraftRule["mode"]) {
-  if (mode === "fixed") return rule.targetType === "service" ? "за услугу" : "за единицу";
-  return rule.targetType === "service" ? "от суммы услуги" : "от чистой прибыли";
+  if (mode === "fixed") return (rule.targetType === "service" || rule.targetType === "all_services") ? "за услугу" : "за единицу";
+  return (rule.targetType === "service" || rule.targetType === "all_services") ? "от суммы услуги" : "от прибыли товара";
 }
 
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
@@ -954,7 +955,7 @@ function EmployeeDashboardView({
                 <strong>Мои отгрузки</strong>
                 <span>Только документы, где есть ваше начисление.</span>
               </div>
-              <Link href="/salary?tab=calculation">Все мои отгрузки</Link>
+              <Link href="/employees/salary?tab=calculation">Все мои отгрузки</Link>
             </div>
             <div className="eco-payroll-employee-filters">
               {[
@@ -1147,6 +1148,7 @@ export default function SalaryDashboard({
   const [rates, setRates] = useState<ShiftRateItem[]>([]);
   const [ratesLoading, setRatesLoading] = useState(false);
   const [rules, setRules] = useState<PieceworkRuleItem[]>([]);
+  const [employeeRuleModes, setEmployeeRuleModes] = useState<Record<string, boolean>>({});
   const [ruleTargets, setRuleTargets] = useState<PieceworkTargets>({ services: [], productGroups: [] });
   const [rulesLoading, setRulesLoading] = useState(false);
   const [draftRules, setDraftRules] = useState<Record<string, DraftRule>>({});
@@ -1156,6 +1158,8 @@ export default function SalaryDashboard({
   const [rulesMessage, setRulesMessage] = useState<string | null>(null);
   const [ruleSearch, setRuleSearch] = useState("");
   const [ruleRoleFilter, setRuleRoleFilter] = useState<PieceworkRuleItem["role"]>("master");
+  const [ruleEmployeeLogin, setRuleEmployeeLogin] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("employee") ?? "");
+  const [ruleTargetType, setRuleTargetType] = useState<PieceworkRuleItem["targetType"]>("service");
   const [ruleTargetToAdd, setRuleTargetToAdd] = useState("");
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [calendarLogin, setCalendarLogin] = useState(isOwner ? "" : login);
@@ -1299,9 +1303,10 @@ export default function SalaryDashboard({
     setRulesLoading(true);
     try {
       const response = await fetch("/api/piecework-rules", { cache: "no-store" });
-      const payload = await readJson<{ rules?: PieceworkRuleItem[]; targets?: PieceworkTargets }>(response, "Не удалось загрузить правила");
+      const payload = await readJson<{ rules?: PieceworkRuleItem[]; targets?: PieceworkTargets; employeeModes?: Record<string, boolean> }>(response, "Не удалось загрузить правила");
       const nextRules = Array.isArray(payload.rules) ? payload.rules : [];
       setRules(nextRules);
+      setEmployeeRuleModes(payload.employeeModes ?? {});
       setRuleTargets({
         services: Array.isArray(payload.targets?.services) ? payload.targets.services : [],
         productGroups: Array.isArray(payload.targets?.productGroups) ? payload.targets.productGroups : [],
@@ -1559,7 +1564,9 @@ export default function SalaryDashboard({
 
   const payrollRows = useMemo<PayrollRow[]>(() => {
     const logins = new Set<string>();
-    for (const user of scopedUsers) logins.add(normalizeLogin(user.login));
+    for (const user of scopedUsers) {
+      if (!user.employmentEnd || user.employmentEnd >= dateFrom) logins.add(normalizeLogin(user.login));
+    }
     if (payroll?.byLogin) {
       for (const loginKey of Object.keys(payroll.byLogin)) logins.add(normalizeLogin(loginKey));
     }
@@ -1586,7 +1593,7 @@ export default function SalaryDashboard({
 
         return {
           login: sourceLogin,
-          name: user?.name ?? sourceLogin,
+          name: `${user?.name ?? sourceLogin}${user?.employmentEnd ? " (уволен)" : ""}`,
           role: roleValue,
           payroll: payrollEntry,
           rateCents: rate,
@@ -1608,6 +1615,7 @@ export default function SalaryDashboard({
     userByLogin,
     viewingAsEmployee,
     shiftCountsByLogin,
+    dateFrom,
   ]);
 
   const selectedRow = selectedLogin
@@ -2104,7 +2112,7 @@ export default function SalaryDashboard({
     if (calendarLogin) {
       return teamUsers.filter((user) => normalizeLogin(user.login) === normalizeLogin(calendarLogin));
     }
-    return teamUsers.filter((user) => user.role === "master" || user.role === "admin");
+    return teamUsers.filter((user) => !user.employmentEnd && (user.role === "master" || user.role === "admin"));
   }
 
   function getEffectiveShiftState(date: string, targetLogin = calendarLogin) {
@@ -2357,6 +2365,7 @@ export default function SalaryDashboard({
             targetType: rule.targetType,
             targetId: rule.targetId,
             role: rule.role,
+            employeeLogin: rule.employeeLogin,
             mode: draft.mode,
             fixedCents: draft.mode === "fixed" ? Math.round(value * 100) : null,
             percentBasisPoints: draft.mode === "percent" ? Math.round(value * 100) : null,
@@ -2389,18 +2398,19 @@ export default function SalaryDashboard({
   }
 
   function addRuleTarget() {
-    const options = ruleRoleFilter === "master" ? ruleTargets.services : ruleTargets.productGroups;
+    const options = selectedRuleTargets;
     const target = options.find((item) => item.id === ruleTargetToAdd);
     if (!target) {
-      setRulesMessage(ruleRoleFilter === "master" ? "Выберите услугу из каталога" : "Выберите группу товаров");
+      setRulesMessage("Выберите позицию для начисления");
       return;
     }
     const nextRule: PieceworkRuleItem = {
       targetType: target.targetType,
       targetId: target.id,
       targetName: target.name,
-      role: target.role,
-      mode: ruleRoleFilter === "master" ? "fixed" : "percent",
+      role: ruleRoleFilter,
+      employeeLogin: ruleEmployeeLogin || undefined,
+      mode: ruleTargetType === "service" || ruleTargetType === "all_services" ? "fixed" : "percent",
       fixedCents: null,
       percentBasisPoints: null,
       isConfigured: false,
@@ -2447,7 +2457,7 @@ export default function SalaryDashboard({
     setRulesSaving(true);
     setRulesMessage(null);
     try {
-      const params = new URLSearchParams({ targetType: rule.targetType, targetId: rule.targetId, role: rule.role });
+      const params = new URLSearchParams({ targetType: rule.targetType, targetId: rule.targetId, role: rule.role, ...(rule.employeeLogin ? { employeeLogin: rule.employeeLogin } : {}) });
       const response = await fetch(`/api/piecework-rules?${params.toString()}`, { method: "DELETE" });
       await readJson(response, "Не удалось убрать правило");
       setToast("Правило убрано");
@@ -2695,15 +2705,17 @@ export default function SalaryDashboard({
   }
 
   const changedRulesCount = rules.filter((rule) => getRuleStatus(rule) === "changed").length;
-  const activeRuleTargetType = ruleRoleFilter === "master" ? "service" : "product_group";
-  const activeRuleLabel = ruleRoleFilter === "master" ? "услуги" : "группы товаров";
-  const addableRuleTargets = (ruleRoleFilter === "master" ? ruleTargets.services : ruleTargets.productGroups).filter(
-    (target) => !rules.some((rule) => rule.targetType === target.targetType && rule.targetId === target.id && rule.role === target.role)
-  );
+  const activeRuleTargetType = ruleTargetType;
+  const activeRuleLabel = ruleTargetType === "service" || ruleTargetType === "all_services" ? "услуг" : "товаров";
+  const selectedRuleTargets: PieceworkTargetOption[] = ruleTargetType === "all_services" || ruleTargetType === "all_products"
+    ? [{ id: "*", name: ruleTargetType === "all_services" ? "Все услуги" : "Все товары", targetType: ruleTargetType, role: ruleRoleFilter }]
+    : ruleTargetType === "service" ? ruleTargets.services : ruleTargets.productGroups;
+  const inRuleScope = (rule: PieceworkRuleItem) => ruleEmployeeLogin ? rule.employeeLogin === ruleEmployeeLogin : !rule.employeeLogin && rule.role === ruleRoleFilter;
+  const addableRuleTargets = selectedRuleTargets.filter((target) => !rules.some((rule) => inRuleScope(rule) && rule.targetType === target.targetType && rule.targetId === target.id));
   const filteredRules = rules.filter((rule) => {
     const search = ruleSearch.trim().toLowerCase();
     if (search && !`${rule.targetName} ${rule.targetId}`.toLowerCase().includes(search)) return false;
-    return rule.role === ruleRoleFilter && rule.targetType === activeRuleTargetType;
+    return inRuleScope(rule) && rule.targetType === activeRuleTargetType;
   });
 
   const selectedDayState = getEffectiveShiftState(selectedDate);
@@ -2783,7 +2795,7 @@ export default function SalaryDashboard({
           <div className="eco-page-crumbs">
             <Link href="/">Главная</Link>
             <span className="sep">/</span>
-            <span>Финансы</span>
+            <Link href="/employees">Сотрудники</Link>
             <span className="sep">/</span>
             <span className="cur">Зарплата</span>
           </div>
@@ -3465,32 +3477,41 @@ export default function SalaryDashboard({
           <div className="eco-payroll-toolbar">
             <div>
               <div className="eco-page-kicker">Правила сдельной части</div>
-              <p>Мастер получает начисление за конкретную услугу, администратор — за конкретную группу товаров.</p>
+              <p>Выберите сотрудника и назначьте услуги, товарные группы или сразу все услуги и товары. Индивидуальные правила заменяют общие правила его роли.</p>
             </div>
             <div className="eco-payroll-rule-summary">
-              <span>Услуги мастера · {rules.filter((rule) => rule.targetType === "service").length}</span>
+              <span>Услуги · {rules.filter((rule) => rule.targetType === "service").length}</span>
               <span>Группы товаров · {rules.filter((rule) => rule.targetType === "product_group").length}</span>
             </div>
           </div>
 
           <div className="eco-payroll-rule-filters">
-            <EcoSelect
-              value={ruleRoleFilter}
-              onChange={(event) => {
-                setRuleRoleFilter(event.target.value as PieceworkRuleItem["role"]);
-                setRuleTargetToAdd("");
-              }}
-              aria-label="Должность для настройки правил"
-            >
-              <option value="master">Мастер</option>
-              <option value="admin">Администратор</option>
+            <EcoSelect value={ruleEmployeeLogin ? `employee:${ruleEmployeeLogin}` : `role:${ruleRoleFilter}`} aria-label="Для кого настроить начисления" onChange={(event) => {
+              const value = event.target.value;
+              if (value.startsWith("employee:")) { setRuleEmployeeLogin(value.slice(9)); setRuleRoleFilter(normalizeRole(teamUsers.find((user) => user.login === value.slice(9))?.role ?? "master") === "admin" ? "admin" : "master"); }
+              else { setRuleEmployeeLogin(""); setRuleRoleFilter(value.slice(5) as "master" | "admin"); setRuleTargetType("service"); }
+              setRuleTargetToAdd("");
+            }}>
+              <optgroup label="Индивидуальные правила">
+                {teamUsers.filter((user) => user.role !== "owner" && !user.employmentEnd).map((user) => <option key={user.login} value={`employee:${user.login}`}>{user.name}</option>)}
+              </optgroup>
+              <optgroup label="Общие правила роли">
+                <option value="role:master">Мастер — общие правила</option>
+                <option value="role:admin">Администратор — общие правила</option>
+              </optgroup>
+            </EcoSelect>
+            <EcoSelect value={ruleTargetType} aria-label="За что начислять" onChange={(event) => { setRuleTargetType(event.target.value as PieceworkRuleItem["targetType"]); setRuleTargetToAdd(""); }}>
+              <option value="service">Конкретные услуги</option>
+              <option value="product_group">Группы товаров</option>
+              {ruleEmployeeLogin && <option value="all_services">Все услуги</option>}
+              {ruleEmployeeLogin && <option value="all_products">Все товары</option>}
             </EcoSelect>
             <EcoSelect
               value={ruleTargetToAdd}
               onChange={(event) => setRuleTargetToAdd(event.target.value)}
-              aria-label={ruleRoleFilter === "master" ? "Услуга для добавления" : "Группа товаров для добавления"}
+              aria-label="Позиция для начисления"
             >
-              <option value="">{ruleRoleFilter === "master" ? "Выберите услугу" : "Выберите группу товаров"}</option>
+              <option value="">Выберите позицию</option>
               {addableRuleTargets.map((target) => (
                 <option key={target.id} value={target.id}>
                   {target.name} · {target.id}
@@ -3498,40 +3519,51 @@ export default function SalaryDashboard({
               ))}
             </EcoSelect>
             <EcoButton type="button" variant="primary" onClick={addRuleTarget} disabled={rulesSaving || !ruleTargetToAdd}>
-              Добавить {ruleRoleFilter === "master" ? "услугу" : "группу товаров"}
+              Добавить позицию
             </EcoButton>
             <label className="eco-payroll-search">
               <Search size={15} />
               <EcoInput
                 value={ruleSearch}
                 onChange={(event) => setRuleSearch(event.target.value)}
-                placeholder={`Поиск по ${activeRuleLabel}`}
+                placeholder="Поиск по названию"
               />
             </label>
           </div>
 
           <div className="eco-payroll-rule-context" role="status">
             <div>
-              <strong>Один шаг на правило</strong>
+              <strong>{ruleEmployeeLogin ? employeeRuleModes[ruleEmployeeLogin] ? "Действует индивидуальный набор" : "Пока действуют общие правила роли" : "Общие правила роли"}</strong>
               <span>
-                Выберите {ruleRoleFilter === "master" ? "услугу" : "группу товаров"}, добавьте её, укажите фикс или процент и сохраните.
+                {ruleEmployeeLogin && !employeeRuleModes[ruleEmployeeLogin] && "Первое сохранение заменит общие правила роли индивидуальным набором. "}Добавьте позицию, укажите фикс или процент и сохраните. Конкретная услуга или группа имеет приоритет над «Все услуги» или «Все товары». Начисления идут только за назначенные смены.
               </span>
             </div>
           </div>
 
+          {ruleEmployeeLogin && <EcoButton type="button" disabled={rulesSaving} onClick={async () => {
+            if (!window.confirm("Вернуть общие правила роли? Все индивидуальные правила сотрудника будут удалены.")) return;
+            setRulesSaving(true);
+            try {
+              const params = new URLSearchParams({ employeeLogin: ruleEmployeeLogin, targetType: "service", targetId: "*", role: ruleRoleFilter, reset: "true" });
+              await readJson(await fetch(`/api/piecework-rules?${params}`, { method: "DELETE" }), "Не удалось вернуть общие правила");
+              await Promise.all([loadRules(), loadPayroll()]);
+              setRulesMessage("Сотрудник использует общие правила роли");
+            } catch (error) { setRulesMessage(error instanceof Error ? error.message : "Ошибка сохранения"); }
+            finally { setRulesSaving(false); }
+          }}>Вернуть общие правила роли</EcoButton>}
           {rulesLoading ? (
             <SkeletonRows rows={6} />
           ) : (
             <div className="eco-payroll-rule-sections">
               <div className="eco-payroll-rule-section">
                 <div className="eco-payroll-section-title">
-                  <strong>{ruleRoleFilter === "master" ? "Услуги мастера" : "Группы товаров администратора"}</strong>
+                  <strong>{ruleEmployeeLogin ? "Индивидуальные начисления" : "Общие начисления роли"}</strong>
                   <span>{filteredRules.length}</span>
                 </div>
                 {filteredRules.length === 0 ? (
                   <EmptyState
                     title={`Нет добавленных ${activeRuleLabel}`}
-                    text={`Выберите ${ruleRoleFilter === "master" ? "услугу" : "группу товаров"} выше и добавьте её в сдельные правила.`}
+                    text={`Выберите позицию выше и добавьте её в сдельные правила.`}
                   />
                 ) : (
                   <div className="eco-table-wrap eco-payroll-rules-table-wrap">
@@ -3644,14 +3676,14 @@ export default function SalaryDashboard({
             <div>
               <strong>
                 {changedRulesCount > 0
-                  ? `${changedRulesCount} правил изменено`
+                  ? `Изменено правил: ${changedRulesCount}`
                   : "Нет несохранённых изменений"}
               </strong>
               <span>
                 {rulesMessage ??
                   (changedRulesCount > 0
                     ? "Сохраните изменения, чтобы правило начало участвовать в расчёте."
-                    : `Добавьте ${ruleRoleFilter === "master" ? "услугу" : "группу товаров"}, когда для неё нужно начисление.`)}
+                    : `Добавьте позицию, когда для неё нужно начисление.`)}
               </span>
             </div>
             <EcoButton type="button" onClick={resetRuleDrafts} disabled={!hasUnsavedRuleChanges || rulesSaving}>

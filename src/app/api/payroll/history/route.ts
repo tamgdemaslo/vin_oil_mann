@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 
 const PAYROLL_ENTITY_TYPES = [
   "piecework_rule",
+  "employee_piecework",
+  "employee_employment",
   "shift_rate",
   "scheduled_working_day",
   "bonus_penalty",

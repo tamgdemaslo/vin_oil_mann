@@ -1,28 +1,8 @@
-import { requireOpenCashShiftAccess } from "@/lib/app-access";
-import SalaryDashboard from "./SalaryDashboard";
-
-function firstParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-export default async function SalaryPage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ tab?: string | string[]; view?: string | string[] }>;
-}) {
-  const params = searchParams ? await searchParams : undefined;
-  const tab = firstParam(params?.tab)?.trim();
-  const personalView = firstParam(params?.view)?.trim() === "mine";
-  const from = tab ? `/salary?tab=${encodeURIComponent(tab)}` : "/salary";
-  const session = await requireOpenCashShiftAccess(from);
-
-  return (
-    <SalaryDashboard
-      role={session.user.role}
-      login={session.user.login}
-      name={session.user.name}
-      isOwner={session.user.role === "owner"}
-      initialPersonalView={personalView}
-    />
-  );
+import { redirect } from "next/navigation";
+export default async function SalaryPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(await searchParams ?? {})) {
+    for (const item of Array.isArray(value) ? value : value == null ? [] : [value]) params.append(key, item);
+  }
+  redirect(`/employees/salary${params.size ? `?${params}` : ""}`);
 }
