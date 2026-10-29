@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { isClientCaseStatus } from "@/lib/client-case-shared";
 import { writeClientCaseEvent } from "@/lib/client-case-workflow";
-import { canAccessCrm } from "@/lib/crm-access";
+import { canAccessClientCases } from "@/lib/crm-access";
 import { prisma } from "@/lib/db";
 
 async function requireCrmSession() {
   const session = await getSession();
   if (!session) return { session: null, response: NextResponse.json({ error: "Необходима авторизация" }, { status: 401 }) };
-  if (!canAccessCrm(session.user.role)) return { session: null, response: NextResponse.json({ error: "Недостаточно прав" }, { status: 403 }) };
+  if (!canAccessClientCases(session.user.role)) return { session: null, response: NextResponse.json({ error: "Недостаточно прав" }, { status: 403 }) };
   return { session, response: null };
 }
 

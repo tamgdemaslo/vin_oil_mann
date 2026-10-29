@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { canAccessCrm } from "@/lib/crm-access";
+import { canAccessClientCases } from "@/lib/crm-access";
 import { prisma } from "@/lib/db";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 
 async function requireCrmSession() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  if (!canAccessCrm(session.user.role)) return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
+  if (!canAccessClientCases(session.user.role)) return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
   return null;
 }
 

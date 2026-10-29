@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { clientCaseStatusLabel, defaultNextActionForCaseStatus, isClientCaseClosedStatus, isClientCaseStatus, normalizeClientCaseStatus } from "@/lib/client-case-shared";
 import { processClientCaseWorkflowTransitions, writeClientCaseEvent } from "@/lib/client-case-workflow";
 import { ensureDefaultCrmStages, getCrmStageBySortOrder, getFirstCrmStage } from "@/lib/crm";
-import { canAccessCrm } from "@/lib/crm-access";
+import { canAccessClientCases } from "@/lib/crm-access";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 
@@ -13,7 +13,7 @@ const CASE_TYPES = new Set(["calculation", "followup", "parts", "message", "ship
 async function requireCrmSession() {
   const session = await getSession();
   if (!session) return { session: null, response: NextResponse.json({ error: "Необходима авторизация" }, { status: 401 }) };
-  if (!canAccessCrm(session.user.role)) return { session: null, response: NextResponse.json({ error: "Недостаточно прав" }, { status: 403 }) };
+  if (!canAccessClientCases(session.user.role)) return { session: null, response: NextResponse.json({ error: "Недостаточно прав" }, { status: 403 }) };
   return { session, response: null };
 }
 

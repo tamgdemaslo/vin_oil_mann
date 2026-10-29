@@ -215,7 +215,7 @@ export default function AppHeader() {
               href: "/crm",
               label: "Дела клиентов",
               description: "Следующие действия, дедлайны и контроль.",
-              disabled: !canAccessCrm,
+              disabled: !(canAccessCrm || user?.role === "master"),
             },
           ],
         },

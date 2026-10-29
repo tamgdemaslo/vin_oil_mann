@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
-import { canAccessCrm } from "@/lib/crm-access";
+import { canAccessClientCases } from "@/lib/crm-access";
 import { prisma } from "@/lib/db";
 import { caseCorrespondence, caseCorrespondenceLink } from "@/lib/client-case-correspondence";
 import { CASE_CHAT_CHANNELS, caseChatPhoneLink, validCaseChatLink } from "@/lib/client-case-chat-link";
@@ -17,7 +17,7 @@ type Match = { id: string; clientId: string | null; peerId: string; priority: nu
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  if (!canAccessCrm(session.user.role)) return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
+  if (!canAccessClientCases(session.user.role)) return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
   const access = await requireBranchApi({ allowAll: false, requireActive: true });
   if (!access.ok) return access.response;
   return runWithBranchApiContext(access.context, async () => {

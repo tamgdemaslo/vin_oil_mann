@@ -101,8 +101,10 @@ export function resolveNavigationForUser({
 
   if (canCustomerRead) {
     const clientItems = [branchOnly("/clients/counterparties", "Клиенты", "Клиенты, контакты и история."), branchOnly("/cabinet/customer-return", "Кого вернуть сегодня", "Общие черновики и подборка филиала.")];
-    if (canCustomerManage) {
+    if (canCustomerManage || effectiveRole === "master") {
       clientItems.push(branchOnly("/crm", "Заявки клиентов", "Расчёты и запчасти."));
+    }
+    if (canCustomerManage) {
       clientItems.push(branchOnly("/messages", "Сообщения", "Рабочая переписка с клиентами."));
       clientItems.push(item("/cabinet/customer-analytics", "Аналитика клиентов", "Повторы, спящие клиенты и услуги."));
     }

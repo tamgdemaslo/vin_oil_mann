@@ -115,4 +115,17 @@ scenario("15. Мобильная навигация сгруппирована",
   assert.doesNotMatch(shell, /navSections\.flatMap/);
 });
 
-process.stdout.write(`\n${passed}/15 сценариев пройдено.\n`);
+
+scenario("Мастер-приёмщик сохраняет заявки после смены роли администратора", () => {
+  const nav = resolveNavigationForUser({ user: { role: "master" }, branchMemberships: [{ branchId: "branch-1", roleId: "master" }], activeBranchId: "branch-1" });
+  const clients = nav.sections.find(section => section.id === "clients");
+  assert.equal(clients.items.find(item => item.href === "/crm")?.disabled, false);
+  assert.equal(clients.items.some(item => item.href === "/messages"), false);
+  assert.equal(clients.items.some(item => item.href === "/cabinet/customer-analytics"), false);
+  for (const roleId of ["mechanic", "accountant", "observer"]) {
+    const other = resolveNavigationForUser({ user: { role: "master" }, branchMemberships: [{ branchId: "branch-1", roleId }], activeBranchId: "branch-1" });
+    assert.equal(other.sections.flatMap(section => section.items).some(item => item.href === "/crm"), false);
+  }
+});
+
+process.stdout.write(`\n${passed}/16 сценариев пройдено.\n`);

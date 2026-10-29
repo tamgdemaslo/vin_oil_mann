@@ -9,13 +9,13 @@ const auth=stub('auth','exports.state={session:{user:{login:"vadim",role:"owner"
 const branch=stub('branch','exports.state={allowed:true};exports.requireBranchApi=async options=>{if(options.allowAll!==false)throw Error("Branch must be concrete");return exports.state.allowed?{ok:true,context:{branchId:"a"}}:{ok:false,response:new Response(null,{status:409})}};exports.runWithBranchApiContext=(_,fn)=>fn();');
 const db=stub('db',`exports.state={row:null,matches:[],clients:[],query:null,caseQuery:null,error:null};exports.prisma={crmDeal:{findFirst:async args=>{exports.state.caseQuery=args;return exports.state.row?.branchId===args.where.branchId?exports.state.row:null}},localCounterparty:{findMany:async args=>{if(args.where.branchId!=='a')throw Error('Invalid scope');return exports.state.clients}},$queryRaw:async query=>{exports.state.query=query;if(exports.state.error)throw exports.state.error;return exports.state.matches},$executeRaw:()=>{throw Error('Opening a chat must not write or send')}};`);
 try{
- const jiti=createJiti(import.meta.url,{alias:{'@/lib/auth':auth,'@/lib/branch-api':branch,'@/lib/db':db,'@/lib/crm-access':stub('access','exports.canAccessCrm=role=>role==="owner";'),'@/lib/messenger/messenger-tenant':stub('tenant','exports.getMessengerOrganizationId=()=>"org-a";'),'@':resolve('src')}});
+ const jiti=createJiti(import.meta.url,{alias:{'@/lib/auth':auth,'@/lib/branch-api':branch,'@/lib/db':db,'@/lib/messenger/messenger-tenant':stub('tenant','exports.getMessengerOrganizationId=()=>"org-a";'),'@':resolve('src')}});
  const d=await jiti.import(db),a=await jiti.import(auth),b=await jiti.import(branch);
  const link=await jiti.import('../src/lib/client-case-chat-link.ts');
  const meta=await jiti.import('../src/lib/client-case-correspondence.ts');
  const {GET}=await jiti.import('../src/app/api/client-cases/[id]/conversation/route.ts');
  const req=()=>GET(new Request('http://example.test/api/client-cases/case-a/conversation'),{params:Promise.resolve({id:'case-a'})});
- a.state.session=null;assert.equal((await req()).status,401);a.state.session={user:{role:'mechanic'}};assert.equal((await req()).status,403);a.state.session={user:{role:'owner'}};
+ a.state.session=null;assert.equal((await req()).status,401);a.state.session={user:{role:'mechanic'}};assert.equal((await req()).status,403);a.state.session={user:{role:'master'}};
  b.state.allowed=false;assert.equal((await req()).status,409);b.state.allowed=true;
  assert.equal((await req()).status,404);
  d.state.row={id:'case-a',branchId:'b',notes:'Переписка: Telegram',phoneNormalized:'79000000001',conversationId:null};assert.equal((await req()).status,404);

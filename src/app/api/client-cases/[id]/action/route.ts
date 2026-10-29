@@ -3,7 +3,7 @@ import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { applyClientCaseAction } from "@/lib/client-case-workflow";
-import { canAccessCrm } from "@/lib/crm-access";
+import { canAccessClientCases } from "@/lib/crm-access";
 import type { ClientCaseAction } from "@/lib/client-case-shared";
 
 import { validCaseRosskoOrder, withCaseRosskoOrder } from "@/lib/client-case-parts";
@@ -30,7 +30,7 @@ const ACTIONS = new Set<ClientCaseAction>([
 async function requireCrmSession() {
   const session = await getSession();
   if (!session) return { session: null, response: NextResponse.json({ error: "Необходима авторизация" }, { status: 401 }) };
-  if (!canAccessCrm(session.user.role)) return { session: null, response: NextResponse.json({ error: "Недостаточно прав" }, { status: 403 }) };
+  if (!canAccessClientCases(session.user.role)) return { session: null, response: NextResponse.json({ error: "Недостаточно прав" }, { status: 403 }) };
   return { session, response: null };
 }
 

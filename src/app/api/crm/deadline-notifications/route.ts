@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientCaseAttention } from "@/lib/client-case-attention";
-import { canAccessCrm } from "@/lib/crm-access";
+import { canAccessClientCases } from "@/lib/crm-access";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import {
@@ -94,7 +94,7 @@ export async function GET() {
   return runWithBranchApiContext(branch.context, async () => {
     const [items, clientCaseAttention] = await Promise.all([
       listClientCaseNotificationsForUser(access.session!.user.login, branchId),
-      canAccessCrm(access.session!.user.role)
+      canAccessClientCases(access.session!.user.role)
         ? getClientCaseAttention(branchId).catch(error => {
           console.warn("[crm-attention]", error);
           return null;

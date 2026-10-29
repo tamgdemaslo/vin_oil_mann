@@ -7,8 +7,7 @@ process.env.APP_TIMEZONE='Europe/Kaliningrad';
 const dir=mkdtempSync(join(tmpdir(),'crm-routes-'));
 function stub(name,code){const file=join(dir,name+'.cjs');writeFileSync(file,code);return file;}
 const alias={
- '@/lib/auth':stub('auth','exports.getSession=async()=>({user:{login:"vadim",role:"owner"}});'),
- '@/lib/crm-access':stub('access','exports.canAccessCrm=()=>true;'),
+ '@/lib/auth':stub('auth','exports.getSession=async()=>({user:{login:"vadim",role:"master"}});'),
  '@/lib/branch-api':stub('branch','exports.requireBranchApi=async()=>({ok:true,context:{branchId:"a"}});exports.runWithBranchApiContext=(_,fn)=>fn();'),
  '@/lib/branch-sql-context':stub('sql','exports.requireSingleBranchSqlContext=()=>({branchId:"a"});'),
  '@/lib/crm':stub('stages','exports.ensureDefaultCrmStages=async()=>{};exports.getFirstCrmStage=async()=>({id:"first",name:"Нужно рассчитать"});exports.getCrmStageBySortOrder=async n=>({id:"stage-"+n});'),

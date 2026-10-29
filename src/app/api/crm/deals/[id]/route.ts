@@ -7,7 +7,7 @@ import { getSession } from "@/lib/auth";
 import { caseStatusFromStageName, defaultNextActionForCaseStatus, isClientCaseStatus } from "@/lib/client-case-shared";
 import { writeClientCaseEvent } from "@/lib/client-case-workflow";
 import { getCrmStageBySortOrder } from "@/lib/crm";
-import { canAccessCrm } from "@/lib/crm-access";
+import { canAccessClientCases } from "@/lib/crm-access";
 import { notifyClientCaseTaskAssigned } from "@/lib/crm-deadline-notifications";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
@@ -101,7 +101,7 @@ async function requireCrmAccess() {
   if (!session) {
     return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
   }
-  if (!canAccessCrm(session.user.role)) {
+  if (!canAccessClientCases(session.user.role)) {
     return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
   }
   return null;

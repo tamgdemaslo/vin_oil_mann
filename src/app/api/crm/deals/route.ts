@@ -9,7 +9,7 @@ import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { caseStatusFromStageName, defaultNextActionForCaseStatus, isClientCaseStatus } from "@/lib/client-case-shared";
 import { processClientCaseWorkflowTransitions, writeClientCaseEvent } from "@/lib/client-case-workflow";
 import { ensureDefaultCrmStages, getFirstCrmStage } from "@/lib/crm";
-import { canAccessCrm } from "@/lib/crm-access";
+import { canAccessClientCases } from "@/lib/crm-access";
 import { notifyClientCaseTaskAssigned } from "@/lib/crm-deadline-notifications";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
@@ -48,7 +48,7 @@ async function requireCrmSession() {
   if (!session) {
     return { session: null, response: NextResponse.json({ error: "Необходима авторизация" }, { status: 401 }) };
   }
-  if (!canAccessCrm(session.user.role)) {
+  if (!canAccessClientCases(session.user.role)) {
     return { session: null, response: NextResponse.json({ error: "Недостаточно прав" }, { status: 403 }) };
   }
   return { session, response: null };
