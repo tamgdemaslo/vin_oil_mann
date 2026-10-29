@@ -347,7 +347,7 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
   const branchPermissions = permissionsFromJson(branchMembership?.permissionsJson);
   const canManageSelectedBranch = Boolean(
     access.groupRole && GROUP_MANAGE_ROLES.has(access.groupRole)
-  ) || ["branch_owner", "administrator"].includes(branchMembership?.roleId ?? "")
+  ) || ["branch_owner", "administrator", "master"].includes(branchMembership?.roleId ?? "")
     || branchPermissions.includes("branches.manage")
     || branchPermissions.includes("branch.members.manage");
 

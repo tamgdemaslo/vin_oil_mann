@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
+import { sessionAuthorizationUser } from "@/lib/administrator-equivalence.mjs";
 
 const SESSION_COOKIE = "eco_session";
 const SESSION_SECRET = process.env.SESSION_SECRET ?? "eco-platform-secret-change-in-production";
@@ -24,6 +25,8 @@ export type User = {
   login: string;
   name: string;
   role: UserRole;
+  /** Stored role used by employee identity and payroll; role is request access. */
+  authRole?: UserRole;
 };
 
 type SessionPayload = {
@@ -289,15 +292,15 @@ export async function getSession(): Promise<{ user: User } | null> {
   const role = normalizeRole(user?.role ?? payload.role);
   const resolved = { login: user?.login ?? login, name: user?.name ?? payload.name, role };
   const { bindRequestTenant } = await import("@/lib/request-tenant");
-  await bindRequestTenant(resolved);
-  return { user: resolved };
+  const tenant = await bindRequestTenant(resolved);
+  return { user: sessionAuthorizationUser(resolved, tenant) };
 }
 
 export async function createSession(user: User): Promise<string> {
   const payload: SessionPayload = {
     login: user.login,
     name: user.name,
-    role: user.role,
+    role: user.authRole ?? user.role,
     exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE,
   };
   const payloadB64 = base64UrlEncode(JSON.stringify(payload));

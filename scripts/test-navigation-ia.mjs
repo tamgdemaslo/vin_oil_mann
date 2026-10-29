@@ -116,13 +116,18 @@ scenario("15. Мобильная навигация сгруппирована",
 });
 
 
-scenario("Мастер-приёмщик сохраняет заявки после смены роли администратора", () => {
+scenario("Мастер-приёмщик получает все функции администратора в своём филиале", () => {
   const nav = resolveNavigationForUser({ user: { role: "master" }, branchMemberships: [{ branchId: "branch-1", roleId: "master" }], activeBranchId: "branch-1" });
   const clients = nav.sections.find(section => section.id === "clients");
   assert.equal(clients.items.find(item => item.href === "/crm")?.disabled, false);
-  assert.equal(clients.items.some(item => item.href === "/messages"), false);
-  assert.equal(clients.items.some(item => item.href === "/cabinet/customer-analytics"), false);
-  for (const roleId of ["mechanic", "accountant", "observer"]) {
+  assert.equal(clients.items.some(item => item.href === "/messages"), true);
+  assert.equal(clients.items.some(item => item.href === "/cabinet/customer-analytics"), true);
+  const admin = resolveNavigationForUser({ user: { role: "admin" }, branchMemberships: [{ branchId: "branch-1", roleId: "administrator" }], activeBranchId: "branch-1" });
+  assert.deepEqual(nav.sections, admin.sections);
+  assert.deepEqual(nav.managementActions, admin.managementActions);
+  assert.equal(nav.canManageBranches, admin.canManageBranches);
+  assert.equal(nav.effectiveRole, "master", "The visible employee role remains master");
+  for (const roleId of ["mechanic", "accountant", "viewer"]) {
     const other = resolveNavigationForUser({ user: { role: "master" }, branchMemberships: [{ branchId: "branch-1", roleId }], activeBranchId: "branch-1" });
     assert.equal(other.sections.flatMap(section => section.items).some(item => item.href === "/crm"), false);
   }

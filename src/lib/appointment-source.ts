@@ -66,7 +66,7 @@ export async function listAppointmentRowsForDate(date: string): Promise<Appointm
   });
   if (!branch) return [];
   const selfOnly = tenant?.permissions?.some((role) => role === "master" || role === "mechanic")
-    && !tenant.permissions.some((role) => ["group_owner", "group_admin", "branch_owner", "administrator"].includes(role));
+    && !tenant.permissions.some((role) => ["group_owner", "group_admin", "branch_owner", "administrator", "master"].includes(role));
   const ownMembership = selfOnly && tenant?.userId
     ? await prisma.branchMembership.findFirst({ where: { branchId, userId: tenant.userId, status: "active" }, select: { id: true } })
     : null;

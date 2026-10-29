@@ -32,8 +32,8 @@ const masterReceptionistContext = {
   permissions: [],
 };
 assert.equal(bookingAccess.canManageBookings(masterReceptionistContext), true);
-assert.equal(bookingAccess.canManageBookingSettings(masterReceptionistContext), false);
-assert.equal(bookingAccess.canOverrideBookingConflict(masterReceptionistContext), false);
+assert.equal(bookingAccess.canManageBookingSettings(masterReceptionistContext), true);
+assert.equal(bookingAccess.canOverrideBookingConflict(masterReceptionistContext), true);
 assert.equal(bookingAccess.bookingViewIsSelfOnly(masterReceptionistContext), false);
 assert.equal(
   bookingAccess.canManageBookings({ groupRole: null, branchRole: "mechanic", permissions: [] }),

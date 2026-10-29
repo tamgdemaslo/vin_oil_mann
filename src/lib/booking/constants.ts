@@ -32,12 +32,13 @@ export const BOOKING_MANAGER_ROLES = new Set([
   "group_admin",
   "branch_owner",
   "administrator",
+  "master",
 ]);
 
 /**
  * A branch-level `master` is a master-receptionist: they work with the full
  * booking journal, while mechanics remain limited to their own appointments.
- * Settings and conflict overrides stay reserved for administrators.
+ * Receptionists have the same settings and conflict permissions as administrators.
  */
 export const BOOKING_JOURNAL_MANAGER_ROLES = new Set([
   ...BOOKING_MANAGER_ROLES,

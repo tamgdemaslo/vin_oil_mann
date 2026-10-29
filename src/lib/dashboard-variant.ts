@@ -30,6 +30,7 @@ const MANAGEMENT_PERMISSIONS = new Set([
 
 const MANAGEMENT_BRANCH_ROLES = new Set([
   "administrator",
+  "master",
   "admin",
   "branch_admin",
   "manager",

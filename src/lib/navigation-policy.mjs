@@ -1,3 +1,4 @@
+import { branchAuthorizationRole } from "./administrator-equivalence.mjs";
 const GROUP_MANAGERS = new Set(["group_owner", "group_admin"]);
 const BRANCH_MANAGERS = new Set(["branch_owner", "administrator"]);
 const CUSTOMER_MANAGERS = new Set(["group_owner", "group_admin", "branch_owner", "administrator"]);
@@ -55,24 +56,25 @@ export function resolveNavigationForUser({
     ?? null;
   const branchRole = activeMembership?.roleId ?? null;
   const effectiveRole = groupRole || branchRole || legacyRole(user);
+  const authorizationRole = branchRole === "master" && !groupRole ? "administrator" : effectiveRole;
   const isAllBranches = activeBranchMode === "all";
   const isGroupManager = GROUP_MANAGERS.has(groupRole || effectiveRole);
-  const isBranchManager = BRANCH_MANAGERS.has(branchRole || effectiveRole);
+  const isBranchManager = BRANCH_MANAGERS.has(branchRole ? branchAuthorizationRole(branchRole) : effectiveRole);
   const canManageBranch = isGroupManager || isBranchManager || permissionSet.has("branches.manage") || permissionSet.has("branch.members.manage");
   const canViewOrganizations = isGroupManager || effectiveRole === "accountant" || permissionSet.has("organizations.view") || permissionSet.has("organizations.manage");
   const canManageIntegrations = isGroupManager || effectiveRole === "branch_owner" || permissionSet.has("integrations.manage");
   const canManageClientCommunications = canManageIntegrations || permissionSet.has("communications.client_automation.manage");
-  const canCustomerManage = CUSTOMER_MANAGERS.has(effectiveRole) || permissionSet.has("crm.write") || permissionSet.has("crm.manage");
-  const canCustomerRead = canCustomerManage || ["group_analyst", "master", "mechanic", "accountant"].includes(effectiveRole) || permissionSet.has("crm.view");
-  const canBookingView = ["group_owner", "group_admin", "branch_owner", "administrator", "master", "mechanic"].includes(effectiveRole)
+  const canCustomerManage = CUSTOMER_MANAGERS.has(authorizationRole) || permissionSet.has("crm.write") || permissionSet.has("crm.manage");
+  const canCustomerRead = canCustomerManage || ["group_analyst", "master", "mechanic", "accountant"].includes(authorizationRole) || permissionSet.has("crm.view");
+  const canBookingView = ["group_owner", "group_admin", "branch_owner", "administrator", "master", "mechanic"].includes(authorizationRole)
     || permissionSet.has("booking.view")
     || permissionSet.has("booking.manage");
-  const canBookingSettings = CUSTOMER_MANAGERS.has(effectiveRole) || permissionSet.has("booking.settings.manage");
-  const canUseAi = ["group_owner", "group_admin", "branch_owner", "administrator", "master"].includes(effectiveRole) || permissionSet.has("ai.use");
+  const canBookingSettings = CUSTOMER_MANAGERS.has(authorizationRole) || permissionSet.has("booking.settings.manage");
+  const canUseAi = ["group_owner", "group_admin", "branch_owner", "administrator", "master"].includes(authorizationRole) || permissionSet.has("ai.use");
   const canViewWarehouseAnalytics = isGroupManager || effectiveRole === "group_analyst" || permissionSet.has("warehouse.analytics.view");
-  const canWork = WORK_ROLES.has(effectiveRole) || permissionSet.has("operations.view");
-  const canViewWarehouse = WAREHOUSE_ROLES.has(effectiveRole) || permissionSet.has("warehouse.view");
-  const canViewFinance = FINANCE_ROLES.has(effectiveRole) || permissionSet.has("finances.view");
+  const canWork = WORK_ROLES.has(authorizationRole) || permissionSet.has("operations.view");
+  const canViewWarehouse = WAREHOUSE_ROLES.has(authorizationRole) || permissionSet.has("warehouse.view");
+  const canViewFinance = FINANCE_ROLES.has(authorizationRole) || permissionSet.has("finances.view");
   const canViewAllBranches = Boolean(groupRole);
 
   const branchOnly = (href, label, description, options = {}) => item(href, label, description, {

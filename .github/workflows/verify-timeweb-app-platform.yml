@@ -64,6 +64,9 @@ jobs:
       - name: Verify Avito autoload and content templates
         run: npm run test:avito-autoload
 
+      - name: Verify receptionist and administrator access parity
+        run: npm run test:receptionist-access
+
       - name: Verify branch isolation
         run: npm run test:branch-isolation
 

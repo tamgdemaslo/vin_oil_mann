@@ -58,7 +58,7 @@ function actorName(context: BranchContext) {
 export function canManageStorageCells(context: BranchContext) {
   if (context.mode !== "branch" || !context.branchId) return false;
   if (["group_owner", "group_admin"].includes(context.groupRole ?? "")) return true;
-  if (["branch_owner", "administrator"].includes(context.branchRole ?? "")) return true;
+  if (["branch_owner", "administrator", "master"].includes(context.branchRole ?? "")) return true;
   return context.permissions.some((permission) => [
     "branches.manage",
     "warehouses.manage",

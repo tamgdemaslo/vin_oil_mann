@@ -213,7 +213,7 @@ export async function GET(request: NextRequest) {
   const employee = users.find((user) => normalizeLogin(user.login) === normalizeLogin(login)) ?? {
     login,
     name: login,
-    role: session.user.role,
+    role: session.user.authRole ?? session.user.role,
   };
   const monthRow = findPayrollRow(monthSummary, login);
   const todayShipments = todaySummary.vehicleHistory.filter((vehicle) => employeeEarnings(vehicle, login) > 0);

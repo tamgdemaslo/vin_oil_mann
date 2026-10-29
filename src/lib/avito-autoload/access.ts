@@ -9,6 +9,6 @@ export function canViewAvito(context: AccessContext) {
 
 export function canEditAvito(context: AccessContext) {
   return ["group_owner", "group_admin"].includes(context.groupRole ?? "")
-    || ["branch_owner", "administrator"].includes(context.branchRole ?? "")
+    || ["branch_owner", "administrator", "master"].includes(context.branchRole ?? "")
     || context.permissions.some((permission) => ["warehouse.avito.manage", "integrations.manage"].includes(permission));
 }

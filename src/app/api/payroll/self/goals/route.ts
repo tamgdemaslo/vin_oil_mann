@@ -9,7 +9,7 @@ export async function GET() {
 
   const goals = await listActivePayrollGoals({
     employeeLogin: session.user.login,
-    role: session.user.role,
+    role: session.user.authRole ?? session.user.role,
     dateKey: toLocalDateString(new Date()),
   });
 

@@ -107,7 +107,7 @@ async function canManageTargetBranch(context: BranchContext, branchId: string) {
     where: { branchId, userId: context.userId, status: "active" },
     select: { roleId: true, permissionsJson: true },
   });
-  return ["branch_owner", "administrator"].includes(membership?.roleId ?? "") || hasWarehouseManagementPermission(membership?.permissionsJson ?? null);
+  return ["branch_owner", "administrator", "master"].includes(membership?.roleId ?? "") || hasWarehouseManagementPermission(membership?.permissionsJson ?? null);
 }
 
 async function findManagedBranch(context: BranchContext, branchId: string) {

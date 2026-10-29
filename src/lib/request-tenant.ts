@@ -152,7 +152,9 @@ export async function bindRequestTenant(authUser: AuthUser) {
       };
       tenantCache.set(cacheKey, entry);
     }
-    bind(await entry.promise);
+    const tenant = await entry.promise;
+    bind(tenant);
+    return tenant;
   } catch (error) {
     const cacheKey = `${normalize(authUser.login)}:`;
     for (const key of tenantCache.keys()) {
@@ -160,5 +162,6 @@ export async function bindRequestTenant(authUser: AuthUser) {
     }
     console.error("Failed to bind verified branch context", error);
     bind(denied);
+    return denied;
   }
 }
