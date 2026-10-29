@@ -2,6 +2,8 @@
 
 import {
   Bell,
+  Volume2,
+  VolumeX,
   Bot,
   BriefcaseBusiness,
   Building2,
@@ -33,6 +35,7 @@ import { loadDashboardClientBundle } from "@/lib/dashboard-client";
 import { safeReadJson } from "@/lib/http-json";
 import { ClientAttentionBadges, ClientAttentionLinks } from "./ClientCaseAttention";
 import { EcoStatusDot } from "./EcoUI";
+import { useClientCaseSignals } from "./useClientCaseSignals";
 
 type PlatformUser = {
   login: string;
@@ -268,7 +271,8 @@ export default function PlatformShell() {
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const browserPushSeenRef = useRef<Set<string>>(new Set());
+  const { enabled: signalsEnabled, message: signalMessage, toggle: toggleSignals, process: processSignals } = useClientCaseSignals(`${user?.login ?? ""}:${selectedBranchId}`);
+  const alertCursorRef = useRef<{ scope: string; since: string | null }>({ scope: "", since: null });
   const deadlineLoadInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -338,75 +342,50 @@ export default function PlatformShell() {
 
   const loadDeadlineNotifications = useCallback(async () => {
     if (shouldHideShell(pathname)) return;
-    if (document.visibilityState !== "visible" || deadlineLoadInFlightRef.current) return;
+    if (!user || !navigation?.sections.some(section => section.items.some(item => item.href === "/crm" && !item.disabled)) || deadlineLoadInFlightRef.current) return;
+    const scope = `${user.login}:${selectedBranchId}`;
+    if (alertCursorRef.current.scope !== scope) alertCursorRef.current = { scope, since: null };
     deadlineLoadInFlightRef.current = true;
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
-    let notificationForFailure: DeadlineNotification | null = null;
+
     try {
-      const res = await fetch("/api/crm/deadline-notifications", {
+      const since = alertCursorRef.current.since;
+      const res = await fetch(`/api/crm/deadline-notifications${since ? `?since=${encodeURIComponent(since)}` : ""}`, {
         cache: "no-store",
         signal: controller.signal,
       });
-      if (!res.ok) { setClientCaseAttention(null); return; }
+      if (!res.ok) return;
       const data = await safeReadJson<{
         notifications?: DeadlineNotification[];
         notificationCounts?: DeadlineNotificationCounts;
         clientCaseAttention?: ClientCaseAttention | null;
+        config?: { enabled?: boolean };
+        serverTime?: string;
+        newCases?: Array<{ id: string; title: string; href: string }>;
       }>(res);
-      const notifications = data?.notifications ?? [];
-      setDeadlineCounts(data?.notificationCounts ?? null);
-      setClientCaseAttention(data?.clientCaseAttention ?? null);
-      const top = notifications[0] ?? null;
-      setDeadlineToast(top);
-
-      if (!top || !("Notification" in window)) return;
-      const browserPushEnabled = window.localStorage.getItem("eco-crm-browser-push") !== "off";
-      const pushKey = `${top.id}:${top.sentAt}`;
-      if (!browserPushEnabled || Notification.permission !== "granted" || browserPushSeenRef.current.has(pushKey)) return;
-      browserPushSeenRef.current.add(pushKey);
-      notificationForFailure = top;
-      const notification = new Notification(top.title, {
-        body: top.body,
-        tag: `crm-case-${top.caseId}`,
-        requireInteraction: top.urgency === "overdue",
-      });
-      notification.onclick = () => {
-        window.focus();
-        window.location.href = top.href;
-      };
-      void fetch("/api/crm/deadline-notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "browser_push", caseId: top.caseId, type: top.type, status: "sent" }),
-      }).catch(() => undefined);
-    } catch (error) {
-      setClientCaseAttention(null);
-      if (!notificationForFailure || (error instanceof DOMException && error.name === "AbortError")) return;
-      void fetch("/api/crm/deadline-notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "browser_push",
-          caseId: notificationForFailure.caseId,
-          type: notificationForFailure.type,
-          status: "failed",
-          errorMessage: error instanceof Error ? error.message : "browser push failed",
-        }),
-      }).catch(() => undefined);
+      if (!data || alertCursorRef.current.scope !== scope) return;
+      const notifications = data.notifications ?? [];
+      setDeadlineCounts(data.notificationCounts ?? null);
+      setClientCaseAttention(data.clientCaseAttention ?? null);
+      setDeadlineToast(notifications[0] ?? null);
+      if (data.config?.enabled !== false) await processSignals({ notifications, newCases: data.newCases });
+      if (data.serverTime) alertCursorRef.current.since = data.serverTime;
+    } catch {
+      // Keep the last successful badges during a transient network failure.
     } finally {
       window.clearTimeout(timeoutId);
       deadlineLoadInFlightRef.current = false;
     }
-  }, [pathname]);
+  }, [pathname, user, navigation, selectedBranchId, processSignals]);
 
   useEffect(() => {
     if (shouldHideShell(pathname)) return;
     const refresh = () => {
-      if (document.visibilityState === "visible") void loadDeadlineNotifications();
+      void loadDeadlineNotifications();
     };
     refresh();
-    const timer = window.setInterval(refresh, 60_000);
+    const timer = window.setInterval(refresh, 30_000);
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("eco-client-cases-changed", refresh);
     return () => {
@@ -609,7 +588,8 @@ export default function PlatformShell() {
   async function handleDeadlineAction(action: "acknowledge" | "snooze" | "close", minutes?: number) {
     const toast = deadlineToast;
     if (!toast) return;
-    await fetch("/api/crm/deadline-notifications", {
+    if (action === "acknowledge" && toast.id.startsWith("live:")) return;
+    const result = await fetch("/api/crm/deadline-notifications", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -619,16 +599,11 @@ export default function PlatformShell() {
         minutes,
       }),
     });
+    if (!result.ok) return;
     setDeadlineToast(null);
     void loadDeadlineNotifications();
   }
 
-  async function enableBrowserPush() {
-    if (typeof window === "undefined" || !("Notification" in window)) return;
-    const permission = await Notification.requestPermission();
-    window.localStorage.setItem("eco-crm-browser-push", permission === "granted" ? "on" : "off");
-    void loadDeadlineNotifications();
-  }
 
   if (shouldHideShell(pathname)) return null;
 
@@ -857,6 +832,10 @@ export default function PlatformShell() {
                   </div>
                 )}
               </div>
+              {navigation?.sections.some(section => section.items.some(item => item.href === "/crm" && !item.disabled)) && <button type="button" className="platform-shell__icon-btn platform-shell__signal-btn" onClick={() => void toggleSignals()} aria-pressed={signalsEnabled} aria-label={signalsEnabled ? "Выключить сигналы заявок" : "Включить сигналы заявок"} title={signalMessage || (signalsEnabled ? "Сигналы включены. Просроченные — каждые 5 минут" : "Включить звук и уведомления о заявках")}>
+                {signalsEnabled ? <Volume2 aria-hidden className="eco-icon" /> : <VolumeX aria-hidden className="eco-icon" />}
+              </button>}
+              <span className="platform-shell__signal-status" role="status">{signalMessage}</span>
               <Link href="/notifications" prefetch={false} className="platform-shell__icon-btn platform-shell__notification-btn" aria-label="Уведомления">
                 <Bell aria-hidden className="eco-icon" />
                 {!!((deadlineCounts?.total ?? 0) + (notificationCounts?.total ?? 0)) && (
@@ -887,6 +866,9 @@ export default function PlatformShell() {
 
                 <div className={`platform-shell__profile-menu ${profileOpen ? "is-open" : ""}`} role="menu" aria-hidden={!profileOpen}>
                   <div className="platform-shell__account-summary" role="presentation"><strong>{user.name || user.login}</strong><span>{roleLabel(navigation?.effectiveRole ?? user.role)}</span><small>ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ</small></div>
+                  <button type="button" className="platform-shell__dropdown-link" onClick={() => void toggleSignals()} role="menuitem">
+                    <Volume2 aria-hidden className="eco-icon" /><span>{signalsEnabled ? "Выключить сигналы заявок" : "Включить сигналы заявок"}<small>{signalMessage || "Новые заявки — короткий звук; просроченные — каждые 5 минут"}</small></span>
+                  </button>
                   {(navigation?.personalItems ?? []).map((personalItem) => {
                     const Icon = personalItemIcon(personalItem);
                     if (personalItem.action === "logout") {
@@ -977,6 +959,7 @@ export default function PlatformShell() {
             <strong>{context.value}</strong>
           </div>
           <span className="platform-shell__mobile-branch-label" title={activeBranchLabel}>{activeBranchLabel}</span>
+          {(clientCaseAttention?.overdue ?? 0) > 0 && <Link href="/crm?filter=overdue" prefetch={false} className="platform-shell__case-overdue">Просрочено: {clientCaseAttention?.overdue}</Link>}
           <div className="grow" />
           {allBranchesMode
             ? <span className="platform-shell__lock-note">Обзор без создания операционных документов.</span>
@@ -1018,9 +1001,9 @@ export default function PlatformShell() {
                 Позвонить
               </a>
             )}
-            {typeof window !== "undefined" && "Notification" in window && Notification.permission !== "granted" && (
-              <button type="button" className="eco-crm-deadline-toast__detail-action" onClick={() => void enableBrowserPush()}>
-                Browser push
+            {!signalsEnabled && (
+              <button type="button" className="eco-crm-deadline-toast__detail-action" onClick={() => void toggleSignals()}>
+                Включить сигналы
               </button>
             )}
           </div>

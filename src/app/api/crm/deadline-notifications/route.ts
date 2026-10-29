@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClientCaseAttention } from "@/lib/client-case-attention";
+import { getClientCaseAlertSnapshot } from "@/lib/client-case-alerts";
 import { canAccessClientCases } from "@/lib/crm-access";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
@@ -72,7 +72,7 @@ async function requireSession() {
   return { session, response: null };
 }
 
-function countsByUrgency(items: Awaited<ReturnType<typeof listClientCaseNotificationsForUser>>) {
+function countsByUrgency(items: Array<{ urgency: "overdue" | "next_hour" | "today" | "info" }>) {
   return items.reduce(
     (acc, item) => {
       acc.total += 1;
@@ -83,7 +83,7 @@ function countsByUrgency(items: Awaited<ReturnType<typeof listClientCaseNotifica
   );
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const access = await requireSession();
   if (access.response) return access.response;
   const branch = await requireBranchApi({ allowAll: false, requireActive: true });
@@ -92,15 +92,23 @@ export async function GET() {
   if (!branchId) return NextResponse.json({ error: "Выберите филиал" }, { status: 409 });
 
   return runWithBranchApiContext(branch.context, async () => {
-    const [items, clientCaseAttention] = await Promise.all([
-      listClientCaseNotificationsForUser(access.session!.user.login, branchId),
-      canAccessClientCases(access.session!.user.role)
-        ? getClientCaseAttention(branchId).catch(error => {
-          console.warn("[crm-attention]", error);
-          return null;
-        })
-        : Promise.resolve(null),
+    if (!canAccessClientCases(access.session!.user.role)) {
+      return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
+    }
+    const rawSince = request.nextUrl.searchParams.get("since");
+    const since = rawSince ? new Date(rawSince) : null;
+    if (since && !Number.isFinite(since.getTime())) {
+      return NextResponse.json({ error: "Некорректное время" }, { status: 400 });
+    }
+    const [loggedItems, snapshot] = await Promise.all([
+      listClientCaseNotificationsForUser(access.session!.user.login, branchId).catch(error => {
+        console.warn("[crm-alerts/log]", error);
+        return [];
+      }),
+      getClientCaseAlertSnapshot(branchId, since),
     ]);
+    const liveIds = new Set(snapshot.overdue.map(item => item.caseId));
+    const items = [...snapshot.overdue, ...loggedItems.filter(item => item.urgency !== "overdue" && !liveIds.has(item.caseId))];
     // Generating reminders can scan hundreds of CRM cases and send Telegram
     // notifications. Run it at most once per branch/interval and never make
     // every browser tab wait for the same background work.
@@ -109,7 +117,9 @@ export async function GET() {
       config: getCrmNotificationConfig(),
       notifications: items,
       notificationCounts: countsByUrgency(items),
-      clientCaseAttention,
+      clientCaseAttention: snapshot.clientCaseAttention,
+      serverTime: snapshot.serverTime,
+      newCases: snapshot.newCases,
     });
   });
 }

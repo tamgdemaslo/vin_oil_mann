@@ -37,6 +37,9 @@ expect("src/components/platform/PlatformShell.tsx", [
 ]);
 
 const platformShellSource = read("src/components/platform/PlatformShell.tsx");
+const deadlineLoader = platformShellSource.slice(platformShellSource.indexOf("const loadDeadlineNotifications"), platformShellSource.indexOf("  useEffect(() => {", platformShellSource.indexOf("const loadDeadlineNotifications")));
+if (/document\.visibilityState/.test(deadlineLoader)) failures.push("Фоновая вкладка должна получать сигналы заявок");
+if (!/setInterval\(refresh, 30_000\)/.test(platformShellSource)) failures.push("Сигналы заявок проверяются каждые 30 секунд");
 const shellLinks = platformShellSource.match(/<Link\b[\s\S]*?>/g) ?? [];
 const shellLinksWithoutPrefetchGuard = shellLinks.filter((link) => !/prefetch=\{false\}/.test(link));
 if (shellLinks.length === 0 || shellLinksWithoutPrefetchGuard.length > 0) {
@@ -81,4 +84,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Background load guard checks passed (single-flight CRM, visible-tab polling, guarded shell prefetch, adaptive OEM backoff). ");
+console.log("Background load guard checks passed (single-flight CRM, background case signals, guarded shell prefetch, adaptive OEM backoff). ");
