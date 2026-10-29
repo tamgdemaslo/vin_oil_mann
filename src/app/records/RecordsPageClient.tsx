@@ -38,6 +38,7 @@ import {
   journalLocalTime,
   utcInstantToJournalLocal,
 } from "@/lib/booking/journal-time";
+import { retainsBookingAssignment } from "@/lib/booking/existing-assignment";
 import { visibleJournalStaff } from "@/lib/booking/journal-staff";
 import { formatLocalDate } from "@/lib/booking/timezone";
 import {
@@ -2639,7 +2640,14 @@ export default function RecordsPageClient() {
   const formRequiresEmail = requiredFormFields.has("email");
   const formRequiresPlate = requiredFormFields.has("plate");
   const selectedFormMaster = staff.find((item) => String(item.id) === form.staffId) ?? null;
-  const eligibleFormMasters = staff.filter((item) => item.bookable !== false && selectedFormServices.every((service) => item.membership_id ? service.master_membership_ids?.includes(item.membership_id) === true : false));
+  const editingFormRecord = formMode === "edit" ? records.find((item) => item.id === editingRecordId) : null;
+  const eligibleFormMasters = staff.filter((item) => {
+    const retainsExisting = editingFormRecord && retainsBookingAssignment({
+      masterMembershipId: String(editingFormRecord.staff_id),
+      serviceItems: (editingFormRecord.services ?? []).map((service) => ({ serviceId: String(service.id) })),
+    }, String(item.id), form.serviceIds);
+    return retainsExisting || (item.bookable !== false && selectedFormServices.every((service) => item.membership_id ? service.master_membership_ids?.includes(item.membership_id) === true : false));
+  });
   const selectedClientPhoneKey = normalizePhone(form.clientPhone);
   const selectedClientShipments = selectedClientPhoneKey ? shipmentLookupByPhone[selectedClientPhoneKey]?.rows ?? [] : [];
 
@@ -3579,7 +3587,7 @@ export default function RecordsPageClient() {
                     setForm((prev) => ({ ...prev, datetime: nextStart, datetimeEnd: addSecondsToDateTimeLocal(nextStart, prev.manualDuration && prev.datetimeEnd ? (calculateSeanceLengthSeconds(prev.datetime, prev.datetimeEnd) ?? selectedServiceDurationSeconds) : selectedServiceDurationSeconds) }));
                   }} /></label>
                   <label><span>Окончание</span><input type="time" value={formEndTime} onChange={(event) => setForm((prev) => ({ ...prev, datetimeEnd: replaceTimePart(prev.datetimeEnd || prev.datetime, event.target.value, formDate), manualDuration: true }))} /></label>
-                  <label><span>Мастер</span><select value={form.staffId} onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value }))}><option value="">Любой подходящий мастер</option>{eligibleFormMasters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{form.serviceIds.length > 0 && eligibleFormMasters.length === 0 ? <small className="eco-records-warning">Для всех выбранных работ не назначен мастер</small> : null}</label>
+                  <label><span>Мастер</span><select value={form.staffId} onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value }))}><option value="">Любой подходящий мастер</option>{eligibleFormMasters.map((item) => <option key={item.id} value={item.id}>{item.name}{item.bookable === false ? " · текущий мастер" : ""}</option>)}</select>{form.serviceIds.length > 0 && eligibleFormMasters.length === 0 ? <small className="eco-records-warning">Для всех выбранных работ не назначен мастер</small> : null}</label>
                 </div>
                 <RecordsSlotPicker
                   localDate={formDate}

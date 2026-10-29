@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bookingViewIsSelfOnly, canViewBookings, requireBookingCapability } from "@/lib/booking/access";
+import { bookingViewIsSelfOnly, canManageBookings, canViewBookings, requireBookingCapability } from "@/lib/booking/access";
 import { getBookingAvailability } from "@/lib/booking/availability";
 import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
 import { bookingErrorPayload } from "@/lib/booking/errors";
@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
       onlineOnly: false,
       respectLeadTime: false,
       excludeBookingId,
+      preserveExistingAssignment: canManageBookings(access.context),
       durationOverrideMinutes,
     };
     const result = await runWithBranchApiContext(access.context, () => getBookingAvailability({ ...baseInput, localDate }));

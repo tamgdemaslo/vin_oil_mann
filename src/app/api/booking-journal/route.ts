@@ -440,7 +440,7 @@ export async function PUT(request: NextRequest) {
       const serviceIds = numericServiceIds.length
         ? await resolveServiceIds(branchId, numericServiceIds)
         : booking.serviceItems.map((item) => item.serviceId).filter((id): id is string => Boolean(id));
-      const membershipId = payload.staff_id ? await resolveMembershipId(branchId, payload.staff_id) : booking.masterMembershipId;
+      const membershipId = payload.staff_id ? await resolveMembershipId(branchId, payload.staff_id, true) : booking.masterMembershipId;
       if (!membershipId) throw new BookingError("Мастер не выбран", "booking_master_required");
       const startsAt = text(payload.datetime)
         ? journalDateTime(text(payload.datetime), booking.branch.timezone)

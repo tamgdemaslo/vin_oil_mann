@@ -11,6 +11,7 @@ import {
 } from "./constants";
 import { BookingError } from "./errors";
 import { getBookingAvailability } from "./availability";
+import { retainsBookingAssignment } from "./existing-assignment";
 import { isValidBookingCustomerName } from "./customer-name";
 import { publicBookingIdempotencyAuditId } from "./idempotency";
 import { createManagementHandle, createManagementToken, verifyManagementToken } from "./management-token";
@@ -218,18 +219,19 @@ async function loadServices(tx: BookingDb, branchId: string, serviceIds: string[
   return { services, ids, durationMinutes };
 }
 
-async function assertMasterAssignments(tx: BookingDb, branchId: string, membershipId: string, serviceIds: string[]) {
+async function assertMasterAssignments(tx: BookingDb, branchId: string, membershipId: string, serviceIds: string[], retainExisting = false) {
   const membership = await tx.branchMembership.findFirst({
     where: {
       id: membershipId,
       branchId,
       roleId: BOOKING_MASTER_ROLE_ID,
-      status: "active",
+      ...(retainExisting ? {} : { status: "active" }),
       user: { status: "active" },
     },
     include: { user: { select: { name: true } } },
   });
   if (!membership) throw new BookingError("Мастер недоступен", "booking_master_unavailable", 409);
+  if (retainExisting) return membership;
   const count = await tx.bookingMasterService.count({
     where: { branchId, membershipId, serviceId: { in: serviceIds } },
   });
@@ -279,6 +281,7 @@ async function assertAvailableSlot(
     onlineOnly: boolean;
     respectLeadTime: boolean;
     excludeBookingId?: string | null;
+    preserveExistingAssignment?: boolean;
     durationOverrideMinutes?: number | null;
   },
   overrideReason?: BookingOverrideReason | null,
@@ -294,6 +297,7 @@ async function assertAvailableSlot(
     onlineOnly: input.onlineOnly,
     respectLeadTime: input.respectLeadTime,
     excludeBookingId: input.excludeBookingId,
+    preserveExistingAssignment: input.preserveExistingAssignment,
     durationOverrideMinutes: input.durationOverrideMinutes,
   }, tx);
   const exact = availability.slots.some((slot) => slot.startsAt === input.startsAt.toISOString());
@@ -870,7 +874,8 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
       ? Math.min(Math.trunc(input.durationOverrideMinutes), 1_440)
       : loaded.durationMinutes;
     if (durationMinutes <= 0) throw new BookingError("У услуг не настроена длительность", "booking_duration_invalid", 409);
-    await assertMasterAssignments(tx, current.branchId, masterMembershipId, loaded.ids);
+    const retainExisting = actor.kind === "USER" && retainsBookingAssignment(current, masterMembershipId, loaded.ids);
+    await assertMasterAssignments(tx, current.branchId, masterMembershipId, loaded.ids, retainExisting);
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
     const currentServiceIds = current.serviceItems.map((item) => item.serviceId).filter((id): id is string => Boolean(id)).sort();
     const scheduleChanged = startsAt.getTime() !== current.startsAt.getTime()
@@ -887,6 +892,7 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
           onlineOnly: false,
           respectLeadTime: false,
           excludeBookingId: current.id,
+          preserveExistingAssignment: retainExisting,
           durationOverrideMinutes: durationMinutes,
         }, overrideReason);
       await assertNoOverlap(tx, {
