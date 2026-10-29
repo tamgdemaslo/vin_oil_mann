@@ -12,11 +12,13 @@ try {
  const {getClientCaseAlertSnapshot:snapshot}=await jiti.import('../src/lib/client-case-alerts.ts');
  const now=new Date('2026-10-29T10:00:00Z');
  const base={id:'old',branchId:'a',status:'open',caseStatus:'calculation_needed',title:'Расчёт',customerName:'Клиент',phoneNormalized:null,responsibleLogin:null,nextAction:null,createdAt:new Date('2026-10-28T08:00:00Z'),nextActionAt:null,nextContactAt:null,snoozeUntil:null,stage:{name:'Нужно рассчитать'}};
- state.rows.push(base,{...base,id:'new',createdAt:new Date(+now-1000)},{...base,id:'other',branchId:'b'}, {...base,id:'closed',status:'won'}, {...base,id:'parts',caseStatus:'parts_arrived',nextActionAt:new Date(+now-2000)}, {...base,id:'waiting',caseStatus:'waiting_parts'}, {...base,id:'snoozed',snoozeUntil:new Date(+now+60000)}, {...base,id:'legacy-closed',stage:{name:'Выполнено'}});
+ state.rows.push(base,{...base,id:'new',createdAt:new Date(+now-1000)},{...base,id:'other',branchId:'b'}, {...base,id:'closed',status:'won'}, {...base,id:'parts',caseStatus:'parts_arrived',nextActionAt:new Date(+now-2000)}, {...base,id:'waiting',caseStatus:'waiting_parts'}, {...base,id:'late-supply',caseStatus:'waiting_parts',suppliesExpectedAt:new Date(+now-1000)}, {...base,id:'future-supply',caseStatus:'waiting_parts',suppliesExpectedAt:new Date(+now+60000)}, {...base,id:'snoozed',snoozeUntil:new Date(+now+60000)}, {...base,id:'legacy-closed',stage:{name:'Выполнено'}});
  let result=await snapshot('a',null,now);
- assert.deepEqual(result.clientCaseAttention,{overdue:3,calculationNeeded:3});
+ assert.deepEqual(result.clientCaseAttention,{overdue:4,calculationNeeded:3});
  assert.deepEqual(result.newCases,[],'Initial load must not announce existing work as new');
- assert.deepEqual(result.overdue.map(row=>row.caseId),['old','parts'],'Legacy requests without a stored deadline remain overdue; snooze suppresses alerts');
+ assert.deepEqual(result.overdue.map(row=>row.caseId),['old','parts','late-supply'],'Legacy requests without a stored deadline remain overdue; snooze suppresses alerts');
+ assert.equal(result.overdue.find(item=>item.caseId==='late-supply').title,'Просрочена поставка запчастей');
+ assert.equal(result.overdue.find(item=>item.caseId==='late-supply').deadline,new Date(+now-1000).toISOString());
  assert.equal(result.overdue[0].id,'live:old','No notification log is required');
  result=await snapshot('a',new Date(+now-2000),now);assert.deepEqual(result.newCases.map(row=>row.id),['new']);
  assert.equal(result.serverTime,now.toISOString());assert.equal(state.state.query.where.branchId,'a');

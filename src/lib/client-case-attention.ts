@@ -13,7 +13,7 @@ export async function getClientCaseAttention(branchId: string, now = new Date())
         stage: { name: { contains: word, mode: "insensitive" as const } },
       })),
     },
-    select: { status: true, caseStatus: true, nextAction: true, createdAt: true, nextActionAt: true, nextContactAt: true, stage: { select: { name: true } } },
+    select: { status: true, caseStatus: true, nextAction: true, createdAt: true, nextActionAt: true, nextContactAt: true, suppliesExpectedAt: true, stage: { select: { name: true } } },
   });
   return rows.reduce((counts, row) => {
     const due = simpleCaseDeadline(row);

@@ -12,6 +12,7 @@ type CaseState = {
   createdAt?: Date | string;
   nextActionAt?: Date | string | null;
   nextContactAt?: Date | string | null;
+  suppliesExpectedAt?: Date | string | null;
   stage?: { name?: string | null } | null;
 };
 
@@ -39,6 +40,7 @@ export function caseDayDeadline(at: Date | string = new Date()): Date {
 export function simpleCaseDeadline(row: CaseState): Date | null {
   const status = simpleCaseStatus(row);
   if (status === "calculation_needed") return row.nextActionAt ? caseDayDeadline(row.nextActionAt) : caseDayDeadline(row.createdAt ?? new Date());
+  if (status === "waiting_parts") return row.suppliesExpectedAt ? parseServiceDateTime(row.suppliesExpectedAt) : null;
   if (status === "parts_arrived") {
     const value = row.nextActionAt ?? row.nextContactAt;
     return value ? parseServiceDateTime(value) : null;

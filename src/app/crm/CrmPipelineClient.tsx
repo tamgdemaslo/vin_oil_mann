@@ -146,7 +146,8 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   }, [load]);
   useEffect(() => {
     const filter = searchParams.get("filter");
-    if (filter === "overdue" || filter === "today") { setView("calculation_needed"); setUrgentOnly(filter === "overdue"); }
+    if (filter === "overdue") { setView("board"); setUrgentOnly(true); setMobileFocus(false); }
+    else if (filter === "today") { setView("calculation_needed"); setUrgentOnly(false); }
     else if (filter === "check_response" || filter === "client_replied") { setView("calculation_sent"); setUrgentOnly(false); }
     else if (WORK_CASE_STATUSES.some(status => status === filter) || filter === "closed") { setView(filter as SimpleCaseStatus); setUrgentOnly(false); }
   }, [searchParams]);
