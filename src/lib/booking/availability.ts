@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { BOOKING_MASTER_ROLE_ID, BOOKING_STATUS } from "./constants";
 import { DEFAULT_BOOKING_STEP_MINUTES, defaultBookingWorkingHour } from "./defaults";
 import { BookingError } from "./errors";
+import { retainsBookingAssignment } from "./existing-assignment";
 import {
   addLocalDays,
   assertLocalDate,
@@ -24,6 +25,8 @@ export type AvailabilityInput = {
   onlineOnly?: boolean;
   respectLeadTime?: boolean;
   excludeBookingId?: string | null;
+  /** Set only by authenticated staff flows, never from public request data. */
+  preserveExistingAssignment?: boolean;
   durationOverrideMinutes?: number | null;
   now?: Date;
 };
@@ -144,6 +147,20 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
       name: assignment.membership.user.name,
       position: assignment.membership.position,
     });
+  }
+  // A time-only staff edit retains the original assignment even if the master
+  // was subsequently disabled or removed from the service settings.
+  if (input.preserveExistingAssignment && !input.onlineOnly && input.excludeBookingId) {
+    const existing = await db.booking.findFirst({
+      where: { id: input.excludeBookingId, branchId: branch.id, status: BOOKING_STATUS.ACTIVE },
+      include: { serviceItems: { select: { serviceId: true } }, masterMembership: { include: { user: { select: { name: true, status: true } } } } },
+    });
+    const membership = existing?.masterMembership;
+    if (membership?.roleId === BOOKING_MASTER_ROLE_ID && membership.user.status === "active"
+      && retainsBookingAssignment(existing, input.masterMembershipId ?? existing?.masterMembershipId, serviceIds)) {
+      masters.set(membership.id, { membershipId: membership.id, name: membership.user.name, position: membership.position });
+      assignedServices.set(membership.id, new Set(serviceIds));
+    }
   }
   const candidateIds = [...masters.keys()].filter((id) => assignedServices.get(id)?.size === serviceIds.length);
   if (!candidateIds.length) {
