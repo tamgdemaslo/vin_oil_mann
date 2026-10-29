@@ -297,7 +297,7 @@ export async function GET(request: NextRequest) {
         const hasUnassignedArchive = bookingViewIsSelfOnly(access.context) ? 0 : await prisma.booking.count({ where: { branchId, source: "LEGACY_YCLIENTS", masterMembershipId: null } });
         return NextResponse.json({ success: true, data: [
           ...memberships.map((membership) => ({ id: journalId(membership.id), membership_id: membership.id, name: membership.user.name, specialization: membership.position || membership.roleId, bookable: membership.roleId === BOOKING_MASTER_ROLE_ID && membership.status === "active" && membership.user.status === "active" && membership.bookingServices.length > 0 })),
-          ...(hasUnassignedArchive ? [{ id: legacyUnassignedId(branchId), name: "Архив Yclients", specialization: "Исторические записи без сопоставленного сотрудника", bookable: true }] : []),
+          ...(hasUnassignedArchive ? [{ id: legacyUnassignedId(branchId), name: "Архив Yclients", specialization: "Исторические записи без сопоставленного сотрудника", bookable: false }] : []),
         ] });
       }
       if (action === "services") {

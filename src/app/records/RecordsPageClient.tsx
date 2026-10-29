@@ -39,7 +39,7 @@ import {
   utcInstantToJournalLocal,
 } from "@/lib/booking/journal-time";
 import { retainsBookingAssignment } from "@/lib/booking/existing-assignment";
-import { visibleJournalStaff } from "@/lib/booking/journal-staff";
+import { canCreateJournalBooking, visibleJournalStaff } from "@/lib/booking/journal-staff";
 import { formatLocalDate } from "@/lib/booking/timezone";
 import {
   DEFAULT_BOOKING_STEP_MINUTES,
@@ -1445,7 +1445,7 @@ export default function RecordsPageClient() {
   const calendarDays = useMemo(() => getMonthGridDays(calendarMonth), [calendarMonth]);
 
   const monthLoadByDate = useMemo(() => {
-    const activeStaff = visibleJournalStaff(staff, monthRecords, timelineStaffId);
+    const activeStaff = visibleJournalStaff(staff, monthRecords, timelineStaffId).filter(canCreateJournalBooking);
     const staffCount = Math.max(1, activeStaff.length);
     const defaultWorkingMinutes = (DEFAULT_TIMELINE_END - DEFAULT_TIMELINE_START) * staffCount;
     const grouped = new Map<string, RecordItem[]>();
@@ -1687,7 +1687,7 @@ export default function RecordsPageClient() {
 
   const nextFreeCards = useMemo(() => {
     const fromMinute = nowMinute == null ? timelineStartMinute : Math.ceil(nowMinute / bookingStepMinutes) * bookingStepMinutes;
-    return timelineStaff.map((staffItem) => {
+    return timelineStaff.filter(canCreateJournalBooking).map((staffItem) => {
       const slots = getFreeSlots(staffItem.id, { fromMinute, durationMinutes: MIN_SLOT_MINUTES });
       const totalFree = slots.reduce((sum, slot) => sum + (slot.end - slot.start), 0);
       return { staffItem, next: slots[0] ?? null, slots, totalFree };
@@ -1799,6 +1799,7 @@ export default function RecordsPageClient() {
   const openCreateForm = useCallback(
     (defaults?: Partial<RecordFormState>) => {
       if (!canManageRecords) return;
+      if (defaults?.staffId && !canCreateJournalBooking(staff.find(item => String(item.id) === defaults.staffId))) return;
       const serviceIds = defaults?.serviceIds ?? [];
       const defaultDuration =
         serviceIds.reduce((sum, id) => sum + getServiceDurationSeconds(serviceById.get(id)), 0) ||
@@ -1823,7 +1824,7 @@ export default function RecordsPageClient() {
       setFormAvailability({ state: "idle", reasonCode: null, message: "Выберите услуги, мастера и время", alternatives: [] });
       setFormOpen(true);
     },
-    [canManageRecords, serviceById]
+    [canManageRecords, serviceById, staff]
   );
 
   const openQuickCreateFromMinute = useCallback(
@@ -2007,6 +2008,11 @@ export default function RecordsPageClient() {
     async (openShipmentAfterCreate = false) => {
       if (form.serviceIds.length === 0) {
         setFormError("Выберите хотя бы одну услугу");
+        return;
+      }
+      const master = staff.find(item => String(item.id) === form.staffId);
+      if (!master || (formMode === "create" && !canCreateJournalBooking(master))) {
+        setFormError("Выберите действующего мастера. Если список пуст, проверьте назначения услуг в настройках записи.");
         return;
       }
       if (!formTimeValidation.ok) {
@@ -2222,6 +2228,7 @@ export default function RecordsPageClient() {
       selectedRecordItem,
       selectedServiceDurationSeconds,
       serviceById,
+      staff,
     ]
   );
 
@@ -2944,6 +2951,7 @@ export default function RecordsPageClient() {
                         <div key={`head-${staffItem.id}`}>
                           <span>{getResourceKicker()}</span>
                           <strong>{staffItem.name}</strong>
+                          {!canCreateJournalBooking(staffItem) ? <small>Только существующие записи</small> : null}
                         </div>
                       ))}
                     </div>
@@ -2970,8 +2978,9 @@ export default function RecordsPageClient() {
                           <div
                             key={`col-${staffItem.id}`}
                             className="eco-records-timeline-col"
+                            style={!canCreateJournalBooking(staffItem) ? { cursor: "default" } : undefined}
                             onMouseMove={(event) => {
-                              if (!canManageRecords) return;
+                              if (!canManageRecords || !canCreateJournalBooking(staffItem)) return;
                               const rect = event.currentTarget.getBoundingClientRect();
                               const y = event.clientY - rect.top;
                               const minute = Math.round(y / minutePx) + timelineStartMinute;
@@ -2979,7 +2988,7 @@ export default function RecordsPageClient() {
                             }}
                             onMouseLeave={() => setHoveredSlot((prev) => (prev?.staffId === staffItem.id ? null : prev))}
                             onClick={(event) => {
-                              if (!canManageRecords) return;
+                              if (!canManageRecords || !canCreateJournalBooking(staffItem)) return;
                               const rect = event.currentTarget.getBoundingClientRect();
                               const y = event.clientY - rect.top;
                               const minute = Math.round(y / minutePx) + timelineStartMinute;
@@ -2992,7 +3001,7 @@ export default function RecordsPageClient() {
                             {halfHourMarks.map((minute) => (
                               <div key={`half-${staffItem.id}-${minute}`} className="eco-records-half-line" style={{ top: `${(minute - timelineStartMinute) * minutePx}px` }} />
                             ))}
-                            {canManageRecords && hoveredSlot?.staffId === staffItem.id ? (
+                            {canManageRecords && canCreateJournalBooking(staffItem) && hoveredSlot?.staffId === staffItem.id ? (
                               <div
                                 className="eco-records-hover-slot"
                                 style={{
@@ -3587,7 +3596,7 @@ export default function RecordsPageClient() {
                     setForm((prev) => ({ ...prev, datetime: nextStart, datetimeEnd: addSecondsToDateTimeLocal(nextStart, prev.manualDuration && prev.datetimeEnd ? (calculateSeanceLengthSeconds(prev.datetime, prev.datetimeEnd) ?? selectedServiceDurationSeconds) : selectedServiceDurationSeconds) }));
                   }} /></label>
                   <label><span>Окончание</span><input type="time" value={formEndTime} onChange={(event) => setForm((prev) => ({ ...prev, datetimeEnd: replaceTimePart(prev.datetimeEnd || prev.datetime, event.target.value, formDate), manualDuration: true }))} /></label>
-                  <label><span>Мастер</span><select value={form.staffId} onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value }))}><option value="">Любой подходящий мастер</option>{eligibleFormMasters.map((item) => <option key={item.id} value={item.id}>{item.name}{item.bookable === false ? " · текущий мастер" : ""}</option>)}</select>{form.serviceIds.length > 0 && eligibleFormMasters.length === 0 ? <small className="eco-records-warning">Для всех выбранных работ не назначен мастер</small> : null}</label>
+                  <label><span>Мастер</span><select value={form.staffId} onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value }))}><option value="">Выберите мастера</option>{eligibleFormMasters.map((item) => <option key={item.id} value={item.id}>{item.name}{item.bookable === false ? " · текущий мастер" : ""}</option>)}</select>{form.serviceIds.length > 0 && eligibleFormMasters.length === 0 ? <small className="eco-records-warning">Для выбранных работ нет действующего мастера. Назначьте услуги в настройках записи.</small> : null}</label>
                 </div>
                 <RecordsSlotPicker
                   localDate={formDate}

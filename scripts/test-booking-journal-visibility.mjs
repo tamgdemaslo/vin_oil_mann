@@ -42,7 +42,7 @@ const aliases = Object.fromEntries(['branch-api', 'db', 'booking/access', 'booki
 const jiti = createJiti(import.meta.url, { alias: { '@': resolve('src'), ...aliases } });
 const { GET } = await jiti.import('../src/app/api/booking-journal/route.ts');
 const { test } = await jiti.import(mock);
-const { visibleJournalStaff } = await jiti.import('../src/lib/booking/journal-staff.ts');
+const { canCreateJournalBooking, visibleJournalStaff } = await jiti.import('../src/lib/booking/journal-staff.ts');
 const { NextRequest } = await import('next/server.js');
 const get = (query) => GET(new NextRequest('http://localhost/api/booking-journal?' + query));
 
@@ -59,6 +59,13 @@ const staff = [...Array.from({ length: 5 }, (_, i) => ({ id: i + 1, bookable: tr
 assert.equal(visibleJournalStaff(staff, [], '').length, 5);
 assert.equal(visibleJournalStaff(staff, [{ staff_id: disabled.id }], '').length, 6, 'All columns, including disabled master with appointments, stay visible');
 assert.deepEqual(visibleJournalStaff(staff, [{ staff_id: disabled.id }], String(disabled.id)), [disabled]);
+
+assert.deepEqual(visibleJournalStaff([disabled], [], ''), [], 'An empty archived column is not restored when there are no active masters');
+assert.deepEqual(visibleJournalStaff([disabled], [{ staff_id: disabled.id }], ''), [disabled], 'Existing archived appointments remain visible');
+assert.equal(canCreateJournalBooking({ membership_id: 'active', bookable: true }), true);
+assert.equal(canCreateJournalBooking({ membership_id: 'disabled', bookable: false }), false, 'Disabled staff cannot offer new slots');
+assert.equal(canCreateJournalBooking({ bookable: false }), false, 'The unassigned archive cannot offer new slots');
+assert.equal(canCreateJournalBooking(undefined), false);
 
 test.queries = [];
 response = await get('action=records&start_date=2026-10-29&end_date=2026-10-29');
