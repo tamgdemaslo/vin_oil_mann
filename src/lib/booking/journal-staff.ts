@@ -14,3 +14,14 @@ export function visibleJournalStaff<T extends { id: number; bookable?: boolean }
 export function canCreateJournalBooking(staff: { bookable?: boolean; membership_id?: string } | undefined): boolean {
   return Boolean(staff?.membership_id) && staff?.bookable !== false;
 }
+
+/** Existing selected services stay removable; new choices follow active staff assignments. */
+export function availableJournalServices<T extends { id: number; master_membership_ids?: string[] }>(
+  services: T[],
+  staff: Array<{ membership_id?: string; bookable?: boolean }>,
+  selectedMasterId: string | undefined,
+  retainedServiceIds: string[],
+): T[] {
+  const activeIds = staff.filter(canCreateJournalBooking).map(item => item.membership_id!);
+  return services.filter(service => retainedServiceIds.includes(String(service.id)) || (service.master_membership_ids ?? []).some(id => activeIds.includes(id) && (!selectedMasterId || id === selectedMasterId)));
+}
