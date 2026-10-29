@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { getPublicUsers, hashAuthPassword, invalidateAuthPasswordCache } from "@/lib/auth";
 import { branchErrorResponse, requireBranchContext } from "@/lib/branch-context";
 import { prisma } from "@/lib/db";
+import { readEmployeePaySettings } from "@/lib/employee-pay-settings";
 
 const BRANCH_ROLES = new Set(["branch_owner", "administrator", "master", "mechanic", "accountant", "viewer"]);
 const LOGIN_PATTERN = /^[a-z0-9][a-z0-9._-]{2,31}$/;
@@ -123,12 +124,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       update: { name: configured.name, authRole: configured.role, status: "active" },
       create: { login, name: configured.name, authRole: configured.role },
     });
-    const membership = await prisma.branchMembership.upsert({
-      where: { branchId_userId: { branchId, userId: user.id } },
-      update: { roleId, status: "active", permissionsJson: body.permissionsJson as never },
-      create: { branchId, userId: user.id, roleId, permissionsJson: body.permissionsJson as never },
-      include: { user: { select: { id: true, login: true, name: true, status: true } } },
-    });
+    const previous = await prisma.branchMembership.findUnique({ where: { branchId_userId: { branchId, userId: user.id } } });
+    if (previous && readEmployeePaySettings(previous.paySettingsJson).employmentEnd) return NextResponse.json({ error: "Сотрудник уволен. История сохранена; повторное включение доступа запрещено." }, { status: 409 });
+    let membership;
+    if (previous) {
+      const updated = await prisma.branchMembership.updateMany({
+        where: { id: previous.id, branchId, updatedAt: previous.updatedAt },
+        data: { roleId, status: "active", permissionsJson: body.permissionsJson as never },
+      });
+      if (!updated.count) return NextResponse.json({ error: "Настройки сотрудника изменились. Обновите страницу." }, { status: 409 });
+      membership = await prisma.branchMembership.findFirstOrThrow({
+        where: { id: previous.id, branchId },
+        include: { user: { select: { id: true, login: true, name: true, status: true } } },
+      });
+    } else {
+      membership = await prisma.branchMembership.create({
+        data: { branchId, userId: user.id, roleId, permissionsJson: body.permissionsJson as never },
+        include: { user: { select: { id: true, login: true, name: true, status: true } } },
+      });
+    }
     await prisma.branchAuditLog.create({
       data: { businessGroupId: access.context.businessGroupId, branchId, userId: access.context.userId, action: "branch_member_assigned", entityType: "branch_membership", entityId: membership.id, metadata: { login, roleId } },
     });

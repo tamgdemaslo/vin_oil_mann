@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { canonicalizeLogin, getLoginVariants, getSession, getUsersFromEnv } from "@/lib/auth";
+import { canonicalizeLogin, getLoginVariants, getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireBranchApi } from "@/lib/branch-api";
+import { listPayrollEmployees } from "@/lib/payroll-employees";
 import { getShiftRateCents } from "@/lib/shift-rates";
 import { logChange } from "@/lib/change-log";
 import { toLocalDateString } from "@/lib/time";
@@ -20,7 +22,9 @@ export async function GET(request: NextRequest) {
   const login = searchParams.get("login");
   if (session.user.role === "owner" && !login) {
     const today = toLocalDateString(new Date());
-    const users = await getUsersFromEnv();
+    const access = await requireBranchApi();
+    if (!access.ok) return access.response;
+    const users = await listPayrollEmployees(access.context.branchId!);
     const rates = await Promise.all(
       users.map(async (user) => ({
         login: user.login,

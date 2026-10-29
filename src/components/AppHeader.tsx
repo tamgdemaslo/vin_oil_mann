@@ -198,12 +198,13 @@ export default function AppHeader() {
               description: "Детализация маржи и себестоимости по локальной базе.",
               disabled: locked,
             },
-            {
-              href: "/salary",
-              label: "Зарплата",
-              description: "Выплаты, ставки и правила сдельной части.",
-              disabled: locked,
-            },
+          ],
+        },
+        {
+          id: "employees", href: "/employees/salary", label: "Сотрудники",
+          items: [
+            { href: "/employees/salary", label: "Зарплата", description: "Начисления и выплаты.", disabled: locked },
+            ...(user?.role === "owner" ? [{ href: "/employees/roles", label: "Роли", description: "Состав команды и доступы.", disabled: locked }] : []),
           ],
         },
         {

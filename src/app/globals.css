@@ -72062,3 +72062,18 @@ select[size="1"]::-ms-expand {
 /* Keep catalog results visible below the shipment table breakpoint. */
 .eco-products-page .eco-inventory-layout, .eco-products-page .eco-inventory-main { min-width: 0; max-width: 100%; }
 .eco-products-page .eco-table-wrap { display: block; max-width: 100%; overflow-x: auto; }
+
+/* Employee workspace uses the existing operational table and form styles. */
+.eco-employees-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin: 1rem 1.5rem 0; padding-bottom: .75rem; border-bottom: 1px solid var(--eco-border, #d1d5db); }
+.eco-employees-nav a { padding: .4rem .6rem; text-decoration: underline; text-underline-offset: .25rem; }
+.eco-employees-toolbar, .eco-employees-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.eco-employees-toolbar { margin: 1.25rem 0; }
+.eco-employees-toolbar [aria-pressed="true"] { font-weight: 700; outline: 2px solid currentColor; outline-offset: 2px; }
+.eco-employees-dismiss { flex-basis: 100%; padding: 1rem; border: 1px solid var(--eco-border, #d1d5db); border-radius: 8px; }
+.eco-employees-dismiss p, .eco-employees-help p { max-width: 75ch; }
+.eco-employees-help { margin-top: 2rem; padding: 1rem 0; border-top: 1px solid var(--eco-border, #d1d5db); }
+.eco-employees-help summary { cursor: pointer; font-weight: 700; padding: .5rem 0; }
+.eco-employees-error { color: #a82424; }
+@media (max-width: 640px) { .eco-employees-nav { margin-inline: .75rem; gap: .5rem; } .eco-employees-actions { min-width: 220px; } }
+
+.eco-employees-nav a[aria-current="page"] { font-weight: 700; text-decoration-thickness: 2px; }

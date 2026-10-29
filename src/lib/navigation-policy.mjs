@@ -132,12 +132,16 @@ export function resolveNavigationForUser({
       branchOnly("/cash", "Касса", "Смена, расходы и закрытие."),
       branchOnly("/finance/invoices", "Счета поставщиков", "Документы из приёмок."),
       item("/finance?tab=expenses", "Расходы", "Статьи и динамика расходов."),
-      item("/salary", "Зарплата", "Расчёт и выплаты команды."),
       item("/finance/profit", "Рентабельность", "Прибыльность товаров и документов."),
       item("/finance?tab=taxes", "Налоги и отчёты", "Налоги, документы и экспорт."),
     ];
     sections.push({ id: "finance", label: "Финансы", href: "/finance", items: financeItems });
   }
+
+  const employeeItems = [];
+  if (canViewFinance) employeeItems.push(branchOnly("/employees/salary", "Зарплата", "Расчёт, правила и выплаты команды."));
+  if (canManageBranch) employeeItems.push(branchOnly("/employees/roles", "Роли", "Состав команды, доступы и увольнение."));
+  if (employeeItems.length) sections.push({ id: "employees", label: "Сотрудники", href: employeeItems[0].href, items: employeeItems });
 
   if (canUseAi) {
     sections.push({
@@ -152,7 +156,6 @@ export function resolveNavigationForUser({
   if (canManageBranch || canViewOrganizations || canManageIntegrations) managementItems.push(item("/management", "Обзор управления", "Структура бизнеса, подключения и система."));
   if (canManageBranch) {
     managementItems.push(item("/cabinet/branches", "Филиалы", "Настройки физических точек."));
-    managementItems.push(item(activeBranchId ? `/cabinet/branches?branch=${encodeURIComponent(activeBranchId)}&tab=employees` : "/cabinet/branches?tab=employees", "Сотрудники и роли", "Доступ сотрудников к филиалам."));
   }
   if (canViewOrganizations) managementItems.push(item("/cabinet/organizations", "Организации", "Юридические лица и реквизиты."));
   if (canManageIntegrations) {
@@ -166,7 +169,7 @@ export function resolveNavigationForUser({
 
   const personalItems = [
     item("/cabinet", "Мой профиль", "Личные данные и роль."),
-    item("/salary?view=mine", "Моя зарплата", "Собственные начисления и выплаты."),
+    item("/employees/salary?view=mine", "Моя зарплата", "Собственные начисления и выплаты."),
     item("/notifications", "Мои уведомления", "Личные и рабочие напоминания."),
     item("/cabinet?tab=telegram", "Мой Telegram", "Персональные уведомления сотрудника."),
     item("/cabinet?tab=security", "Безопасность", "Смена пароля для входа."),

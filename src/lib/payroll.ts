@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
+import { listPayrollEmployees } from "@/lib/payroll-employees";
+import { employedOn, selectPieceworkRecipients } from "@/lib/employee-pay-settings";
 import { getShiftRateCents } from "@/lib/shift-rates";
-import { canonicalizeLogin, getLoginVariants, getUsersFromEnv } from "@/lib/auth";
+import { canonicalizeLogin, getLoginVariants } from "@/lib/auth";
 import { listPayrollAdjustments, listPayrollPayments } from "@/lib/payroll-settlements";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { calculateLineFinancials } from "@/lib/inventory-costing";
@@ -136,7 +138,7 @@ type CashoutRow = {
   expenseItem?: { name?: string };
 };
 
-type StaffingMember = { login: string; role: string };
+type StaffingMember = { login: string; role: "master" | "admin" };
 type PieceworkBreakdownEntry = {
   category: "work" | "product";
   label: string;
@@ -529,7 +531,7 @@ export async function computePayroll(params: {
         date: { gte: dateFrom, lte: dateTo },
       },
     }),
-    getUsersFromEnv(),
+    listPayrollEmployees(branchId!),
     // The rules and shipments must be read from the same active branch. Reading
     // rules via the request branch also avoids a stale cookie context selecting
     // a rule set from another branch.
@@ -539,6 +541,7 @@ export async function computePayroll(params: {
   const demandsWithPositions = await fetchDemandsWithPositions(dateFrom, dateTo);
   const cashouts = await fetchPayrollCashouts(dateFrom, dateTo);
 
+  const employeeByLogin = new Map(users.map((user) => [normalizeLogin(user.login), user]));
   const canonicalLoginByLower = new Map(users.map((u) => [normalizeLogin(u.login), u.login]));
   const roleByLogin = new Map(users.map((u) => [normalizeLogin(u.login), u.role]));
   const nameByLogin = new Map(users.map((u) => [normalizeLogin(u.login), u.name]));
@@ -546,7 +549,10 @@ export async function computePayroll(params: {
     users.filter((u) => u.role === "master" || u.role === "admin").map((u) => normalizeLogin(u.login))
   );
   const staffingByDate = mergeStaffingByDate({
-    scheduledDays: scheduledShiftsForStaffing.map((shift) => ({
+    scheduledDays: scheduledShiftsForStaffing.filter((shift) => {
+      const employee = employeeByLogin.get(normalizeLogin(shift.userLogin));
+      return employee && employedOn(employee.settings, shift.date, employee.employmentStart);
+    }).map((shift) => ({
       ...shift,
       userLogin: canonicalLoginByLower.get(normalizeLogin(shift.userLogin)) ?? shift.userLogin,
     })),
@@ -567,10 +573,6 @@ export async function computePayroll(params: {
     const earningsByLogin: Record<string, number> = {};
     const pieceworkBreakdownByLogin: VehicleRecord["pieceworkBreakdownByLogin"] = {};
     const unallocatedPiecework: VehicleRecord["unallocatedPiecework"] = [];
-    const masters = onShift.filter((member) => member.role === "master");
-    const admins = onShift.filter((member) => member.role === "admin");
-    const master = masters.length === 1 ? masters[0] : null;
-    const admin = admins.length === 1 ? admins[0] : null;
 
     function addPieceworkEntry(
       login: string,
@@ -602,135 +604,45 @@ export async function computePayroll(params: {
       const saleCents = lineFinancials.revenueCents;
       const buyPriceCents = lineFinancials.costCents;
 
-      if (type === "service") {
-        works.push({ name, quantity: qty, priceCents: saleCents });
-        if (!master) {
-          addUnallocatedPiecework({
-            category: "work",
-            label: name,
-            quantity: qty,
-            baseCents: saleCents,
-            reason: masters.length > 1 ? "multiple_masters" : "missing_master",
-            logins: masters.length > 1 ? masters.map((member) => member.login) : undefined,
-          });
-          continue;
-        }
-        const serviceId = extractLocalEntityId(p.assortment?.meta?.href);
-        if (!serviceId) {
-          addUnallocatedPiecework({
-            category: "work",
-            label: name,
-            quantity: qty,
-            baseCents: saleCents,
-            reason: "missing_rule",
-            diagnostic: "У услуги нет ID карточки каталога. Добавьте услугу из каталога в отгрузку и повторите расчёт.",
-          });
-          continue;
-        }
-        const rule = resolvePieceworkRule({
-          ruleMap: pieceworkRuleMap,
-          targetId: serviceId,
-          targetType: "service",
-          role: "master",
-        });
-        if (!rule) {
-          addUnallocatedPiecework({
-            category: "work",
-            label: name,
-            quantity: qty,
-            baseCents: saleCents,
-            reason: "missing_rule",
-            groupPath: pathName || undefined,
-            ruleTargetId: serviceId,
-            diagnostic: `Для услуги «${name || serviceId}» (ID ${serviceId}) не настроено правило мастера.`,
-          });
-          continue;
-        }
-        const amountCents = calculatePieceworkAmountCents(rule, saleCents, qty);
-        if (amountCents <= 0) continue;
-        earningsByLogin[master.login] = (earningsByLogin[master.login] ?? 0) + amountCents;
-        addPieceworkEntry(master.login, {
-          category: "work",
-          label: name,
-          quantity: qty,
-          amountCents,
-          ruleLabel: formatRuleAmountLabel(rule),
-          basisLabel: rule.mode === "percent" ? "от суммы услуги" : "за услугу",
-          status: "PRELIMINARY",
-        });
-      } else {
-        products.push({
-          name,
-          pathName: pathName || undefined,
-          quantity: qty,
-          priceCents: saleCents,
-        });
+      const isService = type === "service";
+      const targetType = isService ? "service" : "product_group";
+      const targetId = isService ? extractLocalEntityId(p.assortment?.meta?.href) : groupId;
+      const category = isService ? "work" : "product";
+      const baseCents = isService ? saleCents : Math.max(0, lineFinancials.profitCents ?? 0);
+      if (isService) works.push({ name, quantity: qty, priceCents: saleCents });
+      else products.push({ name, pathName: pathName || undefined, quantity: qty, priceCents: saleCents });
 
-        if (buyPriceCents == null) {
-          addUnallocatedPiecework({
-            category: "product",
-            label: name,
-            quantity: qty,
-            baseCents: 0,
-            reason: "missing_cost",
-            groupPath: pathName || undefined,
-            diagnostic: "В проведённой строке нет подтверждённого снимка себестоимости; текущая цена карточки не используется.",
-          });
+      const { recipients, conflicts } = selectPieceworkRecipients({
+        staff: onShift,
+        settingsFor: (login) => employeeByLogin.get(normalizeLogin(login))?.settings ?? {},
+        targetType,
+        targetId,
+        roleRule: (role) => resolvePieceworkRule({ ruleMap: pieceworkRuleMap, targetId, targetType, role }),
+      });
+      for (const conflict of conflicts) {
+        addUnallocatedPiecework({ category, label: name, quantity: qty, baseCents,
+          reason: conflict.role === "master" ? "multiple_masters" : "multiple_admins", logins: conflict.logins,
+          diagnostic: "На смене несколько сотрудников с общим правилом роли. Назначьте индивидуальные правила." });
+      }
+      if (!recipients.length && !conflicts.length && !(onShift.length > 0 && onShift.every((member) => employeeByLogin.get(normalizeLogin(member.login))?.settings.individualPiecework))) {
+        addUnallocatedPiecework({ category, label: name, quantity: qty, baseCents,
+          reason: onShift.length ? "missing_rule" : isService ? "missing_master" : "missing_admin",
+          ruleTargetId: targetId ?? undefined, groupPath: pathName || undefined,
+          diagnostic: onShift.length ? "У сотрудников смены нет правила для этой позиции. Добавьте индивидуальное правило или правило роли." : "На дату отгрузки нет назначенных сотрудников." });
+      }
+      for (const { login: recipientLogin, rule } of recipients) {
+        if (!isService && rule.mode === "percent" && buyPriceCents == null) {
+          addUnallocatedPiecework({ category, label: name, quantity: qty, baseCents: 0, reason: "missing_cost", logins: [recipientLogin],
+            diagnostic: "Для процента от прибыли нужен подтверждённый снимок себестоимости позиции." });
           continue;
         }
-        const profitCents = Math.max(0, lineFinancials.profitCents ?? 0);
-        if (!admin) {
-          addUnallocatedPiecework({
-            category: "product",
-            label: name,
-            quantity: qty,
-            baseCents: profitCents,
-            reason: admins.length > 1 ? "multiple_admins" : "missing_admin",
-            logins: admins.length > 1 ? admins.map((member) => member.login) : undefined,
-          });
-          continue;
-        }
-        if (!groupId) {
-          addUnallocatedPiecework({
-            category: "product",
-            label: name,
-            quantity: qty,
-            baseCents: profitCents,
-            reason: "missing_rule",
-            groupPath: pathName || undefined,
-            diagnostic: "В позиции отсутствует сохранённый ID группы товара. Назначьте группу в карточке товара и повторите расчёт.",
-          });
-          continue;
-        }
-        const rule = resolvePieceworkRule({
-          ruleMap: pieceworkRuleMap,
-          targetId: groupId,
-          targetType: "product_group",
-          role: "admin",
-        });
-        if (!rule) {
-          addUnallocatedPiecework({
-            category: "product",
-            label: name,
-            quantity: qty,
-            baseCents: profitCents,
-            reason: "missing_rule",
-            groupPath: pathName || undefined,
-            ruleTargetId: groupId,
-            diagnostic: `Для группы товаров «${pathName || groupId}» (ID ${groupId}) не настроено правило администратора.`,
-          });
-          continue;
-        }
-        const amountCents = calculatePieceworkAmountCents(rule, profitCents, qty);
+        const amountCents = calculatePieceworkAmountCents(rule, baseCents, qty);
         if (amountCents <= 0) continue;
-        earningsByLogin[admin.login] = (earningsByLogin[admin.login] ?? 0) + amountCents;
-        addPieceworkEntry(admin.login, {
-          category: "product",
-          label: name,
-          quantity: qty,
-          amountCents,
+        earningsByLogin[recipientLogin] = (earningsByLogin[recipientLogin] ?? 0) + amountCents;
+        addPieceworkEntry(recipientLogin, {
+          category, label: name, quantity: qty, amountCents,
           ruleLabel: formatRuleAmountLabel(rule),
-          basisLabel: rule.mode === "percent" ? "от расчётной базы группы товара" : "за единицу",
+          basisLabel: rule.mode === "percent" ? isService ? "от суммы услуги" : "от прибыли товара" : isService ? "за услугу" : "за единицу",
           status: "PRELIMINARY",
         });
       }
@@ -758,6 +670,8 @@ export async function computePayroll(params: {
     if (normalizedTargetLogin && normalizeLogin(canonicalLogin) !== normalizedTargetLogin) continue;
     const roleValue = roleByLogin.get(normalizeLogin(canonicalLogin));
     if (roleValue !== "master" && roleValue !== "admin") continue;
+    const employee = employeeByLogin.get(normalizeLogin(canonicalLogin));
+    if (!employee || !employedOn(employee.settings, scheduledShift.date, employee.employmentStart)) continue;
     if (!byLogin[canonicalLogin]) {
       byLogin[canonicalLogin] = {
         shiftTotalCents: 0,

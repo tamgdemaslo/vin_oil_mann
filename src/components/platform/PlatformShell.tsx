@@ -17,6 +17,7 @@ import {
   Send,
   Settings,
   UserRound,
+  UsersRound,
   WalletCards,
   Warehouse,
   X,
@@ -143,6 +144,7 @@ const NAV_ICONS: Record<string, ComponentType<{ className?: string; "aria-hidden
   clients: CalendarDays,
   warehouse: Warehouse,
   finance: CircleDollarSign,
+  employees: UsersRound,
   "ai-assistant": Bot,
   management: Settings,
 };
@@ -172,7 +174,8 @@ function roleLabel(role?: string) {
 
 function personalItemIcon(item: PlatformPersonalItem) {
   if (item.action === "logout") return LogOut;
-  if (item.href?.startsWith("/salary")) return WalletCards;
+  if (item.href?.startsWith("/employees/roles")) return UsersRound;
+  if (item.href?.startsWith("/employees/salary") || item.href?.startsWith("/salary")) return WalletCards;
   if (item.href?.startsWith("/notifications")) return Bell;
   if (item.href?.includes("tab=telegram")) return Send;
   if (item.href?.includes("tab=security")) return KeyRound;
@@ -219,6 +222,7 @@ function routeContext(pathname: string) {
   if (pathname.startsWith("/inventory") || pathname.startsWith("/warehouse")) return { label: "Текущий раздел:", value: "Склад" };
   if (pathname.startsWith("/messages")) return { label: "Текущий раздел:", value: "Сообщения" };
   if (pathname.startsWith("/notifications")) return { label: "Текущий раздел:", value: "Уведомления" };
+  if (pathname.startsWith("/employees") || pathname.startsWith("/salary")) return { label: "Текущий раздел:", value: "Сотрудники" };
   if (pathname.startsWith("/cash") || pathname.startsWith("/finance") || pathname.startsWith("/salary")) {
     return { label: "Текущий раздел:", value: "Финансы" };
   }
