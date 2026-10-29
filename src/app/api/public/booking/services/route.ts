@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
 import { prisma } from "@/lib/db";
 import { CATALOG_BOOKING_SERVICE_PREFIX } from "@/lib/booking/catalog-services";
 import { publicServiceGroupRank, publicServicePresentation } from "@/lib/booking/public-service-presentation";
@@ -28,7 +29,11 @@ export async function GET(request: NextRequest) {
   });
   if (!enabled) return publicJson(request, { error: "Онлайн-запись недоступна" }, { status: 404, headers: rateLimitHeaders(rate) });
   const services = await prisma.bookingService.findMany({
-    where: { branchId, status: "ACTIVE", onlineBookingEnabled: true },
+    where: {
+      branchId, status: "ACTIVE", onlineBookingEnabled: true,
+      durationMinutes: { gt: 0 },
+      masters: { some: { branchId, membership: { roleId: BOOKING_MASTER_ROLE_ID, status: "active", user: { status: "active" } } } },
+    },
     select: {
       id: true,
       name: true,

@@ -42,7 +42,7 @@ const aliases = Object.fromEntries(['branch-api', 'db', 'booking/access', 'booki
 const jiti = createJiti(import.meta.url, { alias: { '@': resolve('src'), ...aliases } });
 const { GET } = await jiti.import('../src/app/api/booking-journal/route.ts');
 const { test } = await jiti.import(mock);
-const { canCreateJournalBooking, visibleJournalStaff } = await jiti.import('../src/lib/booking/journal-staff.ts');
+const { availableJournalServices, canCreateJournalBooking, visibleJournalStaff } = await jiti.import('../src/lib/booking/journal-staff.ts');
 const { NextRequest } = await import('next/server.js');
 const get = (query) => GET(new NextRequest('http://localhost/api/booking-journal?' + query));
 
@@ -66,6 +66,12 @@ assert.equal(canCreateJournalBooking({ membership_id: 'active', bookable: true }
 assert.equal(canCreateJournalBooking({ membership_id: 'disabled', bookable: false }), false, 'Disabled staff cannot offer new slots');
 assert.equal(canCreateJournalBooking({ bookable: false }), false, 'The unassigned archive cannot offer new slots');
 assert.equal(canCreateJournalBooking(undefined), false);
+const services = [{ id: 1, master_membership_ids: ['vadim'] }, { id: 2, master_membership_ids: ['maksim'] }, { id: 3, master_membership_ids: [] }, { id: 4, master_membership_ids: ['other'] }];
+const masters = [{ membership_id: 'vadim', bookable: true }, { membership_id: 'maksim', bookable: false }, { membership_id: 'other', bookable: true }];
+assert.deepEqual(availableJournalServices(services, masters, undefined, []).map(s => s.id), [1, 4]);
+assert.deepEqual(availableJournalServices(services, masters, 'vadim', []).map(s => s.id), [1]);
+assert.deepEqual(availableJournalServices(services, masters, 'vadim', ['2']).map(s => s.id), [1, 2], 'Existing service snapshots remain editable');
+assert.deepEqual(availableJournalServices(services, [], undefined, []), []);
 
 test.queries = [];
 response = await get('action=records&start_date=2026-10-29&end_date=2026-10-29');

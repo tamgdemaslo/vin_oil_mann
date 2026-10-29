@@ -39,7 +39,7 @@ import {
   utcInstantToJournalLocal,
 } from "@/lib/booking/journal-time";
 import { retainsBookingAssignment } from "@/lib/booking/existing-assignment";
-import { canCreateJournalBooking, visibleJournalStaff } from "@/lib/booking/journal-staff";
+import { availableJournalServices, canCreateJournalBooking, visibleJournalStaff } from "@/lib/booking/journal-staff";
 import { formatLocalDate } from "@/lib/booking/timezone";
 import {
   DEFAULT_BOOKING_STEP_MINUTES,
@@ -2640,13 +2640,13 @@ export default function RecordsPageClient() {
   const formEndTime = form.datetimeEnd ? form.datetimeEnd.slice(11, 16) : "";
   const formDurationMinutes = form.datetime && form.datetimeEnd ? Math.round((calculateSeanceLengthSeconds(form.datetime, form.datetimeEnd) ?? 0) / 60) : 0;
   const selectedFormServices = form.serviceIds.map((id) => serviceById.get(id)).filter((item): item is Service => Boolean(item));
+  const selectedFormMaster = staff.find((item) => String(item.id) === form.staffId) ?? null;
   const normalizedServiceSearch = serviceSearch.trim().toLocaleLowerCase("ru-RU");
-  const visibleFormServices = services.filter((service) => !normalizedServiceSearch || `${service.title} ${service.description ?? ""}`.toLocaleLowerCase("ru-RU").includes(normalizedServiceSearch));
+  const visibleFormServices = availableJournalServices(services, staff, selectedFormMaster?.membership_id, formMode === "edit" ? form.serviceIds : []).filter((service) => !normalizedServiceSearch || `${service.title} ${service.description ?? ""}`.toLocaleLowerCase("ru-RU").includes(normalizedServiceSearch));
   const requiredFormFields = new Set(selectedFormServices.flatMap((service) => Array.isArray(service.required_fields) ? service.required_fields : []));
   const formRequiresVin = selectedFormServices.some((service) => service.requires_vin) || requiredFormFields.has("vin");
   const formRequiresEmail = requiredFormFields.has("email");
   const formRequiresPlate = requiredFormFields.has("plate");
-  const selectedFormMaster = staff.find((item) => String(item.id) === form.staffId) ?? null;
   const editingFormRecord = formMode === "edit" ? records.find((item) => item.id === editingRecordId) : null;
   const eligibleFormMasters = staff.filter((item) => {
     const retainsExisting = editingFormRecord && retainsBookingAssignment({
