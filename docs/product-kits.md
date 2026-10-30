@@ -4,6 +4,22 @@ Kits are reusable, branch-scoped compositions of existing catalog products and q
 They are managed in `/inventory/products?tab=kits`; stock targets are managed in
 `/inventory/restock?tab=kits`. They are not published to the storefront.
 
+The catalog defaults to a shared list across the user's accessible branches in
+the current business group. Each kit shows its owning branch and independently
+calculated availability on each active warehouse of that branch. A branch filter
+narrows the shared list without switching the active branch. Kits with no active
+warehouse remain visible. Same-named kits keep their own composition and identity.
+The list never infers matching products or pools stock across warehouses.
+
+`GET /api/product-kits/network` derives the readable scope from verified branch
+membership and runs explicit branch-filtered queries in a read-only aggregate
+context. It accepts neither caller-supplied access scope nor cross-branch writes.
+Editing and archiving remain in the active owning branch; other rows offer an
+explicit branch switch. Product links in another branch switch to that branch
+before opening the card. Shipment selection and restock operations retain their
+concrete branch and warehouse context. No schema migration or data transfer is
+required for the shared catalog.
+
 ## Behaviour
 
 - Name and a fixed composition; 1–100 distinct active products, quantities from
