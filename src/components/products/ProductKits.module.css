@@ -40,6 +40,21 @@
 .composition { width: 100%; border-collapse: collapse; }
 .composition th, .composition td { padding: 8px 12px; font-size: 12px; text-align: left; }
 .composition td { border-top: 1px solid var(--eco-line, #ddd); }
+.compositionScroll { max-width: 100%; overflow-x: auto; }
+.composition tfoot { font-weight: 600; }
+.productLink { color: var(--eco-rust, #914b30); text-decoration: underline; text-underline-offset: 3px; }
+.productLink:hover { color: var(--eco-ink-2, #272b2a); }
+.productLink:focus-visible { outline: 2px solid var(--eco-rust, #914b30); outline-offset: 3px; }
+.quote { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--eco-line, #ddd); display: flex; flex-direction: column; gap: 12px; }
+.quote .detailHead { margin-bottom: 0; }
+.quoteControls, .quoteActions { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px; }
+.quoteControls .field { flex: 0 1 240px; }
+.quoteControls input { width: 100%; min-width: 0; box-sizing: border-box; }
+.quoteTotal { display: flex; flex-direction: column; gap: 6px; margin: 0; font-size: 12px; }
+.quoteTotal strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.quotePreview { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+.quotePreview textarea { width: 100%; min-width: 0; height: auto; min-height: 180px; box-sizing: border-box; resize: vertical; font: inherit; font-weight: 400; line-height: 1.6; }
+.quoteActions { align-items: center; }
 .shortage { color: var(--eco-danger, #a52f25); font-weight: 600; }
 .error { padding: 12px 16px; border-radius: 6px; background: var(--eco-danger-tint, #fff0ed); color: var(--eco-danger, #982e20); display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 13px; }
 .notice { padding: 12px 16px; background: var(--eco-success-tint, #edf5ef); color: var(--eco-success, #296344); border-radius: 6px; margin: 0; font-size: 13px; }

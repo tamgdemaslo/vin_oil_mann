@@ -1,11 +1,12 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Layers, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Copy, Layers, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import type { ProductKitView } from "@/lib/product-kits";
 import { calculateKit, validateKitInput } from "@/lib/product-kit-calculation";
+import { buildKitClientQuote, parseKitLaborCents } from "@/lib/product-kit-quote";
 import KitTabs from "./KitTabs";
 import styles from "./ProductKits.module.css";
 
@@ -49,6 +50,7 @@ export default function ProductKitsWorkspace({ mode = "catalog", storeId: extern
   const [draft, setDraft] = useState<Draft | null>(null);
   const [targets, setTargets] = useState<Record<string, string>>({});
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [laborCosts, setLaborCosts] = useState<Record<string, string>>({});
   const picker = mode === "picker";
 
   useEffect(() => {
@@ -138,13 +140,49 @@ export default function ProductKitsWorkspace({ mode = "catalog", storeId: extern
             </tr>
             {expanded === kit.id && <tr id={`kit-${kit.id}`}><td colSpan={mode === "restock" ? 5 : picker ? 3 : 4} className={styles.detail}>
               <div className={styles.detailHead}><strong>Состав комплекта</strong><span>{kit.ready > 0 ? `Для следующего, ${number(kit.ready + 1)}-го комплекта` : "Для одного полного комплекта"}</span></div>
-              <table className={styles.composition}><thead><tr><th>Товар</th><th>В комплекте</th><th>Свободно</th><th>Не хватает</th></tr></thead><tbody>{kit.items.map((item) => <tr key={item.productId}><td>{item.name}<small>{item.article}{item.blocked ? " · Товар недоступен: измените состав" : ""}</small></td><td>{number(item.quantity)} {item.unit}</td><td>{number(item.available)} {item.unit}</td><td>{item.missingNext > 0 ? <span className={styles.shortage}>{number(item.missingNext)} {item.unit}</span> : "—"}</td></tr>)}</tbody></table>
+              <div className={styles.compositionScroll}><table className={styles.composition}><thead><tr><th>Товар</th><th>В комплекте</th><th>Цена за единицу</th><th>Сумма</th><th>Свободно</th><th>Не хватает</th></tr></thead><tbody>{kit.items.map((item) => <tr key={item.productId}><td><Link className={styles.productLink} href={`/inventory/products?product=${encodeURIComponent(item.productId)}`} target="_blank" rel="noopener noreferrer" title="Открыть карточку товара в новой вкладке">{item.name}</Link><small>{item.article}{item.blocked ? " · Товар недоступен: измените состав" : ""}</small></td><td>{number(item.quantity)} {item.unit}</td><td className={styles.numeric}>{money(item.priceCents)}</td><td className={styles.numeric}>{money(Math.round(item.priceCents * item.quantity))}</td><td>{number(item.available)} {item.unit}</td><td>{item.missingNext > 0 ? <span className={styles.shortage}>{number(item.missingNext)} {item.unit}</span> : "—"}</td></tr>)}</tbody><tfoot><tr><td colSpan={3}>Итого за запчасти</td><td className={styles.numeric}>{money(kit.priceCents)}</td><td colSpan={2} /></tr></tfoot></table></div>
+              <KitClientQuote kit={kit} laborCost={laborCosts[kit.id] ?? ""} onLaborChange={(value) => setLaborCosts((current) => ({ ...current, [kit.id]: value }))} />
               {picker && <p className={styles.hint}>Весь состав добавится обычными строками, даже при дефиците. Совпадающие товары объединятся.</p>}
             </td></tr>}
           </Fragment>)}
         </tbody></table></div>
         {total > 30 && <nav className={styles.pagination} aria-label="Страницы комплектов"><EcoButton disabled={page === 0} onClick={() => setPage((n) => n - 1)}>Назад</EcoButton><span>{page * 30 + 1}–{Math.min(total, (page + 1) * 30)} из {total}</span><EcoButton disabled={(page + 1) * 30 >= total} onClick={() => setPage((n) => n + 1)}>Далее</EcoButton></nav>}
       </> : null}
+    </>}
+  </section>;
+}
+
+function KitClientQuote({ kit, laborCost, onLaborChange }: { kit: ProductKitView; laborCost: string; onLaborChange: (value: string) => void }) {
+  const preview = useRef<HTMLTextAreaElement>(null);
+  const [copyStatus, setCopyStatus] = useState<{ text: string; message: string } | null>(null);
+  let laborCents: number | null = null;
+  let error = "";
+  try { laborCents = parseKitLaborCents(laborCost); }
+  catch (e) { error = e instanceof Error ? e.message : "Проверьте стоимость работы"; }
+  const text = error ? "" : buildKitClientQuote(kit, laborCents);
+  const unavailable = kit.archived || kit.items.some((item) => item.blocked);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus({ text, message: "Текст скопирован" });
+    } catch {
+      preview.current?.focus();
+      preview.current?.select();
+      setCopyStatus({ text, message: "Не удалось скопировать автоматически. Текст выделен — скопируйте его вручную." });
+    }
+  }
+
+  return <section className={styles.quote} aria-labelledby={`quote-title-${kit.id}`}>
+    <div className={styles.detailHead}><h3 id={`quote-title-${kit.id}`}>Текст для клиента</h3><span>Расчёт на один комплект по текущим ценам</span></div>
+    <div className={styles.quoteControls}>
+      <label className={styles.field}>Стоимость работы, ₽<EcoInput inputMode="decimal" value={laborCost} maxLength={16} placeholder="Укажите сумму" aria-invalid={!!error} aria-describedby={error ? `quote-error-${kit.id}` : undefined} onChange={(e) => onLaborChange(e.target.value)} /></label>
+      {!error && <p className={styles.quoteTotal}>{laborCents === null ? "Запчасти" : "Итого с работой"}<strong>{money(kit.priceCents + (laborCents ?? 0))}</strong></p>}
+    </div>
+    {error && <p id={`quote-error-${kit.id}`} className={styles.error} role="alert">{error}</p>}
+    {unavailable ? <p className={styles.hint}>Комплект архивирован или содержит недоступные товары. Проверьте состав перед расчётом для клиента.</p> : <>
+      <label className={styles.quotePreview}>Готовый текст<textarea ref={preview} className="eco-input" readOnly value={text} rows={Math.min(14, kit.items.length + 8)} placeholder="Проверьте стоимость работы, чтобы подготовить текст" onFocus={(e) => e.currentTarget.select()} /></label>
+      <div className={styles.quoteActions}><EcoButton size="sm" disabled={!!error} onClick={() => void copy()}><Copy size={15} /> Скопировать текст</EcoButton><span className={styles.hint} role="status">{copyStatus?.text === text ? copyStatus.message : ""}</span></div>
     </>}
   </section>;
 }

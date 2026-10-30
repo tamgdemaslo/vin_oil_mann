@@ -28,6 +28,14 @@ They are managed in `/inventory/products?tab=kits`; stock targets are managed in
   composition changes do not modify existing shipments.
 - Archive/restore is reversible. Composition saves use optimistic version checks
   to reject concurrent changes instead of overwriting them.
+- Expanded kits show unit sale prices, rounded line totals, a parts subtotal and
+  product links that open the catalog card in a separate tab.
+- The client quote includes component quantities and prices, optional labor and
+  the combined total, with a copy button and manual selection fallback. Labor is
+  kept per kit while the workspace is open (including collapse/reopen), not saved
+  to the catalog. Empty labor is explicitly unpriced; zero means free work.
+  Invalid labor disables copying; archived kits or blocked components require
+  composition review before a client quote is offered.
 
 ## Database migration and release
 
@@ -46,7 +54,8 @@ the application code and keep the added tables and kit data intact.
 ## Verification
 
 - `npm run test:product-kits`: quantities, price totals, shortage calculations,
-  independent availability, shipment merging, validation and branch query policy.
+  independent availability, shipment merging, validation, client quote rounding,
+  labor input and branch query policy.
 - `DATABASE_URL=postgresql://<local-user>@127.0.0.1/eco_kits_test_<suffix> node scripts/test-product-kits-db.mjs`:
   integration tests and synthetic preview fixtures. This command refuses nonlocal
   hosts and databases outside the `eco_kits_test_*` prefix. It deletes and recreates
