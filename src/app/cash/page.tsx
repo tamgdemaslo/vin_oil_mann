@@ -1489,6 +1489,7 @@ export default function CashPage() {
                 </button>
               </div>
               {ordersTotalsHint && <div className="eco-cash-warning">{ordersTotalsHint}</div>}
+              <p>Закрытие кассы доступно, когда в филиале нет просроченных дел. <Link href="/crm?filter=overdue">Проверить дела клиентов</Link></p>
               {closeError && <div className="eco-cash-error">{closeError}</div>}
               {hasDiscrepancy && (
                 <div className="eco-cash-warning">Есть расхождение {money(discrepancyValue)}. Для закрытия смены нужен комментарий.</div>

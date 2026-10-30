@@ -53,7 +53,7 @@ jobs:
         run: npm run test:client-site-domain && node scripts/test-client-seo.mjs
 
       - name: Verify transmission quote requests and client attention counts
-        run: node scripts/test-transmission-quote.mjs && npm run test:client-cases
+        run: node scripts/test-transmission-quote.mjs && npm run test:client-cases && npm run test:cash-shift-policy
 
       - name: Verify AI tool policy
         run: npm run test:ai-tool-loop-policy

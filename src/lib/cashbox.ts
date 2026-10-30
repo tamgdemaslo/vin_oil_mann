@@ -5,6 +5,7 @@ import { getSession, type User } from "./auth";
 import { SERVICE_TIME_ZONE, toServiceDateInput } from "./date-time";
 import { prisma } from "./db";
 import { requireBranchContext } from "./branch-context";
+import { getClientCaseAlertSnapshot } from "./client-case-alerts";
 import {
   cancelCashExpenseOrder,
   cashExpenseOrderToOperation,
@@ -633,6 +634,13 @@ export async function cancelExpense(params: { id: string; reason?: string }): Pr
   return cashExpenseOrderToOperation(updated);
 }
 
+export class CashShiftOverdueCasesError extends Error {
+  constructor(public readonly overdueCount: number) {
+    super(`Нельзя закрыть кассу: в филиале есть просроченные дела (${overdueCount}). Сначала разберите их в разделе «Заявки клиентов».`);
+    this.name = "CashShiftOverdueCasesError";
+  }
+}
+
 export async function closeShift(params: {
   shiftId: string;
   actualCash: number;
@@ -671,6 +679,14 @@ export async function closeShift(params: {
   const expectedCash = opening + cashOrders - withdrawalsTotal - cashExpensesTotal;
   const actualCash = Math.round((params.actualCash || 0) * 100) / 100;
   const discrepancy = Math.round((actualCash - expectedCash) * 100) / 100;
+
+  // Check the same live deadlines as the CRM board immediately before closing.
+  // A notification snooze suppresses sound, but does not resolve overdue work.
+  // Do not catch query failures: an unverified branch must remain open.
+  const { clientCaseAttention } = await getClientCaseAlertSnapshot(shift.branchId, null);
+  if (clientCaseAttention.overdue > 0) {
+    throw new CashShiftOverdueCasesError(clientCaseAttention.overdue);
+  }
 
   const updated = await prisma.cashShift.update({
     where: { id: shift.id },

@@ -4,6 +4,7 @@ import {
   addWithdrawal,
   cancelExpense,
   closeShift,
+  CashShiftOverdueCasesError,
   getCurrentShift,
   listOperationsForShift,
   listShifts,
@@ -223,6 +224,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Неизвестное действие" }, { status: 400 });
     }
   } catch (e) {
+    if (e instanceof CashShiftOverdueCasesError) {
+      return NextResponse.json({ error: e.message, code: "OVERDUE_CLIENT_CASES", overdueCount: e.overdueCount }, { status: 409 });
+    }
     const msg = e instanceof Error ? e.message : "Ошибка сервера";
     return NextResponse.json({ error: msg }, { status: statusFromCashError(msg) });
   }
