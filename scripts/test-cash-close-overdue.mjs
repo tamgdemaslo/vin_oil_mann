@@ -42,6 +42,10 @@ try{
  a.state.user.role='owner';await blocked(base);a.state.user.role='admin';
  let response=await POST({json:async()=>({action:'closeShift',...params})});
  assert.equal(response.status,409);const body=await response.json();assert.equal(body.code,'OVERDUE_CLIENT_CASES');assert.equal(body.overdueCount,1);assert.match(body.error,/Нельзя закрыть кассу/);
+ assert.deepEqual(body.overdueCases,[{id:'late',title:'Дело',client:'Дело',nextAction:'',deadline:'2000-01-01T10:00:00.000Z'}], 'Snoozed cases must still be listed in the blocked response');
+ state.rows=[{...base,id:'later',customerName:'Клиент 2',nextAction:'Позвонить',nextActionAt:new Date('2001-01-01')},{...base,id:'earlier',customerName:'Клиент 1'},{...base,id:'foreign',branchId:'b'},{...base,id:'closed',caseStatus:'closed'}];
+ response=await POST({json:async()=>({action:'closeShift',...params})});
+ const multiple=await response.json();assert.equal(response.status,409);assert.equal(multiple.overdueCount,2);assert.deepEqual(multiple.overdueCases.map(item=>item.id),['earlier','later']);assert.equal(multiple.overdueCases[1].client,'Клиент 2');assert.equal(multiple.overdueCases[1].nextAction,'Позвонить');
  // The same live case can be resolved or rescheduled; neither old logs nor another branch block closing.
  for(const row of [{...base,status:'won'},{...base,caseStatus:'closed'},{...base,caseStatus:'cancelled'},{...base,stage:{name:'Выполнено'}},{...base,branchId:'b'},{...base,nextActionAt:new Date('2100-01-01')},{...base,caseStatus:'calculation_sent'}]){
   state.rows=[row];const result=await closeShift(params);assert.equal(result.status,'closed');

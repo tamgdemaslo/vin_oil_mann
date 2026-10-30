@@ -225,7 +225,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (e) {
     if (e instanceof CashShiftOverdueCasesError) {
-      return NextResponse.json({ error: e.message, code: "OVERDUE_CLIENT_CASES", overdueCount: e.overdueCount }, { status: 409 });
+      return NextResponse.json({ error: e.message, code: "OVERDUE_CLIENT_CASES", overdueCount: e.overdueCount, overdueCases: e.overdueCases }, { status: 409 });
     }
     const msg = e instanceof Error ? e.message : "Ошибка сервера";
     return NextResponse.json({ error: msg }, { status: statusFromCashError(msg) });

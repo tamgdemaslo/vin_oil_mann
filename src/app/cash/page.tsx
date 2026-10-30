@@ -18,6 +18,8 @@ import {
   X,
 } from "lucide-react";
 import MoneyInput from "@/components/MoneyInput";
+import { CashCloseError } from "@/components/cash/CashCloseError";
+import type { OverdueClientCase } from "@/lib/client-case-alerts";
 import { EcoBadge, EcoButton, EcoKpi } from "@/components/platform/EcoUI";
 import { formatServiceDate, formatServiceDateTime, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 
@@ -318,6 +320,12 @@ export default function CashPage() {
   const [closeComment, setCloseComment] = useState("");
   const [ordersTotalsHint, setOrdersTotalsHint] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [closeOverdueCases, setCloseOverdueCases] = useState<OverdueClientCase[]>([]);
+
+  useEffect(() => {
+    setCloseError(null);
+    setCloseOverdueCases([]);
+  }, [shift?.id]);
 
   const [expandedShiftId, setExpandedShiftId] = useState<string | null>(null);
   const [shiftOperationsCache, setShiftOperationsCache] = useState<
@@ -872,6 +880,7 @@ export default function CashPage() {
     if (!shift) return;
     setError(null);
     setCloseError(null);
+    setCloseOverdueCases([]);
     const cashOrders = parseMoneyInput(closeCashOrders);
     const cardOrders = parseMoneyInput(closeCardOrders);
     const actualCash = parseMoneyInput(closeActualCash);
@@ -906,6 +915,7 @@ export default function CashPage() {
       const data = await res.json();
       if (!res.ok) {
         setCloseError(data.error ?? "Ошибка закрытия смены");
+        setCloseOverdueCases(data.code === "OVERDUE_CLIENT_CASES" && Array.isArray(data.overdueCases) ? data.overdueCases : []);
         return;
       }
       setShift(data.shift ?? null);
@@ -1490,7 +1500,7 @@ export default function CashPage() {
               </div>
               {ordersTotalsHint && <div className="eco-cash-warning">{ordersTotalsHint}</div>}
               <p>Закрытие кассы доступно, когда в филиале нет просроченных дел. <Link href="/crm?filter=overdue">Проверить дела клиентов</Link></p>
-              {closeError && <div className="eco-cash-error">{closeError}</div>}
+              <CashCloseError message={closeError} cases={closeOverdueCases} />
               {hasDiscrepancy && (
                 <div className="eco-cash-warning">Есть расхождение {money(discrepancyValue)}. Для закрытия смены нужен комментарий.</div>
               )}

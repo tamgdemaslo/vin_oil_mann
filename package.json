@@ -82,7 +82,7 @@
     "test:ai-assistant-branch-context": "node scripts/test-ai-assistant-branch-context.mjs",
     "test:branch-operational-integrations": "node scripts/test-branch-operational-integrations.mjs",
     "test:branch-print-context": "node scripts/test-branch-print-context.mjs",
-    "test:cash-shift-policy": "node scripts/test-cash-shift-policy.mjs && node scripts/test-cash-close-overdue.mjs",
+    "test:cash-shift-policy": "node scripts/test-cash-shift-policy.mjs && node scripts/test-cash-close-overdue.mjs && node scripts/test-cash-close-error.mjs",
     "test:background-load": "node scripts/test-background-load-guards.mjs && node scripts/test-prisma-pool-config.mjs",
     "test:booking-system": "node scripts/test-booking-system.mjs",
     "test:transmission-booking-selection": "node scripts/test-transmission-booking-selection.mjs",

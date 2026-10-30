@@ -1,6 +1,14 @@
 import { prisma } from "@/lib/db";
 import { simpleCaseDeadline, simpleCaseStatus } from "@/lib/client-case-simple";
 
+export type OverdueClientCase = {
+  id: string;
+  title: string;
+  client: string;
+  nextAction: string;
+  deadline: string;
+};
+
 /** Live branch state: badges and overdue alerts never depend on a delivery log. */
 export async function getClientCaseAlertSnapshot(branchId: string, since: Date | null, now = new Date()) {
   const rows = await prisma.crmDeal.findMany({
@@ -14,6 +22,14 @@ export async function getClientCaseAlertSnapshot(branchId: string, since: Date |
   });
   return {
     serverTime: now.toISOString(),
+    // Cash closing needs every overdue case, including snoozed notifications.
+    overdueCases: overdue.map((row): OverdueClientCase => ({
+      id: row.id,
+      title: row.title,
+      client: row.customerName || row.title,
+      nextAction: row.nextAction || "",
+      deadline: simpleCaseDeadline(row)!.toISOString(),
+    })).sort((a, b) => a.deadline.localeCompare(b.deadline)),
     clientCaseAttention: {
       overdue: overdue.length,
       calculationNeeded: active.filter(row => simpleCaseStatus(row) === "calculation_needed").length,

@@ -15,6 +15,7 @@ try {
  state.rows.push(base,{...base,id:'new',createdAt:new Date(+now-1000)},{...base,id:'other',branchId:'b'}, {...base,id:'closed',status:'won'}, {...base,id:'parts',caseStatus:'parts_arrived',nextActionAt:new Date(+now-2000)}, {...base,id:'waiting',caseStatus:'waiting_parts'}, {...base,id:'late-supply',caseStatus:'waiting_parts',suppliesExpectedAt:new Date(+now-1000)}, {...base,id:'future-supply',caseStatus:'waiting_parts',suppliesExpectedAt:new Date(+now+60000)}, {...base,id:'snoozed',snoozeUntil:new Date(+now+60000)}, {...base,id:'legacy-closed',stage:{name:'Выполнено'}});
  let result=await snapshot('a',null,now);
  assert.deepEqual(result.clientCaseAttention,{overdue:4,calculationNeeded:3});
+ assert.deepEqual(result.overdueCases.map(item=>item.id),['old','snoozed','parts','late-supply'],'Cash closing lists every overdue case, including snoozed alerts');
  assert.deepEqual(result.newCases,[],'Initial load must not announce existing work as new');
  assert.deepEqual(result.overdue.map(row=>row.caseId),['old','parts','late-supply'],'Legacy requests without a stored deadline remain overdue; snooze suppresses alerts');
  assert.equal(result.overdue.find(item=>item.caseId==='late-supply').title,'Просрочена поставка запчастей');
