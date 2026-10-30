@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type LocalStockBalance } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { calculateKit, validateKitInput } from "@/lib/product-kit-calculation";
 
@@ -22,9 +22,9 @@ const kitInclude = {
 } satisfies Prisma.ProductKitInclude;
 type KitRecord = Prisma.ProductKitGetPayload<{ include: typeof kitInclude }>;
 
-async function kitViews(branchId: string, storeId: string, kits: KitRecord[]) {
+export async function kitViews(branchId: string, storeId: string, kits: KitRecord[], suppliedBalances?: LocalStockBalance[]) {
   const productIds = [...new Set(kits.flatMap((kit) => kit.items.map((item) => item.productId)))];
-  const balances = productIds.length ? await prisma.localStockBalance.findMany({ where: { branchId, storeId, productId: { in: productIds } } }) : [];
+  const balances = suppliedBalances ?? (productIds.length ? await prisma.localStockBalance.findMany({ where: { branchId, storeId, productId: { in: productIds } } }) : []);
   const stocks = new Map(balances.map((balance) => [balance.productId, balance]));
   return kits.map((kit) => {
     const summary = calculateKit(kit.items.map((item) => ({
@@ -34,7 +34,7 @@ async function kitViews(branchId: string, storeId: string, kits: KitRecord[]) {
       blocked: item.product.archived || !["product", "variant"].includes(item.product.entityType),
     })), kit.targets.find((target) => target.storeId === storeId)?.quantity ?? 0);
     return {
-      id: kit.id, name: kit.name, version: kit.version, archived: kit.archived,
+      id: kit.id, branchId, storeId, name: kit.name, version: kit.version, archived: kit.archived,
       ...summary,
       items: summary.items.map((item, index) => {
         const product = kit.items[index].product;

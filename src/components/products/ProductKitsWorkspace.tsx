@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Copy, Layers, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import type { ProductKitView } from "@/lib/product-kits";
+import type { ProductKitNetworkResponse, ProductKitNetworkView } from "@/lib/product-kit-network";
 import { calculateKit, validateKitInput } from "@/lib/product-kit-calculation";
 import { buildKitClientQuote, parseKitLaborCents } from "@/lib/product-kit-quote";
 import KitTabs from "./KitTabs";
@@ -13,6 +14,7 @@ import styles from "./ProductKits.module.css";
 const number = (value: number) => value.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
 const money = (cents: number) => `${(cents / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
 type Store = { id: string; name: string };
+type WorkspaceKit = ProductKitView & Partial<Pick<ProductKitNetworkView, "branch" | "storeName" | "canManage" | "locations">>;
 type DraftItem = { productId: string; name: string; article: string; unit: string; quantity: number; priceCents: number; available: number; blocked?: boolean };
 type Draft = { id?: string; version?: number; name: string; items: DraftItem[] };
 
@@ -38,7 +40,11 @@ export default function ProductKitsWorkspace({ mode = "catalog", storeId: extern
   const [storeId, setStoreId] = useState(externalStore || "");
   const [query, setQuery] = useState("");
   const [archived, setArchived] = useState(false);
-  const [kits, setKits] = useState<ProductKitView[]>([]);
+  const [kits, setKits] = useState<WorkspaceKit[]>([]);
+  const [branches, setBranches] = useState<Store[]>([]);
+  const [branchFilter, setBranchFilter] = useState("");
+  const [currentBranchId, setCurrentBranchId] = useState<string | null>(null);
+  const [canCreate, setCanCreate] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -52,31 +58,47 @@ export default function ProductKitsWorkspace({ mode = "catalog", storeId: extern
   const [addingId, setAddingId] = useState<string | null>(null);
   const [laborCosts, setLaborCosts] = useState<Record<string, string>>({});
   const picker = mode === "picker";
+  const network = mode === "catalog";
 
   useEffect(() => {
-    if (picker) return;
+    if (picker || network) return;
     const controller = new AbortController();
     jsonRequest<{ stores: Store[] }>("/api/local-inventory/store-options", { signal: controller.signal })
       .then((data) => { setStores(data.stores); setStoreId((id) => id || data.stores[0]?.id || ""); })
       .catch((e) => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
-  }, [picker]);
+  }, [picker, network]);
 
   const selectedStore = picker ? externalStore || "" : storeId;
+  const loadStore = network ? "" : selectedStore;
   useEffect(() => {
     const controller = new AbortController();
-    if (!selectedStore) { setLoading(false); return; }
+    if (!network && !loadStore) { setLoading(false); return; }
     setLoading(true);
     setError("");
     const timer = setTimeout(() => {
-      const params = new URLSearchParams({ storeId: selectedStore, q: query, page: String(page), archived: archived ? "1" : "0" });
-      jsonRequest<{ kits: ProductKitView[]; total: number }>(`/api/product-kits?${params}`, { signal: controller.signal })
-        .then((data) => { if (!controller.signal.aborted) { setKits(data.kits); setTotal(data.total); } })
+      const params = new URLSearchParams({ storeId: loadStore, branchId: branchFilter, q: query, page: String(page), archived: archived ? "1" : "0" });
+      jsonRequest<{ kits: ProductKitView[]; total: number } | ProductKitNetworkResponse>(`/api/product-kits${network ? "/network" : ""}?${params}`, { signal: controller.signal })
+        .then((data) => { if (!controller.signal.aborted) {
+          setKits(data.kits); setTotal(data.total);
+          if ("branches" in data) {
+            setBranches(data.branches); setCurrentBranchId(data.currentBranchId); setCanCreate(data.canCreate);
+            setStores(data.currentStores); setStoreId((id) => data.currentStores.some((store) => store.id === id) ? id : data.currentStores[0]?.id || "");
+          }
+        } })
         .catch((e) => { if (!controller.signal.aborted) setError(e.message); })
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [selectedStore, query, page, archived, revision]);
+  }, [loadStore, network, branchFilter, query, page, archived, revision]);
+
+  async function openBranch(branchId: string, productId?: string) {
+    setBusy(branchId); setError("");
+    try {
+      await jsonRequest("/api/session/active-branch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branchId }) });
+      window.location.assign(productId ? `/inventory/products?product=${encodeURIComponent(productId)}` : "/inventory/products?tab=kits");
+    } catch (e) { setError(e instanceof Error ? e.message : "Не удалось открыть филиал"); setBusy(null); }
+  }
 
   async function mutate(kit: ProductKitView, action: "archive" | "restore" | "target") {
     setBusy(kit.id); setError(""); setNotice("");
@@ -108,39 +130,40 @@ export default function ProductKitsWorkspace({ mode = "catalog", storeId: extern
     {!picker && <>
       <header className={styles.heading}>
         <div><p className={styles.crumbs}>Склад / {mode === "restock" ? "Пополнение" : "Товары"}</p><h1 className="eco-page-title">{mode === "restock" ? "Пополнение комплектов" : "Комплекты"}</h1>
-          <p className={styles.description}>{mode === "restock" ? "Поддерживайте нужный запас: проверьте доступность и недостающие товары." : "Сохранённые наборы товаров для быстрого добавления в отгрузку."}</p></div>
-        {mode === "catalog" ? <EcoButton variant="primary" disabled={!!draft} onClick={() => { setDraft({ name: "", items: [] }); setNotice(""); }}><Plus size={16} /> Создать комплект</EcoButton>
+          <p className={styles.description}>{mode === "restock" ? "Поддерживайте нужный запас: проверьте доступность и недостающие товары." : "Общий список комплектов всех доступных филиалов с наличием по точкам."}</p></div>
+        {mode === "catalog" ? <EcoButton variant="primary" disabled={!!draft || loading || !canCreate} title={!canCreate ? "Для создания выберите действующий филиал" : undefined} onClick={() => { setDraft({ name: "", items: [] }); setNotice(""); }}><Plus size={16} /> Создать комплект</EcoButton>
           : <Link className="eco-btn" href="/inventory/products?tab=kits">Управление комплектами</Link>}
       </header>
       <KitTabs section={mode === "restock" ? "restock" : "catalog"} kits />
     </>}
-    {draft ? <KitEditor key={draft.id || "new"} initial={draft} storeId={selectedStore} onCancel={() => setDraft(null)} onSaved={() => { setDraft(null); setPage(0); setRevision((n) => n + 1); setNotice("Комплект сохранён"); }} /> : <>
+    {draft ? <><p className={styles.hint}>Филиал комплекта: {branches.find((branch) => branch.id === currentBranchId)?.name || "Текущий филиал"}. После сохранения комплект будет виден в общем списке.</p><KitEditor key={draft.id || "new"} initial={draft} storeId={selectedStore} onCancel={() => setDraft(null)} onSaved={() => { setDraft(null); setPage(0); setRevision((n) => n + 1); setNotice("Комплект сохранён"); }} /></> : <>
       <div className={styles.toolbar}>
         <label className={styles.search}><Search size={16} aria-hidden /><span className={styles.srOnly}>Поиск комплекта</span><EcoInput value={query} onChange={(e) => { setQuery(e.target.value); setPage(0); }} placeholder="Найти комплект по названию" /></label>
-        {!picker && <label className={styles.field}>Склад<EcoSelect value={storeId} onChange={(e) => { setStoreId(e.target.value); setPage(0); setNotice(""); setTargets({}); }}><option value="" disabled>Выберите склад</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</EcoSelect></label>}
+        {network ? <label className={styles.field}>Филиал<EcoSelect value={branchFilter} onChange={(e) => { setBranchFilter(e.target.value); setPage(0); setExpanded(null); }}><option value="">Все доступные филиалы</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</EcoSelect></label> : !picker && <label className={styles.field}>Склад<EcoSelect value={storeId} onChange={(e) => { setStoreId(e.target.value); setPage(0); setNotice(""); setTargets({}); }}><option value="" disabled>Выберите склад</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</EcoSelect></label>}
         {mode === "catalog" && <label className={styles.check}><input type="checkbox" checked={archived} onChange={(e) => { setArchived(e.target.checked); setPage(0); }} /> Архив</label>}
         <EcoButton size="sm" onClick={() => setRevision((n) => n + 1)} disabled={loading} aria-label="Обновить комплекты"><RefreshCw size={16} /></EcoButton>
       </div>
       {picker && !selectedStore && <p className={styles.empty}>Сначала выберите склад отгрузки.</p>}
-      <p className={styles.hint}>Доступность каждого комплекта рассчитана независимо по свободным остаткам выбранного склада. Товары не резервируются.</p>
+      <p className={styles.hint}>{network ? "Наличие рассчитано отдельно для каждого склада филиала комплекта. Товары с разных точек не складываются в один комплект." : "Доступность каждого комплекта рассчитана независимо по свободным остаткам выбранного склада. Товары не резервируются."}</p>
       {error && <div className={styles.error} role="alert">{error} <EcoButton size="sm" onClick={() => setRevision((n) => n + 1)}>Повторить</EcoButton></div>}
       {notice && <p className={styles.notice} role="status">{notice}</p>}
-      {loading ? <div className={styles.loading} role="status">Загружаем составы и остатки…</div> : !error && selectedStore && kits.length === 0 ? <div className={styles.empty}><Layers size={28} aria-hidden /><h2>{query ? "Комплекты не найдены" : archived ? "Архив пуст" : "Создайте первый комплект"}</h2><p>{query ? "Попробуйте другое название." : "Добавьте товары из каталога и укажите количество каждого."}</p>{!archived && <Link className="eco-btn" href="/inventory/products?tab=kits">Перейти к комплектам</Link>}</div> : !error && selectedStore ? <>
-        <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Комплект / состав</th><th>Доступно</th>{!picker && <th>Цена комплекта</th>}{mode === "restock" && <th>Целевой запас</th>}<th>{mode === "restock" ? "До целевого запаса" : "Действия"}</th></tr></thead><tbody>
+      {loading ? <div className={styles.loading} role="status">Загружаем составы и остатки…</div> : !error && (network || selectedStore) && kits.length === 0 ? <div className={styles.empty}><Layers size={28} aria-hidden /><h2>{query || branchFilter ? "Комплекты не найдены" : archived ? "Архив пуст" : "Создайте первый комплект"}</h2><p>{query || branchFilter ? "Попробуйте другое название или выберите все филиалы." : "Добавьте товары из каталога и укажите количество каждого."}</p>{!archived && <Link className="eco-btn" href="/inventory/products?tab=kits">Перейти к комплектам</Link>}</div> : !error && (network || selectedStore) ? <>
+        <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Комплект / состав</th><th>{network ? "Филиал / наличие по складам" : "Доступно"}</th>{!picker && <th>Цена комплекта</th>}{mode === "restock" && <th>Целевой запас</th>}<th>{mode === "restock" ? "До целевого запаса" : "Действия"}</th></tr></thead><tbody>
           {kits.map((kit) => <Fragment key={kit.id}>
             <tr>
               <td><button className={styles.expand} onClick={() => setExpanded(expanded === kit.id ? null : kit.id)} aria-expanded={expanded === kit.id} aria-controls={`kit-${kit.id}`}>
                 {expanded === kit.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span><strong>{kit.name}</strong><small>{kit.items.length} поз. · {kit.items.map((item) => `${item.name} × ${number(item.quantity)}`).join("; ")}</small></span></button></td>
-              <td><div className={styles.availability}><strong>{number(kit.ready)} компл.</strong><EcoBadge tone={kit.status === "ready" ? "success" : kit.status === "partial" ? "warning" : "neutral"}>{kit.status === "ready" ? "Доступен" : kit.status === "partial" ? "Частично" : "Нет в наличии"}</EcoBadge></div></td>
+              <td>{kit.branch ? <div className={styles.locations}><strong>{kit.branch.name}{kit.branch.id === currentBranchId ? " · текущий" : ""}</strong>{kit.locations?.length ? kit.locations.map((location) => <div key={location.storeId}><span>{location.storeName}</span><EcoBadge tone={location.ready > 0 ? "success" : location.status === "partial" ? "warning" : "neutral"}>{location.ready > 0 ? `${number(location.ready)} компл.` : location.status === "partial" ? "Частично" : "Нет в наличии"}</EcoBadge></div>) : <span>Нет действующего склада</span>}</div> : <div className={styles.availability}><strong>{number(kit.ready)} компл.</strong><EcoBadge tone={kit.status === "ready" ? "success" : kit.status === "partial" ? "warning" : "neutral"}>{kit.status === "ready" ? "Доступен" : kit.status === "partial" ? "Частично" : "Нет в наличии"}</EcoBadge></div>}</td>
               {!picker && <td className={styles.numeric}>{money(kit.priceCents)}</td>}
               {mode === "restock" && <td><form className={styles.target} onSubmit={(e) => { e.preventDefault(); void mutate(kit, "target"); }}><label><span className={styles.srOnly}>Целевой запас: {kit.name}</span><EcoInput type="number" min="0" max="1000000" step="1" value={targets[kit.id] ?? kit.target} onChange={(e) => setTargets((old) => ({ ...old, [kit.id]: e.target.value }))} /></label><EcoButton size="sm" type="submit" disabled={busy !== null || loading || targets[kit.id] === undefined || targets[kit.id] === String(kit.target)}>Сохранить</EcoButton></form></td>}
               <td>{mode === "restock" ? <div className={styles.need}><strong>{kit.target === 0 ? "Запас не задан" : kit.missingKits === 0 ? "Запас обеспечен" : `Не хватает ${number(kit.missingKits)} компл.`}</strong>{kit.items.filter((item) => item.missingTarget > 0).map((item) => <span key={item.productId}>{item.name}: {number(item.missingTarget)} {item.unit}{item.blocked ? " · товар недоступен" : ""}</span>)}</div>
                 : picker ? <EcoButton size="sm" variant="primary" disabled={addingId !== null || kit.items.some((item) => item.blocked)} onClick={() => void addKit(kit)}>{addingId === kit.id ? "Добавляем…" : "Добавить"}</EcoButton>
-                  : <div className={styles.actions}>{!archived && <EcoButton size="sm" onClick={() => { setDraft({ id: kit.id, version: kit.version, name: kit.name, items: kit.items }); setError(""); }}><Pencil size={14} /> Изменить</EcoButton>}<EcoButton size="sm" disabled={busy !== null} onClick={() => void mutate(kit, archived ? "restore" : "archive")} aria-label={`${archived ? "Восстановить" : "В архив"}: ${kit.name}`}>{archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}</EcoButton></div>}</td>
+                  : kit.canManage === false ? <EcoButton size="sm" disabled={busy !== null} onClick={() => void openBranch(kit.branchId)}>Открыть филиал</EcoButton> : <div className={styles.actions}>{!archived && <EcoButton size="sm" onClick={() => { setDraft({ id: kit.id, version: kit.version, name: kit.name, items: kit.items }); setError(""); }}><Pencil size={14} /> Изменить</EcoButton>}<EcoButton size="sm" disabled={busy !== null} onClick={() => void mutate(kit, archived ? "restore" : "archive")} aria-label={`${archived ? "Восстановить" : "В архив"}: ${kit.name}`}>{archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}</EcoButton></div>}</td>
             </tr>
             {expanded === kit.id && <tr id={`kit-${kit.id}`}><td colSpan={mode === "restock" ? 5 : picker ? 3 : 4} className={styles.detail}>
               <div className={styles.detailHead}><strong>Состав комплекта</strong><span>{kit.ready > 0 ? `Для следующего, ${number(kit.ready + 1)}-го комплекта` : "Для одного полного комплекта"}</span></div>
-              <div className={styles.compositionScroll}><table className={styles.composition}><thead><tr><th>Товар</th><th>В комплекте</th><th>Цена за единицу</th><th>Сумма</th><th>Свободно</th><th>Не хватает</th></tr></thead><tbody>{kit.items.map((item) => <tr key={item.productId}><td><Link className={styles.productLink} href={`/inventory/products?product=${encodeURIComponent(item.productId)}`} target="_blank" rel="noopener noreferrer" title="Открыть карточку товара в новой вкладке">{item.name}</Link><small>{item.article}{item.blocked ? " · Товар недоступен: измените состав" : ""}</small></td><td>{number(item.quantity)} {item.unit}</td><td className={styles.numeric}>{money(item.priceCents)}</td><td className={styles.numeric}>{money(Math.round(item.priceCents * item.quantity))}</td><td>{number(item.available)} {item.unit}</td><td>{item.missingNext > 0 ? <span className={styles.shortage}>{number(item.missingNext)} {item.unit}</span> : "—"}</td></tr>)}</tbody><tfoot><tr><td colSpan={3}>Итого за запчасти</td><td className={styles.numeric}>{money(kit.priceCents)}</td><td colSpan={2} /></tr></tfoot></table></div>
+              {kit.branch && <p className={styles.stockContext}>Остатки в составе: {kit.branch.name} / {kit.storeName}. Наличие на остальных складах указано в строке комплекта.</p>}
+              <div className={styles.compositionScroll}><table className={styles.composition}><thead><tr><th>Товар</th><th>В комплекте</th><th>Цена за единицу</th><th>Сумма</th><th>Свободно</th><th>Не хватает</th></tr></thead><tbody>{kit.items.map((item) => <tr key={item.productId}><td><Link className={styles.productLink} href={`/inventory/products?product=${encodeURIComponent(item.productId)}`} target={kit.branch && kit.branch.id !== currentBranchId ? undefined : "_blank"} rel="noopener noreferrer" title={kit.branch && kit.branch.id !== currentBranchId ? `Перейти в филиал «${kit.branch.name}» и открыть карточку товара` : "Открыть карточку товара в новой вкладке"} onClick={(event) => { if (kit.branch && kit.branch.id !== currentBranchId) { event.preventDefault(); if (!busy) void openBranch(kit.branch.id, item.productId); } }}>{item.name}</Link><small>{item.article}{item.blocked ? " · Товар недоступен: измените состав" : ""}</small></td><td>{number(item.quantity)} {item.unit}</td><td className={styles.numeric}>{money(item.priceCents)}</td><td className={styles.numeric}>{money(Math.round(item.priceCents * item.quantity))}</td><td>{number(item.available)} {item.unit}</td><td>{item.missingNext > 0 ? <span className={styles.shortage}>{number(item.missingNext)} {item.unit}</span> : "—"}</td></tr>)}</tbody><tfoot><tr><td colSpan={3}>Итого за запчасти</td><td className={styles.numeric}>{money(kit.priceCents)}</td><td colSpan={2} /></tr></tfoot></table></div>
               <KitClientQuote kit={kit} laborCost={laborCosts[kit.id] ?? ""} onLaborChange={(value) => setLaborCosts((current) => ({ ...current, [kit.id]: value }))} />
               {picker && <p className={styles.hint}>Весь состав добавится обычными строками, даже при дефиците. Совпадающие товары объединятся.</p>}
             </td></tr>}

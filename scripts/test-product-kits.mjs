@@ -75,3 +75,4 @@ for (const model of ['ProductKit', 'ProductKitItem', 'ProductKitStockTarget']) {
   assert.throws(() => applyBranchQueryPolicy(model, 'create', { data: { branchId: 'branch-b' } }, tenant));
 }
 console.log('product kits: calculations, quantities, validation, expansion, independent stock, tenant isolation: ok');
+await import('./test-product-kit-network.mjs');
