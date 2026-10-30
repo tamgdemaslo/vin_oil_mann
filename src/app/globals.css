@@ -72082,3 +72082,6 @@ select[size="1"]::-ms-expand {
 .platform-shell__signal-status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .platform-shell__case-overdue { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .platform-shell__actions > .platform-shell__signal-btn { display: inline-flex; }
+
+.platform-shell__signal-copy { display: grid; gap: 4px; }
+.platform-shell__signal-copy small { display: block; font-size: 12px; font-weight: 400; line-height: 1.45; }

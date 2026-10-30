@@ -3,7 +3,6 @@
 import {
   Bell,
   Volume2,
-  VolumeX,
   Bot,
   BriefcaseBusiness,
   Building2,
@@ -271,7 +270,7 @@ export default function PlatformShell() {
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const { enabled: signalsEnabled, message: signalMessage, toggle: toggleSignals, process: processSignals } = useClientCaseSignals(`${user?.login ?? ""}:${selectedBranchId}`);
+  const { enabled: signalsEnabled, message: signalMessage, requestNotifications, process: processSignals } = useClientCaseSignals(`${user?.login ?? ""}:${selectedBranchId}`);
   const alertCursorRef = useRef<{ scope: string; since: string | null }>({ scope: "", since: null });
   const deadlineLoadInFlightRef = useRef(false);
 
@@ -832,9 +831,9 @@ export default function PlatformShell() {
                   </div>
                 )}
               </div>
-              {navigation?.sections.some(section => section.items.some(item => item.href === "/crm" && !item.disabled)) && <button type="button" className="platform-shell__icon-btn platform-shell__signal-btn" onClick={() => void toggleSignals()} aria-pressed={signalsEnabled} aria-label={signalsEnabled ? "Выключить сигналы заявок" : "Включить сигналы заявок"} title={signalMessage || (signalsEnabled ? "Сигналы включены. Просроченные — каждые 5 минут" : "Включить звук и уведомления о заявках")}>
-                {signalsEnabled ? <Volume2 aria-hidden className="eco-icon" /> : <VolumeX aria-hidden className="eco-icon" />}
-              </button>}
+              {navigation?.sections.some(section => section.items.some(item => item.href === "/crm" && !item.disabled)) && <span className="platform-shell__icon-btn platform-shell__signal-btn" role="img" aria-label="Звуковые сигналы заявок включены автоматически" title={signalMessage || (signalsEnabled ? "Звуковые сигналы обязательны. Просроченные — каждые 5 минут" : "Для запуска звука нажмите любую кнопку или ссылку на странице")}>
+                <Volume2 aria-hidden className="eco-icon" />
+              </span>}
               <span className="platform-shell__signal-status" role="status">{signalMessage}</span>
               <Link href="/notifications" prefetch={false} className="platform-shell__icon-btn platform-shell__notification-btn" aria-label="Уведомления">
                 <Bell aria-hidden className="eco-icon" />
@@ -866,9 +865,10 @@ export default function PlatformShell() {
 
                 <div className={`platform-shell__profile-menu ${profileOpen ? "is-open" : ""}`} role="menu" aria-hidden={!profileOpen}>
                   <div className="platform-shell__account-summary" role="presentation"><strong>{user.name || user.login}</strong><span>{roleLabel(navigation?.effectiveRole ?? user.role)}</span><small>ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ</small></div>
-                  <button type="button" className="platform-shell__dropdown-link" onClick={() => void toggleSignals()} role="menuitem">
-                    <Volume2 aria-hidden className="eco-icon" /><span>{signalsEnabled ? "Выключить сигналы заявок" : "Включить сигналы заявок"}<small>{signalMessage || "Новые заявки — короткий звук; просроченные — каждые 5 минут"}</small></span>
-                  </button>
+                  <div className="platform-shell__dropdown-link" role="presentation">
+                    <Volume2 aria-hidden className="eco-icon" /><span className="platform-shell__signal-copy">Звуковые сигналы обязательны<small>{signalsEnabled ? "Включены автоматически. Просроченные — каждые 5 минут" : "Для запуска звука нажмите любую кнопку или ссылку"}</small></span>
+                  </div>
+                  <button type="button" className="platform-shell__dropdown-link" onClick={() => void requestNotifications()} role="menuitem"><Bell aria-hidden className="eco-icon" /><span className="platform-shell__signal-copy">Разрешить уведомления браузера{signalMessage && <small>{signalMessage}</small>}</span></button>
                   {(navigation?.personalItems ?? []).map((personalItem) => {
                     const Icon = personalItemIcon(personalItem);
                     if (personalItem.action === "logout") {
@@ -1001,9 +1001,9 @@ export default function PlatformShell() {
                 Позвонить
               </a>
             )}
-            {!signalsEnabled && (
-              <button type="button" className="eco-crm-deadline-toast__detail-action" onClick={() => void toggleSignals()}>
-                Включить сигналы
+            {typeof window !== "undefined" && "Notification" in window && Notification.permission !== "granted" && (
+              <button type="button" className="eco-crm-deadline-toast__detail-action" onClick={() => void requestNotifications()}>
+                Разрешить уведомления браузера
               </button>
             )}
           </div>
