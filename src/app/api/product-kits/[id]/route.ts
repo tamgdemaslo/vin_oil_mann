@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
-import { readKit, updateKitState } from "@/lib/product-kits";
+import { readSharedKit as readKit, updateSharedKit as updateKitState } from "@/lib/shared-product-kits";
 import { kitErrorResponse } from "@/lib/product-kit-api-error";
 
 type Context = { params: Promise<{ id: string }> };

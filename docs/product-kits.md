@@ -1,3 +1,11 @@
+# Подготовлен переход на один общий комплект
+
+Новая реализация и согласуемая миграция описаны в
+[shared-product-kits-2026-10-31.md](shared-product-kits-2026-10-31.md).
+Они ожидают отдельного подтверждения переноса рабочей базы.
+
+Ниже сохранено описание прежней филиальной модели и истории её проверок.
+
 # Internal product kits
 
 Kits are reusable, branch-scoped compositions of existing catalog products and quantities.

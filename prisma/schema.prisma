@@ -24,6 +24,7 @@ model BusinessGroup {
   memberships            BusinessGroupMembership[]
   integrationCredentials IntegrationCredential[]
   storefronts            Storefront[]
+  sharedProductKits      SharedProductKit[]
 
   @@index([status])
   @@map("business_groups")
@@ -2684,7 +2685,26 @@ model LocalProduct {
   @@map("local_products")
 }
 
-/// Internal virtual sets. Stock and prices always come from the component products.
+/// One composition per business group. Branch bindings and store targets are
+/// versioned with the template; stock and prices remain in local branch tables.
+model SharedProductKit {
+  id              String        @id @default(cuid())
+  businessGroupId String        @map("business_group_id")
+  businessGroup   BusinessGroup @relation(fields: [businessGroupId], references: [id], onDelete: Restrict, map: "shared_product_kits_group_fkey")
+  name            String
+  items           Json
+  targets         Json          @default("{}")
+  legacyIds       Json          @default("[]") @map("legacy_ids")
+  archived        Boolean       @default(false)
+  version         Int           @default(1)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([businessGroupId, archived, name])
+  @@map("shared_product_kits")
+}
+
+/// Legacy branch kits are retained as migration and rollback evidence.
 model ProductKit {
   id        String   @id @default(cuid())
   branchId  String   @map("branch_id")

@@ -98,6 +98,28 @@ export function applyBranchQueryPolicy(
   args: JsonObject,
   tenant: RequestTenant | null = getRequestTenant()
 ) {
+  if (model === "SharedProductKit" && tenant) {
+    if (tenant.mode === "denied" || !tenant.businessGroupId) throw new Error("Нет доступа к общим комплектам сети");
+    if (tenant.mode === "all" && WRITE_OPERATIONS.has(operation)) throw new Error("В режиме «Все филиалы» операции изменения запрещены");
+    const groupId = tenant.businessGroupId;
+    const verify = (raw: unknown): void => {
+      if (Array.isArray(raw)) { raw.forEach(verify); return; }
+      const row = object(raw);
+      if (!row) return;
+      if ("businessGroupId" in row && row.businessGroupId !== groupId) throw new Error("Нет доступа к комплектам другой сети");
+      Object.values(row).forEach(verify);
+    };
+    verify(args.where); verify(args.data); verify(args.create); verify(args.update);
+    const next = { ...args };
+    if (["create", "createMany", "createManyAndReturn"].includes(operation)) {
+      const data = (raw: unknown) => ({ ...(object(raw) ?? {}), businessGroupId: groupId });
+      next.data = Array.isArray(args.data) ? args.data.map(data) : data(args.data);
+    } else {
+      next.where = { ...(object(args.where) ?? {}), businessGroupId: groupId };
+      if (operation === "upsert") next.create = { ...(object(args.create) ?? {}), businessGroupId: groupId };
+    }
+    return next;
+  }
   if (!model || !BRANCH_SCOPED_MODELS.has(model) || !tenant) return args;
   if (tenant.mode === "denied") throw new Error("Нет доступа к филиальным данным");
 

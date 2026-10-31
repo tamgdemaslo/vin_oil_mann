@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
-import { listKits, saveKit } from "@/lib/product-kits";
+import { listSharedKits as listKits, saveSharedKit as saveKit } from "@/lib/shared-product-kits";
 import { kitErrorResponse } from "@/lib/product-kit-api-error";
 
 export async function GET(request: NextRequest) {

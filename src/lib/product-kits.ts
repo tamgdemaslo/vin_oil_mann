@@ -120,4 +120,10 @@ export async function updateKitState(branchId: string, id: string, body: Record<
   return saveKit(branchId, body, id);
 }
 
-export type ProductKitView = Awaited<ReturnType<typeof readKit>>["kit"];
+type LegacyProductKitView = Awaited<ReturnType<typeof readKit>>["kit"];
+export type ProductKitView = Omit<LegacyProductKitView, "items"> & {
+  shared?: boolean;
+  canManage?: boolean;
+  priceComplete?: boolean;
+  items: Array<LegacyProductKitView["items"][number] & { templateItemId?: string; mappingIssue?: string | null }>;
+};
