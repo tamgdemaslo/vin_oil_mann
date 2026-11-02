@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { payrollGoalPeriod } from "@/lib/payroll-goal-period";
 import {
   useCallback,
   useEffect,
@@ -42,7 +43,7 @@ import {
   EcoKpi,
   EcoSelect,
 } from "@/components/platform/EcoUI";
-import { SERVICE_TIME_ZONE, formatServiceDateTime } from "@/lib/date-time";
+import { formatServiceDateTime } from "@/lib/date-time";
 import {
   getCurrentMonthRange,
   toLocalDateInputValue,
@@ -197,6 +198,8 @@ type PayrollShiftItem = {
   date: string;
   createdByLogin: string;
 };
+
+type PieceworkEmployee = { login: string; name: string; roleId: string; roleLabel: string };
 
 type PieceworkRuleItem = {
   targetType: "service" | "product_group" | "all_services" | "all_products";
@@ -372,6 +375,7 @@ type MotivationGoalItem = {
   startsAt: string;
   endsAt: string;
   status: string;
+  targetName?: string | null;
 };
 
 type MotivationRecognitionItem = {
@@ -388,6 +392,7 @@ type MotivationRecognitionItem = {
 type MotivationOverview = {
   users: { login: string; name: string; role: string }[];
   goals: MotivationGoalItem[];
+  targets?: PieceworkTargets;
   recognition: MotivationRecognitionItem[];
   metrics: {
     employeesWithGoals: number;
@@ -653,10 +658,10 @@ function getMonthBounds(year: number, month: number) {
 
 function getMonthLabel(date: Date) {
   return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: SERVICE_TIME_ZONE,
+    timeZone: "UTC",
     month: "long",
     year: "numeric",
-  }).format(date);
+  }).format(new Date(Date.UTC(date.getFullYear(), date.getMonth(), 1)));
 }
 
 function getPresetRange(preset: "current" | "previous" | "7" | "30") {
@@ -1101,6 +1106,7 @@ function summarizeHistoryValue(value: unknown) {
   const bits: string[] = [];
 
   if (typeof record.userLogin === "string") bits.push(record.userLogin);
+  if (typeof record.employeeLogin === "string") bits.push(record.employeeLogin);
   if (typeof record.targetName === "string") bits.push(record.targetName);
   if (typeof record.role === "string") bits.push(roleShortLabel(record.role));
   if (typeof record.date === "string") bits.push(formatDate(record.date));
@@ -1147,8 +1153,10 @@ export default function SalaryDashboard({
   const [toast, setToast] = useState<string | null>(null);
   const [rates, setRates] = useState<ShiftRateItem[]>([]);
   const [ratesLoading, setRatesLoading] = useState(false);
+  const [pieceworkEmployees, setPieceworkEmployees] = useState<PieceworkEmployee[]>([]);
+  const [employeeToAdd, setEmployeeToAdd] = useState("");
+  const [addedRuleEmployees, setAddedRuleEmployees] = useState<string[]>([]);
   const [rules, setRules] = useState<PieceworkRuleItem[]>([]);
-  const [employeeRuleModes, setEmployeeRuleModes] = useState<Record<string, boolean>>({});
   const [ruleTargets, setRuleTargets] = useState<PieceworkTargets>({ services: [], productGroups: [] });
   const [rulesLoading, setRulesLoading] = useState(false);
   const [draftRules, setDraftRules] = useState<Record<string, DraftRule>>({});
@@ -1210,15 +1218,13 @@ export default function SalaryDashboard({
   const [motivationOverview, setMotivationOverview] = useState<MotivationOverview | null>(null);
   const [motivationLoading, setMotivationLoading] = useState(false);
   const [goalEmployeeLogin, setGoalEmployeeLogin] = useState("");
-  const [goalMetric, setGoalMetric] = useState("ACCRUAL_AMOUNT");
+  const [goalMetric, setGoalMetric] = useState("SERVICE");
+  const [goalTargetId, setGoalTargetId] = useState("");
+  const [goalTargets, setGoalTargets] = useState<PieceworkTargets>({ services: [], productGroups: [] });
   const [goalPeriodType, setGoalPeriodType] = useState<"WEEK" | "MONTH">("MONTH");
   const [goalTargetValue, setGoalTargetValue] = useState("");
   const [goalSaving, setGoalSaving] = useState(false);
-  const [recognitionEmployeeLogin, setRecognitionEmployeeLogin] = useState("");
-  const [recognitionMessage, setRecognitionMessage] = useState("");
-  const [recognitionReason, setRecognitionReason] = useState("good_work");
-  const [recognitionVisibility, setRecognitionVisibility] = useState<"PRIVATE" | "TEAM">("PRIVATE");
-  const [recognitionSaving, setRecognitionSaving] = useState(false);
+
   const autoLoadedRef = useRef(false);
   const dragStartDateRef = useRef<string | null>(null);
   const suppressNextClickRef = useRef(false);
@@ -1303,10 +1309,10 @@ export default function SalaryDashboard({
     setRulesLoading(true);
     try {
       const response = await fetch("/api/piecework-rules", { cache: "no-store" });
-      const payload = await readJson<{ rules?: PieceworkRuleItem[]; targets?: PieceworkTargets; employeeModes?: Record<string, boolean> }>(response, "Не удалось загрузить правила");
+      const payload = await readJson<{ rules?: PieceworkRuleItem[]; targets?: PieceworkTargets; employees?: PieceworkEmployee[] }>(response, "Не удалось загрузить правила");
       const nextRules = Array.isArray(payload.rules) ? payload.rules : [];
       setRules(nextRules);
-      setEmployeeRuleModes(payload.employeeModes ?? {});
+      setPieceworkEmployees(payload.employees ?? []);
       setRuleTargets({
         services: Array.isArray(payload.targets?.services) ? payload.targets.services : [],
         productGroups: Array.isArray(payload.targets?.productGroups) ? payload.targets.productGroups : [],
@@ -1375,13 +1381,13 @@ export default function SalaryDashboard({
       const payload = await readJson<MotivationOverview>(response, "Не удалось загрузить мотивацию");
       setMotivationOverview(payload);
       if (!goalEmployeeLogin && payload.users[0]) setGoalEmployeeLogin(payload.users[0].login);
-      if (!recognitionEmployeeLogin && payload.users[0]) setRecognitionEmployeeLogin(payload.users[0].login);
+      setGoalTargets(payload.targets ?? { services: [], productGroups: [] });
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Не удалось загрузить мотивацию");
     } finally {
       setMotivationLoading(false);
     }
-  }, [goalEmployeeLogin, isOwner, recognitionEmployeeLogin]);
+  }, [goalEmployeeLogin, isOwner]);
 
   const loadAdjustments = useCallback(async () => {
     if (!dateFrom || !dateTo) return;
@@ -1885,17 +1891,20 @@ export default function SalaryDashboard({
     if (value && dateFrom && value < dateFrom) setDateFrom(value);
   }
 
+  const goalToday = toLocalDateInputValue(new Date());
+  const goalAnchor = dateFrom.slice(0, 7) === goalToday.slice(0, 7) ? goalToday : dateFrom;
+  const goalRange = payrollGoalPeriod(goalAnchor, goalPeriodType);
+
   async function saveMotivationGoal() {
+    if (!goalRange) { setToast("Укажите корректный период цели"); return; }
     if (!goalEmployeeLogin) {
       setToast("Выберите сотрудника для цели");
       return;
     }
-    const targetValue =
-      goalMetric === "ACCRUAL_AMOUNT"
-        ? Math.round(parseMoneyInput(goalTargetValue) * 100)
-        : Math.round(Number(goalTargetValue));
-    if (!Number.isFinite(targetValue) || targetValue <= 0) {
-      setToast("Укажите положительное значение цели");
+    if (!goalTargetId) { setToast("Выберите услугу или категорию товаров"); return; }
+    const targetValue = Number(goalTargetValue);
+    if (!Number.isInteger(targetValue) || targetValue <= 0) {
+      setToast("Укажите положительное целое количество");
       return;
     }
 
@@ -1908,9 +1917,10 @@ export default function SalaryDashboard({
           employeeLogin: goalEmployeeLogin,
           periodType: goalPeriodType,
           metric: goalMetric,
+          targetId: goalTargetId,
           targetValue,
-          startsAt: dateFrom,
-          endsAt: dateTo,
+          startsAt: goalRange.dateFrom,
+          endsAt: goalRange.dateTo,
         }),
       });
       await readJson<{ id: string }>(response, "Не удалось сохранить цель");
@@ -1922,40 +1932,6 @@ export default function SalaryDashboard({
       setToast(error instanceof Error ? error.message : "Не удалось сохранить цель");
     } finally {
       setGoalSaving(false);
-    }
-  }
-
-  async function saveEmployeeRecognition() {
-    if (!recognitionEmployeeLogin) {
-      setToast("Выберите сотрудника");
-      return;
-    }
-    if (!recognitionMessage.trim()) {
-      setToast("Добавьте короткий комментарий");
-      return;
-    }
-
-    setRecognitionSaving(true);
-    try {
-      const response = await fetch("/api/payroll/recognition", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          employeeLogin: recognitionEmployeeLogin,
-          title: "Похвала от владельца",
-          message: recognitionMessage.trim(),
-          reason: recognitionReason,
-          visibility: recognitionVisibility,
-        }),
-      });
-      await readJson<{ id: string }>(response, "Не удалось отправить похвалу");
-      setRecognitionMessage("");
-      setToast("Похвала отправлена сотруднику");
-      await loadMotivationOverview();
-    } catch (error) {
-      setToast(error instanceof Error ? error.message : "Не удалось отправить похвалу");
-    } finally {
-      setRecognitionSaving(false);
     }
   }
 
@@ -2362,10 +2338,10 @@ export default function SalaryDashboard({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            employeeLogin: rule.employeeLogin,
             targetType: rule.targetType,
             targetId: rule.targetId,
             role: rule.role,
-            employeeLogin: rule.employeeLogin,
             mode: draft.mode,
             fixedCents: draft.mode === "fixed" ? Math.round(value * 100) : null,
             percentBasisPoints: draft.mode === "percent" ? Math.round(value * 100) : null,
@@ -2398,6 +2374,7 @@ export default function SalaryDashboard({
   }
 
   function addRuleTarget() {
+    if (!ruleEmployeeLogin) {setRulesMessage("Сначала выберите сотрудника");return;}
     const options = selectedRuleTargets;
     const target = options.find((item) => item.id === ruleTargetToAdd);
     if (!target) {
@@ -2710,7 +2687,7 @@ export default function SalaryDashboard({
   const selectedRuleTargets: PieceworkTargetOption[] = ruleTargetType === "all_services" || ruleTargetType === "all_products"
     ? [{ id: "*", name: ruleTargetType === "all_services" ? "Все услуги" : "Все товары", targetType: ruleTargetType, role: ruleRoleFilter }]
     : ruleTargetType === "service" ? ruleTargets.services : ruleTargets.productGroups;
-  const inRuleScope = (rule: PieceworkRuleItem) => ruleEmployeeLogin ? rule.employeeLogin === ruleEmployeeLogin : !rule.employeeLogin && rule.role === ruleRoleFilter;
+  const inRuleScope = (rule: PieceworkRuleItem) => Boolean(ruleEmployeeLogin) && rule.employeeLogin === ruleEmployeeLogin;
   const addableRuleTargets = selectedRuleTargets.filter((target) => !rules.some((rule) => inRuleScope(rule) && rule.targetType === target.targetType && rule.targetId === target.id));
   const filteredRules = rules.filter((rule) => {
     const search = ruleSearch.trim().toLowerCase();
@@ -3476,8 +3453,8 @@ export default function SalaryDashboard({
         <section className="eco-payroll-workspace eco-payroll-rules-view">
           <div className="eco-payroll-toolbar">
             <div>
-              <div className="eco-page-kicker">Правила сдельной части</div>
-              <p>Выберите сотрудника и назначьте услуги, товарные группы или сразу все услуги и товары. Индивидуальные правила заменяют общие правила его роли.</p>
+              <div className="eco-page-kicker">Индивидуальные сдельные правила</div>
+              <p>Выберите сотрудника и назначьте услуги, товарные группы или сразу все услуги и товары. Роль подтягивается из раздела «Сотрудники и роли».</p>
             </div>
             <div className="eco-payroll-rule-summary">
               <span>Услуги · {rules.filter((rule) => rule.targetType === "service").length}</span>
@@ -3486,20 +3463,16 @@ export default function SalaryDashboard({
           </div>
 
           <div className="eco-payroll-rule-filters">
-            <EcoSelect value={ruleEmployeeLogin ? `employee:${ruleEmployeeLogin}` : `role:${ruleRoleFilter}`} aria-label="Для кого настроить начисления" onChange={(event) => {
-              const value = event.target.value;
-              if (value.startsWith("employee:")) { setRuleEmployeeLogin(value.slice(9)); setRuleRoleFilter(normalizeRole(teamUsers.find((user) => user.login === value.slice(9))?.role ?? "master") === "admin" ? "admin" : "master"); }
-              else { setRuleEmployeeLogin(""); setRuleRoleFilter(value.slice(5) as "master" | "admin"); setRuleTargetType("service"); }
-              setRuleTargetToAdd("");
-            }}>
-              <optgroup label="Индивидуальные правила">
-                {teamUsers.filter((user) => user.role !== "owner" && !user.employmentEnd).map((user) => <option key={user.login} value={`employee:${user.login}`}>{user.name}</option>)}
-              </optgroup>
-              <optgroup label="Общие правила роли">
-                <option value="role:master">Мастер — общие правила</option>
-                <option value="role:admin">Администратор — общие правила</option>
-              </optgroup>
+            <EcoSelect aria-label="Сотрудник для добавления" value={employeeToAdd} onChange={(event) => setEmployeeToAdd(event.target.value)}>
+              <option value="">Выберите сотрудника</option>
+              {pieceworkEmployees.filter((employee) => !rules.some((rule) => rule.employeeLogin === employee.login) && !addedRuleEmployees.includes(employee.login)).map((employee) => <option key={employee.login} value={employee.login}>{employee.name} · {employee.roleLabel}</option>)}
             </EcoSelect>
+            <EcoButton type="button" disabled={!employeeToAdd} onClick={() => {setAddedRuleEmployees((items) => [...items,employeeToAdd]);setRuleEmployeeLogin(employeeToAdd);setEmployeeToAdd("");setRuleTargetToAdd("");}}>Добавить сотрудника</EcoButton>
+          </div>
+          <div className="eco-payroll-rule-filters" aria-label="Сотрудники с индивидуальными правилами">
+            {pieceworkEmployees.filter((employee) => rules.some((rule) => rule.employeeLogin === employee.login) || addedRuleEmployees.includes(employee.login)).map((employee) => <EcoButton key={employee.login} type="button" variant={ruleEmployeeLogin === employee.login ? "primary" : "secondary"} aria-pressed={ruleEmployeeLogin === employee.login} onClick={() => {setRuleEmployeeLogin(employee.login);setRuleTargetToAdd("");}}>{employee.name} · {employee.roleLabel}</EcoButton>)}
+          </div>
+          <div className="eco-payroll-rule-filters">
             <EcoSelect value={ruleTargetType} aria-label="За что начислять" onChange={(event) => { setRuleTargetType(event.target.value as PieceworkRuleItem["targetType"]); setRuleTargetToAdd(""); }}>
               <option value="service">Конкретные услуги</option>
               <option value="product_group">Группы товаров</option>
@@ -3518,7 +3491,7 @@ export default function SalaryDashboard({
                 </option>
               ))}
             </EcoSelect>
-            <EcoButton type="button" variant="primary" onClick={addRuleTarget} disabled={rulesSaving || !ruleTargetToAdd}>
+            <EcoButton type="button" variant="primary" onClick={addRuleTarget} disabled={rulesSaving || !ruleTargetToAdd || !ruleEmployeeLogin}>
               Добавить позицию
             </EcoButton>
             <label className="eco-payroll-search">
@@ -3533,31 +3506,20 @@ export default function SalaryDashboard({
 
           <div className="eco-payroll-rule-context" role="status">
             <div>
-              <strong>{ruleEmployeeLogin ? employeeRuleModes[ruleEmployeeLogin] ? "Действует индивидуальный набор" : "Пока действуют общие правила роли" : "Общие правила роли"}</strong>
+              <strong>{pieceworkEmployees.find((employee) => employee.login === ruleEmployeeLogin)?.name ?? "Добавьте или выберите сотрудника"}</strong>
               <span>
-                {ruleEmployeeLogin && !employeeRuleModes[ruleEmployeeLogin] && "Первое сохранение заменит общие правила роли индивидуальным набором. "}Добавьте позицию, укажите фикс или процент и сохраните. Конкретная услуга или группа имеет приоритет над «Все услуги» или «Все товары». Начисления идут только за назначенные смены.
+                Добавьте позицию, укажите фикс или процент и сохраните. Конкретная услуга или группа имеет приоритет над «Все услуги» или «Все товары». Начисления идут только за назначенные смены.
               </span>
             </div>
           </div>
 
-          {ruleEmployeeLogin && <EcoButton type="button" disabled={rulesSaving} onClick={async () => {
-            if (!window.confirm("Вернуть общие правила роли? Все индивидуальные правила сотрудника будут удалены.")) return;
-            setRulesSaving(true);
-            try {
-              const params = new URLSearchParams({ employeeLogin: ruleEmployeeLogin, targetType: "service", targetId: "*", role: ruleRoleFilter, reset: "true" });
-              await readJson(await fetch(`/api/piecework-rules?${params}`, { method: "DELETE" }), "Не удалось вернуть общие правила");
-              await Promise.all([loadRules(), loadPayroll()]);
-              setRulesMessage("Сотрудник использует общие правила роли");
-            } catch (error) { setRulesMessage(error instanceof Error ? error.message : "Ошибка сохранения"); }
-            finally { setRulesSaving(false); }
-          }}>Вернуть общие правила роли</EcoButton>}
           {rulesLoading ? (
             <SkeletonRows rows={6} />
           ) : (
             <div className="eco-payroll-rule-sections">
               <div className="eco-payroll-rule-section">
                 <div className="eco-payroll-section-title">
-                  <strong>{ruleEmployeeLogin ? "Индивидуальные начисления" : "Общие начисления роли"}</strong>
+                  <strong>Индивидуальные начисления</strong>
                   <span>{filteredRules.length}</span>
                 </div>
                 {filteredRules.length === 0 ? (
@@ -3900,7 +3862,7 @@ export default function SalaryDashboard({
           <div className="eco-payroll-toolbar">
             <div>
               <div className="eco-page-kicker">Мотивация</div>
-              <p>Личные цели, признание и видимость сотруднического экрана без изменения финансовых правил.</p>
+              <p>Личные цели по конкретной услуге или категории товаров.</p>
             </div>
             <div className="eco-payroll-controls">
               <EcoButton type="button" onClick={() => void loadMotivationOverview()} disabled={motivationLoading}>
@@ -3911,12 +3873,11 @@ export default function SalaryDashboard({
           </div>
 
           <section className="eco-grid eco-grid--kpi eco-payroll-motivation-kpis">
-            <EcoKpi label="Активных целей" value={motivationOverview?.metrics.activeGoals ?? 0} sub="по сотрудникам и ролям" tone="info" />
+            <EcoKpi label="Активных целей" value={motivationOverview?.metrics.activeGoals ?? 0} sub="личные цели сотрудников" tone="info" />
             <EcoKpi label="Сотрудников с целью" value={motivationOverview?.metrics.employeesWithGoals ?? 0} sub="личные цели" tone="rust" />
-            <EcoKpi label="Похвал" value={motivationOverview?.metrics.recognitionCount ?? 0} sub="не меняют зарплату" tone="success" />
           </section>
 
-          <div className="eco-payroll-motivation-grid">
+          <div className="eco-payroll-motivation-grid eco-payroll-motivation-goals">
             <section className="eco-payroll-employee-panel">
               <div className="eco-payroll-panel-head">
                 <div>
@@ -3927,19 +3888,22 @@ export default function SalaryDashboard({
               <div className="eco-payroll-motivation-form">
                 <FieldLabel label="Сотрудник">
                   <EcoSelect value={goalEmployeeLogin} onChange={(event) => setGoalEmployeeLogin(event.target.value)}>
-                    {(motivationOverview?.users ?? teamUsers).map((user) => (
+                    <option value="">Выберите сотрудника</option>
+                    {(motivationOverview?.users ?? []).map((user) => (
                       <option key={user.login} value={user.login}>{user.name}</option>
                     ))}
                   </EcoSelect>
                 </FieldLabel>
-                <FieldLabel label="Метрика">
-                  <EcoSelect value={goalMetric} onChange={(event) => setGoalMetric(event.target.value)}>
-                    <option value="ACCRUAL_AMOUNT">Начисления, ₽</option>
-                    <option value="SHIPMENTS">Отгрузки</option>
-                    <option value="VEHICLES">Автомобили</option>
-                    <option value="SERVICES">Услуги</option>
-                    <option value="PRODUCTS">Товары</option>
-                    <option value="DIAGNOSTICS">Диагностики</option>
+                <FieldLabel label="Цель по">
+                  <EcoSelect value={goalMetric} onChange={(event) => { setGoalMetric(event.target.value); setGoalTargetId(""); }}>
+                    <option value="SERVICE">Конкретная услуга</option>
+                    <option value="PRODUCT_CATEGORY">Категория товаров</option>
+                  </EcoSelect>
+                </FieldLabel>
+                <FieldLabel label={goalMetric === "SERVICE" ? "Услуга из каталога" : "Категория товаров"}>
+                  <EcoSelect value={goalTargetId} onChange={(event) => setGoalTargetId(event.target.value)}>
+                    <option value="">{goalMetric === "SERVICE" ? "Выберите услугу" : "Выберите категорию товаров"}</option>
+                    {(goalMetric === "SERVICE" ? goalTargets.services : goalTargets.productGroups).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </EcoSelect>
                 </FieldLabel>
                 <FieldLabel label="Период">
@@ -3948,69 +3912,26 @@ export default function SalaryDashboard({
                     <option value="WEEK">Неделя</option>
                   </EcoSelect>
                 </FieldLabel>
-                <FieldLabel label={goalMetric === "ACCRUAL_AMOUNT" ? "Цель, ₽" : "Цель, шт."}>
+                <div className="eco-payroll-field is-wide"><span>Срок цели: {goalRange ? `${formatDate(goalRange.dateFrom)} — ${formatDate(goalRange.dateTo)}` : "выберите период"}</span></div>
+                <FieldLabel label="Цель, шт.">
                   <EcoInput
                     value={goalTargetValue}
                     onChange={(event) => setGoalTargetValue(event.target.value)}
                     inputMode="decimal"
-                    placeholder={goalMetric === "ACCRUAL_AMOUNT" ? "40000" : "10"}
+                    placeholder="10"
                   />
                 </FieldLabel>
-                <EcoButton type="button" variant="primary" onClick={() => void saveMotivationGoal()} disabled={goalSaving}>
+                <EcoButton type="button" variant="primary" onClick={() => void saveMotivationGoal()} disabled={goalSaving || !goalEmployeeLogin || !goalTargetId}>
                   {goalSaving ? <Loader2 size={15} className="eco-spin" /> : <Save size={15} />}
                   Сохранить цель
                 </EcoButton>
               </div>
             </section>
 
-            <section className="eco-payroll-employee-panel">
-              <div className="eco-payroll-panel-head">
-                <div>
-                  <strong>Похвалить сотрудника</strong>
-                  <span>Признание появится в ленте сотрудника и не станет денежной корректировкой.</span>
-                </div>
-              </div>
-              <div className="eco-payroll-motivation-form">
-                <FieldLabel label="Сотрудник">
-                  <EcoSelect value={recognitionEmployeeLogin} onChange={(event) => setRecognitionEmployeeLogin(event.target.value)}>
-                    {(motivationOverview?.users ?? teamUsers).map((user) => (
-                      <option key={user.login} value={user.login}>{user.name}</option>
-                    ))}
-                  </EcoSelect>
-                </FieldLabel>
-                <FieldLabel label="Причина">
-                  <EcoSelect value={recognitionReason} onChange={(event) => setRecognitionReason(event.target.value)}>
-                    <option value="good_work">Хорошая работа</option>
-                    <option value="teamwork">Командная работа</option>
-                    <option value="no_errors">Отгрузка без ошибок</option>
-                    <option value="client_feedback">Положительный отзыв</option>
-                  </EcoSelect>
-                </FieldLabel>
-                <FieldLabel label="Видимость">
-                  <EcoSelect value={recognitionVisibility} onChange={(event) => setRecognitionVisibility(event.target.value as "PRIVATE" | "TEAM")}>
-                    <option value="PRIVATE">Только сотруднику</option>
-                    <option value="TEAM">Публично для команды</option>
-                  </EcoSelect>
-                </FieldLabel>
-                <label className="eco-payroll-field is-wide">
-                  <span>Комментарий</span>
-                  <textarea
-                    className="eco-input eco-payroll-comment"
-                    value={recognitionMessage}
-                    onChange={(event) => setRecognitionMessage(event.target.value)}
-                    rows={3}
-                    placeholder="Например: Отличная работа с клиентом"
-                  />
-                </label>
-                <EcoButton type="button" variant="primary" onClick={() => void saveEmployeeRecognition()} disabled={recognitionSaving}>
-                  {recognitionSaving ? <Loader2 size={15} className="eco-spin" /> : <Check size={15} />}
-                  Отправить похвалу
-                </EcoButton>
-              </div>
-            </section>
+
           </div>
 
-          <div className="eco-payroll-motivation-grid">
+          <div className="eco-payroll-motivation-grid eco-payroll-motivation-goals">
             <section className="eco-payroll-employee-panel">
               <div className="eco-payroll-panel-head">
                 <div>
@@ -4021,7 +3942,7 @@ export default function SalaryDashboard({
               {motivationLoading ? (
                 <SkeletonRows rows={4} />
               ) : !motivationOverview?.goals.length ? (
-                <EmptyState title="Целей пока нет" text="Создайте первую цель для сотрудника или роли." />
+                <EmptyState title="Целей пока нет" text="Выберите сотрудника, услугу или категорию товаров и задайте количество." />
               ) : (
                 <div className="eco-payroll-motivation-list">
                   {motivationOverview.goals.slice(0, 12).map((goal) => {
@@ -4029,8 +3950,8 @@ export default function SalaryDashboard({
                     return (
                       <div key={goal.id}>
                         <span>{user?.name ?? goal.role ?? "Общая цель"} · {formatDate(goal.startsAt)} - {formatDate(goal.endsAt)}</span>
-                        <strong>{motivationMetricLabel(goal.metric)}: {formatMotivationValue(goal.metric, goal.targetValue)}</strong>
-                        <p>{goal.periodType === "MONTH" ? "Месячная" : goal.periodType === "WEEK" ? "Недельная" : "Сменная"} · {goal.status}</p>
+                        <strong>{goal.targetName ?? motivationMetricLabel(goal.metric)}: {formatMotivationValue(goal.metric, goal.targetValue)}</strong>
+                        <p>{goal.periodType === "MONTH" ? "Месячная" : goal.periodType === "WEEK" ? "Недельная" : "Сменная"} · {goal.status === "active" ? "Активна" : goal.status === "archived" ? "В архиве" : goal.status === "completed" ? "Выполнена" : "Сохранена"}</p>
                       </div>
                     );
                   })}
@@ -4038,32 +3959,7 @@ export default function SalaryDashboard({
               )}
             </section>
 
-            <section className="eco-payroll-employee-panel">
-              <div className="eco-payroll-panel-head">
-                <div>
-                  <strong>Признание</strong>
-                  <span>Последние сообщения владельца сотрудникам.</span>
-                </div>
-              </div>
-              {motivationLoading ? (
-                <SkeletonRows rows={4} />
-              ) : !motivationOverview?.recognition.length ? (
-                <EmptyState title="Похвалы пока нет" text="Признание можно отправить сотруднику без денежной корректировки." />
-              ) : (
-                <div className="eco-payroll-motivation-list">
-                  {motivationOverview.recognition.slice(0, 12).map((item) => {
-                    const user = motivationOverview.users.find((candidate) => normalizeLogin(candidate.login) === normalizeLogin(item.employeeLogin));
-                    return (
-                      <div key={item.id}>
-                        <span>{formatDateTime(item.createdAt)} · {user?.name ?? item.employeeLogin}</span>
-                        <strong>{item.title}</strong>
-                        <p>{item.message}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+
           </div>
         </section>
       )}

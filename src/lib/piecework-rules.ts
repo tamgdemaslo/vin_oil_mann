@@ -186,3 +186,11 @@ export function getPieceworkRuleKey(
 ) {
   return toKey(targetType, targetId, role);
 }
+
+export async function listPieceworkEmployees(branchId: string) {
+  const { listPayrollEmployees } = await import("@/lib/payroll-employees");
+  const employees = await listPayrollEmployees(branchId);
+  const labels: Record<string,string> = {branch_owner:"Владелец",administrator:"Администратор",master:"Мастер-приёмщик",mechanic:"Механик",accountant:"Бухгалтер",viewer:"Наблюдатель"};
+  return employees.filter((employee) => !employee.settings.employmentEnd && employee.accessStatus === "active")
+    .map((employee) => ({login:employee.login.toLowerCase(),name:employee.name,roleId:employee.branchRole,roleLabel:labels[employee.branchRole] ?? employee.branchRole}));
+}

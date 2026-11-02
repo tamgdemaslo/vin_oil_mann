@@ -284,6 +284,7 @@ export async function listPayrollAdjustments(params: {
   employeeLogin?: string | null;
   includeInactive?: boolean;
   limit?: number;
+  unlimited?: boolean;
 } = {}): Promise<PayrollAdjustmentRecord[]> {
   const { branchId } = requireSingleBranchSqlContext();
   const organizationId = params.organizationId ?? DEFAULT_PAYROLL_SETTLEMENT_ORG_ID;
@@ -323,7 +324,7 @@ export async function listPayrollAdjustments(params: {
         AND (${employeeLogin}::text IS NULL OR employee_id = ${employeeLogin})
         AND (${params.includeInactive ?? false} = true OR status = 'ACTIVE')
       ORDER BY operation_date DESC, created_at DESC
-      LIMIT ${limit}
+      LIMIT ${params.unlimited ? null : limit}
     `;
     return rows.map(mapAdjustment);
   } catch (error) {

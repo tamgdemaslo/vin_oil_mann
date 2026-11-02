@@ -115,6 +115,7 @@ const payrollPrisma = {
   $queryRaw: async () => [],
 };
 const calc = loadRoute("../src/lib/payroll.ts", {
+  "@/lib/payroll-cashout-period": await jiti.import("../src/lib/payroll-cashout-period.ts"),
   "@/lib/db": { prisma: payrollPrisma },
   "@/lib/payroll-employees": { listPayrollEmployees: async () => employees },
   "@/lib/employee-pay-settings": helpers,
@@ -125,7 +126,7 @@ const calc = loadRoute("../src/lib/payroll.ts", {
   "@/lib/inventory-costing": costing,
   "@/lib/piecework-rules": { ...pureRules, getPieceworkRuleMap: async () => new Map() },
 });
-const summary = await calc.computePayroll({ dateFrom: "2026-10-01", dateTo: "2026-10-31" });
+const summary = await calc.computePayroll({ skipSalesPlanBonuses: true, dateFrom: "2026-10-01", dateTo: "2026-10-31" });
 assert.equal(summary.byLogin.one.shiftTotalCents, 10000, "only the last working day earns a fixed shift");
 assert.equal(summary.byLogin.one.pieceworkCents, 15000, "master can earn 10% services and 5% product profit through dismissal date");
 assert.equal(summary.byLogin.one.totalCents, 25000);
@@ -133,6 +134,6 @@ assert.equal(summary.byLogin.two.shiftTotalCents, 20000);
 assert.equal(summary.byLogin.two.pieceworkCents, 20000, "second master earns only 10% product profit on both days");
 assert.equal(summary.byLogin.two.totalCents, 40000);
 assert.equal(summary.vehicleHistory.flatMap((vehicle) => vehicle.unallocatedPiecework).length, 0, "intentionally excluded services are not payroll conflicts");
-const own = await calc.computePayroll({ dateFrom: "2026-10-01", dateTo: "2026-10-31", targetLogin: "one" });
+const own = await calc.computePayroll({ skipSalesPlanBonuses: true, dateFrom: "2026-10-01", dateTo: "2026-10-31", targetLogin: "one" });
 assert.equal(Object.keys(own.byLogin).join(","), "one");
 console.log("Full payroll calculation: two employees with independent categories, exact amounts, personal view and dismissal cutoff passed.");

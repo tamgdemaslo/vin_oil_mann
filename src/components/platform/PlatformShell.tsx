@@ -33,6 +33,7 @@ import { formatServiceTime } from "@/lib/date-time";
 import { loadDashboardClientBundle } from "@/lib/dashboard-client";
 import { safeReadJson } from "@/lib/http-json";
 import { ClientAttentionBadges, ClientAttentionLinks } from "./ClientCaseAttention";
+import SalesPlanBanner from "./SalesPlanBanner";
 import { EcoStatusDot } from "./EcoUI";
 import { useClientCaseSignals } from "./useClientCaseSignals";
 
@@ -621,6 +622,7 @@ export default function PlatformShell() {
 
   return (
     <div ref={shellRef} className="platform-shell">
+      {user?.role === "owner" && selectedBranchId && <SalesPlanBanner ownerLogin={user.login} branchId={selectedBranchId} pathname={pathname} />}
       <header className="platform-shell__main">
         <div className="platform-shell__brand-row">
           <Link href="/" prefetch={false} className="platform-shell__brand" aria-label="Там где масло. ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ">

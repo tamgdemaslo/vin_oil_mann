@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from "react";
+import EmployeeSalesPlanCard from "@/components/dashboard/EmployeeSalesPlanCard";
 import MyPayrollCard, { type EmployeePayrollData, type EmployeePayrollPeriod } from "@/components/dashboard/MyPayrollCard";
 import { type EcoBadgeTone } from "@/components/platform/EcoUI";
 import { loadDashboardClientBundle } from "@/lib/dashboard-client";
@@ -1254,6 +1255,7 @@ function AdminDayCenter({
   scheduleItems,
   sectionsLocked,
   canOpenCashShift,
+  showSalesPlan,
   needCashShiftNotice,
   onRefresh,
 }: {
@@ -1269,6 +1271,7 @@ function AdminDayCenter({
   scheduleItems: ScheduleTimelineItem[];
   sectionsLocked: boolean;
   canOpenCashShift: boolean;
+  showSalesPlan: boolean;
   needCashShiftNotice: boolean;
   onRefresh: () => void;
 }) {
@@ -1291,6 +1294,7 @@ function AdminDayCenter({
       </header>
 
       <AdminPayrollOverview data={payroll} loading={loading || refreshing} error={payrollError} onRefresh={onRefresh} />
+      {showSalesPlan && <EmployeeSalesPlanCard refreshToken={lastUpdatedAt} />}
 
       {loadState === "stale" && dashboard && (
         <div className="eco-admin-day-notice" role="alert">
@@ -1335,11 +1339,13 @@ export default function HomeDashboard({
   role,
   userName,
   dashboardVariant,
+  showSalesPlan = false,
   needCashShiftNotice = false,
 }: {
   role: UserRole;
   userName: string;
   dashboardVariant: DashboardVariant;
+  showSalesPlan?: boolean;
   needCashShiftNotice?: boolean;
 }) {
   const [loadState, setLoadState] = useState<DashboardLoadState>("loading");
@@ -1595,6 +1601,7 @@ export default function HomeDashboard({
         lastUpdatedAt={lastUpdatedAt}
         scheduleItems={scheduleItems}
         sectionsLocked={sectionsLocked}
+        showSalesPlan={showSalesPlan}
         canOpenCashShift={role === "admin"}
         needCashShiftNotice={needCashShiftNotice}
         onRefresh={() => void loadSummary(true)}

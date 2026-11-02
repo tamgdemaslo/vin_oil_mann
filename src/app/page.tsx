@@ -21,6 +21,7 @@ export default async function Home({
       role={session.user.role}
       userName={session.user.name ?? session.user.login}
       dashboardVariant={dashboardAccess.variant}
+      showSalesPlan={branchContext?.branchRole === "master" || (!branchContext?.branchRole && session.user.role === "master")}
       needCashShiftNotice={sp.needCashShift === "1"}
     />
   );

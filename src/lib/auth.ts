@@ -74,7 +74,7 @@ function normalizeRole(value?: string): UserRole {
 
 type EnvUser = { login: string; name: string; passwordHash: string; role: UserRole };
 type PasswordOverrideCache = { expiresAt: number; rows: Map<string, string> } | null;
-type DatabaseUserRow = { login: string; name: string; authRole: string };
+type DatabaseUserRow = { login: string; name: string; authRole: string; status: string };
 type DatabaseUserCache = { expiresAt: number; rows: DatabaseUserRow[] } | null;
 type AuthRuntimeCache = {
   passwordOverrides: PasswordOverrideCache;
@@ -152,8 +152,7 @@ async function getDatabaseUsers(): Promise<DatabaseUserRow[]> {
   const generation = authCache.generation ?? 0;
   const promise = prisma.user
     .findMany({
-      where: { status: "active" },
-      select: { login: true, name: true, authRole: true },
+      select: { login: true, name: true, authRole: true, status: true },
       orderBy: { createdAt: "asc" },
     })
     .then((rows) => {
@@ -173,6 +172,7 @@ async function getDatabaseUsers(): Promise<DatabaseUserRow[]> {
 export async function getUsersFromEnv(): Promise<EnvUser[]> {
   const raw = process.env.AUTH_USERS?.trim() || DEFAULT_AUTH_USERS;
   const [passwordOverrides, databaseUsers] = await Promise.all([getPasswordOverrides(), getDatabaseUsers()]);
+  const inactiveLogins = new Set(databaseUsers.filter((user) => user.status !== "active").map((user) => normalizeLoginKey(canonicalizeLogin(user.login))));
   const users: EnvUser[] = [];
   const lines = raw?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
   for (const line of lines) {
@@ -184,7 +184,7 @@ export async function getUsersFromEnv(): Promise<EnvUser[]> {
       const password = (rawPassword ?? "").trim();
       const configuredName = (rawName ?? "").trim();
       const name = CANONICAL_LOGIN_NAMES[normalizeLoginKey(login)] || configuredName || login;
-      if (login && password) {
+      if (login && password && !inactiveLogins.has(normalizeLoginKey(login))) {
         const role = normalizeRole(rawRole);
         const passwordHash =
           getLoginVariants(login)
@@ -204,6 +204,7 @@ export async function getUsersFromEnv(): Promise<EnvUser[]> {
   }
 
   for (const databaseUser of databaseUsers) {
+    if (databaseUser.status !== "active") continue;
     const login = canonicalizeLogin(databaseUser.login);
     if (users.some((user) => normalizeLoginKey(user.login) === normalizeLoginKey(login))) continue;
     const passwordHash = getLoginVariants(login)

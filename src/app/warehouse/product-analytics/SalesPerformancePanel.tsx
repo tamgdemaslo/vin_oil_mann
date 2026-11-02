@@ -414,6 +414,7 @@ function ClassificationQueue({ data, filters, onSaved }: {
 }
 
 type PlanDraft = {
+  completionBonusRubles: string;
   targetCount: string;
   targetRevenueRubles: string;
   targetGrossProfitRubles: string;
@@ -443,6 +444,7 @@ type PlanHistoryRow = {
 };
 
 const emptyPlanDraft: PlanDraft = {
+  completionBonusRubles: "",
   targetCount: "",
   targetRevenueRubles: "",
   targetGrossProfitRubles: "",
@@ -454,6 +456,7 @@ const emptyPlanDraft: PlanDraft = {
 
 function draftFromPlan(row: SalesPerformancePlanFactRow): PlanDraft {
   return {
+    completionBonusRubles: row.completionBonusCents == null ? "" : String(row.completionBonusCents / 100),
     targetCount: String(row.targetCount),
     targetRevenueRubles: row.targetRevenueCents == null ? "" : String(row.targetRevenueCents / 100),
     targetGrossProfitRubles: row.targetGrossProfitCents == null ? "" : String(row.targetGrossProfitCents / 100),
@@ -708,6 +711,7 @@ function PlanPanel({ data, onSaved, onExport, onOpen }: {
         month: data.plan.month,
         plans: [{
           rowKey: row.rowKey,
+          completionBonusCents: optionalCents(draft.completionBonusRubles),
           targetCount: Number(draft.targetCount),
           targetRevenueCents: optionalCents(draft.targetRevenueRubles),
           targetGrossProfitCents: optionalCents(draft.targetGrossProfitRubles),
@@ -801,7 +805,7 @@ function PlanPanel({ data, onSaved, onExport, onOpen }: {
       {data.plan.canEdit ? (
         <section className="eco-card eco-card--padded eco-sp-section">
           <div className="eco-card__head eco-card__head--plain">
-            <div><h2>Планы филиала</h2><p>Количество обязательно. Финансовые цели и ожидаемые значения можно заполнить отдельно.</p></div>
+            <div><h2>Планы филиала</h2><p>Количество обязательно. Дополнительный бонус за личное выполнение плана задаётся отдельно от сдельной части.</p></div>
             <button type="button" className="eco-btn eco-btn--sm" onClick={() => void copyPrevious()} disabled={savingKey === "copy"}><Copy className="eco-icon" aria-hidden />{savingKey === "copy" ? "Копируем…" : "Скопировать прошлый месяц"}</button>
           </div>
           {message ? <div className="eco-sp-inline-alert" aria-live="polite">{message}</div> : null}
@@ -815,6 +819,7 @@ function PlanPanel({ data, onSaved, onExport, onOpen }: {
                   <div className="eco-sp-plan-edit-main">
                     <div><strong>{row.title}</strong><small>{row.kind === "service" ? servicePlanSubtitle(row as SalesPerformancePlanFactRow) : row.metricCode}</small></div>
                     <label><span>План, {row.unit === "LITER" ? "л" : row.unit === "OPERATION" ? "операций" : "шт."}</span><input className="eco-input" type="number" min="0" step="0.001" value={draft.targetCount} onChange={(event) => updateDraft(row.rowKey, "targetCount", event.target.value)} /></label>
+                    <label><span>Бонус за выполнение, ₽</span><input className="eco-input" type="number" min="0" step="0.01" placeholder="Не установлен" value={draft.completionBonusRubles} onChange={(event) => updateDraft(row.rowKey, "completionBonusRubles", event.target.value)} /></label>
                     <button type="button" className="eco-btn eco-btn--sm" onClick={() => setExpandedKey(expanded ? "" : row.rowKey)}>{expanded ? <ChevronUp className="eco-icon" aria-hidden /> : <ChevronDown className="eco-icon" aria-hidden />}Дополнительно</button>
                     <button type="button" className="eco-btn eco-btn--primary eco-btn--sm" onClick={() => void save(row)} disabled={savingKey === row.rowKey}><Save className="eco-icon" aria-hidden />{savingKey === row.rowKey ? "Сохраняем…" : "Сохранить"}</button>
                   </div>
@@ -844,6 +849,7 @@ export default function SalesPerformancePanel() {
   const [filters, setFilters] = useState<SalesFilters>(defaultFilters);
   const [data, setData] = useState<SalesPerformanceAnalytics | null>(null);
   const [activeTab, setActiveTab] = useState<SalesTab>("overview");
+  useEffect(() => { if (new URLSearchParams(window.location.search).get("salesTab") === "plan") setActiveTab("plan"); }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [detailTitle, setDetailTitle] = useState("");

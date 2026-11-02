@@ -17,6 +17,7 @@ const CONFIGURATIONS = new Set(["NO_PAN", "PAN_AND_FILTER", "TWO_FILTERS", "OTHE
 
 export type SalesPlanWriteInput = {
   rowKey: string;
+  completionBonusCents?: number | null;
   targetCount: number;
   targetRevenueCents?: number | null;
   targetGrossProfitCents?: number | null;
@@ -112,6 +113,7 @@ function normalizePlanInput(input: SalesPlanWriteInput) {
   return {
     ...parsedKey,
     targetCount,
+    completionBonusCents: input.completionBonusCents === undefined ? undefined : optionalCents(input.completionBonusCents, "Бонус за выполнение"),
     targetRevenueCents: optionalCents(input.targetRevenueCents, "План выручки"),
     targetGrossProfitCents: optionalCents(input.targetGrossProfitCents, "План валовой прибыли"),
     targetAttachRateBasisPoints,
@@ -132,6 +134,7 @@ function serializeSalesPlan(plan: BranchSalesPlan) {
     aggregateType: plan.aggregateType,
     procedure: plan.procedure,
     configuration: plan.configuration,
+    completionBonusCents: plan.completionBonusCents,
     targetCount: Number(plan.targetCount),
     targetRevenueCents: plan.targetRevenueCents,
     targetGrossProfitCents: plan.targetGrossProfitCents,
@@ -195,6 +198,7 @@ export async function saveSalesPlans(
           aggregateType: row.aggregateType,
           procedure: row.procedure,
           configuration: row.configuration,
+          completionBonusCents: row.completionBonusCents,
           targetCount: new Prisma.Decimal(row.targetCount),
           targetRevenueCents: row.targetRevenueCents,
           targetGrossProfitCents: row.targetGrossProfitCents,
@@ -207,6 +211,7 @@ export async function saveSalesPlans(
           updatedById: context.userId,
         },
         update: {
+          completionBonusCents: row.completionBonusCents,
           targetCount: new Prisma.Decimal(row.targetCount),
           targetRevenueCents: row.targetRevenueCents,
           targetGrossProfitCents: row.targetGrossProfitCents,
@@ -253,6 +258,7 @@ export async function updateSalesPlan(
   if (!existing || !context.branches.some((branch) => branch.id === existing.branchId)) throw new Error("План не найден");
   const [saved] = await saveSalesPlans(context, existing.branchId, existing.month, [{
     rowKey: existing.rowKey,
+    completionBonusCents: patch.completionBonusCents === undefined ? existing.completionBonusCents : patch.completionBonusCents,
     targetCount: patch.targetCount ?? Number(existing.targetCount),
     targetRevenueCents: patch.targetRevenueCents === undefined ? existing.targetRevenueCents : patch.targetRevenueCents,
     targetGrossProfitCents: patch.targetGrossProfitCents === undefined ? existing.targetGrossProfitCents : patch.targetGrossProfitCents,
@@ -286,6 +292,7 @@ export async function copySalesPlans(context: BranchContext, input: {
   if (!source.length) throw new Error("В исходном месяце нет планов для копирования");
   const saved = await saveSalesPlans(context, input.targetBranchId, targetMonth, source.map((plan) => ({
     rowKey: plan.rowKey,
+    completionBonusCents: plan.completionBonusCents,
     targetCount: Number(plan.targetCount),
     targetRevenueCents: plan.targetRevenueCents,
     targetGrossProfitCents: plan.targetGrossProfitCents,

@@ -156,6 +156,7 @@ export type SalesPerformanceAttachOpportunity = {
 };
 
 export type SalesPerformancePlanFactRow = {
+  completionBonusCents?: number | null;
   rowKey: string;
   metricCode: string;
   kind: "product" | "service";
@@ -1549,6 +1550,7 @@ function buildPlanFactRows(
       aggregateType: aggregateType(plans[0].aggregateType),
       procedure: procedure(plans[0].procedure),
       configuration: configuration(plans[0].configuration),
+      completionBonusCents: plans.some((plan) => plan.completionBonusCents != null) ? plans.reduce((sum, plan) => sum + (plan.completionBonusCents ?? 0), 0) : null,
       targetCount,
       actualCount,
       previousActualCount,
@@ -1997,4 +1999,14 @@ export function normalizeManualMappingSource(sourceType: unknown, sourceId: unkn
   const id = type === "LEGACY_NAME" ? normalizeSalesAnalyticsText(rawId) : rawId;
   if (!id) throw new Error("Не указан источник mapping");
   return { sourceType: type, sourceId: id };
+}
+
+/** Server-only mapping for personal earnings; unlike the detail preview it is not capped at 250 rows. */
+export async function getSalesPlanPositionKeys(context: BranchContext, branchIds: string[], params: SalesPerformanceParams, employeePositionIds: ReadonlySet<string>) {
+  const period = normalizeSalesPerformancePeriod(params);
+  const loaded = await loadLines(context, branchIds, params, period);
+  const lines = loaded.lines.filter((line) => line.documentDate >= period.dateFrom && line.documentDate <= period.dateTo);
+  return { complete: !loaded.truncated,
+    actuals: actualsByBranchAndRow(lines.filter((line) => employeePositionIds.has(line.positionId)), branchIds, loaded.metrics),
+    positions: lines.map((line) => ({ positionId: line.positionId, rowKey: line.rowKey })) };
 }

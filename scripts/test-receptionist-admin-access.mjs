@@ -70,6 +70,7 @@ tenant={mode:'branch',branchId:'a',allowedBranchIds:['a'],permissions:['master']
 const owner=sessionAuthorizationUser({role:'owner'},tenant);assert.equal(owner.role,'owner');assert.notEqual(sessionAuthorizationUser({role:'master'},tenant).role,'owner','Owner-only controls stay owner-only');
 assert.equal(resolveNavigationForUser({user:{role:'master'}}).canManageBranches,false,'An unverified legacy master cannot acquire branch management');
 const ownerOnly=load('../src/app/api/payroll/motivation/overview/route.ts',{
+ '@/lib/branch-api':{requireBranchApi:()=>{throw Error('Owner branch data must not be read')}},'@/lib/piecework-rules':{listPieceworkEmployees:()=>{throw Error('Owner employee data must not be read')},listPieceworkTargets:()=>{throw Error('Owner catalog data must not be read')}},
  'next/server':{NextResponse},'@/lib/auth':auth,'@/lib/payroll-motivation':{listAllPayrollGoals:()=>{throw Error('Owner data must not be read')},listAllRecognition:()=>{throw Error('Owner data must not be read')}},
 },{Response});
 assert.equal((await ownerOnly.GET()).status,403,'Receptionists remain blocked by a real owner-only API');

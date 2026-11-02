@@ -437,6 +437,7 @@ export default function ProductAnalyticsClient() {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [data, setData] = useState<WarehouseProductAnalytics | null>(null);
   const [activeTab, setActiveTab] = useState<AnalyticsTab>("overview");
+  useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "sales-plan") setActiveTab("sales-plan"); }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionPreview, setActionPreview] = useState<ActionPreview | null>(null);

@@ -1,0 +1,42 @@
+import assert from "node:assert/strict";
+import { resolve } from "node:path";
+import { createJiti } from "jiti";
+import { PrismaClient } from "@prisma/client";
+// Explicit local socket and disposable database; never uses DATABASE_URL.
+const prisma = new PrismaClient({ datasources: { db: { url: "postgresql://ilaeliseenko@localhost:55439/eco_automatic_plan_bonus_test?host=/tmp&connection_limit=4" } } });
+globalThis.prisma = prisma;
+const jiti = createJiti(import.meta.url, { alias: { "@": resolve(process.cwd(), "src") } });
+const { awardSalesPlanBonus, salesPlanBonusSource, isSalesPlanComplete } = await jiti.import("../src/lib/sales-plan-bonus.ts");
+const { listPayrollAdjustments } = await jiti.import("../src/lib/payroll-settlements.ts");
+const { runWithRequestTenant } = await jiti.import("../src/lib/request-tenant-store.ts");
+const scope = (branchId, action) => runWithRequestTenant({ mode: "branch", branchId, organizationId: null, allowedBranchIds: [branchId] }, action);
+const base = { branchId: "branch-test", employeeLogin: "maksim", month: "2026-11", rowKey: "product:AIR_FILTER", planId: "p1", planVersion: 1, amountCents: 500000, operationDate: "2026-11-03" };
+try {
+  await prisma.$executeRaw`TRUNCATE payroll_adjustments, change_logs, payroll_periods`;
+  assert.equal(isSalesPlanComplete({ targetCount: 30, targetRevenueCents: null, targetGrossProfitCents: null }, { count: 29, revenueCents: 0, grossProfitCents: null }), false);
+  assert.equal(isSalesPlanComplete({ targetCount: 30, targetRevenueCents: null, targetGrossProfitCents: null }, { count: 30, revenueCents: 0, grossProfitCents: null }), true);
+  assert.equal(isSalesPlanComplete({ targetCount: 30, targetRevenueCents: null, targetGrossProfitCents: null }, { count: null, revenueCents: 0, grossProfitCents: null }), false);
+  const results = await scope("branch-test", () => Promise.all(Array.from({length: 12}, () => awardSalesPlanBonus(base))));
+  assert.equal(results.filter(Boolean).length, 1, "concurrent requests award exactly once");
+  assert.equal(await scope("branch-test", () => awardSalesPlanBonus({...base, amountCents: 900000})), false, "editing bonus amount cannot award a second bonus");
+  await scope("branch-test", () => awardSalesPlanBonus({...base, employeeLogin: "vadim"}));
+  await scope("branch-test", () => awardSalesPlanBonus({...base, rowKey: "service:OIL:-:-:-", planId: "p3"}));
+  await scope("branch-test", () => awardSalesPlanBonus({...base, month: "2026-12", operationDate: "2026-12-03", planId: "p4"}));
+  await scope("branch-other", () => awardSalesPlanBonus({...base, branchId: "branch-other", planId: "p2"}));
+  assert.equal(await scope("branch-test", () => awardSalesPlanBonus({...base, employeeLogin: "dismissed"})), false);
+  assert.equal(await scope("branch-test", () => awardSalesPlanBonus({...base, planVersion: 2, rowKey: "stale-plan"})), false);
+  await assert.rejects(scope("branch-test", () => awardSalesPlanBonus({...base, branchId: "branch-other"})), /другому филиалу/);
+  const rows = await prisma.$queryRaw`SELECT * FROM payroll_adjustments`;
+  assert.equal(rows.length, 5);
+  assert.equal(await scope("branch-test", () => awardSalesPlanBonus({...base, employeeLogin: "alexandr"})), false, "legacy alias shares the same monthly key");
+  assert.equal(rows.filter((row) => row.employee_id === "maksim" && row.branch_id === "branch-test" && row.source_id === salesPlanBonusSource("2026-11", "product:AIR_FILTER"))[0].amount_cents, 500000);
+  assert.equal((await prisma.$queryRaw`SELECT * FROM change_logs`).length, 5, "one audit entry per award");
+  await prisma.$executeRaw`UPDATE payroll_adjustments SET status='REVERSED' WHERE employee_id='vadim'`;
+  assert.equal(await scope("branch-test", () => awardSalesPlanBonus({...base, employeeLogin: "vadim"})), false, "reversed bonus is not silently recreated");
+  await prisma.$executeRaw`INSERT INTO payroll_periods VALUES ('closed', 'branch-test', '2026-10-01', '2026-10-31', 'closed')`;
+  assert.equal(await scope("branch-test", () => awardSalesPlanBonus({...base, month: "2026-10", operationDate: "2026-10-31", planId: "p5"})), false, "closed payroll cannot be altered");
+  const adjustments = await scope("branch-test", () => listPayrollAdjustments({dateFrom:"2026-11-01",dateTo:"2026-11-30",employeeLogin:"maksim",unlimited:true,limit:1}));
+  assert.equal(adjustments.length,2,"payroll reads all bonuses without the UI pagination limit");
+  assert.equal(adjustments.reduce((sum,row)=>sum+row.amountCents,0),1000000,"real settlement query returns the two monthly bonuses");
+  console.log("Automatic bonus DB tests passed: concurrency, permanent monthly uniqueness, employee/branch isolation, immutable amount, reversals, plan version and closed periods.");
+} finally { await prisma.$disconnect(); }

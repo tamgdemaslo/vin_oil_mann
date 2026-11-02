@@ -6,6 +6,8 @@ import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 export const DEFAULT_PAYROLL_ORG_ID = "default";
 
 export type PayrollGoalMetric =
+  | "SERVICE"
+  | "PRODUCT_CATEGORY"
   | "ACCRUAL_AMOUNT"
   | "VEHICLES"
   | "SERVICES"
@@ -23,6 +25,8 @@ export type PayrollGoalRecord = {
   teamKey: string | null;
   periodType: "SHIFT" | "WEEK" | "MONTH";
   metric: PayrollGoalMetric;
+  targetId?: string | null;
+  targetName?: string | null;
   targetValue: number;
   baselineValue: number | null;
   stretchValue: number | null;
@@ -138,6 +142,8 @@ export async function listActivePayrollGoals(params: {
         teamKey: string | null;
         periodType: PayrollGoalRecord["periodType"];
         metric: PayrollGoalMetric;
+        targetId: string | null;
+        targetName: string | null;
         targetValue: number;
         baselineValue: number | null;
         stretchValue: number | null;
@@ -157,6 +163,8 @@ export async function listActivePayrollGoals(params: {
         team_key AS "teamKey",
         period_type AS "periodType",
         metric,
+        target_id AS "targetId",
+        target_name AS "targetName",
         target_value AS "targetValue",
         baseline_value AS "baselineValue",
         stretch_value AS "stretchValue",
@@ -188,6 +196,7 @@ export async function listActivePayrollGoals(params: {
 }
 
 export async function listAllPayrollGoals(organizationId = DEFAULT_PAYROLL_ORG_ID) {
+  const { branchId } = requireSingleBranchSqlContext();
   try {
     const rows = await prisma.$queryRaw<
       Array<{
@@ -198,6 +207,8 @@ export async function listAllPayrollGoals(organizationId = DEFAULT_PAYROLL_ORG_I
         teamKey: string | null;
         periodType: PayrollGoalRecord["periodType"];
         metric: PayrollGoalMetric;
+        targetId: string | null;
+        targetName: string | null;
         targetValue: number;
         baselineValue: number | null;
         stretchValue: number | null;
@@ -217,6 +228,8 @@ export async function listAllPayrollGoals(organizationId = DEFAULT_PAYROLL_ORG_I
         team_key AS "teamKey",
         period_type AS "periodType",
         metric,
+        target_id AS "targetId",
+        target_name AS "targetName",
         target_value AS "targetValue",
         baseline_value AS "baselineValue",
         stretch_value AS "stretchValue",
@@ -228,6 +241,7 @@ export async function listAllPayrollGoals(organizationId = DEFAULT_PAYROLL_ORG_I
         updated_at AS "updatedAt"
       FROM payroll_goals
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${branchId}
       ORDER BY created_at DESC
       LIMIT 100
     `;
@@ -244,6 +258,8 @@ export async function createPayrollGoal(params: {
   teamKey?: string | null;
   periodType: PayrollGoalRecord["periodType"];
   metric: PayrollGoalMetric;
+  targetId?: string;
+  targetName?: string;
   targetValue: number;
   baselineValue?: number | null;
   stretchValue?: number | null;
@@ -264,6 +280,8 @@ export async function createPayrollGoal(params: {
       team_key,
       period_type,
       metric,
+      target_id,
+      target_name,
       target_value,
       baseline_value,
       stretch_value,
@@ -281,6 +299,8 @@ export async function createPayrollGoal(params: {
       ${params.teamKey ?? null},
       ${params.periodType},
       ${params.metric},
+      ${params.targetId ?? null},
+      ${params.targetName ?? null},
       ${params.targetValue},
       ${params.baselineValue ?? null},
       ${params.stretchValue ?? null},

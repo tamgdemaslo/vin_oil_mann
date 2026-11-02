@@ -361,6 +361,7 @@ model BranchSalesPlan {
   aggregateType                   String?              @map("aggregate_type")
   procedure                       String?
   configuration                   String?
+  completionBonusCents            Int?                 @map("completion_bonus_cents")
   targetCount                     Decimal              @map("target_count") @db.Decimal(14, 3)
   targetRevenueCents              Int?                 @map("target_revenue_cents")
   targetGrossProfitCents          Int?                 @map("target_gross_profit_cents")
@@ -525,6 +526,8 @@ model PayrollGoal {
   teamKey        String?  @map("team_key")
   periodType     String   @map("period_type") // SHIFT | WEEK | MONTH
   metric         String // ACCRUAL_AMOUNT | VEHICLES | SERVICES | PRODUCTS | SHIPMENTS | QUALITY | DIAGNOSTICS | APPROVED_RECOMMENDATIONS
+  targetId       String? @map("target_id")
+  targetName     String? @map("target_name")
   targetValue    Int      @map("target_value")
   baselineValue  Int?     @map("baseline_value")
   stretchValue   Int?     @map("stretch_value")

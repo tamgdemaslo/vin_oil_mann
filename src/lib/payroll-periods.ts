@@ -430,6 +430,7 @@ export async function closePayrollPeriod(params: {
     orderBy: { date: "asc" },
   });
   const payrollAdjustments = await listPayrollAdjustments({
+    unlimited: true,
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
   });
@@ -488,6 +489,13 @@ export async function closePayrollPeriod(params: {
   };
 
   await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`payroll-bonus:${branchId}`}, 0))`;
+    const bonusRows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM payroll_adjustments
+      WHERE branch_id = ${branchId} AND source_type = 'SALES_PLAN_BONUS' AND status = 'ACTIVE'
+      AND operation_date >= ${params.dateFrom} AND operation_date <= ${params.dateTo} ORDER BY id`;
+    if (JSON.stringify(bonusRows.map((row) => row.id).sort()) !== JSON.stringify(summary.salesPlanBonusIds ?? [])) {
+      throw new Error("Бонусы изменились во время закрытия. Пересчитайте период и повторите закрытие.");
+    }
     await tx.$executeRaw`
       INSERT INTO payroll_periods (
         id,

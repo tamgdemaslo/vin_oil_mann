@@ -1,3 +1,4 @@
+import { catalogGoalProgress } from "@/lib/payroll-goal-progress";
 import { NextRequest, NextResponse } from "next/server";
 import { canonicalizeLogin, getUsersFromEnv } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
@@ -167,6 +168,7 @@ function metricTitle(metric: PayrollGoalMetric) {
 
 function goalCurrentValue(goal: PayrollGoalRecord, summary: PayrollSummary, login: string) {
   const ownVehicles = summary.vehicleHistory.filter((vehicle) => employeeEarnings(vehicle, login) > 0);
+  if (goal.metric === "SERVICE" || goal.metric === "PRODUCT_CATEGORY") return catalogGoalProgress(goal, summary, login);
   if (goal.metric === "ACCRUAL_AMOUNT") return findPayrollRow(summary, login).totalCents;
   if (goal.metric === "SHIPMENTS" || goal.metric === "VEHICLES") return ownVehicles.length;
   if (goal.metric === "SERVICES") {
@@ -243,6 +245,9 @@ export async function GET(request: NextRequest) {
           limit: 10,
         }),
   ]);
+  const goalSummaries = await Promise.all(goals.map((goal) => getCachedPayrollSummary({
+    dateFrom: goal.startsAt, dateTo: goal.endsAt, targetLogin: login,
+  })));
   const userNameByLogin = new Map(users.map((user) => [user.login.toLowerCase(), user.name]));
 
     return NextResponse.json({
@@ -274,10 +279,10 @@ export async function GET(request: NextRequest) {
         ? "Предварительных начислений по закрытому периоду нет."
         : "Проведённые отгрузки и правила учтены, но период ещё может быть пересчитан.",
     },
-    goals: goals.map((goal) => ({
+    goals: goals.map((goal, index) => ({
       id: goal.id,
-      title: metricTitle(goal.metric),
-      currentValue: goalCurrentValue(goal, monthSummary, login),
+      title: goal.targetName ?? metricTitle(goal.metric),
+      currentValue: goalCurrentValue(goal, goalSummaries[index], login),
       targetValue: goal.targetValue,
       baselineValue: goal.baselineValue,
       stretchValue: goal.stretchValue,

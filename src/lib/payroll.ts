@@ -6,6 +6,7 @@ import { canonicalizeLogin, getLoginVariants } from "@/lib/auth";
 import { listPayrollAdjustments, listPayrollPayments } from "@/lib/payroll-settlements";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { calculateLineFinancials } from "@/lib/inventory-costing";
+import { payrollCashoutPeriodOverlaps, resolvePayrollCashoutPeriod } from "@/lib/payroll-cashout-period";
 import {
   calculatePieceworkAmountCents,
   extractLocalEntityId,
@@ -56,6 +57,7 @@ const PAYROLL_CASHOUT_AGENT_TO_LOGIN = new Map(
 );
 
 type PositionRow = {
+  positionId?: string;
   assortment: {
     meta: { href: string; type: string };
     name?: string;
@@ -132,6 +134,9 @@ type CashoutRow = {
   moment: string;
   sum: number;
   applicable: boolean;
+  periodFrom: string;
+  periodTo: string;
+  employeeLogin?: string | null;
   paymentPurpose?: string;
   description?: string;
   agent?: { name?: string };
@@ -140,6 +145,9 @@ type CashoutRow = {
 
 type StaffingMember = { login: string; role: "master" | "admin" };
 type PieceworkBreakdownEntry = {
+  positionId?: string;
+  targetId?: string;
+  targetType?: "service" | "product_group";
   category: "work" | "product";
   label: string;
   quantity: number;
@@ -278,6 +286,7 @@ async function fetchLocalDemandsWithPositions(
       const assortmentId = product?.id ?? position.productId ?? position.id;
       const groupId = position.groupIdSnapshot ?? product?.groupId ?? undefined;
       return {
+        positionId: position.id,
         assortment: {
           meta: {
             href: `local://${assortmentType || "product"}/${assortmentId}`,
@@ -299,8 +308,8 @@ async function fetchLocalDemandsWithPositions(
 }
 
 async function fetchLocalPayrollCashouts(dateFrom: string, dateTo: string): Promise<CashoutRow[]> {
+  const branchId = getScopedBranchId();
   try {
-    const branchId = getScopedBranchId();
     const rows = await prisma.$queryRaw<
       Array<{
         id: string;
@@ -315,6 +324,9 @@ async function fetchLocalPayrollCashouts(dateFrom: string, dateTo: string): Prom
         counterpartyRelationName: string | null;
         expenseItemName: string;
         expenseItemRelationName: string | null;
+        employeeId: string | null;
+        payrollPeriodFrom: string | null;
+        payrollPeriodTo: string | null;
       }>
     >`
       SELECT
@@ -329,31 +341,45 @@ async function fetchLocalPayrollCashouts(dateFrom: string, dateTo: string): Prom
         ceo.counterparty_name AS "counterpartyName",
         cp.name AS "counterpartyRelationName",
         ceo.expense_item_name AS "expenseItemName",
-        item.name AS "expenseItemRelationName"
+        item.name AS "expenseItemRelationName",
+        ceo.employee_id AS "employeeId",
+        ceo.payroll_period_from AS "payrollPeriodFrom",
+        ceo.payroll_period_to AS "payrollPeriodTo"
       FROM cash_expense_orders ceo
       LEFT JOIN local_counterparties cp ON cp.id = ceo.counterparty_id
       LEFT JOIN cash_expense_items item ON item.id = ceo.expense_item_id
-      WHERE ceo.expense_date >= ${dateFrom}
-        AND ceo.expense_date <= ${dateTo}
-        AND ceo.branch_id = ${branchId}
+      WHERE ceo.branch_id = ${branchId}
         AND (cp.id IS NULL OR cp.branch_id = ${branchId})
         AND (item.id IS NULL OR item.branch_id = ${branchId})
         AND ceo.status = 'posted'
         AND (ceo.source_type IS NULL OR ceo.source_type <> 'PAYROLL_PAYMENT')
+        AND LOWER(CONCAT_WS(' ',
+          COALESCE(item.name, ceo.expense_item_name),
+          COALESCE(ceo.payment_purpose, ceo.article, ceo.comment)
+        )) LIKE ANY (ARRAY['%зарплата%', '%аванс%'])
       ORDER BY ceo.expense_date ASC
     `;
 
+    // Read payroll RKO regardless of cash date: August salary can be paid in September.
     return rows.map((row) => ({
       id: row.id,
       name: row.number,
       moment: `${row.expenseDate} 00:00:00`,
       sum: row.amountCents,
       applicable: row.status === "posted",
+      ...resolvePayrollCashoutPeriod({
+        expenseDate: row.expenseDate,
+        payrollPeriodFrom: row.payrollPeriodFrom,
+        payrollPeriodTo: row.payrollPeriodTo,
+        paymentPurpose: row.paymentPurpose ?? row.article ?? row.comment,
+        expenseItemName: row.expenseItemRelationName ?? row.expenseItemName,
+      }),
+      employeeLogin: row.employeeId,
       paymentPurpose: row.paymentPurpose ?? row.article ?? row.comment ?? "",
       description: row.comment ?? "",
       agent: { name: row.counterpartyRelationName ?? row.counterpartyName ?? "" },
       expenseItem: { name: row.expenseItemRelationName ?? row.expenseItemName ?? "" },
-    }));
+    })).filter((row) => payrollCashoutPeriodOverlaps(row, dateFrom, dateTo));
   } catch (error) {
     const message = error instanceof Error ? error.message.toLowerCase() : "";
     if (!message.includes("source_type") && !message.includes("undefined_column")) throw error;
@@ -361,12 +387,22 @@ async function fetchLocalPayrollCashouts(dateFrom: string, dateTo: string): Prom
 
   const rows = await prisma.cashExpenseOrder.findMany({
     where: {
-      expenseDate: { gte: dateFrom, lte: dateTo },
+      branchId,
       status: "posted",
     },
-    include: {
-      counterparty: true,
-      expenseItem: true,
+    select: {
+      id: true,
+      number: true,
+      expenseDate: true,
+      amountCents: true,
+      status: true,
+      paymentPurpose: true,
+      article: true,
+      comment: true,
+      counterpartyName: true,
+      expenseItemName: true,
+      counterparty: { select: { name: true } },
+      expenseItem: { select: { name: true } },
     },
     orderBy: { expenseDate: "asc" },
   });
@@ -377,11 +413,16 @@ async function fetchLocalPayrollCashouts(dateFrom: string, dateTo: string): Prom
     moment: `${row.expenseDate} 00:00:00`,
     sum: row.amountCents,
     applicable: row.status === "posted",
+    ...resolvePayrollCashoutPeriod({
+      expenseDate: row.expenseDate,
+      paymentPurpose: row.paymentPurpose ?? row.article ?? row.comment,
+      expenseItemName: row.expenseItem?.name ?? row.expenseItemName,
+    }),
     paymentPurpose: row.paymentPurpose ?? row.article ?? row.comment ?? "",
     description: row.comment ?? "",
     agent: { name: row.counterparty?.name ?? row.counterpartyName ?? "" },
     expenseItem: { name: row.expenseItem?.name ?? row.expenseItemName ?? "" },
-  }));
+  })).filter((row) => payrollCashoutPeriodOverlaps(row, dateFrom, dateTo));
 }
 
 function mergeStaffingByDate(params: {
@@ -393,8 +434,9 @@ function mergeStaffingByDate(params: {
 
   for (const day of scheduledDays) {
     const normalized = normalizeLogin(day.userLogin);
-    const role = roleByLogin.get(normalized) ?? "master";
-    if (role !== "master" && role !== "admin") continue;
+    const userRole = roleByLogin.get(normalized);
+    const role: "master" | "admin" = userRole === "admin" ? "admin" : "master";
+    if (!userRole) continue;
     const list = byDate.get(day.date) ?? [];
     if (!list.some((x) => normalizeLogin(x.login) === normalized)) {
       list.push({ login: day.userLogin, role });
@@ -444,6 +486,7 @@ export type VehicleRecord = {
 };
 
 export type PayrollSummary = {
+  salesPlanBonusIds?: string[];
   dateFrom: string;
   dateTo: string;
   byLogin: Record<
@@ -485,6 +528,8 @@ export type PayrollSummary = {
 
 /** Расчёт на лету: зарплата и история машин за период */
 export async function computePayroll(params: {
+  /** Internal recursion guard: the base calculation must not award bonuses. */
+  skipSalesPlanBonuses?: boolean;
   dateFrom: string;
   dateTo: string;
   /** для владельца — по всем, для мастера/админа — только свой логин */
@@ -492,6 +537,10 @@ export async function computePayroll(params: {
 }): Promise<PayrollSummary> {
   const { dateFrom, dateTo, targetLogin } = params;
   const branchId = getScopedBranchId();
+  if (!params.skipSalesPlanBonuses) {
+    const { syncSalesPlanBonuses } = await import("@/lib/sales-plan-bonus");
+    await syncSalesPlanBonuses(params);
+  }
   const normalizedTargetLogin = targetLogin ? normalizeLogin(targetLogin) : undefined;
   const targetLoginVariants = targetLogin ? getLoginVariants(targetLogin) : undefined;
   const targetLoginWhere = targetLoginVariants ? { userLogin: { in: targetLoginVariants } } : {};
@@ -511,6 +560,7 @@ export async function computePayroll(params: {
       },
     }),
     listPayrollAdjustments({
+      unlimited: true,
       dateFrom,
       dateTo,
       employeeLogin: targetLogin,
@@ -546,7 +596,7 @@ export async function computePayroll(params: {
   const roleByLogin = new Map(users.map((u) => [normalizeLogin(u.login), u.role]));
   const nameByLogin = new Map(users.map((u) => [normalizeLogin(u.login), u.name]));
   const activeLogins = new Set(
-    users.filter((u) => u.role === "master" || u.role === "admin").map((u) => normalizeLogin(u.login))
+    users.map((u) => normalizeLogin(u.login))
   );
   const staffingByDate = mergeStaffingByDate({
     scheduledDays: scheduledShiftsForStaffing.filter((shift) => {
@@ -628,7 +678,7 @@ export async function computePayroll(params: {
         addUnallocatedPiecework({ category, label: name, quantity: qty, baseCents,
           reason: onShift.length ? "missing_rule" : isService ? "missing_master" : "missing_admin",
           ruleTargetId: targetId ?? undefined, groupPath: pathName || undefined,
-          diagnostic: onShift.length ? "У сотрудников смены нет правила для этой позиции. Добавьте индивидуальное правило или правило роли." : "На дату отгрузки нет назначенных сотрудников." });
+          diagnostic: onShift.length ? "У сотрудников смены нет правила для этой позиции. Добавьте индивидуальное правило." : "На дату отгрузки нет назначенных сотрудников." });
       }
       for (const { login: recipientLogin, rule } of recipients) {
         if (!isService && rule.mode === "percent" && buyPriceCents == null) {
@@ -640,7 +690,7 @@ export async function computePayroll(params: {
         if (amountCents <= 0) continue;
         earningsByLogin[recipientLogin] = (earningsByLogin[recipientLogin] ?? 0) + amountCents;
         addPieceworkEntry(recipientLogin, {
-          category, label: name, quantity: qty, amountCents,
+          positionId: p.positionId, targetId: targetId ?? undefined, targetType, category, label: name, quantity: qty, amountCents,
           ruleLabel: formatRuleAmountLabel(rule),
           basisLabel: rule.mode === "percent" ? isService ? "от суммы услуги" : "от прибыли товара" : isService ? "за услугу" : "за единицу",
           status: "PRELIMINARY",
@@ -669,7 +719,7 @@ export async function computePayroll(params: {
     const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(scheduledShift.userLogin)) ?? scheduledShift.userLogin;
     if (normalizedTargetLogin && normalizeLogin(canonicalLogin) !== normalizedTargetLogin) continue;
     const roleValue = roleByLogin.get(normalizeLogin(canonicalLogin));
-    if (roleValue !== "master" && roleValue !== "admin") continue;
+    if (!roleValue) continue;
     const employee = employeeByLogin.get(normalizeLogin(canonicalLogin));
     if (!employee || !employedOn(employee.settings, scheduledShift.date, employee.employmentStart)) continue;
     if (!byLogin[canonicalLogin]) {
@@ -714,7 +764,7 @@ export async function computePayroll(params: {
 
     const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(bp.userLogin)) ?? bp.userLogin;
     const roleValue = roleByLogin.get(normalizeLogin(canonicalLogin));
-    if (roleValue !== "master" && roleValue !== "admin") continue;
+    if (!roleValue) continue;
     if (!byLogin[canonicalLogin]) {
       byLogin[canonicalLogin] = {
         shiftTotalCents: 0,
@@ -737,7 +787,7 @@ export async function computePayroll(params: {
   for (const adjustment of payrollAdjustments) {
     const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(adjustment.employeeId)) ?? adjustment.employeeId;
     const roleValue = roleByLogin.get(normalizeLogin(canonicalLogin));
-    if (roleValue !== "master" && roleValue !== "admin") continue;
+    if (!roleValue) continue;
     if (normalizedTargetLogin && normalizeLogin(canonicalLogin) !== normalizedTargetLogin) continue;
     if (!byLogin[canonicalLogin]) {
       byLogin[canonicalLogin] = {
@@ -762,7 +812,7 @@ export async function computePayroll(params: {
     const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(payment.employeeId)) ?? payment.employeeId;
     if (normalizedTargetLogin && normalizeLogin(canonicalLogin) !== normalizedTargetLogin) continue;
     const roleValue = roleByLogin.get(normalizeLogin(canonicalLogin));
-    if (roleValue !== "master" && roleValue !== "admin") continue;
+    if (!roleValue) continue;
 
     if (!byLogin[canonicalLogin]) {
       byLogin[canonicalLogin] = {
@@ -805,7 +855,7 @@ export async function computePayroll(params: {
 
   for (const cashout of cashouts) {
     const agentName = cashout.agent?.name ?? "";
-    const mappedLogin = resolvePayrollCashoutLogin(agentName);
+    const mappedLogin = cashout.employeeLogin || resolvePayrollCashoutLogin(agentName);
     if (!mappedLogin || !isSalaryCashout(cashout)) continue;
 
     const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(mappedLogin)) ?? mappedLogin;
@@ -835,8 +885,13 @@ export async function computePayroll(params: {
       login: canonicalLogin,
       sourceType: "cash_expense_order",
       paymentMethod: "CASH",
-      operationType: "SALARY",
+      operationType: normalizePersonName(`${cashout.paymentPurpose ?? ""} ${cashout.expenseItem?.name ?? ""}`).includes("аванс")
+        ? "ADVANCE"
+        : "SALARY",
       cashOrderId: cashout.id,
+      periodFrom: cashout.periodFrom,
+      periodTo: cashout.periodTo,
+      cashDate: momentToDate(cashout.moment),
     });
   }
 
@@ -880,6 +935,7 @@ export async function computePayroll(params: {
     return {
       dateFrom,
       dateTo,
+      salesPlanBonusIds: payrollAdjustments.filter((row) => row.sourceType === "SALES_PLAN_BONUS").map((row) => row.id).sort(),
       byLogin: activeByLogin,
       vehicleHistory: activeHistory,
       cashoutHistory: activeCashoutHistory,
@@ -889,6 +945,7 @@ export async function computePayroll(params: {
   return {
     dateFrom,
     dateTo,
+    salesPlanBonusIds: payrollAdjustments.filter((row) => row.sourceType === "SALES_PLAN_BONUS").map((row) => row.id).sort(),
     byLogin,
     vehicleHistory: filteredHistory,
     cashoutHistory: filteredCashoutHistory,

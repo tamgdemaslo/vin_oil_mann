@@ -141,7 +141,12 @@
     "test:barrel-marking-input": "node scripts/test-barrel-marking-input.mjs",
     "test:client-site-domain": "node scripts/test-client-site-domain.mjs",
     "test:maintenance-quote": "node scripts/test-maintenance-quote.mjs",
-    "test:client-cases": "node scripts/test-client-case-simple.mjs && node scripts/test-client-case-simple-routes.mjs && node scripts/test-client-case-attention.mjs && node scripts/test-client-case-parts.mjs && node scripts/test-client-case-chat.mjs && node scripts/test-client-case-alerts.mjs && node scripts/test-client-case-signals.mjs && node scripts/test-client-case-alert-route.mjs"
+    "test:client-cases": "node scripts/test-client-case-simple.mjs && node scripts/test-client-case-simple-routes.mjs && node scripts/test-client-case-attention.mjs && node scripts/test-client-case-parts.mjs && node scripts/test-client-case-chat.mjs && node scripts/test-client-case-alerts.mjs && node scripts/test-client-case-signals.mjs && node scripts/test-client-case-alert-route.mjs",
+    "test:automatic-sales-plan-bonus": "node scripts/test-automatic-sales-plan-bonus.mjs",
+    "test:catalog-motivation-goals": "node scripts/test-catalog-motivation-goals.mjs",
+    "test:employee-sales-plan": "node scripts/test-employee-sales-plan.mjs",
+    "test:individual-piecework": "node scripts/test-individual-piecework.mjs",
+    "test:payroll-cashout-periods": "node scripts/test-payroll-cashout-periods.mjs"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",
