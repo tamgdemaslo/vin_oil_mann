@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
 const fixtures = mkdtempSync(join(tmpdir(), "automatic-sales-plan-bonus-"));
 writeFileSync(join(fixtures, "context.mjs"), `export const getBranchContext = async () => ({branchId:'bonus-test',branch:{timezone:'Europe/Moscow'}}); export const requireBranchContext = getBranchContext;`);
-writeFileSync(join(fixtures, "analytics.mjs"), `export const getSalesPlanPositionKeys = async () => ({complete:true,actuals:new Map([['bonus-test:product:AIR_FILTER',{count:30,revenueCents:100000,grossProfitCents:50000}]])});`);
+writeFileSync(join(fixtures, "analytics.mjs"), `export const getSalesPlanPositionKeys = async (_context, _branches, _params, ids) => ({complete:true,actuals:new Map([['bonus-test:product:AIR_FILTER',{count:ids.has('personal-sale')?30:0,revenueCents:100000,grossProfitCents:50000}]])});`);
 const jiti = createJiti(import.meta.url, { alias: {
   "@/lib/branch-context": join(fixtures, "context.mjs"),
   "@/lib/sales-performance-analytics": join(fixtures, "analytics.mjs"),
@@ -34,7 +34,7 @@ globalThis.prisma = {
   branchMembership:{findMany:async()=>[{roleId:'master',user:{login:'maksim',name:'Максим'}}]},
   user:{findMany:read},authPassword:{findMany:read},
   bonusPenalty:{findMany:async()=>[{userLogin:'maksim',type:'bonus',amountCents:100000}]},
-  scheduledWorkingDay:{findMany:read},pieceworkRule:{findMany:read},localProduct:{findMany:read},localCatalogGroup:{findMany:read},localDemand:{findMany:read},
+  scheduledWorkingDay:{findMany:async()=>[{userLogin:'maksim',date:dateFrom}]},shiftRate:{findFirst:async()=>null},pieceworkRule:{findMany:read},localProduct:{findMany:read},localCatalogGroup:{findMany:read},localDemand:{findMany:async()=>[{id:'personal-demand',name:'sale',momentAt:new Date(dateFrom+'T12:00:00Z'),sumCents:100000,positions:[{id:'personal-sale',productId:'filter',groupIdSnapshot:'filters',assortmentType:'product',name:'Filter',quantity:{toNumber:()=>30},discount:{toNumber:()=>0},priceCentsPerUnit:3333,buyPriceCentsPerUnit:null}]}]},
   $queryRaw:async(strings)=>strings.join('').includes('FROM payroll_adjustments')?ledger:[],
   $transaction:async(action)=>action(tx),
 };
@@ -43,6 +43,7 @@ try {
   const {runWithRequestTenant}=await jiti.import('../src/lib/request-tenant-store.ts');
   for(let i=0;i<3;i++) {
     const result=await runWithRequestTenant({mode:'branch',branchId:'bonus-test',allowedBranchIds:['bonus-test'],organizationId:null},()=>computePayroll({dateFrom,dateTo,targetLogin:'maksim'}));
+    assert.equal(result.byLogin.maksim.pieceworkCents,0,'no piecework rule must not block the completed personal plan');
     assert.equal(result.byLogin.maksim.bonusCents,600000,'base 1,000 ₽ plus the automatic 5,000 ₽ bonus');
     assert.equal(result.byLogin.maksim.totalCents,600000);
     assert.equal(result.byLogin.maksim.remainingCents,600000);

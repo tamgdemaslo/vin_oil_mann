@@ -465,6 +465,8 @@ export type VehicleRecord = {
   earningsByLogin: Record<string, number>;
   /** Детальная расшифровка сдельной части по каждому сотруднику для этой отгрузки */
   pieceworkBreakdownByLogin: Record<string, PieceworkBreakdownEntry[]>;
+  /** Personal sales from the employee's shift, independent of wage eligibility. */
+  salesPositionsByLogin?: Record<string, { positionId: string; targetId?: string; targetType: "service" | "product_group"; quantity: number }[]>;
   /** Позиции, которые не начислены автоматически из-за отсутствующей роли, конфликта или правила */
   unallocatedPiecework: {
     category: "work" | "product";
@@ -622,6 +624,7 @@ export async function computePayroll(params: {
     const products: VehicleRecord["products"] = [];
     const earningsByLogin: Record<string, number> = {};
     const pieceworkBreakdownByLogin: VehicleRecord["pieceworkBreakdownByLogin"] = {};
+    const salesPositionsByLogin: NonNullable<VehicleRecord["salesPositionsByLogin"]> = {};
     const unallocatedPiecework: VehicleRecord["unallocatedPiecework"] = [];
 
     function addPieceworkEntry(
@@ -658,6 +661,11 @@ export async function computePayroll(params: {
       const targetType = isService ? "service" : "product_group";
       const targetId = isService ? extractLocalEntityId(p.assortment?.meta?.href) : groupId;
       const category = isService ? "work" : "product";
+      if (p.positionId) {
+        for (const member of onShift) {
+          (salesPositionsByLogin[member.login] ??= []).push({ positionId: p.positionId, targetId: targetId ?? undefined, targetType, quantity: qty });
+        }
+      }
       const baseCents = isService ? saleCents : Math.max(0, lineFinancials.profitCents ?? 0);
       if (isService) works.push({ name, quantity: qty, priceCents: saleCents });
       else products.push({ name, pathName: pathName || undefined, quantity: qty, priceCents: saleCents });
@@ -710,6 +718,7 @@ export async function computePayroll(params: {
       products,
       earningsByLogin,
       pieceworkBreakdownByLogin,
+      salesPositionsByLogin,
       unallocatedPiecework,
     });
   }
@@ -903,7 +912,7 @@ export async function computePayroll(params: {
 
   const filteredHistory = normalizedTargetLogin
     ? vehicleHistory.filter((v) =>
-        Object.keys(v.earningsByLogin).some((login) => normalizeLogin(login) === normalizedTargetLogin)
+        Object.keys(v.salesPositionsByLogin ?? v.earningsByLogin).some((login) => normalizeLogin(login) === normalizedTargetLogin)
       )
     : vehicleHistory;
   const filteredCashoutHistory = normalizedTargetLogin
@@ -927,7 +936,7 @@ export async function computePayroll(params: {
         );
         return { ...vehicle, earningsByLogin, pieceworkBreakdownByLogin };
       })
-      .filter((vehicle) => Object.keys(vehicle.earningsByLogin).length > 0 || vehicle.unallocatedPiecework.length > 0);
+      .filter((vehicle) => Object.keys(vehicle.salesPositionsByLogin ?? vehicle.earningsByLogin).length > 0 || vehicle.unallocatedPiecework.length > 0);
     const activeCashoutHistory = filteredCashoutHistory.filter((item) =>
       activeLogins.has(normalizeLogin(item.login))
     );

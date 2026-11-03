@@ -38,7 +38,7 @@ export default function EmployeeSalesPlanCard({ refreshToken }: { refreshToken: 
   return (
     <section className="eco-ops-card eco-employee-sales-plan" aria-label="План продаж и ваш заработок" aria-busy={loading}>
       <header>
-        <div><h2><Target size={20} aria-hidden />План продаж · {month}</h2><p>{data?.branchName ?? "Текущий филиал"} · ваш личный прогресс и сдельный заработок</p></div>
+        <div><h2><Target size={20} aria-hidden />Личный план продаж · {month}</h2><p>{data?.branchName ?? "Текущий филиал"} · продажи в ваших сменах и сдельный заработок</p></div>
         <button type="button" className="eco-btn eco-btn--ghost" onClick={refresh} disabled={loading} aria-label="Обновить план продаж"><RefreshCw size={16} className={loading ? "eco-spin" : ""} aria-hidden /></button>
       </header>
       {error && <p role="status">Не удалось обновить план. {data ? "Показаны последние загруженные данные." : "Нажмите кнопку обновления."}</p>}

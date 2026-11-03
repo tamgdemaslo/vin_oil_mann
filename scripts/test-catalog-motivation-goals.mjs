@@ -27,6 +27,7 @@ assert.equal(catalogGoalProgress(service, summary, "alexandr"), 3, "canonical em
 assert.equal(catalogGoalProgress({ ...service, metric: "PRODUCT_CATEGORY" }, summary, "vadim"), 5);
 assert.equal(catalogGoalProgress({ ...service, targetId: null }, summary, "vadim"), 0);
 assert.equal(catalogGoalProgress(service, summary, "ilya"), 0, "another employee's work is not counted");
+assert.equal(catalogGoalProgress(service, { vehicleHistory: [{ date: "2026-11-02", salesPositionsByLogin: { vadim: [{ targetId: "same-id", targetType: "service", quantity: 4 }] }, pieceworkBreakdownByLogin: {} }] }, "vadim"), 4, "goals count sales independently of piecework earnings");
 await runWithRequestTenant({ mode: "branch", branchId: "test-branch", allowedBranchIds: ["test-branch"], organizationId: null }, async () => {
   await createPayrollGoal({ employeeLogin: "vadim", periodType: "WEEK", metric: "SERVICE", targetId: "service-id", targetName: "Замена масла", targetValue: 10, startsAt: "2026-11-01", endsAt: "2026-11-07", createdByLogin: "ilya" });
   const [goal] = await listAllPayrollGoals();

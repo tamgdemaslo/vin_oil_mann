@@ -21,4 +21,8 @@ assert.equal(earnings.size, 2, "unplanned positions are excluded");
 assert.deepEqual([...employeePlanPositionIds(summary, "vadim")], ["filter-1", "filter-2", "service-1", "unplanned-1"]);
 assert.equal(employeePlanPositionIds(summary, "ilya").size, 0, "another employee receives no personal facts");
 assert.equal(employeePlanEarnings(summary, "ilya", mapping).size, 0);
+const noPay = { vehicleHistory: [{ salesPositionsByLogin: { vadim: [{ positionId: "sold-without-pay" }] }, pieceworkBreakdownByLogin: {} }] };
+assert.deepEqual([...employeePlanPositionIds(noPay, "alexandr")], ["sold-without-pay"], "personal sales do not require a wage rule, profit, or positive earnings");
+assert.equal(employeePlanEarnings(noPay, "vadim", [{positionId:"sold-without-pay",rowKey:"product:AIR_FILTER"}]).size, 0);
+assert.equal(employeePlanPositionIds(noPay, "maksim").size, 0, "other employees cannot receive the personal sale");
 console.log("Employee sales plan: 700 ₽ filter earnings, service earnings, alias handling and employee isolation passed.");

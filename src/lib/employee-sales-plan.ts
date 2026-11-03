@@ -19,7 +19,7 @@ export function employeePlanEarnings(summary: PayrollSummary, login: string, pos
 
 export function employeePlanPositionIds(summary: PayrollSummary, login: string) {
   const employee = canonicalizeLogin(login).toLowerCase();
-  return new Set(summary.vehicleHistory.flatMap((vehicle) => Object.entries(vehicle.pieceworkBreakdownByLogin)
+  return new Set(summary.vehicleHistory.flatMap((vehicle) => Object.entries(vehicle.salesPositionsByLogin ?? vehicle.pieceworkBreakdownByLogin)
     .filter(([key]) => canonicalizeLogin(key).toLowerCase() === employee)
-    .flatMap(([, entries]) => entries.flatMap((entry) => entry.positionId ? [entry.positionId] : []))));
+    .flatMap(([, entries]) => entries.flatMap((entry: { positionId?: string }) => entry.positionId ? [entry.positionId] : []))));
 }

@@ -8,7 +8,7 @@ export function catalogGoalProgress(goal: PayrollGoalRecord, summary: PayrollSum
   const targetType = goal.metric === "SERVICE" ? "service" : "product_group";
   const employee = canonicalizeLogin(login).trim().toLowerCase();
   return summary.vehicleHistory.filter((vehicle) => vehicle.date >= goal.startsAt && vehicle.date <= goal.endsAt)
-    .reduce((sum, vehicle) => sum + Object.entries(vehicle.pieceworkBreakdownByLogin)
+    .reduce((sum, vehicle) => sum + Object.entries(vehicle.salesPositionsByLogin ?? vehicle.pieceworkBreakdownByLogin)
       .filter(([key]) => canonicalizeLogin(key).trim().toLowerCase() === employee)
       .flatMap(([, entries]) => entries)
       .filter((entry) => entry.targetId === goal.targetId && entry.targetType === targetType)
