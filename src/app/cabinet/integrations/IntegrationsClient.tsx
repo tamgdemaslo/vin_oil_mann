@@ -549,7 +549,6 @@ export default function IntegrationsClient({
               <div className="eco-form-error eco-tbank-settings-error">В аккаунте ROSSKO не найдены реквизиты. Добавьте организацию и реквизиты в личном кабинете ROSSKO либо обратитесь к менеджеру ROSSKO.</div>
             )}
             <div className="eco-tbank-settings-grid">
-          <label><span>Название подключения</span><EcoInput maxLength={100} value={tbankForm.name} onChange={(event) => updateTBankForm("name", event.target.value)} placeholder="Например, ИП — основной счёт" /></label>
               <label>
                 <span>Организация для оформления заказа</span>
                 <EcoSelect value={rosskoForm.requisiteId} onChange={(event) => updateRosskoForm("requisiteId", event.target.value)} disabled={rosskoCheckout.company.length === 0}>
@@ -671,6 +670,7 @@ export default function IntegrationsClient({
 
 
         <div className="eco-tbank-settings-grid">
+          <label><span>Название подключения</span><EcoInput maxLength={100} value={tbankForm.name} onChange={(event) => updateTBankForm("name", event.target.value)} placeholder="Например, ИП — основной счёт" /></label>
           <label>
             <span>ИНН организации</span>
             <EcoInput value={tbankForm.inn} onChange={(event) => updateTBankForm("inn", event.target.value)} placeholder="10 или 12 цифр" />
