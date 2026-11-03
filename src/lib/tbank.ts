@@ -34,6 +34,9 @@ const TBANK_WEBHOOK_IPS = new Set([
 ]);
 
 type TBankSettingsInput = {
+  connectionId?: string;
+  createNew?: boolean;
+  name?: string;
   organizationId?: string;
   inn?: string;
   kpp?: string;
@@ -52,6 +55,7 @@ type TBankSettingsInput = {
 };
 
 type TBankDraftInput = {
+  connectionId?: string;
   fromAccountId?: string | null;
   fromAccountNumber?: string | null;
   paymentPurpose?: string | null;
@@ -237,6 +241,8 @@ function mapPayment(payment: SupplierInvoiceTBankPayment | null) {
 
 function mapIntegrationStatus(integration: (TBankIntegration & { accounts: TBankSettlementAccount[] }) | null) {
   return {
+    id: integration?.id ?? "",
+    name: integration?.name ?? "Основное подключение",
     configured: Boolean(integration),
     connected: Boolean(integration?.tokenEncrypted && (integration.debitAccountNumberEncrypted || integration.accounts.some((account) => account.isDefault))),
     organizationId: integration?.organizationId ?? getMessengerOrganizationId(),
@@ -250,7 +256,11 @@ function mapIntegrationStatus(integration: (TBankIntegration & { accounts: TBank
     maxSinglePayment: integration?.maxSinglePaymentCents == null ? "" : String(rubFromCents(integration.maxSinglePaymentCents)),
     dailyPaymentLimit: integration?.dailyPaymentLimitCents == null ? "" : String(rubFromCents(integration.dailyPaymentLimitCents)),
     allowedSupplierInns: parseAllowedInns(integration?.allowedSupplierInnsJson).join(", "),
-    webhookUrl: integration?.webhookUrl ?? defaultWebhookUrl(),
+    webhookUrl: (() => {
+      const url = integration?.webhookUrl ?? defaultWebhookUrl();
+      if (!url || !integration || integration.connectionKey === "main") return url;
+      try { const parsed = new URL(url); parsed.searchParams.set("connectionId", integration.id); return parsed.toString(); } catch { return url; }
+    })(),
     sandbox: integration?.sandbox ?? false,
     productionMode: integration?.productionMode ?? false,
     certificateConfigured: integration?.certificateConfigured ?? false,
@@ -271,16 +281,22 @@ function mapIntegrationStatus(integration: (TBankIntegration & { accounts: TBank
   };
 }
 
-async function getIntegration(organization = getMessengerOrganizationId()) {
-  return prisma.tBankIntegration.findUnique({
-    where: { branchId_organizationId: { branchId: getScopedBranchId(), organizationId: organization } },
-    include: {
-      accounts: {
-        where: { isActive: true },
-        orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
-      },
-    },
+async function getIntegration(organization = getMessengerOrganizationId(), connectionId?: string) {
+  return prisma.tBankIntegration.findFirst({
+    where: { branchId: getScopedBranchId(), organizationId: organization,
+      ...(connectionId ? { id: connectionId } : {}) },
+    orderBy: { createdAt: "asc" },
+    include: { accounts: { where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] } },
   });
+}
+
+export async function listTBankConnections() {
+  const connections = await prisma.tBankIntegration.findMany({
+    where: { branchId: getScopedBranchId(), organizationId: getMessengerOrganizationId() },
+    include: { accounts: { where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] } },
+    orderBy: { createdAt: "asc" },
+  });
+  return connections.map(mapIntegrationStatus);
 }
 
 async function auditTBank(input: {
@@ -323,8 +339,10 @@ function ensureFinanceStatusAccess(user?: User | null) {
   return null;
 }
 
-export async function getTBankIntegrationStatus() {
-  return mapIntegrationStatus(await getIntegration());
+export async function getTBankIntegrationStatus(connectionId?: string) {
+  const connections = await listTBankConnections();
+  const selected = connectionId ? connections.find((item) => item.id === connectionId) : connections[0];
+  return { ...(selected ?? mapIntegrationStatus(null)), connections };
 }
 
 export async function saveTBankIntegrationSettings(input: TBankSettingsInput, user: User) {
@@ -332,11 +350,16 @@ export async function saveTBankIntegrationSettings(input: TBankSettingsInput, us
   if (permissionError) return { ok: false as const, error: permissionError, status: 403 };
 
   const orgId = organizationId(input.organizationId);
+  const existing = input.createNew ? null : await getIntegration(orgId, input.connectionId);
+  if (input.connectionId && !existing && !input.createNew) return { ok: false as const, error: "Подключение не найдено в выбранном филиале.", status: 404 };
+  const connectionKey = existing?.connectionKey ?? (input.createNew ? crypto.randomUUID() : "main");
   const token = cleanText(input.token);
+  if (input.createNew && (!token || !cleanText(input.name))) return { ok: false as const, error: "Укажите название подключения и токен.", status: 400 };
   const debitAccountNumber = cleanDigits(input.debitAccountNumber);
   const maxSinglePaymentCents = centsFromRub(input.maxSinglePayment);
   const dailyPaymentLimitCents = centsFromRub(input.dailyPaymentLimit);
   const commonData = {
+    name: cleanText(input.name).slice(0, 100) || existing?.name || "Основное подключение",
     inn: cleanDigits(input.inn) || null,
     kpp: cleanDigits(input.kpp) || null,
     mode: input.mode === "direct_enabled" ? "direct_enabled" : "draft_only",
@@ -371,12 +394,13 @@ export async function saveTBankIntegrationSettings(input: TBankSettingsInput, us
     ...commonData,
     ...secretData,
     organizationId: orgId,
+    connectionKey,
     createdById: user.login,
     updatedById: user.login,
   };
 
   const integration = await prisma.tBankIntegration.upsert({
-    where: { branchId_organizationId: { branchId: getScopedBranchId(), organizationId: orgId } },
+    where: { branchId_organizationId_connectionKey: { branchId: getScopedBranchId(), organizationId: orgId, connectionKey } },
     update: updateData,
     create: createData,
     include: { accounts: true },
@@ -427,7 +451,7 @@ export async function saveTBankIntegrationSettings(input: TBankSettingsInput, us
     metadata: { tokenUpdated: Boolean(token), debitAccountUpdated: Boolean(debitAccountNumber) },
   });
 
-  return { ok: true as const, integration: await getTBankIntegrationStatus() };
+  return { ok: true as const, integration: await getTBankIntegrationStatus(integration.id) };
 }
 
 async function tokenForIntegration(integration: TBankIntegration) {
@@ -437,7 +461,7 @@ async function tokenForIntegration(integration: TBankIntegration) {
 async function callTBankJson(
   integration: TBankIntegration,
   path: string,
-  init: { method?: string; body?: unknown } = {}
+  init: { method?: string; body?: unknown; timeoutMs?: number } = {}
 ): Promise<TBankApiResponse> {
   if ((init.method ?? "GET").toUpperCase() !== "GET") {
     assertExternalSideEffectAllowed("payment_mutation");
@@ -453,6 +477,7 @@ async function callTBankJson(
   if (token) headers.Authorization = `Bearer ${token}`;
   const response = await fetch(`${apiBaseUrl(integration)}${path}`, {
     method: init.method ?? "GET",
+    signal: init.timeoutMs ? AbortSignal.timeout(init.timeoutMs) : undefined,
     headers,
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
     cache: "no-store",
@@ -617,6 +642,7 @@ async function resolveDebitAccount(
   const selected = input.fromAccountId
     ? integration.accounts.find((account) => account.id === input.fromAccountId)
     : integration.accounts.find((account) => account.isDefault) ?? integration.accounts[0];
+  if (input.fromAccountId && !selected) return { number: "", masked: "" };
   if (selected?.accountNumberEncrypted) {
     const number = decryptText(selected.accountNumberEncrypted);
     return { number, masked: selected.accountNumberMasked || maskAccount(number) };
@@ -640,7 +666,7 @@ async function buildDraftContext(
   if (permissionError) errors.push(permissionError);
 
   const [integration, invoice] = await Promise.all([
-    getIntegration(),
+    getIntegration(getMessengerOrganizationId(), input.connectionId),
     prisma.localSupplierInvoice.findUnique({
       where: { id: invoiceId },
       include: supplierInvoiceInclude,
@@ -1038,7 +1064,7 @@ export async function refreshTBankPaymentStatus(invoiceId: string, paymentId: st
   if (!payment.tbankDocumentId && !payment.tbankPaymentId) {
     return { ok: false as const, error: "T-Bank не вернул идентификатор документа для проверки статуса", status: 400 };
   }
-  const integration = await getIntegration(payment.organizationId);
+  const integration = await getIntegration(payment.organizationId, payment.integrationId ?? undefined);
   if (!integration) return { ok: false as const, error: "Настройки T-Bank не найдены", status: 400 };
   const body = payment.tbankDocumentId
     ? { documentIds: [payment.tbankDocumentId] }
@@ -1078,10 +1104,10 @@ function accountNumberFromBankRecord(record: Record<string, unknown>) {
   return cleanDigits(record.accountNumber) || cleanDigits(record.account) || cleanDigits(record.number);
 }
 
-export async function testTBankIntegration(user: User) {
+export async function testTBankIntegration(user: User, connectionId?: string) {
   const permissionError = ensureOwner(user);
   if (permissionError) return { ok: false as const, error: permissionError, status: 403 };
-  const integration = await getIntegration();
+  const integration = await getIntegration(getMessengerOrganizationId(), connectionId);
   if (!integration) return { ok: false as const, error: "Сначала сохраните настройки T-Bank.", status: 400 };
   if (!integration.tokenEncrypted && !integration.sandbox) return { ok: false as const, error: "Укажите токен T-API.", status: 400 };
   try {
@@ -1146,7 +1172,7 @@ export async function testTBankIntegration(user: User) {
       message: "Подключение T-Bank проверено.",
       metadata: { accountsFound: accountRecords.length },
     });
-    return { ok: true as const, message: "Подключение T-Bank проверено.", integration: await getTBankIntegrationStatus() };
+    return { ok: true as const, message: "Подключение T-Bank проверено.", integration: await getTBankIntegrationStatus(integration.id) };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Не удалось проверить подключение T-Bank.";
     await prisma.tBankIntegration.update({
@@ -1160,7 +1186,7 @@ export async function testTBankIntegration(user: User) {
       status: "error",
       message,
     });
-    return { ok: false as const, error: message, status: 502, integration: await getTBankIntegrationStatus() };
+    return { ok: false as const, error: message, status: 502, integration: await getTBankIntegrationStatus(integration.id) };
   }
 }
 
@@ -1195,8 +1221,9 @@ export async function processTBankPaymentWebhook(input: {
   payload: unknown;
   headers: Headers;
   sourceIp?: string | null;
+  connectionId?: string;
 }) {
-  const integration = await getIntegration();
+  const integration = await getIntegration(getMessengerOrganizationId(), input.connectionId);
   if (!integration) return { ok: true as const, matched: false, message: "T-Bank integration is not configured" };
   if (integration.webhookSecretEncrypted) {
     const expected = decryptText(integration.webhookSecretEncrypted);
@@ -1212,13 +1239,15 @@ export async function processTBankPaymentWebhook(input: {
     return { ok: false as const, status: 403, error: "Webhook IP is not allowed" };
   }
 
-  const eventId = webhookEventId(input.payload) || null;
+  const providerEventId = webhookEventId(input.payload);
+  const eventId = providerEventId ? (integration.connectionKey === "main" ? providerEventId : `${integration.id}:${providerEventId}`) : null;
   const tbankDocumentId = webhookDocumentId(input.payload) || null;
   const tbankPaymentId = webhookPaymentId(input.payload) || null;
   const providerStatus = extractProviderStatus(input.payload, { tbankDocumentId, tbankPaymentId }) || textField(asRecord(input.payload), ["status", "state"]);
   const payment = tbankDocumentId || tbankPaymentId
     ? await prisma.supplierInvoiceTBankPayment.findFirst({
         where: {
+          integrationId: integration.id,
           OR: [
             ...(tbankDocumentId ? [{ tbankDocumentId }] : []),
             ...(tbankPaymentId ? [{ tbankPaymentId }] : []),
@@ -1317,4 +1346,59 @@ export async function markSupplierInvoicePaidManually(invoiceId: string, user: U
   });
   invalidateWarehouseReadCaches();
   return { ok: true as const, invoice: mapSupplierInvoice(updated) };
+}
+
+
+// Read-only statement: never creates accounting documents or payments.
+export async function getTBankStatement(input: { dateFrom: string; dateTo: string; accountId?: string; connectionId?: string }, user: User) {
+  if (ensureFinanceStatusAccess(user)) return { ok: false as const, status: 403, error: "Недостаточно прав для просмотра банковских операций." };
+  const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+  if (!validDate(input.dateFrom) || !validDate(input.dateTo) || input.dateFrom > input.dateTo) {
+    return { ok: false as const, status: 400, error: "Укажите корректный период выписки." };
+  }
+  const integration = await getIntegration(getMessengerOrganizationId(), input.connectionId);
+  if (!integration?.tokenEncrypted) return { ok: false as const, status: 409, error: "Сохраните токен Т-Банка в настройках интеграции." };
+  const account = input.accountId
+    ? integration.accounts.find((item) => item.id === input.accountId)
+    : integration.accounts.find((item) => item.isDefault) ?? integration.accounts[0];
+  if (input.accountId && !account) return { ok: false as const, status: 404, error: "Счёт не найден в выбранном филиале." };
+  const number = decryptText(account?.accountNumberEncrypted ?? integration.debitAccountNumberEncrypted);
+  if (!/^\d{20}$/.test(number)) return { ok: false as const, status: 409, error: "Укажите расчётный счёт в настройках Т-Банка." };
+  try {
+    // This documented endpoint returns the complete statement (bank rejects >50,000 operations).
+    const query = new URLSearchParams({ accountNumber: number, from: input.dateFrom, till: input.dateTo });
+    const response = await callTBankJson(integration, `/api/v1/bank-statement?${query}`, { timeoutMs: 30_000 });
+    const body = asRecord(response.body);
+    if (!Array.isArray(body.operation)) throw new Error("Invalid statement");
+    const money = (value: unknown) => {
+      if ((typeof value !== "number" && typeof value !== "string") || value === "") throw new Error("Invalid amount");
+      const cents = Math.round(Number(value) * 100);
+      if (!Number.isSafeInteger(cents)) throw new Error("Invalid amount");
+      return cents;
+    };
+    const operations = body.operation.map((value: unknown) => {
+      const row = asRecord(value);
+      const incoming = cleanText(row.recipientAccount) === number;
+      const outgoing = cleanText(row.payerAccount) === number;
+      if (!incoming && !outgoing) throw new Error("Unknown operation direction");
+      return {
+        id: cleanText(row.operationId) || cleanText(row.id),
+        date: cleanText(row.date),
+        direction: incoming && outgoing ? "internal" : incoming ? "income" : "expense",
+        amountCents: Math.abs(money(row.amount)),
+        counterparty: incoming ? cleanText(row.payerName) : cleanText(row.recipient),
+        inn: incoming ? cleanText(row.payerInn) : cleanText(row.recipientInn),
+        purpose: cleanText(row.paymentPurpose),
+      };
+    }).sort((a, b) => b.date.localeCompare(a.date));
+    return { ok: true as const, statement: {
+      accountMasked: maskAccount(number), currency: account?.currency ?? "RUB",
+      dateFrom: input.dateFrom, dateTo: input.dateTo, fetchedAt: new Date().toISOString(),
+      openingCents: money(body.saldoIn), closingCents: money(body.saldoOut),
+      incomeCents: money(body.income), expenseCents: money(body.outcome), operations,
+    } };
+  } catch (error) {
+    return { ok: false as const, status: 502, error: error instanceof TBankApiError
+      ? tbankPublicError(error.status, {}) : "Не удалось получить полную выписку Т-Банка. Попробуйте сократить период или повторите запрос позже." };
+  }
 }

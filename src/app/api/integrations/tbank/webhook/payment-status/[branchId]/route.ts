@@ -14,7 +14,7 @@ export async function POST(
     assertExternalSideEffectAllowed("webhook_processing");
     const { branchId } = await context.params;
     const result = await runForBranch(branchId, () =>
-      processTBankPaymentWebhook({ payload, headers: request.headers, sourceIp })
+      processTBankPaymentWebhook({ payload, connectionId: request.nextUrl.searchParams.get("connectionId") ?? undefined, headers: request.headers, sourceIp })
     );
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
     return NextResponse.json(result);
