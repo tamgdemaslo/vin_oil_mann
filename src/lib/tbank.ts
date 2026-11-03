@@ -1416,7 +1416,9 @@ export async function getTBankDashboardBalances() {
     const number = decryptText(integration.debitAccountNumberEncrypted || account?.accountNumberEncrypted);
     const accountHash = /^\d{20}$/.test(number) ? hashSecret(number) : null;
     const result = { accountHash, cents: null as number | null, message: 'Проверьте подключение Т-Банка', at: null as string | null };
-    if (!accountHash || !integration.tokenEncrypted || integration.sandbox) return result;
+    // Read-only balances use the same authenticated endpoint as connection checks.
+    // The sandbox/payment flags must not suppress reading the configured account.
+    if (!accountHash || !integration.tokenEncrypted) return result;
     try {
       const response = await callTBankJson(integration, '/api/v4/bank-accounts', { timeoutMs: 12_000 });
       const records = recordsFromUnknown(response.body).filter(row => accountNumberFromBankRecord(row) === number);

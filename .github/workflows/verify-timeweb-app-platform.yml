@@ -59,7 +59,7 @@ jobs:
         run: npm run test:ai-tool-loop-policy
 
       - name: Verify T-Bank connections and account statements
-        run: node scripts/test-tbank-connections.mjs && node scripts/test-tbank-statement.mjs && node scripts/test-tbank-transport.mjs && node scripts/test-dashboard-money.mjs
+        run: node scripts/test-tbank-connections.mjs && node scripts/test-tbank-statement.mjs && node scripts/test-tbank-transport.mjs && node scripts/test-dashboard-money.mjs && node scripts/test-tbank-dashboard-balance.mjs
 
       - name: Verify branch operational integrations
         run: npm run test:branch-operational-integrations
