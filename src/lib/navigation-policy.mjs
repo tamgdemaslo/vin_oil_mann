@@ -131,6 +131,7 @@ export function resolveNavigationForUser({
   if (canViewFinance) {
     const financeItems = [
       item("/finance", "Обзор", "P&L, движение денег и план/факт."),
+      branchOnly("/finance/bank", "Операции по счёту", "Т-Банк: поступления, списания и выписки."),
       branchOnly("/cash", "Касса", "Смена, расходы и закрытие."),
       branchOnly("/finance/invoices", "Счета поставщиков", "Документы из приёмок."),
       item("/finance?tab=expenses", "Расходы", "Статьи и динамика расходов."),
