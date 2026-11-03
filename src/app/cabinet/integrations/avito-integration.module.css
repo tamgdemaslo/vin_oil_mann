@@ -36,3 +36,5 @@
 .linkSetup li > svg { color: #256139; flex-shrink: 0; }
 .linkSetup li a { color: var(--eco-rust-hover); }
 .linkSetup textarea { display: block; margin: 8px 0 12px; max-width: 100%; }
+
+.workflow > .credentials { margin-top: 16px; }

@@ -46,7 +46,7 @@ const historyLabels: Record<string, string> = {
   settings_saved: "Настройки", listing_saved: "Объявление", selection_saved: "Выбор товаров", feed_generated: "Файл сформирован",
   feed_fetched: "Файл выдан по ссылке", feed_failed: "Выгрузка остановлена", connection_checked: "Подключение проверено",
   feed_connected: "Файл подключён", upload_requested: "Загрузка запрошена", report_received: "Отчёт Авито",
-  test_failed: "Ошибка подключения", connect_failed: "Ошибка подключения файла", upload_failed: "Ошибка запуска", reports_failed: "Ошибка получения отчёта",
+  test_failed: "Ошибка проверки API", connect_failed: "Ошибка подключения ссылки через API", upload_failed: "Ошибка запуска через API", reports_failed: "Ошибка получения отчёта через API",
 };
 
 export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, initialTab = "products", initialData }: {
