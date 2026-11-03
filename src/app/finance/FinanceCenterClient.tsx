@@ -291,6 +291,7 @@ export default function FinanceCenterClient({ initialTab = "overview" }: Finance
           </p>
         </div>
         <div className="eco-fc-head-actions">
+          <Link className="eco-btn" href="/finance/bank">Операции по счёту</Link>
           <button type="button" className="eco-btn eco-btn--primary" onClick={() => void load("recalculate")} disabled={state === "loading"}>
             <Calculator className="eco-icon" aria-hidden />
             Пересчитать

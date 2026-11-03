@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { getTBankIntegrationStatus, saveTBankIntegrationSettings } from "@/lib/tbank";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const access = await requireBranchApi({ allowAll: false, requireActive: true });
   if (!access.ok) return access.response;
   return runWithBranchApiContext(access.context, async () =>
-    NextResponse.json(await getTBankIntegrationStatus())
+    NextResponse.json(await getTBankIntegrationStatus(request.nextUrl.searchParams.get("connectionId") ?? undefined))
   );
 }
 

@@ -4638,6 +4638,8 @@ model TBankIntegration {
   branchId                    String    @default("branch-main") @map("branch_id")
   id                          String    @id @default(cuid())
   organizationId              String    @default("default") @map("organization_id")
+  connectionKey               String    @default("main") @map("connection_key")
+  name                        String    @default("Основное подключение")
   inn                         String?
   kpp                         String?
   tokenEncrypted              String?   @map("token_encrypted") @db.Text
@@ -4667,7 +4669,7 @@ model TBankIntegration {
   accounts TBankSettlementAccount[]
   payments SupplierInvoiceTBankPayment[]
 
-  @@unique([branchId, organizationId])
+  @@unique([branchId, organizationId, connectionKey])
   @@index([branchId])
   @@map("tbank_integrations")
 }

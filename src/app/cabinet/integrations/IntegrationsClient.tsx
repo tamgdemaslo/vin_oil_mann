@@ -10,6 +10,9 @@ import OperationalIntegrationsPanel from "./OperationalIntegrationsPanel";
 import AvitoIntegrationPanel from "./AvitoIntegrationPanel";
 
 type TBankStatus = {
+  id: string;
+  name: string;
+  connections?: TBankStatus[];
   configured: boolean;
   connected: boolean;
   inn: string;
@@ -39,6 +42,7 @@ type TBankStatus = {
 };
 
 type TBankForm = {
+  name: string;
   inn: string;
   kpp: string;
   debitAccountNumber: string;
@@ -98,6 +102,7 @@ type RunResult = {
 };
 
 const DEFAULT_TBANK_FORM: TBankForm = {
+  name: "",
   inn: "",
   kpp: "",
   debitAccountNumber: "",
@@ -167,6 +172,8 @@ export default function IntegrationsClient({
   employeesConfigured: boolean;
 }) {
   const [tbank, setTbank] = useState<TBankStatus | null>(null);
+  const [tbankConnections, setTbankConnections] = useState<TBankStatus[]>([]);
+  const [newTbank, setNewTbank] = useState(false);
   const [tbankError, setTbankError] = useState<string | null>(null);
   const [tbankForm, setTbankForm] = useState<TBankForm>(DEFAULT_TBANK_FORM);
   const [rossko, setRossko] = useState<RosskoStatus | null>(null);
@@ -190,6 +197,7 @@ export default function IntegrationsClient({
       const data = await safeReadJson<TBankStatus & { error?: string }>(tbankRes.value);
       if (tbankRes.value.ok && data) {
         setTbank(data);
+        setTbankConnections(data.connections ?? []);
         setTbankError(null);
       } else {
         setTbankError(safeMessage(data?.error, "Статус T-Bank временно недоступен"));
@@ -220,6 +228,7 @@ export default function IntegrationsClient({
   useEffect(() => {
     if (!tbank) return;
     setTbankForm({
+      name: tbank.name,
       inn: tbank.inn,
       kpp: tbank.kpp,
       debitAccountNumber: "",
@@ -266,13 +275,15 @@ export default function IntegrationsClient({
       const response = await fetch("/api/integrations/tbank/status", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(tbankForm),
+        body: JSON.stringify({ ...tbankForm, connectionId: newTbank ? undefined : tbank?.id, createNew: newTbank }),
       });
       const data = await safeReadJson<TBankStatus & { error?: string }>(response);
       if (!response.ok || !data?.configured) {
         throw new Error(safeMessage(data?.error, "Настройки T-Bank не сохранены."));
       }
       setTbank(data);
+      setTbankConnections(data.connections ?? []);
+      setNewTbank(false);
       setRunResult({
         title: "T-Bank",
         message: "Настройки интеграции сохранены.",
@@ -293,13 +304,13 @@ export default function IntegrationsClient({
     setRunning("tbank-test");
     setRunResult(null);
     try {
-      const response = await fetch("/api/integrations/tbank/test", { method: "POST" });
+      const response = await fetch(`/api/integrations/tbank/test?${new URLSearchParams({ connectionId: tbank?.id ?? "" })}`, { method: "POST" });
       const data = await safeReadJson<{ ok?: boolean; message?: string; error?: string; integration?: TBankStatus }>(response);
       if (!response.ok || !data?.ok) {
         if (data?.integration) setTbank(data.integration);
         throw new Error(safeMessage(data?.error, "Не удалось проверить T-Bank."));
       }
-      if (data.integration) setTbank(data.integration);
+      if (data.integration) { setTbank(data.integration); setTbankConnections(data.integration.connections ?? []); }
       setRunResult({
         title: "T-Bank",
         message: data.message || "Подключение T-Bank проверено.",
@@ -538,6 +549,7 @@ export default function IntegrationsClient({
               <div className="eco-form-error eco-tbank-settings-error">В аккаунте ROSSKO не найдены реквизиты. Добавьте организацию и реквизиты в личном кабинете ROSSKO либо обратитесь к менеджеру ROSSKO.</div>
             )}
             <div className="eco-tbank-settings-grid">
+          <label><span>Название подключения</span><EcoInput maxLength={100} value={tbankForm.name} onChange={(event) => updateTBankForm("name", event.target.value)} placeholder="Например, ИП — основной счёт" /></label>
               <label>
                 <span>Организация для оформления заказа</span>
                 <EcoSelect value={rosskoForm.requisiteId} onChange={(event) => updateRosskoForm("requisiteId", event.target.value)} disabled={rosskoCheckout.company.length === 0}>
@@ -632,8 +644,8 @@ export default function IntegrationsClient({
         <div className="eco-card__head">
           <div>
             <div className="eco-page-kicker">T-Bank</div>
-            <h2 className="eco-stock-doc-title">Оплата счетов поставщиков</h2>
-            <p>Безопасный режим создаёт черновик платёжного поручения, а подтверждение остаётся в T-Business.</p>
+            <h2 className="eco-stock-doc-title">Подключения Т-Банка</h2>
+            <p>Добавьте отдельное подключение для каждого токена. Проверка загрузит доступные ему расчётные счета.</p>
           </div>
           <EcoBadge tone={tbankTone} dot>
             {tbank?.connected ? "подключено" : tbank?.configured ? "требует проверки" : "не настроено"}
@@ -641,6 +653,22 @@ export default function IntegrationsClient({
         </div>
 
         {tbankError && <div className="eco-form-error eco-tbank-settings-error">{tbankError}</div>}
+        <div className="eco-form-actions">
+          <label><span>Подключение Т-Банка</span>
+            <EcoSelect aria-label="Подключение Т-Банка" value={newTbank ? "new" : tbank?.id ?? ""} disabled={running !== null} onChange={(event) => {
+              setNewTbank(false); setTbank(tbankConnections.find((item) => item.id === event.target.value) ?? null); setRunResult(null);
+            }}>
+              {tbankConnections.length === 0 && <option value="">Основное подключение</option>}
+              {tbankConnections.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.debitAccountNumberMasked || "счёт не выбран"}</option>)}
+              {newTbank && <option value="new">Новое подключение</option>}
+            </EcoSelect>
+          </label>
+          <EcoButton type="button" disabled={running !== null || newTbank} onClick={() => {
+            setNewTbank(true); setTbank(null); setTbankForm({ ...DEFAULT_TBANK_FORM, name: `Подключение ${tbankConnections.length + 1}` }); setRunResult(null);
+          }}>Добавить подключение</EcoButton>
+        </div>
+        <p>У каждого подключения свой токен и список расчётных счетов. Выбор подключения открывает его настройки.</p>
+
 
         <div className="eco-tbank-settings-grid">
           <label>
@@ -718,7 +746,7 @@ export default function IntegrationsClient({
             <Building2 size={16} />
             {running === "tbank-save" ? "Сохраняем..." : "Сохранить T-Bank"}
           </EcoButton>
-          <EcoButton type="button" onClick={() => void testTBankConnection()} disabled={running !== null || !tbank?.configured}>
+          <EcoButton type="button" onClick={() => void testTBankConnection()} disabled={running !== null || newTbank || !tbank?.configured}>
             <Landmark size={16} />
             {running === "tbank-test" ? "Проверяем..." : "Проверить подключение"}
           </EcoButton>
