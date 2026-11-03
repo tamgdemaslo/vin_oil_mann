@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import HomeDashboard from "./HomeDashboard";
 import { requireAuthenticatedSession } from "@/lib/app-access";
 import { getBranchContext } from "@/lib/branch-context";
@@ -11,7 +12,8 @@ export default async function Home({
   const session = await requireAuthenticatedSession("/");
   const sp = await searchParams;
   const fallbackDashboardAccess = resolveDashboardVariant({ userRole: session.user.role });
-  const branchContext = await getBranchContext({ allowAll: false, requireActive: false }).catch(() => null);
+  const branchContext = await getBranchContext({ allowAll: true, requireActive: false }).catch(() => null);
+  if (branchContext?.mode === "all") redirect("/owner");
   const dashboardAccess = branchContext
     ? await resolveDashboardAccessForBranch(branchContext)
     : fallbackDashboardAccess;
