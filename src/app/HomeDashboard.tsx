@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from "react";
+import MoneyOverview from "@/components/dashboard/MoneyOverview";
 import EmployeeSalesPlanCard from "@/components/dashboard/EmployeeSalesPlanCard";
 import MyPayrollCard, { type EmployeePayrollData, type EmployeePayrollPeriod } from "@/components/dashboard/MyPayrollCard";
 import { type EcoBadgeTone } from "@/components/platform/EcoUI";
@@ -1615,6 +1616,7 @@ export default function HomeDashboard({
         {loading ? "Загружаем операционную сводку." : refreshing ? "Обновляем операционную сводку." : loadState === "stale" ? "Показаны ранее загруженные данные." : "Операционная сводка обновлена."}
       </div>
       <TelegramDashboardNotice />
+      {role === "owner" && <MoneyOverview />}
       <section className="eco-mobile-control" aria-label={`Мобильный контроль дня для ${userName}`}>
         <header className="eco-mobile-top">
           <div>

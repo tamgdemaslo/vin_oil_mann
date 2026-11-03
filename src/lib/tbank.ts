@@ -1403,3 +1403,32 @@ export async function getTBankStatement(input: { dateFrom: string; dateTo: strin
       ? tbankPublicError(error.status, {}) : "Не удалось получить полную выписку Т-Банка. Попробуйте сократить период или повторите запрос позже." };
   }
 }
+
+/** Read only the explicitly configured branch account; discovery must not add other accounts to the dashboard. */
+export async function getTBankDashboardBalances() {
+  const integrations = await prisma.tBankIntegration.findMany({
+    where: { branchId: getScopedBranchId(), organizationId: getMessengerOrganizationId() },
+    include: { accounts: { where: { isActive: true }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] } },
+    orderBy: { createdAt: 'asc' },
+  });
+  return Promise.all(integrations.map(async integration => {
+    const account = integration.accounts.find(item => item.isDefault) ?? integration.accounts[0];
+    const number = decryptText(integration.debitAccountNumberEncrypted || account?.accountNumberEncrypted);
+    const accountHash = /^\d{20}$/.test(number) ? hashSecret(number) : null;
+    const result = { accountHash, cents: null as number | null, message: 'Проверьте подключение Т-Банка', at: null as string | null };
+    if (!accountHash || !integration.tokenEncrypted || integration.sandbox) return result;
+    try {
+      const response = await callTBankJson(integration, '/api/v4/bank-accounts', { timeoutMs: 12_000 });
+      const records = recordsFromUnknown(response.body).filter(row => accountNumberFromBankRecord(row) === number);
+      if (records.length !== 1) return { ...result, message: 'Настроенный счёт не найден в Т-Банке' };
+      const currency = String(records[0].currency ?? '').toUpperCase();
+      if (!['RUB','643','810'].includes(currency)) return { ...result, message: 'Для сводки нужен рублёвый счёт' };
+      // T-API v4: balance.otb is the available balance, expressed in rubles.
+      const amount = asRecord(records[0].balance).otb;
+      if ((typeof amount !== 'string' && typeof amount !== 'number') || !/^-?\d+(\.\d{1,2})?$/.test(String(amount))) throw new Error('Invalid bank balance');
+      const cents = Math.round(Number(amount) * 100);
+      if (!Number.isSafeInteger(cents)) throw new Error('Invalid bank balance');
+      return { accountHash, cents, message: `Т-Банк · ${maskAccount(number)}`, at: new Date().toISOString() };
+    } catch { return { ...result, message: 'Т-Банк недоступен. Повторите обновление.' }; }
+  }));
+}
