@@ -38,10 +38,10 @@ async function requireOwner() {
   return { ok: true as const, session };
 }
 
-async function resolveTarget(branchId: string, targetType: PieceworkTargetType, targetId: string): Promise<{ id: string; name: string; aliases?: string[] } | null> {
+async function resolveTarget(branchId: string, targetType: PieceworkTargetType, targetId: string): Promise<{ id: string; name: string; aliases?: string[]; archived?: boolean } | null> {
   if (targetType === "service") {
     const service = findServiceIdentity(await loadPayrollServiceIdentities(branchId), targetId);
-    return service && !service.archived ? { id: service.id, name: service.name, aliases: serviceIdentityIds(service) } : null;
+    return service ? { id: service.id, name: service.name, aliases: serviceIdentityIds(service), archived: service.archived } : null;
   }
   return prisma.localCatalogGroup.findFirst({
     where: { id: targetId, branchId, kind: "product", archived: false },
@@ -121,6 +121,9 @@ export async function POST(request: NextRequest) {
     if (settings.employmentEnd) return NextResponse.json({ error: "Сотрудник уволен. Его правила сохранены в истории." }, { status: 400 });
     const rule: EmployeeRule = { targetType: targetType as EmployeeRule["targetType"], targetId: target.id, targetName: target.name, mode, fixedCents: mode === "fixed" ? fixedCents : null, percentBasisPoints: mode === "percent" ? percentBasisPoints : null };
     const aliases = new Set([rule.targetId, ...("aliases" in target ? target.aliases ?? [] : [])]);
+    if ("archived" in target && target.archived && !(settings.pieceworkRules ?? []).some(item => item.targetType === rule.targetType && aliases.has(item.targetId))) {
+      return NextResponse.json({ error: "Для архивной услуги можно редактировать только уже существующее правило" }, { status: 400 });
+    }
     const rules = (settings.pieceworkRules ?? []).filter((item) => item.targetType !== rule.targetType || !aliases.has(item.targetId));
     rules.push(rule);
     const next = { ...settings, individualPiecework: true, pieceworkRules: rules };

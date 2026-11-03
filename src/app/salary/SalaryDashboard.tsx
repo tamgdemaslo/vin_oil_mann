@@ -3554,6 +3554,7 @@ export default function SalaryDashboard({
                               <td>
                                 <strong>{rule.targetName}</strong>
                                 <small>{rule.targetId}</small>
+                                {rule.targetType === "service" && !ruleTargets.services.some(target => target.id === rule.targetId) && <small>Услуга в архиве или недоступна в каталоге. Правило сохранено для истории; для новых продаж добавьте актуальную услугу.</small>}
                               </td>
                               <td>
                                 <EcoSelect

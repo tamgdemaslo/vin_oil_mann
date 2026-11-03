@@ -43,7 +43,7 @@ const deps = {
   "@/lib/auth": { getSession: async () => ({ user: actor }), canonicalizeLogin: (login) => login.trim().toLowerCase() },
   "@/lib/branch-api": { requireBranchApi: async () => ({ ok: true, context: { branchId } }) },
   "@/lib/branch-context": { requireBranchContext: async () => ({ canManageBranches: allowed, businessGroupId: "group-a", user: actor }), branchErrorResponse: (error) => ({ error: error.message, status: 500 }) },
-  "@/lib/payroll-service-identity": { ...identity, loadPayrollServiceIdentities: async (id) => id === branchId ? [{id:"service-a",name:"Oil service",archived:false,raw:{meta:{uuidHref:"https://online.moysklad.ru/app/#good/edit?id=legacy-service"}}}] : [] },
+  "@/lib/payroll-service-identity": { ...identity, loadPayrollServiceIdentities: async (id) => id === branchId ? [{id:"service-a",name:"Oil service",archived:false,raw:{meta:{uuidHref:"https://online.moysklad.ru/app/#good/edit?id=legacy-service"}}},{id:"archived-service",name:"Archived",archived:true,raw:{id:"old-archived-service"}}] : [] },
   "@/lib/employee-pay-settings": helpers,
   "@/lib/payroll": { invalidatePayrollCache() {} },
   "@/lib/date-time": { toServiceDateInput: () => "2026-10-29" },
@@ -87,6 +87,11 @@ assert.equal(member.paySettingsJson.pieceworkRules[0].percentBasisPoints,2000);
 assert.equal((await rules.POST(request({ ...rule,targetType:"service",targetId:"service-a",percentBasisPoints:5000 }))).status,200);
 assert.equal(member.paySettingsJson.pieceworkRules.length,1);
 assert.equal(member.paySettingsJson.pieceworkRules[0].percentBasisPoints,5000);
+assert.equal((await rules.POST(request({...rule,targetType:"service",targetId:"old-archived-service"}))).status,400,"new rules cannot target archived catalog services");
+member.paySettingsJson.pieceworkRules.push({...legacyRule,targetId:"old-archived-service"});
+assert.equal((await rules.POST(request({...rule,targetType:"service",targetId:"old-archived-service"}))).status,200,"existing archived rules remain editable without blocking the batch");
+assert.equal(member.paySettingsJson.pieceworkRules.filter(r=>r.targetId==="archived-service").length,1);
+member.paySettingsJson.pieceworkRules=member.paySettingsJson.pieceworkRules.filter(r=>r.targetId!=="archived-service");
 const deleted=await rules.DELETE({nextUrl:new URL("https://example.test/api/piecework-rules?employeeLogin=employee&targetType=service&targetId=legacy-service&role=master")});
 assert.equal(deleted.status,200);
 assert.equal(member.paySettingsJson.pieceworkRules.length,0,"deleting through a saved alias removes the canonical rule");
@@ -144,7 +149,7 @@ const calc = loadRoute("../src/lib/payroll.ts", {
   "@/lib/payroll-cashout-period": await jiti.import("../src/lib/payroll-cashout-period.ts"),
   "@/lib/db": { prisma: payrollPrisma },
   "@/lib/payroll-employees": { listPayrollEmployees: async () => employees },
-  "@/lib/payroll-service-identity": { ...identity, loadPayrollServiceIdentities: async (id) => id === branchId ? [{id:"service-a",name:"Oil service",archived:false,raw:{meta:{uuidHref:"https://online.moysklad.ru/app/#good/edit?id=legacy-service"}}}] : [] },
+  "@/lib/payroll-service-identity": { ...identity, loadPayrollServiceIdentities: async (id) => id === branchId ? [{id:"service-a",name:"Oil service",archived:false,raw:{meta:{uuidHref:"https://online.moysklad.ru/app/#good/edit?id=legacy-service"}}},{id:"archived-service",name:"Archived",archived:true,raw:{id:"old-archived-service"}}] : [] },
   "@/lib/employee-pay-settings": helpers,
   "@/lib/shift-rates": { getShiftRateCents: async () => 10000 },
   "@/lib/auth": { canonicalizeLogin: (login) => login.toLowerCase(), getLoginVariants: (login) => [login] },
