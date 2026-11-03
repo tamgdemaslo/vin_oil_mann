@@ -5,11 +5,12 @@ import ts from "typescript";
 import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url);
 const helpers = await jiti.import("../src/lib/employee-pay-settings.ts");
+const identity = loadRoute("../src/lib/payroll-service-identity.ts", {"@/lib/db":{prisma:{}}});
 const json = (body, init) => ({ status: init?.status ?? 200, body });
 function loadRoute(path, dependencies) {
   const source = ts.transpileModule(fs.readFileSync(new URL(path, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const exports = {};
-  vm.runInNewContext(source, { exports, require(id) { if (!(id in dependencies)) throw new Error(`Unexpected dependency: ${id}`); return dependencies[id]; }, Date, Number, Set, Map });
+  vm.runInNewContext(source, { exports, require(id) { if (!(id in dependencies)) throw new Error(`Unexpected dependency: ${id}`); return dependencies[id]; }, Date, Number, Set, Map, URL, URLSearchParams });
   return exports;
 }
 let member;
@@ -42,6 +43,7 @@ const deps = {
   "@/lib/auth": { getSession: async () => ({ user: actor }), canonicalizeLogin: (login) => login.trim().toLowerCase() },
   "@/lib/branch-api": { requireBranchApi: async () => ({ ok: true, context: { branchId } }) },
   "@/lib/branch-context": { requireBranchContext: async () => ({ canManageBranches: allowed, businessGroupId: "group-a", user: actor }), branchErrorResponse: (error) => ({ error: error.message, status: 500 }) },
+  "@/lib/payroll-service-identity": { ...identity, loadPayrollServiceIdentities: async (id) => id === branchId ? [{id:"service-a",name:"Oil service",archived:false,raw:{meta:{uuidHref:"https://online.moysklad.ru/app/#good/edit?id=legacy-service"}}}] : [] },
   "@/lib/employee-pay-settings": helpers,
   "@/lib/payroll": { invalidatePayrollCache() {} },
   "@/lib/date-time": { toServiceDateInput: () => "2026-10-29" },
@@ -49,6 +51,18 @@ const deps = {
   "@/lib/payroll-employees": {},
   "@/lib/change-log": { logChange: async () => { audit++; } },
 };
+const catalogIdentity = [{id:"current",name:"Renamed service",archived:false,raw:{id:"import-service",meta:{href:"https://api.moysklad.ru/api/remap/1.2/entity/service/import-service",uuidHref:"https://online.moysklad.ru/app/#good/edit?id=old-product"}}}];
+assert.equal(identity.findServiceIdentity(catalogIdentity,"old-product").id,"current");
+assert.equal(identity.findServiceIdentity(catalogIdentity,"import-service").id,"current");
+assert.equal(identity.findServiceIdentity(catalogIdentity,"Renamed service"),undefined,"names never identify imported services");
+assert.equal(identity.findServiceIdentity([...catalogIdentity,{...catalogIdentity[0],id:"duplicate"}],"old-product"),undefined,"ambiguous imported IDs cannot select a financial rule");
+const legacyRule = {targetType:"service",targetId:"old-product",targetName:"Old name",mode:"fixed",fixedCents:30000,percentBasisPoints:null};
+const canonicalRule = {...legacyRule,targetId:"current",fixedCents:50000};
+assert.equal(identity.normalizeEmployeeServiceRules({pieceworkRules:[legacyRule]},catalogIdentity).pieceworkRules[0].targetId,"current");
+const preferred=identity.normalizeEmployeeServiceRules({retainedSetting:123,pieceworkRules:[legacyRule,canonicalRule]},catalogIdentity);
+assert.equal(preferred.pieceworkRules.length,1);
+assert.equal(preferred.pieceworkRules[0].fixedCents,50000,"an explicitly configured current-ID rule retains precedence");
+assert.equal(preferred.retainedSetting,123);
 const rules = loadRoute("../src/app/api/piecework-rules/route.ts", deps);
 const members = loadRoute("../src/app/api/branches/[branchId]/members/[membershipId]/route.ts", deps);
 const request = (body) => ({ json: async () => body });
@@ -64,6 +78,18 @@ assert.equal((await rules.POST(request({ ...rule, targetType: "service", targetI
 assert.equal(writes, 0);
 assert.equal((await rules.POST(request({ ...rule, percentBasisPoints: 10001 }))).status, 400);
 assert.equal(writes, 0);
+reset();
+member.paySettingsJson.pieceworkRules = [{targetType:"service",targetId:"legacy-service",targetName:"Old",mode:"fixed",fixedCents:30000,percentBasisPoints:null}];
+assert.equal((await rules.POST(request({ ...rule, targetType:"service",targetId:"legacy-service",percentBasisPoints:2000 }))).status, 200);
+assert.equal(member.paySettingsJson.pieceworkRules.length,1,"saving an imported rule replaces its legacy identity instead of duplicating it");
+assert.equal(member.paySettingsJson.pieceworkRules[0].targetId,"service-a");
+assert.equal(member.paySettingsJson.pieceworkRules[0].percentBasisPoints,2000);
+assert.equal((await rules.POST(request({ ...rule,targetType:"service",targetId:"service-a",percentBasisPoints:5000 }))).status,200);
+assert.equal(member.paySettingsJson.pieceworkRules.length,1);
+assert.equal(member.paySettingsJson.pieceworkRules[0].percentBasisPoints,5000);
+const deleted=await rules.DELETE({nextUrl:new URL("https://example.test/api/piecework-rules?employeeLogin=employee&targetType=service&targetId=legacy-service&role=master")});
+assert.equal(deleted.status,200);
+assert.equal(member.paySettingsJson.pieceworkRules.length,0,"deleting through a saved alias removes the canonical rule");
 actor.role = "master";
 assert.equal((await rules.POST(request(rule))).status, 403);
 assert.equal((await patch({ employmentEnd: "2026-10-20" })).status, 403);
@@ -118,6 +144,7 @@ const calc = loadRoute("../src/lib/payroll.ts", {
   "@/lib/payroll-cashout-period": await jiti.import("../src/lib/payroll-cashout-period.ts"),
   "@/lib/db": { prisma: payrollPrisma },
   "@/lib/payroll-employees": { listPayrollEmployees: async () => employees },
+  "@/lib/payroll-service-identity": { ...identity, loadPayrollServiceIdentities: async (id) => id === branchId ? [{id:"service-a",name:"Oil service",archived:false,raw:{meta:{uuidHref:"https://online.moysklad.ru/app/#good/edit?id=legacy-service"}}}] : [] },
   "@/lib/employee-pay-settings": helpers,
   "@/lib/shift-rates": { getShiftRateCents: async () => 10000 },
   "@/lib/auth": { canonicalizeLogin: (login) => login.toLowerCase(), getLoginVariants: (login) => [login] },

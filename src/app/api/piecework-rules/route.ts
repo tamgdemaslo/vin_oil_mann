@@ -15,6 +15,7 @@ import { canonicalizeLogin } from "@/lib/auth";
 import { listPayrollEmployees } from "@/lib/payroll-employees";
 import { readEmployeePaySettings, type EmployeeRule } from "@/lib/employee-pay-settings";
 import { invalidatePayrollCache } from "@/lib/payroll";
+import { findServiceIdentity, loadPayrollServiceIdentities, serviceIdentityIds } from "@/lib/payroll-service-identity";
 
 function isRole(value: string): value is PieceworkRole {
   return value === "master" || value === "admin";
@@ -37,12 +38,10 @@ async function requireOwner() {
   return { ok: true as const, session };
 }
 
-async function resolveTarget(branchId: string, targetType: PieceworkTargetType, targetId: string) {
+async function resolveTarget(branchId: string, targetType: PieceworkTargetType, targetId: string): Promise<{ id: string; name: string; aliases?: string[] } | null> {
   if (targetType === "service") {
-    return prisma.localProduct.findFirst({
-      where: { id: targetId, branchId, entityType: "service", archived: false },
-      select: { id: true, name: true },
-    });
+    const service = findServiceIdentity(await loadPayrollServiceIdentities(branchId), targetId);
+    return service && !service.archived ? { id: service.id, name: service.name, aliases: serviceIdentityIds(service) } : null;
   }
   return prisma.localCatalogGroup.findFirst({
     where: { id: targetId, branchId, kind: "product", archived: false },
@@ -121,7 +120,8 @@ export async function POST(request: NextRequest) {
     const settings = readEmployeePaySettings(member.paySettingsJson);
     if (settings.employmentEnd) return NextResponse.json({ error: "Сотрудник уволен. Его правила сохранены в истории." }, { status: 400 });
     const rule: EmployeeRule = { targetType: targetType as EmployeeRule["targetType"], targetId: target.id, targetName: target.name, mode, fixedCents: mode === "fixed" ? fixedCents : null, percentBasisPoints: mode === "percent" ? percentBasisPoints : null };
-    const rules = (settings.pieceworkRules ?? []).filter((item) => item.targetType !== rule.targetType || item.targetId !== rule.targetId);
+    const aliases = new Set([rule.targetId, ...("aliases" in target ? target.aliases ?? [] : [])]);
+    const rules = (settings.pieceworkRules ?? []).filter((item) => item.targetType !== rule.targetType || !aliases.has(item.targetId));
     rules.push(rule);
     const next = { ...settings, individualPiecework: true, pieceworkRules: rules };
     const saved = await prisma.$transaction(async (tx) => {
@@ -193,7 +193,9 @@ export async function DELETE(request: NextRequest) {
     if (settings.employmentEnd) return NextResponse.json({ error: "Правила уволенного сотрудника доступны только для просмотра" }, { status: 400 });
     const reset = request.nextUrl.searchParams.get("reset") === "true";
     if (reset) return NextResponse.json({error:"Общие правила удалены. Изменяйте индивидуальные начисления сотрудника."},{status:400});
-    const next = { ...settings, individualPiecework: !reset, pieceworkRules: reset ? [] : (settings.pieceworkRules ?? []).filter((rule) => rule.targetType !== targetType || rule.targetId !== targetId) };
+    const service = targetType === "service" ? findServiceIdentity(await loadPayrollServiceIdentities(branchId), targetId) : undefined;
+    const aliases = new Set([targetId, ...(service ? serviceIdentityIds(service) : [])]);
+    const next = { ...settings, individualPiecework: true, pieceworkRules: (settings.pieceworkRules ?? []).filter((rule) => rule.targetType !== targetType || !aliases.has(rule.targetId)) };
     const saved = await prisma.$transaction(async (tx) => {
       const result = await tx.branchMembership.updateMany({ where: { id: member.id, branchId, updatedAt: member.updatedAt }, data: { paySettingsJson: next } });
       if (result.count) await tx.changeLog.create({ data: { branchId, entityType: "employee_piecework", entityId: member.id, action: "update", oldValue: settings as never, newValue: next as never, performedByLogin: owner.session.user.login } });
