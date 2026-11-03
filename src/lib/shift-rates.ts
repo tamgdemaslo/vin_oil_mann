@@ -9,7 +9,7 @@ async function activeBranchId() {
 }
 
 /** Найти ставку назначенной смены для сотрудника на дату. */
-export async function getShiftRateCents(userLogin: string, shiftDate: string): Promise<number | null> {
+export async function getShiftRate(userLogin: string, shiftDate: string) {
   const branchId = await activeBranchId();
   const row = await prisma.shiftRate.findFirst({
     where: {
@@ -19,5 +19,9 @@ export async function getShiftRateCents(userLogin: string, shiftDate: string): P
     },
     orderBy: { effectiveFrom: "desc" },
   });
-  return row?.amountCents ?? null;
+  return row;
+}
+
+export async function getShiftRateCents(userLogin: string, shiftDate: string): Promise<number | null> {
+  return (await getShiftRate(userLogin, shiftDate))?.amountCents ?? null;
 }

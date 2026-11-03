@@ -187,6 +187,7 @@ type PayrollProblem = {
 };
 
 type ShiftRateItem = {
+  effectiveFrom?: string | null;
   login: string;
   name: string;
   amountCents: number | null;
@@ -3691,7 +3692,8 @@ export default function SalaryDashboard({
                 </thead>
                 <tbody>
                   {teamUsers.map((user) => {
-                    const rate = rateByLogin.get(normalizeLogin(user.login))?.amountCents ?? null;
+                    const rateItem = rateByLogin.get(normalizeLogin(user.login));
+                    const rate = rateItem?.amountCents ?? null;
                     const row = payrollRows.find((item) => normalizeLogin(item.login) === normalizeLogin(user.login));
                     return (
                       <tr key={user.login}>
@@ -3708,7 +3710,7 @@ export default function SalaryDashboard({
                         <td className="is-num">{rate == null ? "Не задана" : `${formatMoney(rate)} / смена`}</td>
                         <td>{row ? formatMoney(row.payroll.pieceworkCents) : "—"}</td>
                         <td><EcoBadge tone="success">Активен</EcoBadge></td>
-                        <td>{formatDate(dateFrom)}</td>
+                        <td>{rateItem?.effectiveFrom ? formatDate(rateItem.effectiveFrom) : "—"}</td>
                         <td>
                           <EcoButton type="button" size="sm" onClick={() => setRateDrawerLogin(user.login)}>
                             Редактировать
@@ -4441,11 +4443,11 @@ export default function SalaryDashboard({
             </div>
             <div className="eco-payroll-drawer__footer">
               <EcoButton type="button" onClick={() => void saveRate(false)} disabled={rateSaving}>
-                Сохранить ставку
+                Сохранить с сегодняшнего дня
               </EcoButton>
               <EcoButton type="button" variant="primary" onClick={() => void saveRate(true)} disabled={rateSaving}>
                 {rateSaving ? <Loader2 size={15} className="eco-spin" /> : <Save size={15} />}
-                Применить на период
+                Применить с {formatDate(dateFrom)}
               </EcoButton>
             </div>
           </aside>
