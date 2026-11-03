@@ -1895,10 +1895,6 @@ export default function HomeDashboard({
                     <span>Не оплачено</span>
                     <strong className={dashboard.finance.unpaidCents > 0 ? "is-warning" : ""}>{formatMoneyCents(dashboard.finance.unpaidCents)}</strong>
                   </div>
-                  <div>
-                    <span>Ожидается в кассе</span>
-                    <strong>{formatMoneyCents(dashboard.cash.expectedBalanceCents ?? 0)}</strong>
-                  </div>
               </div>
             </section>}
 

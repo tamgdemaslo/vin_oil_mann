@@ -16002,7 +16002,7 @@ select.eco-input::-ms-expand,
 
 .eco-ops-finance-ledger {
   display: grid;
-  grid-template-columns: minmax(180px, 1.25fr) repeat(4, minmax(118px, 1fr));
+  grid-template-columns: minmax(180px, 1.25fr) repeat(3, minmax(118px, 1fr));
   gap: 1px;
   background: var(--ops-line);
 }
