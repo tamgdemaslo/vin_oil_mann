@@ -37,6 +37,7 @@ const BRANCH_SCOPED_MODELS = new Set([
   "NotificationLog", "ClientNotificationPreference", "OrganizationMember",
   "ProductMannPomanMigrationAudit", "ProductImportJob", "ProductImportRow", "ProductOemBatch", "ProductOemBatchItem", "ClosingDocument",
   "ClosingDocumentNumberSequence", "LocalDemandPosition", "DemandAttributeDefinition",
+  "BankOperationCategory", "BankOperationClassification",
   "TBankIntegration", "TBankSettlementAccount", "SupplierInvoiceTBankPayment", "TBankWebhookEvent",
   "BranchBookingSettings", "BranchBookingWorkingHour", "BookingService", "BookingMasterService",
   "BookingMasterWorkingHour", "BookingScheduleException", "ClientVehicle", "ClientVehicleRevision", "Booking", "BookingServiceItem",

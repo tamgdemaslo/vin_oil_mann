@@ -11,6 +11,8 @@ let payload = { saldoIn: 100, saldoOut: 174.75, income: 100, outcome: 25.25, ope
 ] };
 const context = { exports: {}, ensureFinanceStatusAccess: user => user.role !== 'owner',
   getMessengerOrganizationId: () => 'org',
+  hashSecret: value => 'hash:' + value,
+  bankOperationCategoryData: async () => ({ categories: [], assignments: new Map() }),
   getIntegration: async (_org, connectionId) => { if (connectionId === 'foreign') return null; return ({ id: connectionId || 'first', tokenEncrypted: 'encrypted', accounts: [{ id: 'own', isDefault: true, accountNumberEncrypted: 'encrypted', currency: 'RUB' }] }); },
   decryptText: () => '1'.repeat(20), callTBankJson: async (_integration, path) => { calls++; usedConnection = _integration.id; assert.match(path, /from=2026-11-01&till=2026-11-03/); return { body: payload }; },
   asRecord: value => value ?? {}, cleanText: value => String(value ?? '').trim(), maskAccount: () => '**** 1111',

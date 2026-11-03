@@ -1,0 +1,25 @@
+.heading { display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap; margin:12px 0; }
+.heading h2 { margin:0; font-size:1.15rem; }
+.heading > span,.muted { color:var(--eco-muted,#5e5e58); font-size:.875rem; }
+.balances { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:0; padding:16px 0; border-top:1px solid var(--eco-line,#d8d6ce); border-bottom:1px solid var(--eco-line,#d8d6ce); gap:16px; }
+.balances dt { font-size:.8rem; color:var(--eco-muted,#5e5e58); }
+.balances dd { margin:6px 0 0; font-size:1.15rem; font-weight:600; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.tableScroll { overflow-x:auto; max-width:100%; }
+.amount { white-space:nowrap; font-variant-numeric:tabular-nums; text-align:right; }
+.purpose { min-width:220px; max-width:420px; overflow-wrap:anywhere; }
+.operationCategory { min-width:230px; max-width:290px; }
+.operationCategory select { width:100%; max-width:280px; font:inherit; padding:8px; border:1px solid var(--eco-line,#c9c6ba); border-radius:4px; color:inherit; background:var(--eco-surface,#fff); }
+.operationCategory small { display:block; margin-top:6px; max-width:280px; white-space:normal; }
+.categoryLink { border:0; background:transparent; padding:0; text-align:left; cursor:pointer; color:inherit; text-decoration:underline; text-decoration-color:var(--eco-line,#c9c6ba); text-underline-offset:3px; font:inherit; }
+.categoryLink:hover { text-decoration-color:currentColor; }
+.manager { padding:14px 0; border-top:1px solid var(--eco-line,#d8d6ce); border-bottom:1px solid var(--eco-line,#d8d6ce); }
+.manager summary { cursor:pointer; font-weight:600; }
+.categoryForm { display:flex; align-items:end; gap:12px; flex-wrap:wrap; margin-top:12px; }
+.categoryForm label { display:flex; flex:1 1 210px; flex-direction:column; gap:6px; font-size:.85rem; }
+.categoryForm input:not([type=checkbox]),.categoryForm select,.filter select { width:100%; min-height:40px; padding:8px; font:inherit; color:inherit; border:1px solid var(--eco-line,#c9c6ba); border-radius:4px; background:var(--eco-surface,#fff); }
+.categoryForm .checkbox { flex:0 0 auto; flex-direction:row; align-items:center; padding-bottom:10px; }
+.filter { display:flex; align-items:center; gap:8px; font-size:.85rem; }
+.filter select { max-width:290px; }
+.rowError { color:var(--eco-danger,#a0271c); }
+.operationCategory select:focus-visible,.categoryLink:focus-visible,.categoryForm :focus-visible,.filter select:focus-visible { outline:2px solid var(--eco-accent,#ba3d00); outline-offset:2px; }
+@media(max-width:700px) { .balances { grid-template-columns:repeat(2,minmax(0,1fr)); }.filter { width:100%; }.filter select { flex:1; max-width:none; }.categoryForm label { flex-basis:100%; }.categoryForm button { width:100%; } }

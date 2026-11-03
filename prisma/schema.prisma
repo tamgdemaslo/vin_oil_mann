@@ -92,6 +92,8 @@ model Branch {
   bookingServiceItems    BookingServiceItem[]
   customerReturnStates   CustomerReturnState[]
   salesPlans             BranchSalesPlan[]
+  bankOperationCategories BankOperationCategory[]
+  bankOperationClassifications BankOperationClassification[]
   storefrontBranches     StorefrontBranch[]
   storefrontBindings     StorefrontProductBinding[]
 
@@ -5318,4 +5320,47 @@ model VehicleServiceComplexityRule {
 
   @@index([organizationId, make, model, serviceType, active])
   @@map("vehicle_service_complexity_rules")
+}
+
+
+/// User-defined classifications; bank operation amounts remain authoritative at the bank.
+model BankOperationCategory {
+  id          String   @id @default(cuid())
+  branchId    String   @default("branch-main") @map("branch_id")
+  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  code        String
+  name        String
+  nameKey     String   @map("name_key")
+  kind        String   @default("operating")
+  archived    Boolean  @default(false)
+  createdById String?  @map("created_by_id")
+  updatedById String?  @map("updated_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  classifications BankOperationClassification[]
+
+  @@unique([branchId, id], map: "bank_operation_categories_branch_id_id_key")
+  @@unique([branchId, code], map: "bank_operation_categories_branch_code_key")
+  @@unique([branchId, nameKey], map: "bank_operation_categories_branch_name_key")
+  @@index([branchId, archived])
+  @@map("bank_operation_categories")
+}
+
+/// Identity is independent of the API token and connection id, so categories survive reconnection.
+model BankOperationClassification {
+  id                String   @id @default(cuid())
+  branchId          String   @default("branch-main") @map("branch_id")
+  branch            Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  accountNumberHash String   @map("account_number_hash")
+  operationId       String   @map("operation_id")
+  categoryId        String?  @map("category_id")
+  category          BankOperationCategory? @relation(fields: [branchId, categoryId], references: [branchId, id], onDelete: Restrict)
+  createdById       String?  @map("created_by_id")
+  updatedById       String?  @map("updated_by_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([branchId, accountNumberHash, operationId], map: "bank_operation_classification_identity_key")
+  @@index([branchId, categoryId])
+  @@map("bank_operation_classifications")
 }

@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { resolve } from 'node:path';
+import { createJiti } from 'jiti';
+import { PrismaClient } from '@prisma/client';
+const url = new URL(process.env.DATABASE_URL ?? 'postgresql://invalid/invalid');
+assert.equal(url.hostname,'127.0.0.1'); assert.equal(url.port,'55439'); assert.ok(url.pathname.startsWith('/eco_bank_categories_'),'Only a disposable local test database is allowed');
+const jiti = createJiti(import.meta.url,{alias:{'@':resolve('src')}});
+const { runWithRequestTenant } = await jiti.import('../src/lib/request-tenant-store.ts');
+const { prisma: guarded } = await jiti.import('../src/lib/db.ts');
+const { listBankOperationCategories: list, saveBankOperationCategory: save, assignBankOperationCategory: assign, bankOperationCategoryData: read } = await jiti.import('../src/lib/bank-operation-categories.ts');
+const raw = new PrismaClient();
+const owner = { login:'test-owner',name:'Test Owner',role:'owner' };
+const admin = { login:'test-admin',name:'Test Admin',role:'admin' };
+const scope = (branchId,run) => runWithRequestTenant({mode:'branch',branchId,organizationId:'default',allowedBranchIds:[branchId],businessGroupId:'bank-test-group',userId:'test-owner'},run);
+const hash = value => createHash('sha256').update(value).digest('hex');
+const input = {accountId:'bank-test-account-a',operationId:'same-bank-operation'};
+try {
+  await raw.businessGroup.create({data:{id:'bank-test-group',name:'Test group',slug:'bank-test-group'}});
+  for(const [id,slug] of [['bank-test-a','a'],['bank-test-b','b']]) await raw.branch.create({data:{id,businessGroupId:'bank-test-group',name:id,shortName:id,slug}});
+  const integrations = [['a','bank-test-a'],['b','bank-test-b']];
+  for(const [suffix,branchId] of integrations){
+    await raw.tBankIntegration.create({data:{id:`bank-test-integration-${suffix}`,branchId,organizationId:'default'}});
+    await raw.tBankSettlementAccount.create({data:{id:`bank-test-account-${suffix}`,branchId,integrationId:`bank-test-integration-${suffix}`,accountNumberHash:hash(suffix),accountNumberMasked:'**** 0000',isActive:true}});
+  }
+  await raw.tBankSettlementAccount.create({data:{id:'bank-test-account-other',branchId:'bank-test-a',integrationId:'bank-test-integration-a',accountNumberHash:hash('other'),accountNumberMasked:'**** 0001'}});
+  const defaultsA = await scope('bank-test-a',list);
+  assert.ok(defaultsA.length >= 10);
+  assert.equal(await raw.bankOperationCategory.count(),0,'reading defaults must not write to the database');
+  const purchases = defaultsA.find(row=>row.code==='purchases');
+  await scope('bank-test-a',()=>assign({...input,categoryId:purchases.id},owner));
+  assert.equal((await scope('bank-test-a',()=>read(hash('a'),[input.operationId]))).assignments.get(input.operationId),purchases.id,'classification survives a fresh read');
+  await raw.tBankIntegration.create({data:{id:'bank-test-reconnected',branchId:'bank-test-a',organizationId:'default',connectionKey:'replacement-token'}});
+  await raw.tBankSettlementAccount.create({data:{id:'bank-test-new-account-id',branchId:'bank-test-a',integrationId:'bank-test-reconnected',accountNumberHash:hash('a'),accountNumberMasked:'**** 0000'}});
+  await scope('bank-test-a',()=>assign({...input,accountId:'bank-test-new-account-id',categoryId:purchases.id},owner));
+  assert.equal(await raw.bankOperationClassification.count(),1,'reconnecting the same bank account keeps a single classification');
+
+  assert.equal((await scope('bank-test-a',()=>read(hash('other'),[input.operationId]))).assignments.size,0,'same operation id on another account is independent');
+  assert.equal((await scope('bank-test-b',()=>read(hash('a'),[input.operationId]))).assignments.size,0,'other branches cannot read classifications');
+  await assert.rejects(()=>scope('bank-test-b',()=>assign({...input,categoryId:purchases.id},owner)),/Счёт не найден/);
+  await assert.rejects(()=>scope('bank-test-b',()=>assign({accountId:'bank-test-account-b',operationId:'x',categoryId:purchases.id},owner)),/Категория недоступна/);
+  await assert.rejects(()=>scope('bank-test-a',()=>assign({...input,categoryId:purchases.id},{...owner,role:'mechanic'})),/Недостаточно прав/);
+  await scope('bank-test-a',()=>save({id:purchases.id,name:'Товары и материалы',kind:'operating',archived:false},admin,true));
+  assert.equal((await scope('bank-test-a',list)).find(row=>row.id===purchases.id).name,'Товары и материалы');
+  await scope('bank-test-a',()=>save({id:purchases.id,name:'Товары и материалы',kind:'operating',archived:true},owner,true));
+  await assert.rejects(()=>scope('bank-test-a',()=>assign({accountId:'bank-test-account-other',operationId:'new',categoryId:purchases.id},owner)),/Категория недоступна/);
+  assert.equal((await scope('bank-test-a',()=>read(hash('a'),[input.operationId]))).assignments.get(input.operationId),purchases.id,'archiving retains historical assignments');
+  await scope('bank-test-a',()=>assign({...input,categoryId:null},owner));
+  assert.equal((await scope('bank-test-a',()=>read(hash('a'),[input.operationId]))).assignments.get(input.operationId),null,'classification can be cleared');
+  const custom = await scope('bank-test-a',()=>save({name:'Инструменты',kind:'operating'},owner,false));
+  await assert.rejects(()=>scope('bank-test-a',()=>save({name:'  ИНСТРУМЕНТЫ  ',kind:'owner'},owner,false)),/названием уже/);
+  await assert.rejects(()=>scope('bank-test-a',()=>save({id:'foreign',name:'Другая категория',kind:'operating'},owner,true)),/не найдена/);
+  assert.ok(custom.categories.find(row=>row.id===custom.categoryId));
+  const defaultsB = await scope('bank-test-b',list);
+  assert.notEqual(defaultsB.find(row=>row.code==='purchases').id,purchases.id,'default category ids are branch specific');
+  await assert.rejects(()=>raw.bankOperationClassification.create({data:{branchId:'bank-test-b',accountNumberHash:hash('b'),operationId:'cross-branch-fk',categoryId:custom.categoryId}}),/Foreign key constraint/);
+  assert.ok(await raw.integrationAuditLog.count({where:{channel:'tbank',action:'bank_operation_categorized'}})>=2,'changes are audited');
+  assert.equal((await scope('bank-test-a',()=>guarded.bankOperationClassification.findMany())).every(row=>row.branchId==='bank-test-a'),true,'Prisma query guard scopes reads without explicit filters');
+  console.log('Bank categories DB: persistence, account/branch isolation, composite foreign key, permissions, rename/archive, clearing, duplicate names and audit passed');
+} finally { await raw.$disconnect(); await guarded.$disconnect(); }
