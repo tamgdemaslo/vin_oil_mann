@@ -70,7 +70,7 @@ const db = {
     findFirst: async ({ where }) => products.find((p) => p.id === where.id && p.branchId === where.branchId) ?? null,
     updateMany: async ({ where, data }) => {
       let count = 0;
-      for (const p of products) if (p.branchId === where.branchId && p.id === where.id && p.updatedAt.getTime() === where.updatedAt.getTime()) { p.avito = data.avito; count++; }
+      for (const p of products) if (p.branchId === where.branchId && (typeof where.id === "string" ? p.id === where.id : where.id.in.includes(p.id)) && (!where.updatedAt || p.updatedAt.getTime() === where.updatedAt.getTime())) { p.avito = data.avito; count++; }
       return { count };
     },
   },
@@ -164,23 +164,20 @@ try {
   assert.equal(listing({ available: 1 }, {}, { ...settings, stockBuffer: 1 }).included, false);
   assert.equal(listing({ available: .2 }, {}, { ...settings, stockBuffer: .1 }).included, true, "fractional stock stays exact");
   assert.equal(listing({ uomName: "л", packageVolume: "208 л", available: 300 }).included, false, "barrel volume must never inherit the per-litre price");
-  assert.equal(domain.avitoFeedStats([listing({ uomName: "л", packageVolume: "208 л", available: 3 })], settings).excludedByPackaging, 1, "bulk is excluded by packaging, not stock");
-  assert.equal(listing({ uomName: "л", available: 4 }, { volume: "4 л", priceRubles: 4990 }).included, false, "an explicit bulk offer is still not a canister");
-  assert.equal(domain.avitoStockAllowed({ ...source, uomName: "л", available: 4 }, "4 л", settings), true);
+  assert.equal(listing({ uomName: "л", available: 4 }, { volume: "4 л", priceRubles: 4990 }).included, true, "bulk requires explicit advertised volume and price");
   assert.equal(listing({ uomName: "л", available: 3.9 }, { volume: "4 л", priceRubles: 4990 }).included, false, "bulk stock must cover the advertised volume");
   assert.equal(listing({ uomName: "л", available: 4 }, { volume: "4 л", priceRubles: 4990 }, { ...settings, stockBuffer: 1 }).included, false);
-  for (const packageVolume of ["1 л", "0.5 л", "2 л", "3 л", "20 л", "208 л", null]) {
-    assert.equal(listing({ packageVolume }).included, false, `${packageVolume} must not enter the 4/5-litre canister feed`);
-    assert.equal(listing({ packageVolume }, {}, { ...settings, onlyInStock: false }).included, false, "disabling stock filtering never disables packaging filtering");
+  for (const packageVolume of ["1 л", "2 л", "3 л", "4 л", "5 л", "20 л"]) {
+    assert.equal(listing({ packageVolume }).included, true, `${packageVolume} may be selected regardless of packaging`);
+    assert.equal(listing({ packageVolume, avito: false }).included, false, "unselected volumes stay out of the feed");
+    assert.equal(listing({ packageVolume, available: 0 }).included, false, "stock filtering still applies");
   }
-  for (const packageVolume of ["4 л", "5 л", "4000 мл", "5000 ml", "4,0 л", "5 L"]) assert.equal(listing({ packageVolume }).included, true, "normalize real canister volumes before applying the rule");
-  assert.equal(listing({ packageVolume: "1 л" }, { volume: "5 л" }).included, true, "an explicit corrected advertised volume retains priority");
-  assert.equal(listing({ packageVolume: "4 л" }, { volume: "1 л" }).included, false);
-  const packagingStats = domain.avitoFeedStats([valid, listing({ packageVolume: "5 л" }), listing({ packageVolume: "1 л", available: 0, brand: "Bad" })], settings, [valid.adId, "old-one-litre"]);
-  assert.equal(packagingStats.excludedByPackaging, 1);
-  assert.equal(packagingStats.outOfStock, 0, "a packaging exclusion has its own count");
-  assert.equal(packagingStats.invalid, 0, "excluded one-litre cards do not inflate errors among eligible canisters");
-  assert.equal(packagingStats.withdrawals, 1);
+  assert.equal(listing({ packageVolume: null }).included, false, "a valid volume is still required");
+  assert.equal(listing({ packageVolume: "4 л" }, { volume: "1 л" }).included, true);
+  const selectionStats = domain.avitoFeedStats([valid, listing({ packageVolume: "1 л", avito: false })], settings, [valid.adId, "old-one-litre"]);
+  assert.equal(selectionStats.excludedByPackaging, 0);
+  assert.equal(selectionStats.selected, 1);
+  assert.equal(selectionStats.withdrawals, 1);
   assert.equal(listing({ archived: true }).included, false);
   assert.equal(listing({ avito: false }).included, false);
   assert.equal(listing({ acea: null, apiSpec: null, oem: null }).included, false);
@@ -416,26 +413,28 @@ try {
       { ...products[0], id: "five-litre", packageVolume: "5 л" },
       { ...products[0], id: "bulk-four-litre", uomName: "л", packageVolume: "4 л" },
     );
+    // Existing deselected litres must stay out; selecting a litre later must work.
+    products.find((product) => product.id === "one-litre").avito = false;
     const canisters = await service.generateAvitoExport();
     assert.equal(canisters.stats.included, 2);
-    assert.equal(canisters.stats.excludedByPackaging, 2);
-    const canisterXml = parseXml((await service.downloadAvitoExport(canisters.id, "xml")).toString("utf8"));
-    assert.deepEqual(canisterXml.children.map((ad) => xmlField(ad, "Volume").text), ["4 л", "5 л"]);
-    const canisterCsv = (await service.downloadAvitoExport(canisters.id)).toString("utf8");
-    assert.ok(!canisterCsv.includes(storage.avitoAdId(scope, "one-litre")));
-    assert.ok(!canisterCsv.includes(storage.avitoAdId(scope, "bulk-four-litre")));
-    assert.equal((await publicXml()).headers.get("X-Avito-Excluded-Packaging"), "2");
-    const readyCanisters = await service.getAvitoWorkspace({ branchName: "Test", canEdit: true, canEditSecrets: true, view: "ready" });
-    assert.ok(readyCanisters.products.every((product) => ["4 л", "5 л"].includes(product.values.volume) && !product.source.uomName));
-    const canisterSnapshot = await storage.readAvitoValue(scope, "snapshot");
-    assert.deepEqual(canisterSnapshot.productIds, [source.id, "five-litre"]);
-    assert.equal(products.find((product) => product.id === "one-litre").avito, true, "excluding a volume never edits catalog selection");
-    assert.deepEqual(await service.downloadAvitoExport(exported.id), original, "the packaging rule never rewrites historical exports");
+    assert.equal(canisters.stats.excludedByPackaging, 0);
+    const beforeLitre = (await service.downloadAvitoExport(canisters.id, "xml")).toString("utf8");
+    assert.ok(!beforeLitre.includes(storage.avitoAdId(scope, "one-litre")));
+    await service.selectAvitoProducts({ ids: ["one-litre"], enabled: true });
+    const withLitre = await service.generateAvitoExport();
+    assert.equal(withLitre.stats.included, 3);
+    const selectedXml = parseXml((await service.downloadAvitoExport(withLitre.id, "xml")).toString("utf8"));
+    assert.deepEqual(selectedXml.children.map((ad) => xmlField(ad, "Volume").text), ["4 л", "1 л", "5 л"]);
+    assert.ok((await service.downloadAvitoExport(withLitre.id)).toString("utf8").includes(storage.avitoAdId(scope, "one-litre")));
+    assert.equal((await publicXml()).headers.get("X-Avito-Excluded-Packaging"), "0");
+    const ready = await service.getAvitoWorkspace({ branchName: "Test", canEdit: true, canEditSecrets: true, view: "ready" });
+    assert.ok(ready.products.some((product) => product.id === "one-litre"), "ready filter includes valid litres");
+    await service.selectAvitoProducts({ ids: ["one-litre"], enabled: false });
+    assert.ok(!(await service.prepareAvitoFeed(profile, scope, false, true)).snapshot.productIds.includes("one-litre"));
+    assert.deepEqual(await service.downloadAvitoExport(exported.id), original, "selection changes never rewrite historical exports");
     products.splice(-3);
     products[0].packageVolume = "1 л";
-    const packagingWithdrawal = await service.prepareAvitoFeed(profile, scope, false, true);
-    assert.equal(packagingWithdrawal.stats.included, 0, "the explicit packaging rule can withdraw the last excluded canister");
-    assert.equal(packagingWithdrawal.stats.withdrawals, 2);
+    assert.equal((await service.prepareAvitoFeed(profile, scope, false, true)).stats.included, 1);
     products[0].packageVolume = source.packageVolume;
     await service.generateAvitoExport();
     stockFailure = true;
