@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { fetchTBank } from "@/lib/tbank-transport";
 import { Prisma } from "@prisma/client";
 import type { SupplierInvoiceTBankPayment, TBankIntegration, TBankSettlementAccount } from "@prisma/client";
 import type { User } from "@/lib/auth";
@@ -475,7 +476,7 @@ async function callTBankJson(
   };
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetch(`${apiBaseUrl(integration)}${path}`, {
+  const response = await fetchTBank(`${apiBaseUrl(integration)}${path}`, {
     method: init.method ?? "GET",
     signal: init.timeoutMs ? AbortSignal.timeout(init.timeoutMs) : undefined,
     headers,
