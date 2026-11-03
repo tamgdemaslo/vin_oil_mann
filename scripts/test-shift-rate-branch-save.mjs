@@ -42,3 +42,10 @@ role='master';assert.equal((await post({userLogin:'sergei',amountCents:100000}))
 role='owner';allowed=false;assert.equal((await post({userLogin:'sergei',amountCents:100000})).status,403);
 assert.equal(audits,3);
 console.log('Shift-rate save: selected branch, create/update/month replacement, unchanged foreign rates, read-after-write, effective date, validation and permissions passed.');
+
+const {employeeRoleLabel}=load('../src/lib/employee-role-label.ts',{});
+assert.equal(employeeRoleLabel('master','admin'),'Мастер-приёмщик','branch job title must not be replaced by administrator access');
+assert.equal(employeeRoleLabel('mechanic','admin'),'Механик');
+assert.equal(employeeRoleLabel('accountant','master'),'Бухгалтер');
+assert.equal(employeeRoleLabel('administrator','master'),'Администратор');
+console.log('Payroll job labels follow branch roles independently of account permissions.');

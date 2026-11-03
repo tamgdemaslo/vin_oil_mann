@@ -1,5 +1,7 @@
 "use client";
 
+import { employeeRoleLabel } from "@/lib/employee-role-label";
+
 import Link from "next/link";
 import { payrollGoalPeriod } from "@/lib/payroll-goal-period";
 import {
@@ -403,6 +405,7 @@ type MotivationOverview = {
 };
 
 type PayrollRow = {
+  roleLabel: string;
   login: string;
   name: string;
   role: UserRole;
@@ -1602,6 +1605,7 @@ export default function SalaryDashboard({
           login: sourceLogin,
           name: `${user?.name ?? sourceLogin}${user?.employmentEnd ? " (уволен)" : ""}`,
           role: roleValue,
+          roleLabel: employeeRoleLabel(user?.branchRole, roleValue),
           payroll: payrollEntry,
           rateCents: rate,
           shiftsCount: shifts?.size ?? payrollEntry.shiftsCount,
@@ -1635,6 +1639,7 @@ export default function SalaryDashboard({
           login: user.login,
           name: user.name,
           role: normalizeRole(user.role ?? "master"),
+          roleLabel: employeeRoleLabel(user.branchRole, user.role),
           payroll: EMPTY_PAYROLL_ROW,
           rateCents: rateByLogin.get(normalizeLogin(user.login))?.amountCents ?? null,
           shiftsCount: 0,
@@ -3059,7 +3064,7 @@ export default function SalaryDashboard({
                             </div>
                           </div>
                         </td>
-                        <td>{roleShortLabel(row.role)}</td>
+                        <td>{row.roleLabel}</td>
                         <td className="is-num">{row.shiftsCount}</td>
                         <td className="is-num">{formatMoney(row.payroll.shiftTotalCents)}</td>
                         <td className="is-num">{formatMoney(row.payroll.pieceworkCents)}</td>
@@ -3706,7 +3711,7 @@ export default function SalaryDashboard({
                             </div>
                           </div>
                         </td>
-                        <td>{roleShortLabel(user.role ?? "master")}</td>
+                        <td>{employeeRoleLabel(user.branchRole, user.role)}</td>
                         <td className="is-num">{rate == null ? "Не задана" : `${formatMoney(rate)} / смена`}</td>
                         <td>{row ? formatMoney(row.payroll.pieceworkCents) : "—"}</td>
                         <td><EcoBadge tone="success">Активен</EcoBadge></td>
@@ -4049,7 +4054,7 @@ export default function SalaryDashboard({
               <div>
                 <span className="eco-page-kicker">Детализация сотрудника</span>
                 <h2>{selectedRow.name}</h2>
-                <p>{roleShortLabel(selectedRow.role)} · {formatDate(dateFrom)} - {formatDate(dateTo)}</p>
+                <p>{selectedRow.roleLabel} · {formatDate(dateFrom)} - {formatDate(dateTo)}</p>
               </div>
               <button type="button" className="eco-icon-btn" onClick={() => setSelectedLogin(null)} title="Закрыть">
                 <X size={16} />
@@ -4231,7 +4236,7 @@ export default function SalaryDashboard({
                   >
                     {payrollOperationUsers.map((user) => (
                       <option key={user.login} value={user.login}>
-                        {user.name} · {roleShortLabel(normalizeRole(user.role ?? "master"))}
+                        {user.name} · {employeeRoleLabel(user.branchRole, user.role)}
                       </option>
                     ))}
                   </EcoSelect>
@@ -4301,7 +4306,7 @@ export default function SalaryDashboard({
                   <EcoSelect value={operationEmployeeLogin || selectedRow.login} onChange={(event) => setOperationEmployeeLogin(event.target.value)}>
                     {payrollOperationUsers.map((user) => (
                       <option key={user.login} value={user.login}>
-                        {user.name} · {roleShortLabel(normalizeRole(user.role ?? "master"))}
+                        {user.name} · {employeeRoleLabel(user.branchRole, user.role)}
                       </option>
                     ))}
                   </EcoSelect>
@@ -4409,7 +4414,7 @@ export default function SalaryDashboard({
               <div>
                 <span className="eco-page-kicker">Редактирование ставки</span>
                 <h2>{rateDrawerRow.name}</h2>
-                <p>{roleShortLabel(rateDrawerRow.role)} · действует с выбранной даты</p>
+                <p>{rateDrawerRow.roleLabel} · действует с выбранной даты</p>
               </div>
               <button type="button" className="eco-icon-btn" onClick={() => setRateDrawerLogin(null)} title="Закрыть">
                 <X size={16} />

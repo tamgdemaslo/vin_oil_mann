@@ -7,6 +7,7 @@ export type OwnerUser = {
   login: string;
   name: string;
   role?: "owner" | "admin" | "master";
+  branchRole?: string;
   employmentEnd?: string | null;
   employmentStart?: string | null;
 };
