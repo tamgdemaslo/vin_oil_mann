@@ -114,7 +114,9 @@ export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOv
     atf: type === "transmission" ? inherited(overrides.atf, sameFamily ? source.atf : "") : "",
     oem: inherited(overrides.oem, sameFamily ? (type === "motor" ? source.oem : source.oemAtf) : ""),
     condition: overrides.condition ?? "Новое",
-    avitoId: overrides.avitoId ?? remote?.avitoId ?? "",
+    // Report IDs describe the account that produced that report, not a binding
+    // for future exports. Stable Id matches existing autoload ads; AvitoId is opt-in.
+    avitoId: overrides.avitoId ?? "",
     multiItem: overrides.multiItem ?? false,
     multiName: overrides.multiName ?? "",
   };

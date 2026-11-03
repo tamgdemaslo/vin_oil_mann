@@ -114,6 +114,14 @@ try {
   const valid = listing();
   assert.equal(valid.included, true);
   assert.equal(valid.values.multiItem, false);
+  const oldAccountStatus = { status: "active", avitoId: "8391205611", checkedAt: "2026-10-27T00:00:00Z", reportId: "old-account", url: null, messages: [] };
+  const newAccountListing = domain.buildAvitoListing(source, {}, settings, valid.adId, oldAccountStatus);
+  assert.equal(newAccountListing.values.avitoId, "", "an old account report must never bind an export to that account's ad");
+  assert.equal(newAccountListing.adId, valid.adId, "account changes retain stable internal listing IDs");
+  assert.equal(newAccountListing.remote.avitoId, oldAccountStatus.avitoId, "history remains available without becoming an export binding");
+  assert.equal(domain.buildAvitoListing(source, { avitoId: "123456789" }, settings, valid.adId, oldAccountStatus).values.avitoId, "123456789", "explicit manual bindings remain supported");
+  assert.ok(!buildAvitoXml([newAccountListing], settings, () => "").includes("<AvitoId>"));
+
   for (const groupPath of ["Масляные фильтры АКПП", "Фильтры и поддоны АКПП / CVT", "Топливные фильтры", "Масла/Фильтры/АКПП", "Уплотнительные кольца и прокладки", "Тормозная жидкость", "АКПП"]) {
     assert.equal(domain.inferAvitoOilType({ ...source, groupPath, groupCode: "TRANSMISSION_FLUID" }), null, `non-oil group must not become transmission fluid: ${groupPath}`);
     assert.equal(listing({ groupPath, avito: true }, { type: "transmission" }).included, false, "neither Avito selection nor an old category override changes membership");
