@@ -1,0 +1,18 @@
+.catalog { display: grid; gap: 24px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
+.toolbar > input { max-width: 280px; }
+.categories { display: flex; flex-wrap: wrap; gap: 6px; }
+.categories button { border: 1px solid transparent; border-radius: 8px; padding: 9px 14px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.categories button[aria-pressed="true"] { background: var(--eco-rust); color: white; }
+.categories button:focus-visible { outline: 2px solid var(--eco-rust); outline-offset: 3px; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.service { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.serviceHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.icon { display: inline-flex; padding: 12px; background: var(--eco-surface-sunk); border-radius: 12px; }
+.service h2 { margin: 0; font-size: 20px; }
+.service p { margin: 0; line-height: 1.6; color: var(--eco-muted); }
+.serviceFooter { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 12px; }
+.detailHead { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.detailHead > span { color: var(--eco-muted); font-size: 13px; }
+@media (max-width: 1100px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .cards { grid-template-columns: 1fr; } .toolbar > input { max-width: none; } .categories button { padding: 8px 10px; } }

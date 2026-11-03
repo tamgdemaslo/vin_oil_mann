@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Building2, Landmark, MessageSquareText, RefreshCw, ShieldCheck } from "lucide-react";
-import { EcoBadge, EcoButton, EcoCard, EcoInput, EcoKpi, EcoSelect, EcoStatusDot } from "@/components/platform/EcoUI";
+import { EcoBadge, EcoButton, EcoCard, EcoInput, EcoSelect, EcoStatusDot } from "@/components/platform/EcoUI";
 import { formatServiceDateTime } from "@/lib/date-time";
 import { safeReadJson } from "@/lib/http-json";
 import OperationalIntegrationsPanel from "./OperationalIntegrationsPanel";
 import AvitoIntegrationPanel from "./AvitoIntegrationPanel";
+import styles from "./integrations.module.css";
 
 type TBankStatus = {
   id: string;
@@ -171,6 +172,9 @@ export default function IntegrationsClient({
   organizationConfigured: boolean;
   employeesConfigured: boolean;
 }) {
+  const [category, setCategory] = useState("Все");
+  const [search, setSearch] = useState("");
+  const [activeIntegration, setActiveIntegration] = useState<string | null>(null);
   const [tbank, setTbank] = useState<TBankStatus | null>(null);
   const [tbankConnections, setTbankConnections] = useState<TBankStatus[]>([]);
   const [newTbank, setNewTbank] = useState(false);
@@ -446,6 +450,16 @@ export default function IntegrationsClient({
     ? (rosskoCheckout?.address.filter((row) => !row.deliveryIds.length || row.deliveryIds.includes(rosskoForm.deliveryId)) ?? [])
     : (rosskoCheckout?.address ?? []);
 
+  const visibleIntegrations = [
+    { id: "avito", name: "Авито", category: "Продажи", description: "Публикация товаров и управление выгрузкой объявлений.", icon: Building2 },
+    { id: "tbank", name: "Т-Банк", category: "Финансы", description: "Банковские счета, платёжные черновики и лимиты.", icon: Landmark },
+    { id: "aqsi", name: "AQSI", category: "Финансы", description: "Кассы филиала, отправка чеков и фискализация.", icon: Building2 },
+    { id: "rossko", name: "ROSSKO", category: "Поставщики", description: "Поиск запчастей, условия доставки и правила наценки.", icon: Building2 },
+    { id: "telegram", name: "Telegram", category: "Связь", description: "Рабочий аккаунт филиала и подключение по QR-коду.", icon: MessageSquareText },
+    { id: "messenger", name: "Каналы связи", category: "Связь", description: "Настройка каналов общения с клиентами.", icon: MessageSquareText },
+    { id: "overview", name: "Готовность и журнал", category: "Управление", description: "Шаги настройки филиала, уведомления и история изменений.", icon: ShieldCheck },
+  ].filter((item) => (category === "Все" || item.category === category) && `${item.name} ${item.description}`.toLocaleLowerCase("ru").includes(search.trim().toLocaleLowerCase("ru")));
+
   return (
     <main className="eco-page">
       <section className="eco-page-head">
@@ -463,14 +477,9 @@ export default function IntegrationsClient({
               управление подключениями
             </EcoBadge>
           </div>
-          <p className="eco-page-subtitle">Рабочие подключения принадлежат выбранному филиалу. Новый филиал начинает без скопированных секретов и сессий.</p>
+          <p className="eco-page-subtitle">Подключайте сервисы и управляйте их настройками для филиала «{branchName}».</p>
         </div>
         <div className="eco-page-actions">
-          <a href="#avito" className="eco-btn eco-btn--ghost">Авито · товары</a>
-          <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--ghost">
-            <MessageSquareText size={16} />
-            Каналы связи
-          </Link>
           <EcoButton type="button" variant="secondary" onClick={() => { setAvitoRefreshVersion((current) => current + 1); void loadStatus(); }} disabled={loading}>
             <RefreshCw size={16} />
             {loading ? "Обновляем..." : "Обновить статус"}
@@ -478,11 +487,31 @@ export default function IntegrationsClient({
         </div>
       </section>
 
-      <div className="eco-grid eco-grid--kpi">
-        <EcoKpi label="Источник настроек" value="PostgreSQL" tone="success" sub="Реквизиты разрешаются только по активному филиалу." />
-        <EcoKpi label="Секреты" value="Зашифрованы" tone="success" sub="Маски и реальные значения не возвращаются из API." />
-        <EcoKpi label="Изоляция" value={branchName} tone="neutral" sub="Подключения другого филиала недоступны." />
-      </div>
+      {activeIntegration === null ? (
+        <section aria-label="Каталог интеграций" className={styles.catalog}>
+          <div className={styles.toolbar}>
+            <div className={styles.categories} aria-label="Категории интеграций">
+              {["Все", "Продажи", "Финансы", "Поставщики", "Связь", "Управление"].map((item) => (
+                <button type="button" key={item} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>
+              ))}
+            </div>
+            <EcoInput aria-label="Найти интеграцию" placeholder="Найти сервис…" value={search} onChange={(event) => setSearch(event.target.value)} />
+          </div>
+          <div className={styles.cards}>
+            {visibleIntegrations.map((item) => (
+              <EcoCard key={item.id} className={styles.service}>
+                <div className={styles.serviceHead}><span className={styles.icon}><item.icon size={22} /></span><span className="eco-page-kicker">{item.category}</span></div>
+                <h2>{item.name}</h2><p>{item.description}</p>
+                <div className={styles.serviceFooter}>
+                  {item.id === "tbank" || item.id === "rossko" ? <EcoBadge tone={loading ? "neutral" : (item.id === "tbank" ? tbankError : rosskoError) ? "warning" : item.id === "tbank" ? tbankTone : rosskoTone} dot>{loading ? "Загрузка…" : (item.id === "tbank" ? tbankError : rosskoError) ? "Статус недоступен" : (item.id === "tbank" ? tbank?.connected : rossko?.connected) ? "Подключено" : (item.id === "tbank" ? tbank?.configured : rossko?.configured) ? "Требует проверки" : "Не настроено"}</EcoBadge> : <span />}
+                  {item.id === "messenger" ? <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--secondary">Настроить</Link> : <EcoButton type="button" variant="secondary" onClick={() => { setActiveIntegration(item.id); setRunResult(null); }}>Открыть</EcoButton>}
+                </div>
+              </EcoCard>
+            ))}
+          </div>
+          {visibleIntegrations.length === 0 && <p role="status">Сервисы не найдены. Измените категорию или название.</p>}
+        </section>
+      ) : <div className={styles.detailHead}><EcoButton type="button" variant="ghost" onClick={() => { setActiveIntegration(null); setRunResult(null); }}>← Все интеграции</EcoButton><span>Филиал: {branchName} · Изменения сохраняются кнопкой в настройках сервиса</span></div>}
 
       {runResult && (
         <EcoCard>
@@ -498,17 +527,17 @@ export default function IntegrationsClient({
         </EcoCard>
       )}
 
-      <AvitoIntegrationPanel key={branchId} branchName={branchName} canEditSecrets={canEditSecrets} refreshVersion={avitoRefreshVersion} />
+      <div hidden={activeIntegration !== "avito"}><AvitoIntegrationPanel key={branchId} branchName={branchName} canEditSecrets={canEditSecrets} refreshVersion={avitoRefreshVersion} /></div>
 
-      <OperationalIntegrationsPanel
+      <div hidden={!["aqsi", "telegram", "overview"].includes(activeIntegration ?? "")}><OperationalIntegrationsPanel
+        view={activeIntegration === "aqsi" ? "aqsi" : activeIntegration === "telegram" ? "telegram" : "overview"}
         branchName={branchName}
         canEditSecrets={canEditSecrets}
         organizationConfigured={organizationConfigured}
         employeesConfigured={employeesConfigured}
-      />
+      /></div>
 
-      <section id="finance" className="eco-integration-group">
-        <header><div><p className="eco-page-kicker">Финансы</p><h2>Банковские подключения</h2></div><span>T-Bank, счета и безопасные лимиты платежей.</span></header>
+      <section hidden={activeIntegration !== "rossko"} aria-label="Настройки ROSSKO">
       <EcoCard className="eco-tbank-settings">
         <div className="eco-card__head">
           <div>
@@ -639,6 +668,8 @@ export default function IntegrationsClient({
         </div>
       </EcoCard>
 
+      </section>
+      <section hidden={activeIntegration !== "tbank"} aria-label="Настройки Т-Банка">
       <EcoCard className="eco-tbank-settings">
         <div className="eco-card__head">
           <div>

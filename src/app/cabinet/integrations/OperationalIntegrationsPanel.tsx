@@ -142,11 +142,13 @@ function actionLabel(action: string) {
 }
 
 export default function OperationalIntegrationsPanel({
+  view,
   branchName,
   canEditSecrets,
   organizationConfigured,
   employeesConfigured,
 }: {
+  view?: "aqsi" | "telegram" | "overview";
   branchName: string;
   canEditSecrets: boolean;
   organizationConfigured: boolean;
@@ -294,8 +296,8 @@ export default function OperationalIntegrationsPanel({
 
   return (
     <section className="eco-integration-group">
-      <header><div><p className="eco-page-kicker">Филиал: {branchName}</p><h2>Рабочие интеграции</h2></div><span>{configuredSteps}/3 подключений готовы.</span></header>
-      {onboardingSteps < 7 ? (
+      {!view && <header><div><p className="eco-page-kicker">Филиал: {branchName}</p><h2>Рабочие интеграции</h2></div><span>{configuredSteps}/3 подключений готовы.</span></header>}
+      {(!view || view === "overview") && onboardingSteps < 7 ? (
         <EcoCard>
           <div className="eco-card__head"><div><div className="eco-page-kicker">Мастер настройки нового филиала</div><h2>Готовность филиала по шагам</h2></div><EcoBadge tone="warning">{onboardingSteps}/7</EcoBadge></div>
           <ol className="eco-action-list">
@@ -310,7 +312,8 @@ export default function OperationalIntegrationsPanel({
         </EcoCard>
       ) : null}
       {message ? <div className="eco-integration-note eco-integration-note--info"><CheckCircle2 size={16} /><span>{message}</span></div> : null}
-      <div className="eco-grid eco-grid--2">
+      <div className={view ? undefined : "eco-grid eco-grid--2"}>
+        <div hidden={Boolean(view && view !== "aqsi")}>
         <EcoCard>
           <div className="eco-card__head"><div><div className="eco-page-kicker">Кассы и фискализация</div><h2>AQSI</h2><p>Несколько касс на филиал; одна касса используется по умолчанию.</p></div><EcoBadge tone={aqsi?.configured ? "success" : "warning"} dot>{label(selected?.status ?? "not_configured", Boolean(aqsi?.configured))}</EcoBadge></div>
           {selected ? <div className="eco-integration-note eco-integration-note--info"><span>Последний успех: {dateTime(selected.lastSuccessAt)} · последняя ошибка: {dateTime(selected.lastErrorAt)}{selected.lastErrorMessage ? ` · ${selected.lastErrorMessage}` : ""}</span></div> : null}
@@ -353,7 +356,7 @@ export default function OperationalIntegrationsPanel({
           </div>
         </EcoCard>
 
-        <EcoCard>
+        </div><div hidden={Boolean(view && view !== "telegram")}><EcoCard>
           <div className="eco-card__head"><div><div className="eco-page-kicker">Рабочий аккаунт</div><h2>Telegram по QR</h2><p>Один рабочий user account на филиал. Реквизиты приложения настраиваются централизованно на backend.</p></div><EcoBadge tone={telegram?.account?.status === "connected" ? "success" : telegram?.configured ? "warning" : "neutral"} dot>{label(telegram?.status ?? "not_configured", Boolean(telegram?.configured))}</EcoBadge></div>
           <div>
             <div className={`eco-integration-note eco-integration-note--${telegram?.configured ? "success" : "warning"}`}>
@@ -368,9 +371,9 @@ export default function OperationalIntegrationsPanel({
               <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--secondary"><QrCode size={15} />Открыть подключение по QR</Link>
             </div>
           </div>
-        </EcoCard>
+        </EcoCard></div>
       </div>
-      {canEditSecrets ? (
+      {canEditSecrets && (!view || view === "overview") ? (
         <EcoCard>
           <div className="eco-card__head"><div><div className="eco-page-kicker">Только владельцу</div><h2>Уведомления и журнал изменений</h2><p>Секретные значения и ответы провайдеров в журнал не попадают.</p></div><EcoBadge tone={ownerNotifications.length ? "warning" : "neutral"}>{ownerNotifications.length} уведомлений</EcoBadge></div>
           {ownerNotifications.map((item) => <div className="eco-integration-note eco-integration-note--warning" key={item.id}><AlertTriangle size={16} /><span>{item.message} · {dateTime(item.createdAt)}</span></div>)}
