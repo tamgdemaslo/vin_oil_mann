@@ -93,6 +93,7 @@ globalThis.__ecoAvitoTestDb = db;
 const jiti = createJiti(import.meta.url, { alias: { "@/lib/db": resolve(temp, "db.mjs"), "@/lib/branch-api": resolve(temp, "branch-api.mjs"), "@": resolve(root, "src") }, moduleCache: false });
 try {
   const domain = await jiti.import("../src/lib/avito-autoload/domain.ts");
+  const { avitoLinkStatus } = await jiti.import("../src/lib/avito-autoload/feed-state.ts");
   const content = await jiti.import("../src/lib/avito-autoload/content.ts");
   const access = await jiti.import("../src/lib/avito-autoload/access.ts");
   const storage = await jiti.import("../src/lib/avito-autoload/storage.ts");
@@ -278,9 +279,16 @@ try {
   assert.equal(failedPosts, 1, "publication requests must never auto-retry");
 
   await tenant.runWithRequestTenant({ ...scope, mode: "branch", allowedBranchIds: [scope.branchId] }, async () => {
-    const token = storage.newAvitoFeedToken(scope);
-    const profile = { version: 1, settings, feedToken: token, connection: { status: "never", checkedAt: null, accountId: null, message: null } };
-    await storage.writeAvitoValue(scope, "profile", profile);
+    await service.saveAvitoSettings({ settings });
+    const profile = await service.getAvitoProfile(scope);
+    const token = profile.feedToken;
+    assert.equal(await storage.readAvitoValue(scope, "client_id"), null);
+    assert.equal(await storage.readAvitoValue(scope, "client_secret"), null);
+    const noApi = await service.getAvitoIntegration({ branchName: "Test", canEdit: true, canEditSecrets: true });
+    assert.equal(noApi.settings.configured, true, "settings can be created without any API credentials");
+    assert.equal(noApi.settings.clientIdConfigured, false);
+    assert.ok(noApi.settings.feedUrl.endsWith("/feed.xml"));
+    assert.equal(avitoLinkStatus(noApi.settings).label, "XML: подготовьте первый файл");
     const publicGet = () => feedRoute.GET(new Request("https://crm.example.ru/feed.csv"), { params: Promise.resolve({ token }) });
     const publicHead = () => feedRoute.HEAD(new Request("https://crm.example.ru/feed.csv", { method: "HEAD" }), { params: Promise.resolve({ token }) });
     const publicXml = () => xmlRoute.GET(new Request("https://crm.example.ru/feed.xml"), { params: Promise.resolve({ token }) });
@@ -346,6 +354,14 @@ try {
     products.pop();
     await service.saveAvitoSettings({ settings });
     const exported = await service.generateAvitoExport();
+    assert.equal(await storage.readAvitoValue(scope, "client_id"), null, "generating a reviewed feed needs no API keys");
+    const linkView = await service.getAvitoIntegration({ branchName: "Test", canEdit: true, canEditSecrets: true });
+    assert.equal(avitoLinkStatus(linkView.settings).label, "XML-ссылка включена");
+    assert.deepEqual(avitoLinkStatus({ ...linkView.settings, connection: { status: "error" } }), avitoLinkStatus(linkView.settings), "API failure must not affect XML status");
+    await storage.writeAvitoValue(scope, "profile", { ...profile, connection: { ...profile.connection, status: "error", message: "API denied" } });
+    assert.equal((await publicXmlHead()).status, 200, "API denial never blocks the XML endpoint");
+    await storage.writeAvitoValue(scope, "profile", profile);
+
     assert.equal(exported.stats.included, 1, "foreign branch never enters feed");
     const original = await service.downloadAvitoExport(exported.id);
     const originalXml = await service.downloadAvitoExport(exported.id, "xml");

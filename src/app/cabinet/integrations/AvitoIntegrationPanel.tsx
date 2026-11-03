@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, CheckCircle2, Circle, FileCheck2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput } from "@/components/platform/EcoUI";
 import AvitoSettingsForm from "@/components/integrations/AvitoSettingsForm";
+import { avitoLinkStatus } from "@/lib/avito-autoload/feed-state";
 import type { AvitoIntegrationData, AvitoSettings } from "@/lib/avito-autoload/types";
 import settingsStyles from "@/app/warehouse/avito/avito.module.css";
 import styles from "./avito-integration.module.css";
@@ -37,6 +38,7 @@ export default function AvitoIntegrationPanel({ branchName, canEditSecrets, refr
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [error, setError] = useState("");
+  const [apiError, setApiError] = useState("");
   const [notice, setNotice] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsVersion, setSettingsVersion] = useState(0);
@@ -62,14 +64,16 @@ export default function AvitoIntegrationPanel({ branchName, canEditSecrets, refr
   const owner = data?.canEditSecrets ?? canEditSecrets;
   const credentialsDirty = Boolean(clientId.trim() || clientSecret.trim());
   const connected = hasKeys && settings?.connection.status === "ok";
-  const apiLabel = connected ? "API подключён" : settings?.connection.status === "error" ? "Ошибка подключения" : hasKeys ? "Ключи сохранены · нужна проверка" : "API не подключён";
+  const apiLabel = connected ? "API подключён" : settings?.connection.status === "error" ? "API: ошибка доступа" : hasKeys ? "API: нужна проверка" : "API не подключён · необязательно";
+
+  const linkStatus = avitoLinkStatus(settings);
 
   async function run(label: string, operation: () => Promise<string>) {
     if (busyRef.current) return false;
-    busyRef.current = true; setBusy(label); setError(""); setNotice("");
+    busyRef.current = true; setBusy(label); setError(""); setApiError(""); setNotice("");
     let success = false;
     try { setNotice(await operation()); success = true; }
-    catch (failure) { setError(message(failure)); }
+    catch (failure) { (["credentials", "test", "connect", "upload", "reports"].includes(label) ? setApiError : setError)(message(failure)); }
     try { if (mounted.current) await refresh(); }
     catch (failure) { setError((current) => current || `Не удалось обновить статус. ${message(failure)}`); }
     finally { busyRef.current = false; setBusy(null); }
@@ -105,16 +109,34 @@ export default function AvitoIntegrationPanel({ branchName, canEditSecrets, refr
 
   return <section id="avito" className={styles.panel} aria-labelledby="avito-integration-title">
     <header className={styles.header}>
-      <div><h2 id="avito-integration-title">Авито · товары</h2><p>Подключение API и автовыгрузка товаров филиала <strong>{data?.branchName ?? branchName}</strong>.</p></div>
-      <EcoBadge tone={connected ? "success" : settings?.connection.status === "error" ? "danger" : "neutral"} dot>{loading ? "Проверяем настройки…" : apiLabel}</EcoBadge>
+      <div><h2 id="avito-integration-title">Авито · товары</h2><p>Автовыгрузка по XML-ссылке для филиала <strong>{data?.branchName ?? branchName}</strong>.</p></div>
+      <EcoBadge tone={linkStatus.tone} dot>{linkStatus.label}</EcoBadge>
     </header>
 
     {error && <div role="alert" className={styles.error}>{error}</div>}
     {notice && <div role="status" className={styles.notice}>{notice}</div>}
     {!data && loading ? <div className={styles.skeleton} role="status" aria-label="Загружаем подключение Авито"><div /><div /><div /></div> : !data ? <EcoButton type="button" onClick={() => { setLoading(true); refresh().then(() => { setLoading(false); setError(""); }).catch((failure) => { setError(message(failure)); setLoading(false); }); }}><RefreshCw size={15} /> Повторить загрузку</EcoButton> : <>
-      <form className={styles.credentials} onSubmit={(event) => { event.preventDefault(); if (owner && credentialsDirty && !busyRef.current) void saveAndCheck(); }}>
-        <fieldset disabled={Boolean(busy)}><legend>Подключение API</legend>
-          <p className={styles.help}>Введите Client ID и Client Secret вашего приложения Авито. Аккаунту нужен доступ к API автозагрузки.</p>
+      <div className={styles.linkSetup}>
+        <div><h3>Подготовка автовыгрузки</h3><p className={styles.help}>API-ключи не требуются. Сохраните настройки, сформируйте первый файл и добавьте XML-ссылку в кабинет нужного аккаунта Авито. Там включите загрузку по расписанию.</p></div>
+        <ul>
+          <li>{settings!.lastExportAt ? <CheckCircle2 size={17} /> : <Circle size={17} />}<span>{settings!.lastExportAt ? `Файл подготовлен: ${data.reviewedAds} объявлений` : "Первый файл ещё не подготовлен"}</span><Link href="/warehouse/avito">Подготовить товары <ArrowRight size={13} /></Link></li>
+          <li>{settings!.enabled && settings!.feedUrl ? <CheckCircle2 size={17} /> : <Circle size={17} />}<span>{settings!.enabled && settings!.feedUrl ? "Выдача файла по ссылке включена" : "Выдачу файла нужно включить в настройках"}</span></li>
+        </ul>
+        <div className={styles.actions}><Link className="eco-btn" href="/warehouse/avito?tab=history"><FileCheck2 size={16} /> История и отчёты</Link></div>
+        {settings!.feedUrl && <><label className={styles.help} htmlFor="avito-integration-feed-url">XML-ссылка для кабинета Авито</label><textarea id="avito-integration-feed-url" className={settingsStyles.feedUrl} readOnly rows={3} value={settings!.feedUrl} /><EcoButton type="button" size="sm" onClick={async () => { try { await navigator.clipboard.writeText(settings!.feedUrl!); setNotice("XML-ссылка скопирована. Добавьте её в кабинет Авито и настройте расписание."); } catch { setError("Выделите ссылку и скопируйте её вручную"); } }}>Скопировать XML-ссылку</EcoButton></>}
+        <p className={styles.help}>Статус XML показывает настройки выдачи файла в CRM. Получение файла и публикацию подтверждает Авито.</p>
+      </div>
+
+      <details className={styles.settings} open={settingsOpen} onToggle={(event) => setSettingsOpen(event.currentTarget.open)}>
+        <summary>Настройки выгрузки и ссылка на файл</summary>
+        {settingsOpen && <div className={settingsStyles.workspace}><AvitoSettingsForm key={settingsVersion} settings={settings!} stores={data.stores} canEditSecrets={owner} showCredentials={false} busy={Boolean(busy)} onSave={(next) => saveSettings(next)} onApi={api} onCopyNotice={setNotice} /></div>}
+      </details>
+      <section className={styles.workflow} aria-label="Необязательное API Авито">
+        <EcoBadge tone={connected ? "success" : settings?.connection.status === "error" ? "warning" : "neutral"}>{apiLabel}</EcoBadge>
+        {apiError && <div role="alert" className={styles.error}><strong>Ошибка API Авито.</strong> {apiError}<br />Она не отключает XML-ссылку. Недоступны только функции API, для которых Авито отклонил запрос.</div>}
+        <form className={styles.credentials} onSubmit={(event) => { event.preventDefault(); if (owner && credentialsDirty && !busyRef.current) void saveAndCheck(); }}>
+        <fieldset disabled={Boolean(busy)}><legend>API Авито — необязательно</legend>
+          <p className={styles.help}>Ключи нужны только для отчётов, подключения ссылки и ручного запуска из CRM. Для выгрузки по ссылке они не требуются.</p>
           <div className={styles.keyFields}>
             <label><span>Client ID {settings?.clientIdConfigured && <EcoBadge tone="success">Сохранён</EcoBadge>}</span><EcoInput name="avito-client-id" type="password" autoComplete="off" maxLength={1000} required={!settings?.clientIdConfigured} disabled={!owner} value={clientId} placeholder={settings?.clientIdConfigured ? "Оставьте пустым, чтобы сохранить" : "Введите Client ID"} onChange={(event) => setClientId(event.target.value)} /></label>
             <label><span>Client Secret {settings?.clientSecretConfigured && <EcoBadge tone="success">Сохранён</EcoBadge>}</span><EcoInput name="avito-client-secret" type="password" autoComplete="new-password" maxLength={2000} required={!settings?.clientSecretConfigured} disabled={!owner} value={clientSecret} placeholder={settings?.clientSecretConfigured ? "Оставьте пустым, чтобы сохранить" : "Введите Client Secret"} onChange={(event) => setClientSecret(event.target.value)} /></label>
@@ -134,20 +156,9 @@ export default function AvitoIntegrationPanel({ branchName, canEditSecrets, refr
         {settings!.connection.message && <span>{settings!.connection.message}</span>}
       </div>
 
-      <div className={styles.workflow}>
-        <div><h3>Подготовка автовыгрузки</h3><p className={styles.help}>Сохраните настройки и проверьте первый файл перед подключением к Авито.</p></div>
-        <ul>
-          <li>{connected ? <CheckCircle2 size={17} /> : <Circle size={17} />}<span>API {connected ? "подключён" : "нужно подключить и проверить"}</span></li>
-          <li>{settings!.lastExportAt ? <CheckCircle2 size={17} /> : <Circle size={17} />}<span>{settings!.lastExportAt ? `Файл подготовлен: ${data.reviewedAds} объявлений` : "Первый файл ещё не подготовлен"}</span><Link href="/warehouse/avito">Подготовить товары <ArrowRight size={13} /></Link></li>
-          <li>{settings!.enabled && settings!.feedUrl ? <CheckCircle2 size={17} /> : <Circle size={17} />}<span>{settings!.enabled && settings!.feedUrl ? "Выдача файла по ссылке включена" : "Выдачу файла нужно включить в настройках"}</span></li>
-        </ul>
-        <div className={styles.actions}><Link className="eco-btn" href="/warehouse/avito?tab=history"><FileCheck2 size={16} /> История и отчёты</Link><EcoButton type="button" disabled={!hasKeys || credentialsDirty || Boolean(busy)} onClick={() => void api("reports")}><RefreshCw size={15} className={busy === "reports" ? styles.spinning : ""} /> Получить отчёт Авито</EcoButton></div>
-      </div>
-
-      <details className={styles.settings} open={settingsOpen} onToggle={(event) => setSettingsOpen(event.currentTarget.open)}>
-        <summary>Настройки выгрузки и ссылка на файл</summary>
-        {settingsOpen && <div className={settingsStyles.workspace}><AvitoSettingsForm key={settingsVersion} settings={settings!} stores={data.stores} canEditSecrets={owner} showCredentials={false} busy={Boolean(busy) || credentialsDirty} onSave={(next) => saveSettings(next)} onApi={api} onCopyNotice={setNotice} /></div>}
-      </details>
+        <p className={styles.help}>Если Авито уже настроен на загрузку по ссылке, повторно подключать API не нужно. Принятие и публикацию объявлений проверяйте в кабинете Авито.</p>
+        <EcoButton type="button" disabled={!hasKeys || credentialsDirty || Boolean(busy)} onClick={() => void api("reports")}><RefreshCw size={15} className={busy === "reports" ? styles.spinning : ""} /> Получить отчёт через API</EcoButton>
+      </section>
     </>}
   </section>;
 }

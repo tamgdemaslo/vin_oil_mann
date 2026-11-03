@@ -7,6 +7,7 @@ import { isLiterSaleUnit } from "@/lib/product-marking";
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronLeft, ChevronRight, Download, ExternalLink, FileCheck2, ImagePlus, Loader2, RefreshCw, Save, Search, Settings2, TriangleAlert, X } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import { AVITO_TYPE_LABELS, avitoCatalog, avitoRemoteLabel, buildAvitoListing } from "@/lib/avito-autoload/domain";
+import { avitoLinkStatus } from "@/lib/avito-autoload/feed-state";
 import type { AvitoFeedStats, AvitoHistoryItem, AvitoListing, AvitoOverrides, AvitoPhotoFilter, AvitoSettings, AvitoSort, AvitoWorkspaceData } from "@/lib/avito-autoload/types";
 import AvitoSettingsForm from "@/components/integrations/AvitoSettingsForm";
 import styles from "./avito.module.css";
@@ -110,7 +111,7 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
       setXmlDownloadUrl(result.xmlDownloadUrl ?? null);
       await refreshCurrent.current();
       return true;
-    } catch (failure) { setError(errorMessage(failure)); return false; }
+    } catch (failure) { setError(action === "api" ? `API Авито: ${errorMessage(failure)}. Это не отключает XML-ссылку.` : errorMessage(failure)); return false; }
     finally { setBusy(null); }
   };
 
@@ -127,7 +128,7 @@ export default function AvitoWorkspace({ branchName, canEdit, canEditSecrets, in
     <header className={styles.header}>
       <div>
         <div className="eco-page-crumbs"><Link href="/">Главная</Link><span className="sep">/</span><Link href="/inventory/products">Склад</Link><span className="sep">/</span><span className="cur">Авито</span></div>
-        <div className={styles.titleRow}><h1>Авито</h1><EcoBadge tone={data?.settings.enabled ? "success" : "neutral"} dot>{data?.settings.enabled ? "Автовыгрузка включена" : "Автовыгрузка выключена"}</EcoBadge></div>
+        <div className={styles.titleRow}><h1>Авито</h1><EcoBadge tone={avitoLinkStatus(data?.settings).tone} dot>{avitoLinkStatus(data?.settings).label}</EcoBadge></div>
         <p>Объявления из товаров филиала <strong>{data?.branchName ?? branchName}</strong></p>
       </div>
       <div className={styles.headerActions}>
@@ -280,7 +281,7 @@ function ListingEditor({ listing, settings, canEdit, busy, error, onClose, onSav
 
 function History({ items, busy, canEdit, hasKeys, onReports }: { items: AvitoHistoryItem[]; busy: boolean; canEdit: boolean; hasKeys: boolean; onReports: () => Promise<boolean> }) {
   return <>
-    <div className={styles.historyHeader}><div><h2>История загрузок</h2><p>Формирование файлов, запросы Авито и результаты обработки.</p></div>{canEdit && <EcoButton disabled={busy || !hasKeys} onClick={() => void onReports()}><RefreshCw size={15} /> Получить отчёт Авито</EcoButton>}</div>
+    <div className={styles.historyHeader}><div><h2>История загрузок</h2><p>Формирование файлов, запросы Авито и результаты обработки. API необязателен: ошибка получения отчёта не отключает XML-ссылку. Без API проверяйте обработку в кабинете Авито.</p></div>{canEdit && <EcoButton disabled={busy || !hasKeys} onClick={() => void onReports()}><RefreshCw size={15} /> Получить отчёт через API</EcoButton>}</div>
     {!items.length ? <div className={styles.empty}><FileCheck2 size={24} /><h2>Загрузок пока нет</h2><p>Сформируйте первый файл. Здесь появятся его состав и результат обработки Авито.</p></div> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>Время</th><th>Событие</th><th>Результат</th><th>Файл</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{dateLabel(item.createdAt)}</td><td><strong>{historyLabels[item.action] ?? item.action}</strong><small>{item.message}</small></td><td><EcoBadge tone={item.status === "error" ? "danger" : item.status === "pending" ? "warning" : "success"}>{item.status === "error" ? "Ошибка" : item.status === "pending" ? "Обрабатывается" : "Выполнено"}</EcoBadge>{item.stats && <small>{item.stats.included} объявлений · {item.stats.invalid ?? 0} пропущено с ошибками · {item.stats.withdrawals} исключений{Boolean(item.stats.excludedByPackaging) && ` · ${item.stats.excludedByPackaging} по фасовке`}</small>}{item.reportId && <small>Отчёт №{item.reportId}</small>}</td><td><div className={styles.downloadLinks}>{item.xmlDownloadUrl && <a className="eco-btn eco-btn--sm" href={item.xmlDownloadUrl}><Download size={15} /> XML</a>}{item.downloadUrl && <a className="eco-btn eco-btn--sm" href={item.downloadUrl}><Download size={15} /> CSV</a>}</div></td></tr>)}</tbody></table></div>}
   </>;
 }

@@ -29,3 +29,10 @@
 @keyframes avito-integration-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinning { animation: none; } }
 @media (max-width: 650px) { .panel { padding: 18px; } .header { flex-direction: column; gap: 12px; } .keyFields { grid-template-columns: minmax(0, 1fr); gap: 15px; } .workflow li > a { margin-left: 26px; } .connectionMeta { flex-direction: column; } }
+
+.linkSetup h3 { font-size: 15px; font-weight: 700; margin: 0 0 8px; }
+.linkSetup ul { display: grid; gap: 14px; padding: 0; list-style: none; margin: 18px 0; font-size: 13px; }
+.linkSetup li { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 9px; }
+.linkSetup li > svg { color: #256139; flex-shrink: 0; }
+.linkSetup li a { color: var(--eco-rust-hover); }
+.linkSetup textarea { display: block; margin: 8px 0 12px; max-width: 100%; }
