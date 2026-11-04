@@ -14,7 +14,7 @@ export function MoneyOverviewView({ data, loading, error, refresh }: { data: Das
     {data && <>
       {data.totalCents === null && <p className={styles.notice}>Общий итог неполный: не все остатки доступны. Недостающие суммы не считаются нулевыми.</p>}
       <div className={styles.scroll}><table><caption className="eco-visually-hidden">Деньги по филиалам</caption><thead><tr><th scope="col">Филиал</th><th scope="col">Наличные</th><th scope="col">Счёт / карта</th><th scope="col">Итого</th></tr></thead><tbody>{data.branches.map(branch => <tr key={branch.id}><th scope="row">{branch.name}</th><td><strong>{money(branch.cash.cents)}</strong><small>{branch.cash.message}{branch.cash.at ? ` · ${formatServiceTime(branch.cash.at)}` : ''}</small></td><td><strong>{money(branch.bank.cents)}</strong><small>{branch.bank.message}</small></td><td><strong>{money(branch.totalCents)}</strong></td></tr>)}</tbody></table></div>
-      <footer className={styles.footer}><span>{error ? 'Показаны ранее загруженные данные. ' : ''}Обновлено {formatServiceTime(data.fetchedAt)}. В банке — доступный остаток; наличные открытой смены — расчётные.</span>{data.mode === 'branch' && <Link href="/finance/bank">Операции по счёту →</Link>}</footer>
+      <footer className={styles.footer}><span>{error ? 'Показаны ранее загруженные данные. ' : ''}Обновлено {formatServiceTime(data.fetchedAt)}. В банке — текущий остаток на счёте; наличные открытой смены — расчётные.</span>{data.mode === 'branch' && <Link href="/finance/bank">Операции по счёту →</Link>}</footer>
     </>}
   </section>;
 }

@@ -10,7 +10,7 @@ const original=JSON.stringify(integration);
 const context={exports:{},getScopedBranchId:()=> 'branch-a',getMessengerOrganizationId:()=> 'org-a',
  prisma:{tBankIntegration:{findMany:async({where})=>{assert.equal(where.branchId,'branch-a');assert.equal(where.organizationId,'org-a');return [integration];}}},
  decryptText:()=>number,hashSecret:()=> 'hash',maskAccount:()=> '****1111',asRecord:v=>v??{},recordsFromUnknown:v=>v,accountNumberFromBankRecord:r=>r.accountNumber,
- callTBankJson:async(_integration,path)=>{calls++;assert.equal(path,'/api/v4/bank-accounts');return {body:[{accountNumber:number,currency:'643',balance:{otb:123.45}}]};},
+ callTBankJson:async(_integration,path)=>{calls++;assert.equal(path,'/api/v4/bank-accounts');return {body:[{accountNumber:number,currency:'643',balance:{balance:123.45,otb:20123.45}}]};},
 };
 vm.runInNewContext(ts.transpileModule('/** Read only the explicitly configured branch account;'+source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
 const read=context.exports.getTBankDashboardBalances;
