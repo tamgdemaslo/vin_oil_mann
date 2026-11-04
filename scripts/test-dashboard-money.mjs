@@ -44,7 +44,7 @@ const bankNumber='1'.repeat(20),otherNumber='2'.repeat(20);let bankMode='valid';
 const bank=load('src/lib/tbank.ts',{
   prisma:{tBankIntegration:{findMany:async({where})=>{assert.equal(where.branchId,'a');return [{debitAccountNumberEncrypted:'configured',tokenEncrypted:'secret',accounts:[{isDefault:true,accountNumberEncrypted:'discovered'}]}];}}},
   getScopedBranchId:()=> 'a',getMessengerOrganizationId:()=> 'org',decryptText:v=>v==='configured'?bankNumber:otherNumber,hashSecret:()=> 'hash',
-  callTBankJson:async(_integration,path)=>{assert.equal(path,'/api/v4/bank-accounts');if(bankMode==='error')throw Error();return {body:[{accountNumber:bankNumber,currency:'643',balance:{otb:bankMode==='missing'?undefined:123.45}},{accountNumber:otherNumber,currency:'643',balance:{otb:9999}}]};},recordsFromUnknown:v=>v,accountNumberFromBankRecord:r=>r.accountNumber,asRecord:v=>v??{},maskAccount:()=> '****1111',
+  callTBankJson:async(_integration,path)=>{assert.equal(path,'/api/v4/bank-accounts');if(bankMode==='error')throw Error();return {body:[{accountNumber:bankNumber,currency:'643',balance:{balance:bankMode==='missing'?undefined:123.45,otb:20123.45}},{accountNumber:otherNumber,currency:'643',balance:{otb:9999}}]};},recordsFromUnknown:v=>v,accountNumberFromBankRecord:r=>r.accountNumber,asRecord:v=>v??{},maskAccount:()=> '****1111',
 },'/** Read only the explicitly configured branch account;');
 assert.equal((await bank.getTBankDashboardBalances())[0].cents,12345,'only configured account, no discovered funds');
 for(const mode of ['missing','error']) {bankMode=mode;assert.equal((await bank.getTBankDashboardBalances())[0].cents,null);}

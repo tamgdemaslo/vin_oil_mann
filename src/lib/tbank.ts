@@ -1425,8 +1425,8 @@ export async function getTBankDashboardBalances() {
       if (records.length !== 1) return { ...result, message: 'Настроенный счёт не найден в Т-Банке' };
       const currency = String(records[0].currency ?? '').toUpperCase();
       if (!['RUB','643','810'].includes(currency)) return { ...result, message: 'Для сводки нужен рублёвый счёт' };
-      // T-API v4: balance.otb is the available balance, expressed in rubles.
-      const amount = asRecord(records[0].balance).otb;
+      // T-API v4: balance.balance is the current account balance, excluding available overdraft.
+      const amount = asRecord(records[0].balance).balance;
       if ((typeof amount !== 'string' && typeof amount !== 'number') || !/^-?\d+(\.\d{1,2})?$/.test(String(amount))) throw new Error('Invalid bank balance');
       const cents = Math.round(Number(amount) * 100);
       if (!Number.isSafeInteger(cents)) throw new Error('Invalid bank balance');
