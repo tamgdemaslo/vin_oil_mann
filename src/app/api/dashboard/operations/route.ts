@@ -495,7 +495,7 @@ export async function GET() {
   const now = new Date();
   const nextAppointment = todayAppointments.find((item) => {
     const value = appointmentDateTime(item);
-    return value ? value.getTime() >= now.getTime() : false;
+    return value ? value.getTime() >= now.getTime() && !/отмен|не приш/.test(appointmentStatus(item)) : false;
   }) ?? null;
   const appointmentShipmentStatuses = reconcileAppointmentShipments(todayAppointments, todayShipments);
   const appointmentShipmentStatusById = new Map(appointmentShipmentStatuses.map((status) => [status.appointmentId, status]));

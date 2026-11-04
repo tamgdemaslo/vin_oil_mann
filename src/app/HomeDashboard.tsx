@@ -18,8 +18,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from "react";
-import MoneyOverview from "@/components/dashboard/MoneyOverview";
 import EmployeeSalesPlanCard from "@/components/dashboard/EmployeeSalesPlanCard";
+import MoneyOverview from "@/components/dashboard/MoneyOverview";
+import OwnerMonthCard from "@/components/dashboard/OwnerMonthCard";
 import MyPayrollCard, { type EmployeePayrollData, type EmployeePayrollPeriod } from "@/components/dashboard/MyPayrollCard";
 import { type EcoBadgeTone } from "@/components/platform/EcoUI";
 import { loadDashboardClientBundle } from "@/lib/dashboard-client";
@@ -1793,7 +1794,7 @@ export default function HomeDashboard({
               <span className="eco-ops-command-context">{SERVICE_ORGANIZATION_LABEL} · {todayShortPhrase()}</span>
               <h1>{role === "owner" ? "Контроль бизнеса сегодня" : "Рабочий день"}</h1>
               <p>
-                {role === "owner" ? "Деньги, отклонения и решения по филиалу." : "Ближайшие работы, отгрузки и незавершённые диагностики."}
+                {role === "owner" ? "Деньги, запись и выполнение плана филиала." : "Ближайшие работы, отгрузки и незавершённые диагностики."}
               </p>
               {lastUpdatedAt && (
                 <span className="eco-ops-updated">Обновлено в {formatTime(new Date(lastUpdatedAt).toISOString())}{refreshing ? " · обновляем…" : ""}</span>
@@ -1865,7 +1866,7 @@ export default function HomeDashboard({
         </section>
       ) : (
         <>
-          <section className={`eco-ops-owner-grid ${role !== "owner" ? "is-single" : ""}`} aria-label={role === "owner" ? "Деньги и внимание владельца" : "Очередь работ мастера"}>
+          <section className="eco-ops-owner-grid is-single" aria-label={role === "owner" ? "Финансовая сводка владельца" : "Очередь работ мастера"}>
             {role === "owner" && dashboard.finance && <section className="eco-ops-finance-panel">
               <header>
                 <div>
@@ -1891,18 +1892,14 @@ export default function HomeDashboard({
                     <span>Средний чек</span>
                     <strong>{formatMoneyCents(dashboard.finance.averageCheckCents)}</strong>
                   </div>
-                  <div>
-                    <span>Не оплачено</span>
-                    <strong className={dashboard.finance.unpaidCents > 0 ? "is-warning" : ""}>{formatMoneyCents(dashboard.finance.unpaidCents)}</strong>
-                  </div>
               </div>
             </section>}
 
-            <section className="eco-ops-attention-panel">
+            {role !== "owner" && <section className="eco-ops-attention-panel">
               <header>
                 <div>
                   <h2>Требует решения</h2>
-                  <p>{role === "owner" ? "Деньги, клиенты, склад и диагностика по приоритету." : "Записи и диагностики по сроку и влиянию."}</p>
+                  <p>Записи и диагностики по сроку и влиянию.</p>
                 </div>
                 <span>{attentionItems.length ? formatCount(attentionItems.length) : "0"}</span>
               </header>
@@ -1931,11 +1928,21 @@ export default function HomeDashboard({
                   <span>Можно смотреть журнал и отгрузки без красного шума.</span>
                 </div>
               )}
-            </section>
+            </section>}
           </section>
+          {role === "owner" && <OwnerMonthCard refreshToken={lastUpdatedAt} />}
 
-          <section className="eco-ops-day-grid" aria-label="Рабочий слой дня">
-            <Card
+          <section className={`eco-ops-day-grid ${role === "owner" ? "is-owner" : ""}`} aria-label="Рабочий слой дня">
+            {role === "owner" ? <Card title="Журнал сегодня" href="/records" action="Весь журнал" className="eco-owner-journal">
+              <StatStrip items={[
+                { label: "Всего окон", value: dashboard.appointments.rows.filter(row => !/отмен|не приш/.test(row.status)).length + dashboard.appointments.freeWindows.length },
+                { label: "Занято", value: dashboard.appointments.rows.filter(row => !/отмен|не приш/.test(row.status)).length },
+                { label: "Свободно", value: dashboard.appointments.freeWindows.length },
+                { label: "Подтверждены", value: dashboard.appointments.confirmedToday },
+              ]} dense />
+              <div className="eco-owner-journal__windows"><b>Свободные окна</b><span>{dashboard.appointments.freeWindows.map(scheduleWindowLabel).join(" · ") || "Свободных окон нет"}</span></div>
+              {dashboard.appointments.next ? <Link href={recordHref(dashboard.appointments.next)} className="eco-owner-journal__next"><span>Ближайшая запись · {dashboard.appointments.next.time}</span><b>{dashboard.appointments.next.client}</b><small>{[dashboard.appointments.next.vehicle, dashboard.appointments.next.service].filter(Boolean).join(" · ")}</small></Link> : <p className="eco-owner-journal__empty">Ближайших записей на сегодня нет</p>}
+            </Card> : <Card
               title="Журнал сегодня"
               href="/records"
               action="Журнал"
@@ -2068,7 +2075,7 @@ export default function HomeDashboard({
                   )}
                 </>
               )}
-            </Card>
+            </Card>}
 
             {role !== "master" && dashboard.crm && <Card
               title="Дела клиентов"
@@ -2231,7 +2238,7 @@ export default function HomeDashboard({
 
           </section>
 
-          <section className="eco-ops-secondary-widgets" aria-label="История дня">
+          {role !== "owner" && <section className="eco-ops-secondary-widgets" aria-label="История дня">
             <Card
               title="Последние события"
               href="/notifications"
@@ -2310,7 +2317,7 @@ export default function HomeDashboard({
                 )}
               </div>
             </Card>}
-          </section>
+          </section>}
         </>
       ))}
       </div>
