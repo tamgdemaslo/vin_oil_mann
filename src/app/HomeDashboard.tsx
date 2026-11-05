@@ -1637,26 +1637,44 @@ export default function HomeDashboard({
                 <div><dt>Занято</dt><dd>{formatCount(booked)}</dd></div>
                 <div><dt>Свободно</dt><dd>{formatCount(appointments.freeWindows.length)}</dd></div>
               </dl>
-              {appointments.freeWindows.length > 0 && <p className="eco-owner-brief__windows">{appointments.freeWindows.slice(0, 3).map(scheduleWindowLabel).join(" · ")}{appointments.freeWindows.length > 3 ? ` · ещё ${appointments.freeWindows.length - 3}` : ""}</p>}
+              <div className="eco-owner-brief__availability">
+                <h3>Свободные окна</h3>
+                {appointments.freeWindows.length ? (
+                  <ul className="eco-owner-brief__slots">
+                    {appointments.freeWindows.slice(0, 4).map((window, index) => (
+                      <li key={`${window}-${index}`}>{scheduleWindowLabel(window)}</li>
+                    ))}
+                    {appointments.freeWindows.length > 4 && (
+                      <li><Link href="/records">Ещё {appointments.freeWindows.length - 4} →</Link></li>
+                    )}
+                  </ul>
+                ) : <p className="eco-owner-brief__muted">На сегодня свободных окон нет</p>}
+              </div>
               {next ? <Link className="eco-owner-brief__next" href={recordHref(next)}><small>Ближайшая запись</small><strong>{next.time} · {next.client}</strong><span>{[next.vehicle, next.service].filter(Boolean).join(" · ")}</span></Link> : <p className="eco-owner-brief__muted">Ближайших записей нет</p>}
             </section>
             <section className="eco-owner-brief__panel" aria-label="Отгрузки сегодня">
               <header><h2>Отгрузки сегодня</h2><Link href="/shipment">Все отгрузки →</Link></header>
-              <dl className="eco-owner-brief__metrics">
-                <div><dt>Всего</dt><dd>{formatCount(shipments.today)}</dd></div>
-                <div><dt>Черновики</dt><dd>{formatCount(shipments.drafts)}</dd></div>
-                <div><dt>Без оплаты</dt><dd>{formatCount(shipments.unpaid)}</dd></div>
+              <dl className="eco-owner-brief__metrics eco-owner-brief__shipment-totals">
+                <div><dt>Всего отгрузок</dt><dd>{formatCount(shipments.today)}</dd></div>
+                {dashboard.finance && (
+                  <div><dt>Выручка сегодня</dt><dd>{formatMoneyCents(dashboard.finance.revenueCents)}</dd></div>
+                )}
               </dl>
+              <div className="eco-owner-brief__shipment-details">
+                <span>Черновики <b>{formatCount(shipments.drafts)}</b></span>
+                <span>Без оплаты <b>{formatCount(shipments.unpaid)}</b></span>
+                {dashboard.finance && (
+                  <>
+                    <span>Прибыль <b>{formatMoneyCents(dashboard.finance.grossProfitCents)}</b></span>
+                    <span>Средний чек <b>{formatMoneyCents(dashboard.finance.averageCheckCents)}</b></span>
+                    <Link href="/finance">Финансы →</Link>
+                  </>
+                )}
+              </div>
               {shipments.rows.slice(0, 3).map(row => <Link key={row.id} className="eco-owner-brief__shipment" href={`/shipment/${row.id}`}><span>{row.name} · {row.client}</span><strong>{formatMoneyCents(row.sumCents)}</strong></Link>)}
             </section>
           </div>
         </div>
-        {dashboard.finance && <footer className="eco-owner-brief__finance">
-          <Link href="/finance">Деньги сегодня →</Link>
-          <span>Выручка <b>{formatMoneyCents(dashboard.finance.revenueCents)}</b></span>
-          <span>Прибыль <b>{formatMoneyCents(dashboard.finance.grossProfitCents)}</b></span>
-          <span>Средний чек <b>{formatMoneyCents(dashboard.finance.averageCheckCents)}</b></span>
-        </footer>}
       </main>
     );
   }

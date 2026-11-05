@@ -72268,3 +72268,89 @@ select[size="1"]::-ms-expand {
   .eco-owner-brief .eco-owner-month__delta { font-size:12px; }
   .eco-owner-brief .eco-owner-month__plans { gap:10px; }
 }
+
+/* Owner overview emphasis. */
+.eco-owner-brief {
+  --owner-ink: #211c18;
+  --owner-orange: #a43d17;
+  --owner-orange-light: #ffb087;
+  --owner-orange-wash: #fff1e8;
+  color: var(--owner-ink);
+}
+
+.eco-owner-brief .eco-owner-brief__cash {
+  background: var(--owner-ink);
+  border-color: var(--owner-ink);
+  color: #fffaf6;
+}
+
+.eco-owner-brief__cash > div > span { color: #eadbd2; }
+.eco-owner-brief__cash strong { font-size: 20px; }
+.eco-owner-brief .eco-owner-brief__cash > a { color: var(--owner-orange-light); }
+
+.eco-owner-brief .eco-owner-month__totals > div:first-child > strong {
+  color: var(--owner-orange);
+  font-size: clamp(25px, 3vw, 32px);
+  line-height: 1.2;
+}
+
+.eco-owner-brief__metrics > div {
+  min-width: 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f6f4f1;
+}
+
+.eco-owner-brief__panel[aria-label="Журнал сегодня"] .eco-owner-brief__metrics > div:last-child {
+  background: var(--owner-orange-wash);
+}
+
+.eco-owner-brief__panel[aria-label="Журнал сегодня"] .eco-owner-brief__metrics > div:last-child dd {
+  color: var(--owner-orange);
+}
+
+.eco-owner-brief .eco-owner-month__plan progress { accent-color: var(--owner-orange); }
+
+.eco-owner-brief .eco-owner-brief__actions .eco-ops-btn--primary {
+  color: #fff;
+  background: var(--owner-orange);
+}
+
+.eco-owner-brief .eco-owner-brief__actions .eco-ops-btn--primary:hover {
+  background: #863012;
+}
+
+.eco-owner-brief__availability { margin-top: 14px; }
+.eco-owner-brief__availability h3 { margin: 0 0 6px; font-size: 13px; }
+.eco-owner-brief__slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.eco-owner-brief__slots li {
+  padding: 4px 8px;
+  border: 1px solid #f0d7c7;
+  border-radius: 5px;
+  background: var(--owner-orange-wash);
+  color: var(--owner-orange);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.eco-owner-brief__panel .eco-owner-brief__slots a { color: inherit; }
+.eco-owner-brief__shipment-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.eco-owner-brief__shipment-totals > div:nth-child(2) dd {
+  color: var(--owner-orange);
+  overflow-wrap: anywhere;
+}
+.eco-owner-brief__shipment-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--ops-muted);
+}
