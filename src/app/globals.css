@@ -72226,3 +72226,45 @@ select[size="1"]::-ms-expand {
   .eco-ops-dashboard.is-role-owner .eco-ops-finance-ledger { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   .eco-ops-dashboard.is-role-owner .eco-ops-finance-ledger .is-main { grid-column:1 / -1; }
 }
+
+/* Owner brief: balances, month and today's work share one reading order. */
+.eco-owner-brief { gap: 14px; padding: 18px 24px 36px; }
+.eco-owner-brief__top, .eco-owner-brief__actions, .eco-owner-brief__cash, .eco-owner-brief__finance { display:flex; align-items:center; flex-wrap:wrap; gap: 10px 22px; }
+.eco-owner-brief__top { justify-content:space-between; }
+.eco-owner-brief__top h1 { margin:2px 0 0; font-size:26px; line-height:1.2; }
+.eco-owner-brief__top p { margin:0; color:var(--ops-muted); font-size:13px; }
+.eco-owner-brief__actions { gap:8px; }
+.eco-owner-brief__cash, .eco-owner-brief__finance { padding:12px 16px; background:var(--ops-surface); border:1px solid var(--ops-line); border-radius:8px; font-size:13px; }
+.eco-owner-brief__cash h2 { font-size:14px; margin:0; }
+.eco-owner-brief__cash > div { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 10px; }
+.eco-owner-brief__cash strong { font-size:16px; font-variant-numeric:tabular-nums; }
+.eco-owner-brief__cash > a { margin-inline-start:auto; }
+.eco-owner-brief__grid { display:grid; grid-template-columns:minmax(0, 1.15fr) minmax(0, 1fr); align-items:start; gap:14px; }
+.eco-owner-brief__today { display:grid; gap:12px; min-width:0; }
+.eco-owner-brief__panel { padding:14px 16px; background:var(--ops-surface); border:1px solid var(--ops-line); border-radius:8px; }
+.eco-owner-brief__panel > header { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:5px 12px; }
+.eco-owner-brief__panel h2 { margin:0; font-size:16px; }
+.eco-owner-brief__panel a, .eco-owner-brief__cash a, .eco-owner-brief__finance a { font-size:13px; text-decoration:underline; text-underline-offset:3px; }
+.eco-owner-brief__metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:12px 0 0; }
+.eco-owner-brief__metrics dt, .eco-owner-brief__muted, .eco-owner-brief__windows { font-size:13px; color:var(--ops-muted); }
+.eco-owner-brief__metrics dd { margin:3px 0 0; font-size:21px; font-weight:700; font-variant-numeric:tabular-nums; }
+.eco-owner-brief__windows,.eco-owner-brief__muted { margin:9px 0 0; }
+.eco-owner-brief__panel .eco-owner-brief__next { display:grid; gap:3px; border-top:1px solid var(--ops-line); padding-top:9px; margin-top:9px; text-decoration:none; }
+.eco-owner-brief__next small,.eco-owner-brief__next span { color:var(--ops-muted); }
+.eco-owner-brief__shipment { display:flex; justify-content:space-between; gap:10px; border-top:1px solid var(--ops-line); margin-top:8px; padding-top:8px; }
+.eco-owner-brief__shipment strong { white-space:nowrap; }
+.eco-owner-brief .eco-owner-month { min-width:0; }
+.eco-owner-brief .eco-owner-month__totals { gap:12px 28px; }
+@media(max-width:760px) {
+  .eco-owner-brief { padding:12px 12px 28px; }
+  .eco-owner-brief__grid { grid-template-columns:minmax(0,1fr); }
+  .eco-owner-brief__cash h2 { flex-basis:100%; }
+  .eco-owner-brief__cash > a { margin-inline-start:0; }
+}
+@media(max-width:520px) {
+  .eco-owner-brief .eco-owner-month > header { gap:4px 12px; }
+  .eco-owner-brief .eco-owner-month__totals { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px 0; }
+  .eco-owner-brief .eco-owner-month__totals strong { font-size:22px; }
+  .eco-owner-brief .eco-owner-month__delta { font-size:12px; }
+  .eco-owner-brief .eco-owner-month__plans { gap:10px; }
+}

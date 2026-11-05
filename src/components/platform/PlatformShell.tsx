@@ -622,7 +622,7 @@ export default function PlatformShell() {
 
   return (
     <div ref={shellRef} className="platform-shell">
-      {user?.role === "owner" && selectedBranchId && <SalesPlanBanner ownerLogin={user.login} branchId={selectedBranchId} pathname={pathname} />}
+      {user?.role === "owner" && selectedBranchId && pathname !== "/" && <SalesPlanBanner ownerLogin={user.login} branchId={selectedBranchId} pathname={pathname} />}
       <header className="platform-shell__main">
         <div className="platform-shell__brand-row">
           <Link href="/" prefetch={false} className="platform-shell__brand" aria-label="Там где масло. ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ">
