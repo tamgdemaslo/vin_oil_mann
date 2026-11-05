@@ -15,6 +15,9 @@ type Statement = {
 };
 type Connection = { id: string; name: string; accounts: Account[] };
 type Account = { id: string; accountNumberMasked: string; currency: string };
+const expensePalette = ["#a84422", "#315d6a", "#997026", "#4f6a40", "#755679", "#886d59", "#35527f", "#9a4c61"];
+const shareFormat = new Intl.NumberFormat("ru-RU", { style: "percent", maximumFractionDigits: 1 });
+const expenseFilterPrefix = "expense:";
 const emptyCategoryForm = { id: "", name: "", kind: "operating" as BankCategoryKind, archived: false };
 
 export default function BankPage() {
@@ -35,10 +38,26 @@ export default function BankPage() {
   const [categoryMessage, setCategoryMessage] = useState<{ error: boolean; text: string } | null>(null);
   const busy = loading || savingCategory || Object.values(savingRows).some(Boolean);
   const summaries = useMemo(() => summarizeBankCategories(data?.operations.filter(row => !row.cashTransferDate) ?? [], data?.categories ?? []), [data]);
+  const expenseSummaries = useMemo(() => summarizeBankCategories(
+    data?.operations.filter(row => row.direction === "expense" && !row.cashTransferDate) ?? [],
+    data?.categories ?? [],
+  ).filter(row => row.expenseCents > 0 && row.kind !== "transfer"), [data]);
+  const expenseTotal = expenseSummaries.reduce((sum, row) => sum + row.expenseCents, 0);
+  const selectedExpense = categoryFilter.startsWith(expenseFilterPrefix) ? categoryFilter.slice(expenseFilterPrefix.length) : null;
+  const expenseSlices = expenseSummaries.map((row, index) => ({
+    ...row,
+    key: row.categoryId ?? "uncategorized",
+    color: row.categoryId ? expensePalette[index % expensePalette.length] : "#77756c",
+    share: row.expenseCents / expenseTotal,
+  }));
   const uncategorizedCount = data?.operations.filter(row => !row.categoryId && !row.cashTransferDate).length ?? 0;
   const hiddenCount = data?.operations.filter(row => row.hiddenFromReview).length ?? 0;
   const reviewCount = data?.operations.filter(needsBankExpenseReview).length ?? 0;
   const visibleOperations = data?.operations.filter(row => {
+    if (selectedExpense) {
+      return row.direction === "expense" && !row.cashTransferDate &&
+        (row.categoryId ?? "uncategorized") === selectedExpense;
+    }
     if (categoryFilter === "review") return needsBankExpenseReview(row);
     if (categoryFilter === "hidden") return row.hiddenFromReview;
     if (categoryFilter === "uncategorized") return !row.categoryId && !row.cashTransferDate;
@@ -183,9 +202,41 @@ export default function BankPage() {
           {[['Остаток на начало периода',data.openingCents],['Поступило',data.incomeCents],['Списано',data.expenseCents],['Остаток на конец периода',data.closingCents]].map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{money(Number(value))}</dd></div>)}
         </dl>
       </section>
+      <section className={styles.expenseOverview} aria-labelledby="expense-chart-title">
+        <div className={styles.expenseHeader}>
+          <div><h2 id="expense-chart-title">Списания по категориям</h2>
+            <p>Доля в списаниях за период. Внутренние переводы и внесения в кассу вынесены отдельно.</p>
+          </div>
+          {selectedExpense && <button type="button" className="eco-btn" onClick={() => setCategoryFilter("")}>Сбросить фильтр</button>}
+        </div>
+        {expenseTotal > 0 ? <div className={styles.expenseChart}>
+          <div className={styles.donut}>
+            <svg viewBox="0 0 160 160" aria-hidden="true">
+              <circle cx="80" cy="80" r="67" fill="none" stroke="var(--eco-line, #e2ded6)" strokeWidth="16" />
+              {expenseSlices.map((slice, index) => {
+                const start = expenseSlices.slice(0, index).reduce((sum, previous) => sum + previous.share, 0);
+                return <circle key={slice.key} cx="80" cy="80" r="67" pathLength="100" fill="none"
+                  stroke={slice.color} strokeWidth="16" strokeDasharray={`${slice.share * 100} ${100 - slice.share * 100}`}
+                  strokeDashoffset={-start * 100} transform="rotate(-90 80 80)"
+                  opacity={selectedExpense && selectedExpense !== slice.key ? 0.3 : 1} />;
+              })}
+            </svg>
+            <div className={styles.donutTotal}><span>Всего по категориям</span><strong>{money(expenseTotal)}</strong></div>
+          </div>
+          <div className={styles.expenseLegend} role="group" aria-label="Фильтр списаний по категориям">
+            {expenseSlices.map(slice => <button key={slice.key} type="button" aria-pressed={selectedExpense === slice.key}
+              onClick={() => setCategoryFilter(selectedExpense === slice.key ? "" : expenseFilterPrefix + slice.key)}>
+              <span className={styles.legendDot} style={{ backgroundColor: slice.color }} />
+              <span>{slice.name}{slice.archived ? " (архив)" : ""}</span>
+              <strong>{money(slice.expenseCents)}</strong>
+              <span className={styles.legendShare}>{slice.share < 0.001 ? "< 0,1%" : shareFormat.format(slice.share)}</span>
+            </button>)}
+          </div>
+        </div> : <p className={styles.expenseEmpty}>За выбранный период нет списаний для диаграммы.</p>}
+      </section>
       <section className={styles.workspace} aria-label="Банковские операции">
         <div className={styles.workspaceHeader}>
-          <h2>{categoryFilter === "review" ? "Расходы к разбору" : "Операции"}</h2>
+          <h2>{selectedExpense ? `Списания · ${expenseSlices.find(slice => slice.key === selectedExpense)?.name ?? "выбранная категория"}` : categoryFilter === "review" ? "Расходы к разбору" : "Операции"}</h2>
           <span role="status">Показано {visibleOperations.length} из {data.operations.length}</span>
         </div>
         <div className={styles.toolbar}>
@@ -197,7 +248,7 @@ export default function BankPage() {
             ))}
           </div>
           <label className={styles.filter}><span>Категория</span>
-            <select value={categoryFilter === "review" || categoryFilter === "hidden" ? "" : categoryFilter} onChange={event => setCategoryFilter(event.target.value)}>
+            <select value={selectedExpense ?? (categoryFilter === "review" || categoryFilter === "hidden" ? "" : categoryFilter)} onChange={event => setCategoryFilter(event.target.value)}>
               <option value="">Все категории</option><option value="uncategorized">Без категории · {uncategorizedCount}</option>
               {data.categories.map(category => <option key={category.id} value={category.id}>{category.name}{category.archived ? " (архив)" : ""}</option>)}
             </select>
@@ -242,8 +293,8 @@ export default function BankPage() {
           </tr>)}</tbody>
         </table></div>}
       </section>
-      <section aria-label="Статистика по категориям">
-        <div className={styles.heading}><h2>По категориям</h2><span>Весь выбранный период · {data.operations.length} операций</span></div>
+      <details className={styles.manager}>
+        <summary>Подробная сводка по категориям</summary>
         <p className={styles.muted}>Операций без категории: {uncategorizedCount}. Подтверждённые внесения из банка показаны в списке операций.</p>
         <div className={styles.tableScroll}><table className="eco-table"><thead><tr><th scope="col">Категория</th><th scope="col">Вид</th><th scope="col">Операций</th><th scope="col">Поступило</th><th scope="col">Списано</th></tr></thead>
           <tbody>{summaries.map(summary => <tr key={summary.categoryId ?? "uncategorized"}>
@@ -252,7 +303,7 @@ export default function BankPage() {
           </tr>)}</tbody>
         </table></div>
         {summaries.length === 0 && <p>В этом периоде нет операций для статистики.</p>}
-      </section>
+      </details>
       <details className={styles.manager}>
         <summary>Настроить категории</summary>
         <p className={styles.muted}>Категории общие для счетов выбранного филиала. Архивная категория остаётся у уже размеченных операций.</p>
