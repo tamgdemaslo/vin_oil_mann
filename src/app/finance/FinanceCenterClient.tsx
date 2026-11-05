@@ -1,5 +1,6 @@
 "use client";
 
+import MoneyMovements from "./MoneyMovements";
 import {
   AlertTriangle,
   BarChart3,
@@ -386,6 +387,13 @@ export default function FinanceCenterClient({ initialTab = "overview" }: Finance
         </div>
       )}
 
+      {activeTab === "overview" && <MoneyMovements
+        key={`${data?.period.dateFrom ?? dateFrom}:${data?.period.dateTo ?? dateTo}:${data?.period.calculatedAt ?? ""}`}
+        dateFrom={data?.period.dateFrom ?? dateFrom}
+        dateTo={data?.period.dateTo ?? dateTo}
+        refreshedAt={data?.period.calculatedAt}
+      />}
+
       {state === "error" && (
         <section className="eco-fc-state is-error">
           <AlertTriangle aria-hidden />
@@ -457,7 +465,7 @@ function OverviewTab({ data, onTab, mode }: { data: FinanceCenterResult; onTab: 
       <section className="eco-fc-panel eco-fc-panel--wide">
         <SectionHead
           title="Прибыль отдельно, деньги отдельно"
-          text="P&L показывает результат бизнеса по начислению. Cashflow показывает фактические поступления и выплаты."
+          text="P&L показывает результат бизнеса по начислению. Отчёт по документам помогает сверить оплаты и закупки."
           icon={<Wallet aria-hidden />}
         />
         <div className="eco-fc-split">
@@ -468,9 +476,9 @@ function OverviewTab({ data, onTab, mode }: { data: FinanceCenterResult; onTab: 
             <button type="button" onClick={() => onTab("pnl")}>Открыть P&L</button>
           </article>
           <article>
-            <span>Cashflow</span>
+            <span>По документам CRM</span>
             <strong>{formatMoney(data.cashflow.netFlow)}</strong>
-            <p>Фактические деньги: касса, эквайринг, выплаты, закупки и расходы.</p>
+            <p>Расчёт по кассе, эквайрингу и документам CRM.</p>
             <button type="button" onClick={() => onTab("cashflow")}>Открыть cashflow</button>
           </article>
           <article>

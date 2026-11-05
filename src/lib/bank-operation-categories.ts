@@ -31,9 +31,10 @@ export async function bankOperationCategoryData(
   operations: (BankExpenseMatch & { id: string })[],
 ) {
   const branchId = getScopedBranchId();
-  const [categories, rules] = await Promise.all([
+  const [categories, rules, cashTransfers] = await Promise.all([
     listBankOperationCategories(),
     prisma.bankOperationCategoryRule.findMany({ where: { branchId }, select: { merchantKey: true, categoryId: true } }),
+    prisma.bankCashTransfer.findMany({ where: { branchId, accountNumberHash }, select: { operationId: true, cashDate: true } }),
   ]);
   const saved = new Map<string, { categoryId: string | null; hiddenFromReview: boolean }>();
   const ids = [...new Set(operations.map(operation => operation.id).filter(Boolean))];
@@ -45,6 +46,7 @@ export async function bankOperationCategoryData(
     for (const row of rows) saved.set(row.operationId, row);
   }
   const rulesByMerchant = new Map(rules.map(rule => [rule.merchantKey, rule.categoryId]));
+  const transfers = new Map(cashTransfers.map(transfer => [transfer.operationId, transfer.cashDate]));
   const assignments = new Map(operations.map(operation => {
     const merchantKey = bankExpenseMerchantKey(operation);
     const ruleCategoryId = merchantKey ? rulesByMerchant.get(merchantKey) : undefined;
@@ -56,6 +58,7 @@ export async function bankOperationCategoryData(
       categorySource: manual ? "manual" : auto ? "automatic" : null,
       canRemember: Boolean(merchantKey),
       hasRule: Boolean(ruleCategoryId),
+      cashTransferDate: transfers.get(operation.id) ?? null,
     }] as const;
   }));
   return { categories, assignments };

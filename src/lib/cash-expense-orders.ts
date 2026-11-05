@@ -265,7 +265,8 @@ export async function createCashExpenseOrder(
     throw new Error("Выберите контрагента");
   }
   const article = normalizeNullable(params.article) ?? expenseItem.name;
-  const paymentType = normalizePaymentType(params.paymentType);
+  if (params.paymentType && params.paymentType !== "cash") throw new Error("РКО оформляется только на наличные.");
+  const paymentType = "cash";
   const now = new Date();
   const needsCash = paymentType === "cash" && status === "posted";
   if (needsCash && tx) await assertCashAvailable(tx, branchId, params.shiftId, amountCents);
@@ -329,6 +330,7 @@ export async function updateCashExpenseOrderDraft(
 ): Promise<CashExpenseOrderRow> {
   const current = await getCashExpenseOrder(id);
   if (!current) throw new Error("Расходный ордер не найден");
+  if (current.paymentType !== "cash") throw new Error("Карточный черновик можно отменить. Банковскую оплату учитывайте по выписке.");
   if (current.status !== "draft") {
     throw new Error("Редактировать можно только черновик расходного ордера");
   }
@@ -356,6 +358,7 @@ export async function updateCashExpenseOrderDraft(
       ? current.article
       : normalizeNullable(params.article) ?? expenseItemName;
 
+  if (params.paymentType && params.paymentType !== "cash") throw new Error("РКО оформляется только на наличные.");
   return prisma.cashExpenseOrder.update({
     where: { id, branchId: current.branchId, status: "draft" },
     data: {
@@ -383,6 +386,7 @@ export async function postCashExpenseOrder(id: string, user: User): Promise<Cash
     throw new Error("Отменённый расходный ордер нельзя провести");
   }
   if (current.status === "posted") return current;
+  if (current.paymentType !== "cash") throw new Error("Для проведения РКО выберите наличные. Карточную оплату учитывайте по выписке.");
 
   return prisma.$transaction(async (tx) => {
     if (current.paymentType === "cash") await assertCashAvailable(tx, current.branchId, current.shiftId, current.amountCents);

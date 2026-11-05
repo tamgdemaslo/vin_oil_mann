@@ -24,7 +24,7 @@ const cash=load('src/lib/dashboard-cash.ts',{
   ...domain,getScopedBranchId:()=> 'a',
   resolveAqsiCashRegister:async()=>({deviceId:'42'}),
   aqsiFetchJson:async(_config,path)=>{queries.push(path);if(receiptMode==='bad')return {};const page=Number(new URLSearchParams(path.split('?')[1]).get('page'));return {pages:2,rows:[receipt(`r${page}`,page?2:1,page?2:10)]};},
-  prisma:{cashShift:{findMany:async()=>shiftMode==='open'?[{id:'s',openingCashCents:1000,openedAt:new Date('2026-11-03T08:00:00Z'),timezone:'Europe/Kaliningrad',aqsiRegisterId:'register'}]:[],findFirst:async()=>shiftMode==='closed'?{actualCashCents:3456,closedAt:new Date('2026-11-02T18:00Z')}:null},cashWithdrawal:{aggregate:async()=>({_sum:{amountCents:100}})},cashExpenseOrder:{aggregate:async({where})=>{assert.equal(where.status,'posted');assert.equal(where.paymentType,'cash');assert.equal(where.branchId,'a');return {_sum:{amountCents:200}};}}},
+  prisma:{bankCashTransfer:{aggregate:async()=>({_sum:{amountCents:300}})},cashShift:{findMany:async()=>shiftMode==='open'?[{id:'s',openingCashCents:1000,openedAt:new Date('2026-11-03T08:00:00Z'),timezone:'Europe/Kaliningrad',aqsiRegisterId:'register'}]:[],findFirst:async()=>shiftMode==='closed'?{actualCashCents:3456,closedAt:new Date('2026-11-02T18:00Z')}:null},cashWithdrawal:{aggregate:async()=>({_sum:{amountCents:100}})},cashExpenseOrder:{aggregate:async({where})=>{assert.equal(where.status,'posted');assert.equal(where.paymentType,'cash');assert.equal(where.branchId,'a');return {_sum:{amountCents:200}};}}},
 });
 function receipt(id,type,amount){return {id,amount:amount+999+111,processedAt:'2026-11-03T11:00:00',content:{type,checkClose:{payments:[{type:0,amount},{type:1,amount:999},{type:13,amount:111}]}}};}
 const from='2026-11-03T10:00:00',till='2026-11-03T12:00:00';
@@ -35,7 +35,7 @@ assert.throws(()=>cash.receiptCashCents({processedAt:from,content:{type:1}},'42'
 const withChange={...receipt('change',1,20),amount:1120,change:10};
 assert.equal(cash.receiptCashCents(withChange,'42',from,till),1000,'cash change is deducted exactly once');
 assert.throws(()=>cash.receiptCashCents({...withChange,amount:1119},'42',from,till),'unreconciled cash is not shown');
-const open=await cash.getDashboardCash(new Date('2026-11-03T10:00:00Z'));assert.equal(open.cents,1500,'opening + receipts - refund - posted cash expenses - withdrawals');
+const open=await cash.getDashboardCash(new Date('2026-11-03T10:00:00Z'));assert.equal(open.cents,1800,'opening + receipts + bank cash deposit - refund - posted cash expenses - withdrawals');
 assert.equal(queries.length,2);assert.match(queries[0],/filtered.devices=42/);assert.match(queries[0],/2026-11-03T10/,'branch timezone is applied');
 receiptMode='bad';assert.equal((await cash.getDashboardCash()).cents,null,'invalid provider data is unknown, not zero');
 shiftMode='closed';assert.equal((await cash.getDashboardCash()).cents,3456,'closed shift uses counted cash');

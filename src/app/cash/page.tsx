@@ -35,6 +35,7 @@ type CashShift = {
   openedAt: string;
   openedBy: { login: string; name: string; role: "owner" | "admin" | "master" };
   openingCash: number;
+  bankCashReceived?: number;
   closedAt?: string;
   closedBy?: { login: string; name: string; role: "owner" | "admin" | "master" };
   cashOrdersTotal?: number;
@@ -286,8 +287,6 @@ export default function CashPage() {
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseDate, setExpenseDate] = useState(() => getServiceDateForTimezone());
   const [expenseArticle, setExpenseArticle] = useState("");
-  const [expensePaymentType, setExpensePaymentType] =
-    useState<CashExpensePaymentType>("cash");
   const [expenseComment, setExpenseComment] = useState("");
   const [expenseAttachmentUrl, setExpenseAttachmentUrl] = useState("");
   const [expenseItems, setExpenseItems] = useState<ReferenceOption[]>([]);
@@ -593,7 +592,7 @@ export default function CashPage() {
       .reduce((sum, op) => sum + (op.amount || 0), 0);
     const opening = shift?.openingCash ?? 0;
     const cashOrders = parseMoneyInput(closeCashOrders);
-    const expected = opening + cashOrders - withdrawals - cashExpenses;
+    const expected = opening + (shift?.bankCashReceived ?? 0) + cashOrders - withdrawals - cashExpenses;
     const actual = parseMoneyInput(closeActualCash);
     const discrepancy = Math.round((actual - expected) * 100) / 100;
     return {
@@ -705,7 +704,6 @@ export default function CashPage() {
     setExpenseArticle("");
     setExpenseComment("");
     setExpenseAttachmentUrl("");
-    setExpensePaymentType("cash");
     setSelectedExpenseItemId("");
     setSelectedExpenseCounterparty(null);
     setExpenseCounterpartySearch("");
@@ -713,14 +711,13 @@ export default function CashPage() {
   }
 
   function startEditExpenseOrder(cashout: CashoutRecord) {
-    if (cashout.status !== "draft") return;
+    if (cashout.status !== "draft" || cashout.paymentType === "card") return;
     setEditingExpenseOrderId(cashout.id);
     setExpenseAmount((cashout.sum / 100).toFixed(2));
     setExpenseDate(cashout.moment.slice(0, 10));
     setExpenseArticle(cashout.paymentPurpose || "");
     setExpenseComment(cashout.description || "");
     setExpenseAttachmentUrl("");
-    setExpensePaymentType(cashout.paymentType ?? "cash");
     const expenseItem =
       (cashout.expenseItemId ? expenseItems.find((item) => item.id === cashout.expenseItemId) : null) ??
       expenseItems.find((item) => item.name === cashout.expenseItemName);
@@ -784,7 +781,7 @@ export default function CashPage() {
           expenseItemId: selectedExpenseItem.id,
           expenseItemName: selectedExpenseItem.name,
           expenseItemMetaHref: selectedExpenseItem.meta?.href,
-          paymentType: expensePaymentType,
+          paymentType: "cash",
           status,
           comment: expenseComment.trim() || undefined,
           attachmentUrl: expenseAttachmentUrl.trim() || undefined,
@@ -1463,6 +1460,7 @@ export default function CashPage() {
                 <span><b>Кассир</b>{shift.openedBy.name}</span>
                 <span><b>Дата сервиса</b>{shift.serviceDate}</span>
                 <span><b>Стартовый остаток</b>{money(shift.openingCash)}</span>
+                {!!shift.bankCashReceived && <span><b>Внесено из банка</b>{money(shift.bankCashReceived)}</span>}
                 <span><b>Поступления</b>{money(parseMoneyInput(closeCashOrders))}</span>
                 <span><b>Расходы наличными</b>{signedMoney(totals.cashExpenses)}</span>
                 <span><b>Изъятия</b>{signedMoney(totals.withdrawals)}</span>
@@ -1567,13 +1565,7 @@ export default function CashPage() {
                       : "Создаёт локальный расходный ордер и привязывает его к текущей смене."}
                   </p>
                 </div>
-                <EcoBadge tone={expensePaymentType === "cash" ? "warning" : "info"}>
-                  {editingExpenseOrderId
-                    ? "черновик"
-                    : expensePaymentType === "cash"
-                      ? "наличные"
-                      : "карта"}
-                </EcoBadge>
+                <EcoBadge tone="warning">{editingExpenseOrderId ? "черновик" : "наличные"}</EcoBadge>
               </div>
               {expenseRefsError && <div className="eco-cash-warning">Локальные справочники не загрузились: {expenseRefsError}</div>}
               <div className="eco-cash-form-grid">
@@ -1636,13 +1628,6 @@ export default function CashPage() {
                   <span>Основание / назначение</span>
                   <input value={expenseArticle} onChange={(event) => setExpenseArticle(event.target.value)} className="eco-input" placeholder="Например: оплата аренды за март" />
                 </label>
-                <div className="eco-cash-field">
-                  <span>Тип оплаты</span>
-                  <div className="eco-seg eco-cash-payment-seg">
-                    <button type="button" className={`eco-seg-btn ${expensePaymentType === "cash" ? "is-active" : ""}`} onClick={() => setExpensePaymentType("cash")}>Наличные</button>
-                    <button type="button" className={`eco-seg-btn ${expensePaymentType === "card" ? "is-active" : ""}`} onClick={() => setExpensePaymentType("card")}>Карта</button>
-                  </div>
-                </div>
                 <label className="eco-cash-field">
                   <span>Вложение</span>
                   <input value={expenseAttachmentUrl} onChange={(event) => setExpenseAttachmentUrl(event.target.value)} className="eco-input" placeholder="Ссылка на чек" />
@@ -1885,7 +1870,7 @@ export default function CashPage() {
                           </td>
                           <td>
                             <div className="eco-row-actions is-visible">
-                              {cashout.status === "draft" && (
+                              {cashout.status === "draft" && cashout.paymentType !== "card" && (
                                 <>
                                   <button type="button" className="eco-icon-btn" onClick={() => startEditExpenseOrder(cashout)} title="Редактировать черновик" aria-label="Редактировать черновик">
                                     <Pencil aria-hidden className="eco-icon" />
@@ -1924,7 +1909,7 @@ export default function CashPage() {
                       <span>{cashout.expenseItemName || "статья не указана"} · {cashoutSourceLabel(cashout)}</span>
                       <strong className="l-money">{moneyFromCents(cashout.sum)}</strong>
                       <div className="eco-row-actions is-visible">
-                        {cashout.status === "draft" && (
+                        {cashout.status === "draft" && cashout.paymentType !== "card" && (
                           <>
                             <button type="button" className="eco-icon-btn" onClick={() => startEditExpenseOrder(cashout)} title="Редактировать черновик" aria-label="Редактировать черновик">
                               <Pencil aria-hidden className="eco-icon" />

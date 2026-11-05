@@ -62,7 +62,7 @@ jobs:
         run: node scripts/test-tbank-connections.mjs && node scripts/test-tbank-statement.mjs && node scripts/test-tbank-transport.mjs && node scripts/test-dashboard-money.mjs && node scripts/test-tbank-dashboard-balance.mjs && node scripts/test-bank-operation-categories.mjs
 
       - name: Verify cash availability and supplier payment correction
-        run: node scripts/test-cash-available.mjs
+        run: node scripts/test-cash-available.mjs && node scripts/test-finance-money-movements.mjs
 
       - name: Verify branch operational integrations
         run: npm run test:branch-operational-integrations
