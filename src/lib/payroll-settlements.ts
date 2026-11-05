@@ -1,3 +1,4 @@
+import { assertCashAvailable } from "@/lib/cash-available";
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { canonicalizeLogin, getUsersFromEnv, type User } from "@/lib/auth";
@@ -606,6 +607,8 @@ export async function createPayrollPayment(params: {
         throw new Error("Открытая кассовая смена не найдена. Откройте кассу или выберите другой способ выплаты.");
       }
 
+      await assertCashAvailable(tx, branchId, shift.id, amountCents);
+
       const title = operationTitle(operationType);
       const expenseItem = await tx.cashExpenseItem.upsert({
         where: { branchId_name: { branchId, name: title } },
@@ -704,7 +707,7 @@ export async function createPayrollPayment(params: {
           AND branch_id = ${branchId}
       `;
     }
-  });
+  }, { timeout: 25_000 });
 
   const { invalidatePayrollCache } = await import("@/lib/payroll");
   invalidatePayrollCache();
@@ -775,7 +778,7 @@ export async function updatePayrollPayment(params: {
     if (existing.cashOrderId) {
       const cashOrder = await tx.cashExpenseOrder.findFirst({
         where: { id: existing.cashOrderId, branchId },
-        select: { id: true, status: true, shiftId: true },
+        select: { id: true, status: true, shiftId: true, amountCents: true },
       });
       if (!cashOrder) throw new Error("Связанный расходный ордер не найден");
       if (cashOrder.status !== "posted") throw new Error("Связанный расходный ордер отменён или не проведён");
@@ -789,6 +792,10 @@ export async function updatePayrollPayment(params: {
             "РКО проведён в закрытой кассовой смене. Для исправления движения денег отмените выплату и оформите новый РКО в нужной смене."
           );
         }
+      }
+
+      if (amountCents > cashOrder.amountCents) {
+        await assertCashAvailable(tx, branchId, cashOrder.shiftId, amountCents - cashOrder.amountCents);
       }
 
       const title = operationTitle(operationType);
@@ -830,7 +837,7 @@ export async function updatePayrollPayment(params: {
       WHERE id = ${existing.id}
         AND branch_id = ${branchId}
     `;
-  });
+  }, { isolationLevel: "Serializable", timeout: 25_000 });
 
   const { invalidatePayrollCache } = await import("@/lib/payroll");
   invalidatePayrollCache();

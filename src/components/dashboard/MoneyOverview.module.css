@@ -1,0 +1,21 @@
+.section { margin-block: 20px; padding: 20px; border: 1px solid var(--eco-border, #d5d1c7); border-radius: 8px; background: var(--eco-surface, #fff); color: var(--eco-text, #171717); }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.header h2 { margin: 0; font-size: 20px; }
+.header p { margin: 5px 0 0; color: #555; font-size: 14px; }
+.totals { display: flex; flex-wrap: wrap; margin: 20px 0; border-block: 1px solid #dedbd5; }
+.totals > div { flex: 1 1 180px; padding: 14px 12px 14px 0; }
+.totals dt { font-size: 14px; color: #555; }
+.totals dd { margin: 6px 0 0; font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.total dd { color: #171717; }
+.scroll { overflow-x: auto; }
+.scroll table { width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; }
+.scroll th, .scroll td { padding: 12px 14px 12px 0; vertical-align: top; border-bottom: 1px solid #dedbd5; }
+.scroll thead th { color: #555; font-weight: 500; }
+.scroll td strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scroll small { display: block; max-width: 36ch; margin-top: 5px; color: #555; line-height: 1.45; }
+.footer { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; margin-top: 14px; font-size: 13px; color: #555; }
+.footer span { max-width: 85ch; }
+.footer a { color: #923707; }
+.notice { padding: 10px 12px; background: #fff1d4; color: #664300; font-size: 14px; }
+.section :is(button,a):focus-visible { outline: 2px solid #923707; outline-offset: 3px; }
+@media (max-width: 600px) { .section { padding: 14px; margin-block: 14px; } .header { align-items: flex-start; flex-direction: column; } .totals > div { flex-basis: 45%; } .totals > .total { flex-basis: 100%; padding-top: 0; } .totals dd { font-size: 21px; } .scroll table { min-width: 620px; } }

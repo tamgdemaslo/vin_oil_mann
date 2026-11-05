@@ -1,0 +1,14 @@
+.eco-supplier-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+
+.eco-supplier-cards .eco-client-mobile-card {
+  min-width: 0;
+}
+
+.eco-supplier-cards .eco-client-mobile-card strong {
+  overflow-wrap: anywhere;
+}

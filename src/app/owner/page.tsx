@@ -1,3 +1,4 @@
+import MoneyOverview from "@/components/dashboard/MoneyOverview";
 import { redirect } from "next/navigation";
 import { requireBranchContext } from "@/lib/branch-context";
 import { getOwnerDashboard } from "@/lib/owner-dashboard";
@@ -26,6 +27,8 @@ export default async function OwnerDashboardPage() {
           <a href="/cabinet/branches" className="eco-btn eco-btn--secondary">Управление филиалами</a>
         </div>
       </header>
+
+      <MoneyOverview />
 
       <section className="eco-owner-dashboard__totals" aria-label="Итоги месяца">
         <div><span>Выручка месяца</span><strong>{money(dashboard.total.revenueCents)}</strong></div>
