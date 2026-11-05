@@ -45,3 +45,38 @@ export function summarizeBankCategories(operations: CategorizedBankOperation[], 
   }
   return [...result.values()].sort((a, b) => (b.expenseCents - a.expenseCents) || (b.incomeCents - a.incomeCents) || a.name.localeCompare(b.name, "ru"));
 }
+
+export type BankExpenseMatch = {
+  direction: string;
+  counterparty: string;
+  inn: string;
+  purpose: string;
+};
+
+export function bankExpenseMerchantKey(operation: BankExpenseMatch) {
+  if (operation.direction !== "expense") return null;
+  const name = bankCategoryNameKey(operation.counterparty);
+  const inn = operation.inn.replace(/\D/g, "");
+  if (name.length < 3 || name.length > 200 || !/\p{L}/u.test(name)) return null;
+  if (![10, 12].includes(inn.length) && /^(?:перевод|плат[её]ж|оплата|получатель|банк|сбп|физическое лицо)(?:\s|$)/iu.test(name)) return null;
+  return JSON.stringify([name, [10, 12].includes(inn.length) ? inn : ""]);
+}
+
+export function automaticBankCategory(
+  operation: BankExpenseMatch,
+  categories: BankCategory[],
+  ruleCategoryId?: string,
+) {
+  if (operation.direction !== "expense") return undefined;
+  const rule = categories.find(category => category.id === ruleCategoryId && !category.archived);
+  if (rule) return rule;
+  const description = bankCategoryNameKey(operation.counterparty + " " + operation.purpose);
+  if (/(?:возврат|refund|сторно)/iu.test(description)) return undefined;
+  if (/(?:^|[^\p{L}\p{N}])(?:авито|avito)(?=$|[^\p{L}\p{N}])/iu.test(description)) {
+    return categories.find(category => category.code === "marketing" && !category.archived);
+  }
+}
+
+export function needsBankExpenseReview(operation: CategorizedBankOperation & { hiddenFromReview?: boolean }) {
+  return operation.direction === "expense" && Boolean(operation.id) && !operation.categoryId && !operation.hiddenFromReview;
+}

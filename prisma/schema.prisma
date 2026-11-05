@@ -5338,6 +5338,7 @@ model BankOperationCategory {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   classifications BankOperationClassification[]
+  rules BankOperationCategoryRule[]
 
   @@unique([branchId, id], map: "bank_operation_categories_branch_id_id_key")
   @@unique([branchId, code], map: "bank_operation_categories_branch_code_key")
@@ -5354,6 +5355,7 @@ model BankOperationClassification {
   accountNumberHash String   @map("account_number_hash")
   operationId       String   @map("operation_id")
   categoryId        String?  @map("category_id")
+  hiddenFromReview  Boolean  @default(false) @map("hidden_from_review")
   category          BankOperationCategory? @relation(fields: [branchId, categoryId], references: [branchId, id], onDelete: Restrict)
   createdById       String?  @map("created_by_id")
   updatedById       String?  @map("updated_by_id")
@@ -5363,4 +5365,14 @@ model BankOperationClassification {
   @@unique([branchId, accountNumberHash, operationId], map: "bank_operation_classification_identity_key")
   @@index([branchId, categoryId])
   @@map("bank_operation_classifications")
+}
+
+/// A recurring expense rule is scoped to the category's branch.
+model BankOperationCategoryRule {
+  branchId   String @map("branch_id")
+  merchantKey String @map("merchant_key")
+  categoryId String @map("category_id")
+  category   BankOperationCategory @relation(fields: [branchId, categoryId], references: [branchId, id], onDelete: Restrict)
+  @@id([branchId, merchantKey])
+  @@map("bank_operation_category_rules")
 }

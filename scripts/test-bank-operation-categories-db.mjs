@@ -15,6 +15,10 @@ const admin = { login:'test-admin',name:'Test Admin',role:'admin' };
 const scope = (branchId,run) => runWithRequestTenant({mode:'branch',branchId,organizationId:'default',allowedBranchIds:[branchId],businessGroupId:'bank-test-group',userId:'test-owner'},run);
 const hash = value => createHash('sha256').update(value).digest('hex');
 const input = {accountId:'bank-test-account-a',operationId:'same-bank-operation'};
+const merchant = {direction:'expense',counterparty:'Тестовый поставщик',inn:'0000000000',purpose:'Оплата услуг'};
+const op = (id=input.operationId, fields={}) => ({...merchant,id,...fields});
+const assignment = async (branchId, account, operation=op()) =>
+  (await scope(branchId,()=>read(hash(account),[operation]))).assignments.get(operation.id);
 try {
   await raw.businessGroup.create({data:{id:'bank-test-group',name:'Test group',slug:'bank-test-group'}});
   for(const [id,slug] of [['bank-test-a','a'],['bank-test-b','b']]) await raw.branch.create({data:{id,businessGroupId:'bank-test-group',name:id,shortName:id,slug}});
@@ -29,14 +33,14 @@ try {
   assert.equal(await raw.bankOperationCategory.count(),0,'reading defaults must not write to the database');
   const purchases = defaultsA.find(row=>row.code==='purchases');
   await scope('bank-test-a',()=>assign({...input,categoryId:purchases.id},owner));
-  assert.equal((await scope('bank-test-a',()=>read(hash('a'),[input.operationId]))).assignments.get(input.operationId),purchases.id,'classification survives a fresh read');
+  assert.equal((await assignment('bank-test-a','a')).categoryId,purchases.id,'classification survives a fresh read');
   await raw.tBankIntegration.create({data:{id:'bank-test-reconnected',branchId:'bank-test-a',organizationId:'default',connectionKey:'replacement-token'}});
   await raw.tBankSettlementAccount.create({data:{id:'bank-test-new-account-id',branchId:'bank-test-a',integrationId:'bank-test-reconnected',accountNumberHash:hash('a'),accountNumberMasked:'**** 0000'}});
   await scope('bank-test-a',()=>assign({...input,accountId:'bank-test-new-account-id',categoryId:purchases.id},owner));
   assert.equal(await raw.bankOperationClassification.count(),1,'reconnecting the same bank account keeps a single classification');
 
-  assert.equal((await scope('bank-test-a',()=>read(hash('other'),[input.operationId]))).assignments.size,0,'same operation id on another account is independent');
-  assert.equal((await scope('bank-test-b',()=>read(hash('a'),[input.operationId]))).assignments.size,0,'other branches cannot read classifications');
+  assert.equal((await assignment('bank-test-a','other')).categoryId,null,'same operation id on another account is independent');
+  assert.equal((await assignment('bank-test-b','a')).categoryId,null,'other branches cannot read classifications');
   await assert.rejects(()=>scope('bank-test-b',()=>assign({...input,categoryId:purchases.id},owner)),/Счёт не найден/);
   await assert.rejects(()=>scope('bank-test-b',()=>assign({accountId:'bank-test-account-b',operationId:'x',categoryId:purchases.id},owner)),/Категория недоступна/);
   await assert.rejects(()=>scope('bank-test-a',()=>assign({...input,categoryId:purchases.id},{...owner,role:'mechanic'})),/Недостаточно прав/);
@@ -44,13 +48,31 @@ try {
   assert.equal((await scope('bank-test-a',list)).find(row=>row.id===purchases.id).name,'Товары и материалы');
   await scope('bank-test-a',()=>save({id:purchases.id,name:'Товары и материалы',kind:'operating',archived:true},owner,true));
   await assert.rejects(()=>scope('bank-test-a',()=>assign({accountId:'bank-test-account-other',operationId:'new',categoryId:purchases.id},owner)),/Категория недоступна/);
-  assert.equal((await scope('bank-test-a',()=>read(hash('a'),[input.operationId]))).assignments.get(input.operationId),purchases.id,'archiving retains historical assignments');
+  assert.equal((await assignment('bank-test-a','a')).categoryId,purchases.id,'archiving retains historical assignments');
   await scope('bank-test-a',()=>assign({...input,categoryId:null},owner));
-  assert.equal((await scope('bank-test-a',()=>read(hash('a'),[input.operationId]))).assignments.get(input.operationId),null,'classification can be cleared');
+  assert.equal((await assignment('bank-test-a','a')).categoryId,null,'classification can be cleared');
   const custom = await scope('bank-test-a',()=>save({name:'Инструменты',kind:'operating'},owner,false));
   await assert.rejects(()=>scope('bank-test-a',()=>save({name:'  ИНСТРУМЕНТЫ  ',kind:'owner'},owner,false)),/названием уже/);
   await assert.rejects(()=>scope('bank-test-a',()=>save({id:'foreign',name:'Другая категория',kind:'operating'},owner,true)),/не найдена/);
   assert.ok(custom.categories.find(row=>row.id===custom.categoryId));
+  const recurring = op('recurring-expense');
+  const avito = op('avito-expense',{counterparty:'Авито'});
+  assert.equal((await assignment('bank-test-a','a',avito)).categorySource,'automatic');
+  await scope('bank-test-a',()=>assign({...input,...merchant,categoryId:custom.categoryId,rule:'remember'},owner));
+  assert.equal((await assignment('bank-test-a','other',recurring)).categoryId,custom.categoryId,'rules cover other accounts in the same branch');
+  assert.equal((await assignment('bank-test-b','b',recurring)).categoryId,null,'rules stay inside the branch');
+  assert.equal((await assignment('bank-test-a','a',op('incoming',{direction:'income'}))).categoryId,null);
+  await scope('bank-test-a',()=>assign({...input,operationId:recurring.id,categoryId:null,hiddenFromReview:true},owner));
+  assert.equal((await assignment('bank-test-a','a',recurring)).categoryId,null,'hidden rows override rules');
+  assert.equal((await assignment('bank-test-a','a',recurring)).hiddenFromReview,true);
+  await scope('bank-test-a',()=>assign({...input,operationId:recurring.id,categoryId:null,hiddenFromReview:false},owner));
+  assert.equal((await assignment('bank-test-a','a',recurring)).hiddenFromReview,false);
+  assert.equal((await assignment('bank-test-a','a',recurring)).categoryId,null,'explicit clearing remains manual');
+  await scope('bank-test-a',()=>assign({...input,...merchant,categoryId:null,rule:'forget'},owner));
+  assert.equal((await assignment('bank-test-a','other',recurring)).categoryId,null);
+  assert.equal((await assignment('bank-test-a','a')).categoryId,custom.categoryId,'removing a rule retains manual assignments');
+  await assert.rejects(()=>raw.bankOperationCategoryRule.create({data:{branchId:'bank-test-b',merchantKey:'foreign',categoryId:custom.categoryId}}),/Foreign key constraint/);
+
   const defaultsB = await scope('bank-test-b',list);
   assert.notEqual(defaultsB.find(row=>row.code==='purchases').id,purchases.id,'default category ids are branch specific');
   await assert.rejects(()=>raw.bankOperationClassification.create({data:{branchId:'bank-test-b',accountNumberHash:hash('b'),operationId:'cross-branch-fk',categoryId:custom.categoryId}}),/Foreign key constraint/);
