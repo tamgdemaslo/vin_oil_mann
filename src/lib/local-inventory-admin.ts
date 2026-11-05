@@ -3515,12 +3515,12 @@ export async function listLocalAdminCounterparties(params: {
     branchId: params.branchId,
     ...anonymousRetailCounterpartyExclusion(params.branchId),
     ...(status === "active" ? { archived: false } : status === "archive" ? { archived: true } : {}),
-    ...(type === "individual" ? { category: "INDIVIDUAL" } : type === "supplier" ? { category: "SUPPLIER" } : {}),
-    ...(phone === "with"
-      ? { AND: [{ phone: { not: null } }, { NOT: { phone: "" } }] }
-      : phone === "without"
-        ? { OR: [{ phone: null }, { phone: "" }] }
-        : {}),
+    ...(type === "individual" ? { category: "INDIVIDUAL" } : {}),
+    AND: [
+      ...(type === "supplier" ? [supplierCounterpartyIdentityWhere()] : []),
+      ...(phone === "with" ? [{ phone: { not: null } }, { NOT: { phone: "" } }] : []),
+      ...(phone === "without" ? [{ OR: [{ phone: null }, { phone: "" }] }] : []),
+    ],
     ...(searchQuery.normalized
       ? {
           OR: [
@@ -4571,67 +4571,108 @@ export async function createLocalSupplierInvoicePayment(
     invoice.document.counterparty?.name ??
     invoice.document.counterpartyNameSnapshot ??
     "Поставщик";
-  let cashExpenseOrderId: string | null = null;
+  const shift = paymentType === "cash" ? await getCurrentShift() : null;
+  if (paymentType === "cash" && !shift) {
+    return { ok: false as const, error: "Кассовая смена не открыта.", cashShiftClosed: true };
+  }
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const current = await tx.localSupplierInvoice.findUniqueOrThrow({ where: { id }, include: supplierInvoiceInclude });
+      const paid = effectivePaidCents(current);
+      const remaining = current.sumCents - paid;
+      if (normalizeSupplierInvoiceStatus(current.status) === "cancelled" || remaining <= 0) {
+        throw new Error("Счёт уже оплачен или отменён.");
+      }
+      if (amountCents > remaining && body.allowOverpay !== true) throw new Error("Сумма оплаты больше остатка по счёту.");
 
-  if (paymentType === "cash") {
-    const shift = await getCurrentShift();
-    if (!shift) {
-      return {
-        ok: false as const,
-        error: "Кассовая смена не открыта. Наличную оплату нельзя провести через кассу.",
-        cashShiftClosed: true,
-      };
-    }
-    try {
-      const expense = await addExpense({
+      const expense = shift ? await addExpense({
         shiftId: shift.id,
         amount: amountCents / 100,
-        article: `Оплата счёта поставщика ${invoice.number || invoice.document.name}`,
+        article: `Оплата счёта поставщика ${current.number || current.document.name}`,
         expenseDate: paymentDate,
         expenseItemName: "Оплата поставщику",
-        counterpartyId: invoice.document.counterpartyId ?? undefined,
+        counterpartyId: current.document.counterpartyId ?? undefined,
         counterpartyName: supplierName,
         paymentType: "cash",
         status: "posted",
-        comment: body.comment?.trim() || `Счёт ${invoice.number || invoice.document.name}`,
+        comment: body.comment?.trim() || `Счёт ${current.number || current.document.name}`,
+      }, tx) : null;
+      await tx.localSupplierInvoicePayment.create({
+        data: {
+          branchId: current.branchId,
+          invoiceId: current.id,
+          amountCents,
+          paymentDate,
+          paymentType,
+          cashExpenseOrderId: expense?.orderId ?? null,
+          comment: body.comment?.trim() || null,
+          createdBy: user.login,
+          createdByName: user.name,
+          raw: toJson(body),
+        },
       });
-      cashExpenseOrderId = expense.orderId ?? null;
-    } catch (error) {
-      return {
-        ok: false as const,
-        error: error instanceof Error ? error.message : "Не удалось создать расходный ордер кассы",
-      };
-    }
+      const nextPaid = Math.min(current.sumCents, paid + amountCents);
+      return tx.localSupplierInvoice.update({
+        where: { id: current.id },
+        data: { paidAmountCents: nextPaid, status: nextPaid >= current.sumCents ? "paid" : "partial" },
+        include: supplierInvoiceInclude,
+      });
+    }, { isolationLevel: "Serializable", timeout: 25_000 });
+    invalidateSupplierInvoiceLists();
+    return { ok: true as const, invoice: mapSupplierInvoice(updated) };
+  } catch (error) {
+    const conflict = error instanceof Prisma.PrismaClientKnownRequestError && ["P2034", "P2002"].includes(error.code);
+    return { ok: false as const, error: conflict ? "Счёт или касса изменились. Обновите данные и повторите." : error instanceof Error ? error.message : "Не удалось сохранить оплату." };
   }
+}
 
-  const nextPaidCents = Math.min(invoice.sumCents, currentPaidCents + amountCents);
-  const nextStatus = nextPaidCents >= invoice.sumCents ? "paid" : "partial";
+export async function correctSupplierCashPayment(invoiceId: string, paymentId: string, paymentType: string, user: User) {
+  const branchId = getScopedBranchId();
+  if (user.role !== "owner" && user.role !== "admin") throw new Error("Недостаточно прав для изменения оплаты.");
+  if (paymentType !== "bank_transfer" && paymentType !== "card") throw new Error("Выберите перевод или оплату картой.");
   const updated = await prisma.$transaction(async (tx) => {
-    await tx.localSupplierInvoicePayment.create({
-      data: {
-        invoiceId: invoice.id,
-        amountCents,
-        paymentDate,
-        paymentType,
-        cashExpenseOrderId,
-        comment: body.comment?.trim() || null,
-        createdBy: user.login,
-        createdByName: user.name,
-        raw: toJson(body),
-      },
+    const payment = await tx.localSupplierInvoicePayment.findFirst({
+      where: { id: paymentId, invoiceId, branchId },
+      include: { cashExpenseOrder: true },
     });
-    return tx.localSupplierInvoice.update({
-      where: { id: invoice.id },
-      data: {
-        paidAmountCents: nextPaidCents,
-        status: nextStatus,
-      },
-      include: supplierInvoiceInclude,
+    if (!payment) throw new Error("Оплата не найдена.");
+    if (payment.paymentType !== "cash" && payment.paymentType !== paymentType) throw new Error("Способ оплаты уже изменён. Обновите счёт.");
+    const order = payment.cashExpenseOrder;
+    if (order && (order.branchId !== branchId || order.amountCents !== payment.amountCents)) {
+      throw new Error("Реквизиты связанного ордера не совпадают с оплатой.");
+    }
+    if (order && order.status !== "cancelled") {
+      const shiftWhere = { id: order.shiftId, branchId };
+      await tx.cashShift.updateMany({ where: shiftWhere, data: { updatedAt: new Date() } });
+      const reason = paymentType === "bank_transfer" ? "Исправление способа оплаты на перевод" : "Исправление способа оплаты на карту";
+      const cancelled = await tx.cashExpenseOrder.updateMany({
+        where: { id: order.id, branchId, status: order.status },
+        data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: user.login, cancelledByName: user.name, cancelReason: reason },
+      });
+      if (cancelled.count !== 1) throw new Error("Ордер изменился. Обновите счёт и повторите.");
+      const shift = await tx.cashShift.findFirst({ where: shiftWhere });
+      if (shift?.status === "closed" && order.status === "posted" && order.paymentType === "cash" &&
+          shift.cashExpensesTotalCents != null && shift.cashExpensesTotalCents >= order.amountCents &&
+          shift.expectedCashCents != null && shift.actualCashCents != null) {
+        const expectedCashCents = shift.expectedCashCents + order.amountCents;
+        await tx.cashShift.update({
+          where: shiftWhere,
+          data: {
+            cashExpensesTotalCents: shift.cashExpensesTotalCents - order.amountCents,
+            expectedCashCents,
+            discrepancyCents: shift.actualCashCents - expectedCashCents,
+          },
+        });
+      }
+    }
+    await tx.localSupplierInvoicePayment.updateMany({
+      where: { id: payment.id, invoiceId, branchId },
+      data: { paymentType },
     });
-  });
-
+    return tx.localSupplierInvoice.findUniqueOrThrow({ where: { id: invoiceId, branchId }, include: supplierInvoiceInclude });
+  }, { isolationLevel: "Serializable" });
   invalidateSupplierInvoiceLists();
-  return { ok: true as const, invoice: mapSupplierInvoice(updated) };
+  return mapSupplierInvoice(updated);
 }
 
 export async function updateLocalSupplierInvoiceStatus(invoiceId: string, status: string, user?: ActingUser) {
