@@ -2440,10 +2440,10 @@ function vinToMinutes(time) {
 //  pages/shop.jsx — каталог масел и расходников
 // ====================================================================
 
-function ShopPage() {
+function ShopPage({ initialBrands }: { initialBrands: string[] }) {
   const OILS = useContext(CatalogCtx);
   const router = useRoute();
-  const [brands, setBrands] = useState(new Set());
+  const [brands, setBrands] = useState(() => new Set(initialBrands));
   const [viscs, setViscs] = useState(new Set());
   const [types, setTypes] = useState(new Set());
   const [vols, setVols] = useState(new Set());
@@ -3853,7 +3853,11 @@ function useClientRoute(initialPath, basePath) {
   return { path, go, state, params, basePath };
 }
 
-function App({ initialPath = '/', initialOils = [], basePath = CLIENT_SITE_BASE_PATH }: { initialPath?: string; initialOils?: ClientOil[]; basePath?: string }) {
+function App({
+  initialPath = '/', initialOils = [], initialShopBrands = [], basePath = CLIENT_SITE_BASE_PATH,
+}: {
+  initialPath?: string; initialOils?: ClientOil[]; initialShopBrands?: string[]; basePath?: string;
+}) {
   const router = useClientRoute(initialPath, basePath);
   const [OILS, setOils] = useState(initialOils);
   const oilsRef = useRef(initialOils);
@@ -3988,7 +3992,7 @@ function App({ initialPath = '/', initialOils = [], basePath = CLIENT_SITE_BASE_
   else if (seg[0] === 'vin') page = <VinDevelopmentPage />;
   else if (catalogStatus === 'loading') page = <CatalogGate title="Загружаем каталог масел" />;
   else if (catalogStatus === 'error') page = <CatalogGate title="Каталог эко-платформы недоступен" text={catalogError} />;
-  else if (seg[0] === 'shop') page = <ShopPage />;
+  else if (seg[0] === 'shop') page = <ShopPage initialBrands={initialShopBrands} />;
   else if (seg[0] === 'product') page = <ProductPage catalogVersion={catalogVersion} />;
   else if (seg[0] === 'account') page = <AccountPage />;
   else page = <HomePage />;

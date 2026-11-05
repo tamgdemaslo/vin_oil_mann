@@ -11,7 +11,11 @@ import ClientSiteApp from "../ClientSiteApp";
 
 export const dynamic = "force-dynamic";
 const product = cache(getPublicOilById);
-type Props = { params: Promise<{ segments: string[] }> };
+type Props = {
+  params: Promise<{ segments: string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+const legacyBrandFilter = "tfc_charact:6370502[782899051]";
 
 async function resolvePage(segments: string[]) {
   const [section, id] = segments;
@@ -36,16 +40,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if ("card" in info && info.card) return productMetadata(info.card);
   return { ...pageMetadata(`/${segments.join("/")}`, info.title, info.description), ...("noindex" in info ? { robots: { index: false, follow: true } } : {}) };
 }
-export default async function ClientSiteRoute({ params }: Props) {
+export default async function ClientSiteRoute({ params, searchParams }: Props) {
   const { segments } = await params;
   const basePath = clientSiteRequestBasePath(await headers());
   const info = await resolvePage(segments);
   const card = "card" in info ? info.card : undefined;
   const oils = card ? [publicOilToClientOil(card)] : segments[0] === "shop" ? await getClientCatalogForPage() : [];
+  const query = segments[0] === "shop" ? await searchParams : {};
+  const requestedBrands = [query.brand ?? query[legacyBrandFilter] ?? []].flat()
+    .flatMap(value => value.split(",").map(brand => brand.trim()).filter(Boolean));
+  const brandsByName = new Map(oils.map(oil => [oil.brand.toLowerCase(), oil.brand]));
+  const initialShopBrands = requestedBrands.map(brand => brandsByName.get(brand.toLowerCase()) ?? brand);
   return <>
     {card ? <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd([
       productStructuredData(card), breadcrumbs(card.name, `/product/${card.id}`),
     ]) }} /> : null}
-    <ClientSiteApp initialPath={`/${segments.join("/")}`} initialOils={oils} basePath={basePath} />
+    <ClientSiteApp initialPath={`/${segments.join("/")}`} initialOils={oils} initialShopBrands={initialShopBrands} basePath={basePath} />
   </>;
 }
