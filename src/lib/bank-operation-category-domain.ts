@@ -21,6 +21,7 @@ export const DEFAULT_BANK_CATEGORIES: Array<{ code: string; name: string; kind: 
   { code: "services", name: "Услуги и подписки", kind: "operating" },
   { code: "refunds", name: "Возвраты", kind: "operating" },
   { code: "other", name: "Прочие расходы и поступления", kind: "operating" },
+  { code: "cash_withdrawal", name: "Снятие для кассы", kind: "transfer" },
   { code: "own_transfer", name: "Перевод между своими счетами", kind: "transfer" },
   { code: "owner_withdrawal", name: "Вывод собственных средств", kind: "owner" },
   { code: "owner_contribution", name: "Взнос собственных средств", kind: "owner" },
@@ -77,6 +78,6 @@ export function automaticBankCategory(
   }
 }
 
-export function needsBankExpenseReview(operation: CategorizedBankOperation & { hiddenFromReview?: boolean }) {
-  return operation.direction === "expense" && Boolean(operation.id) && !operation.categoryId && !operation.hiddenFromReview;
+export function needsBankExpenseReview(operation: CategorizedBankOperation & { hiddenFromReview?: boolean; cashTransferDate?: string | null }) {
+  return operation.direction === "expense" && Boolean(operation.id) && !operation.categoryId && !operation.hiddenFromReview && !operation.cashTransferDate;
 }

@@ -37,6 +37,7 @@ export type CashShift = {
   status: CashShiftStatus;
   openedAt: string; // ISO
   openedBy: CashUserSnapshot;
+  bankCashReceived?: number;
   openingCash: number; // стартовый остаток наличных
   closedAt?: string;
   closedBy?: CashUserSnapshot;
@@ -376,7 +377,9 @@ async function findShiftRowById(id: string): Promise<CashShiftRow | null> {
 
 export async function getCurrentShift(): Promise<CashShift | null> {
   const shift = await findCurrentShiftRow();
-  return shift ? shiftRowToCashShift(shift) : null;
+  if (!shift) return null;
+  const deposits = await prisma.bankCashTransfer.aggregate({ where: { branchId: shift.branchId, shiftId: shift.id }, _sum: { amountCents: true } });
+  return { ...shiftRowToCashShift(shift), bankCashReceived: rubFromCents(deposits._sum.amountCents ?? 0) };
 }
 
 export async function listShifts(limit = 50): Promise<CashShift[]> {
@@ -693,7 +696,8 @@ export async function closeShift(params: {
     const cashOrders = Math.max(0, params.cashOrdersTotal || 0);
     const cardOrders = Math.max(0, params.cardOrdersTotal || 0);
 
-    const expectedCash = opening + cashOrders - withdrawalsTotal - cashExpensesTotal;
+    const deposits = await tx.bankCashTransfer.aggregate({ where: { branchId: shift.branchId, shiftId: shift.id }, _sum: { amountCents: true } });
+    const expectedCash = opening + cashOrders + rubFromCents(deposits._sum.amountCents ?? 0) - withdrawalsTotal - cashExpensesTotal;
     const actualCash = Math.round((params.actualCash || 0) * 100) / 100;
     const discrepancy = Math.round((actualCash - expectedCash) * 100) / 100;
 

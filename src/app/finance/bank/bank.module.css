@@ -6,7 +6,6 @@
 .balances dd { margin:6px 0 0; font-size:1.15rem; font-weight:600; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .tableScroll { overflow-x:auto; max-width:100%; }
 .amount { white-space:nowrap; font-variant-numeric:tabular-nums; text-align:right; }
-.purpose { min-width:220px; max-width:420px; overflow-wrap:anywhere; }
 .operationCategory { min-width:230px; max-width:290px; }
 .operationCategory select { width:100%; max-width:280px; font:inherit; padding:8px; border:1px solid var(--eco-line,#c9c6ba); border-radius:4px; color:inherit; background:var(--eco-surface,#fff); }
 .operationCategory small { display:block; margin-top:6px; max-width:280px; white-space:normal; }
@@ -27,3 +26,51 @@
 .rowActions { display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:4px; font-size:.825rem; }
 .rowActions button { min-height:26px; }
 .rowActions button:disabled { opacity:.55; cursor:default; }
+
+.layout { grid-template-columns:minmax(0,1fr); }
+.layout > * { min-width:0; }
+.pageHead { display:flex; flex-direction:row; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.pageHead > a { width:auto; align-self:flex-end; }
+.statementFilters {
+  grid-template-columns:minmax(135px,1fr) minmax(135px,1fr) repeat(2,minmax(120px,.8fr)) auto;
+  align-items:end;
+}
+.statementFilters label,.statementFilters input,.statementFilters select,.workspace .filter select { min-width:0; }
+.statementFilters > button { align-self:end; }
+.feedback { padding:12px 16px; border:1px solid var(--eco-line,#d8d6ce); border-radius:6px; background:var(--eco-surface,#fff); }
+.workspace { border:1px solid var(--eco-line,#d8d6ce); border-radius:8px; background:var(--eco-surface,#fff); }
+.workspaceHeader { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:6px 16px; padding:16px 16px 10px; }
+.workspaceHeader h2 { margin:0; font-size:1.15rem; }
+.workspaceHeader > span { color:var(--eco-muted,#5e5e58); font-size:.85rem; }
+.toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; padding:0 16px 12px; }
+.views { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+.views button { border:1px solid transparent; border-radius:5px; background:transparent; color:inherit; min-height:36px; padding:6px 10px; font:inherit; font-size:.875rem; cursor:pointer; }
+.views button:hover { background:#f4f1ea; }
+.views button[aria-pressed="true"] { border-color:#e0c5b4; background:#fff2e9; color:#873407; font-weight:600; }
+.views button span { margin-inline-start:4px; font-variant-numeric:tabular-nums; }
+.views button:focus-visible,.requisites summary:focus-visible { outline:2px solid var(--eco-accent,#ba3d00); outline-offset:2px; }
+.workspace > .feedback { margin:0 16px 16px; }
+.operationTable { margin:0; }
+.operationTable th:nth-child(3) { text-align:right; }
+.workspace .operationTable tbody td { vertical-align:top; padding:10px 14px; }
+.operationTable .date { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.operationInfo { min-width:150px; overflow-wrap:anywhere; }
+.operationInfo > strong,.operationInfo > span,.operationAmount small { display:block; }
+.operationInfo > span,.operationAmount small,.requisites { margin-top:4px; color:var(--eco-muted,#5e5e58); font-size:.8125rem; }
+.requisites summary { cursor:pointer; width:fit-content; }
+.operationAmount { width:1%; }
+@media(max-width:820px) {
+  .statementFilters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:620px) {
+  .workspaceHeader,.toolbar { padding-inline:12px; }
+  .workspace .filter { width:100%; }
+  .workspace .operationTable,.operationTable tbody { display:block; min-width:0; }
+  .operationTable thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .operationTable tbody tr { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 12px; padding:12px; border-top:1px solid var(--eco-line,#d8d6ce); }
+  .workspace .operationTable tbody td { height:auto; padding:0; border:0; min-width:0; }
+  .operationTable .date { grid-column:1; grid-row:1; }
+  .operationTable .operationAmount { grid-column:2; grid-row:1; width:auto; }
+  .operationTable .operationInfo,.operationTable .operationCategory { grid-column:1/-1; max-width:none; }
+  .operationCategory select { max-width:none; }
+}

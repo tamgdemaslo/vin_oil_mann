@@ -294,7 +294,7 @@ async function getCashState() {
     operations,
     expensesCents: cents(expenses * 100),
     withdrawalsCents: cents(withdrawals * 100),
-    expectedBalanceCents: cents(((shift.openingCash || 0) - cashExpenses - withdrawals) * 100),
+    expectedBalanceCents: cents(((shift.openingCash || 0) + (shift.bankCashReceived ?? 0) - cashExpenses - withdrawals) * 100),
     openedHours,
   };
 }

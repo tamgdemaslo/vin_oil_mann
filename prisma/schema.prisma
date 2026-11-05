@@ -3799,6 +3799,9 @@ model CashShift {
   aqsiRegister   AqsiCashRegister? @relation(fields: [branchId, aqsiRegisterId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
 
   withdrawals CashWithdrawal[]
+  bankCashTransfers BankCashTransfer[]
+
+  @@unique([branchId, id], map: "cash_shifts_branch_id_id_key")
 
   @@index([branchId, serviceDate], map: "cash_shifts_branch_id_service_date_idx")
   @@index([status])
@@ -5375,4 +5378,23 @@ model BankOperationCategoryRule {
   category   BankOperationCategory @relation(fields: [branchId, categoryId], references: [branchId, id], onDelete: Restrict)
   @@id([branchId, merchantKey])
   @@map("bank_operation_category_rules")
+}
+
+model BankCashTransfer {
+  branchId          String   @map("branch_id")
+  accountNumberHash String   @map("account_number_hash")
+  operationId       String   @map("operation_id")
+  shiftId           String   @map("shift_id")
+  shift             CashShift @relation(fields: [branchId, shiftId], references: [branchId, id], onDelete: Restrict)
+  amountCents       Int      @map("amount_cents")
+  bankDate          String   @map("bank_date")
+  cashDate          String   @map("cash_date")
+  createdBy         String   @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@id([branchId, accountNumberHash, operationId])
+  @@unique([accountNumberHash, operationId], map: "bank_cash_transfers_bank_operation_key")
+  @@index([branchId, shiftId])
+  @@index([branchId, cashDate])
+  @@map("bank_cash_transfers")
 }

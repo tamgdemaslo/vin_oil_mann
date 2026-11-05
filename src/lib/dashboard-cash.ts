@@ -91,11 +91,12 @@ export async function getDashboardCash(now = new Date()): Promise<MoneyValue> {
   }
   const shift = open[0];
   try {
-    const [receipts, withdrawals, expenses] = await Promise.all([
+    const [receipts, withdrawals, expenses, deposits] = await Promise.all([
       cashReceipts(shift, now),
       prisma.cashWithdrawal.aggregate({ where: { branchId, shiftId: shift.id }, _sum: { amountCents: true } }),
       prisma.cashExpenseOrder.aggregate({ where: { branchId, shiftId: shift.id, status: 'posted', paymentType: 'cash' }, _sum: { amountCents: true } }),
+      prisma.bankCashTransfer.aggregate({ where: { branchId, shiftId: shift.id }, _sum: { amountCents: true } }),
     ]);
-    return { cents: sumKnown([shift.openingCashCents, receipts, -(withdrawals._sum.amountCents ?? 0), -(expenses._sum.amountCents ?? 0)]), message: 'Расчёт открытой смены · чеки AQSI', at: now.toISOString() };
+    return { cents: sumKnown([shift.openingCashCents, receipts, deposits._sum.amountCents ?? 0, -(withdrawals._sum.amountCents ?? 0), -(expenses._sum.amountCents ?? 0)]), message: 'Расчёт открытой смены · чеки AQSI', at: now.toISOString() };
   } catch { return { cents: null, message: 'Не удалось рассчитать кассу. Проверьте AQSI и устройство кассы.', at: null }; }
 }

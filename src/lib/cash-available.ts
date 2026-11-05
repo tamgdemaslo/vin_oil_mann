@@ -50,7 +50,7 @@ export function receiptCashCents(value: unknown, deviceId: string, from: string,
   if (!Number.isSafeInteger(cash)) throw new Error('Invalid cash total');
   return [2,3].includes(type) ? -cash : cash;
 }
-async function cashReceipts(shift: { openedAt: Date; timezone: string; aqsiRegisterId: string | null }, now: Date) {
+export async function cashReceipts(shift: { openedAt: Date; timezone: string; aqsiRegisterId: string | null }, now: Date) {
   const config = await resolveAqsiCashRegister(shift.aqsiRegisterId);
   if (!config.deviceId) throw new Error('Select AQSI device');
   const local = (date: Date) => {
@@ -102,11 +102,12 @@ export async function assertCashAvailable(tx: Prisma.TransactionClient, branchId
   } catch {
     throw new Error("Не удалось проверить наличные по чекам AQSI. Проверьте подключение кассы.");
   }
-  const [withdrawals, expenses] = await Promise.all([
+  const [withdrawals, expenses, deposits] = await Promise.all([
     tx.cashWithdrawal.aggregate({ where: { branchId, shiftId }, _sum: { amountCents: true } }),
     tx.cashExpenseOrder.aggregate({ where: { branchId, shiftId, status: "posted", paymentType: "cash" }, _sum: { amountCents: true } }),
+    tx.bankCashTransfer.aggregate({ where: { branchId, shiftId }, _sum: { amountCents: true } }),
   ]);
-  const available = shift.openingCashCents + receipts - (withdrawals._sum.amountCents ?? 0) - (expenses._sum.amountCents ?? 0);
+  const available = shift.openingCashCents + receipts + (deposits._sum.amountCents ?? 0) - (withdrawals._sum.amountCents ?? 0) - (expenses._sum.amountCents ?? 0);
   if (amountCents > available) {
     const formatted = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB" }).format(Math.max(0, available) / 100);
     throw new Error(`В кассе не хватает наличных. Доступно ${formatted}.`);

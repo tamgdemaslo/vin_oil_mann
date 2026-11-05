@@ -26,6 +26,7 @@ vm.runInNewContext(outputText, {
 
 let open = true;
 let expenses = 2_000;
+let deposits = 0;
 const tx = {
   cashShift: {
     updateMany: async ({ where }) => {
@@ -35,6 +36,7 @@ const tx = {
     },
     findFirstOrThrow: async () => ({ openingCashCents: 10_000, timezone: "Europe/Kaliningrad", openedAt: new Date(), aqsiRegisterId: "register" }),
   },
+  bankCashTransfer: { aggregate: async () => ({ _sum: { amountCents: deposits } }) },
   cashWithdrawal: { aggregate: async () => ({ _sum: { amountCents: 1_000 } }) },
   cashExpenseOrder: { aggregate: async ({ where }) => {
     assert.equal(where.status, "posted");
@@ -45,6 +47,10 @@ const tx = {
 const check = (amount) => exports.assertCashAvailable(tx, "branch-test", "shift-test", amount);
 await check(7_000);
 await assert.rejects(check(7_001), /не хватает наличных/);
+deposits = 3_000;
+await check(10_000);
+await assert.rejects(check(10_001), /не хватает наличных/);
+deposits = 0;
 expenses += 7_000;
 await assert.rejects(check(1), /не хватает наличных/);
 providerFailed = true;

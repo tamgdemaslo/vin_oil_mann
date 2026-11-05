@@ -6,7 +6,7 @@ import { formatServiceDate, toServiceDateInput } from "@/lib/date-time";
 import { BANK_CATEGORY_KINDS, needsBankExpenseReview, summarizeBankCategories, type BankCategory, type BankCategoryKind } from "@/lib/bank-operation-category-domain";
 import styles from "./bank.module.css";
 
-type Operation = { id: string; date: string; direction: string; amountCents: number; counterparty: string; inn: string; purpose: string; categoryId: string | null; hiddenFromReview: boolean; categorySource: "manual" | "automatic" | null; canRemember: boolean; hasRule: boolean };
+type Operation = { id: string; date: string; direction: string; amountCents: number; counterparty: string; inn: string; purpose: string; categoryId: string | null; hiddenFromReview: boolean; categorySource: "manual" | "automatic" | null; canRemember: boolean; hasRule: boolean; cashTransferDate?: string | null };
 type Statement = {
   connectionId: string; accountId: string | null; categories: BankCategory[];
   accountMasked: string; currency: string; dateFrom: string; dateTo: string;
@@ -34,13 +34,14 @@ export default function BankPage() {
   const [savingCategory, setSavingCategory] = useState(false);
   const [categoryMessage, setCategoryMessage] = useState<{ error: boolean; text: string } | null>(null);
   const busy = loading || savingCategory || Object.values(savingRows).some(Boolean);
-  const summaries = useMemo(() => summarizeBankCategories(data?.operations ?? [], data?.categories ?? []), [data]);
-  const uncategorizedCount = data?.operations.filter(row => !row.categoryId).length ?? 0;
+  const summaries = useMemo(() => summarizeBankCategories(data?.operations.filter(row => !row.cashTransferDate) ?? [], data?.categories ?? []), [data]);
+  const uncategorizedCount = data?.operations.filter(row => !row.categoryId && !row.cashTransferDate).length ?? 0;
+  const hiddenCount = data?.operations.filter(row => row.hiddenFromReview).length ?? 0;
   const reviewCount = data?.operations.filter(needsBankExpenseReview).length ?? 0;
   const visibleOperations = data?.operations.filter(row => {
     if (categoryFilter === "review") return needsBankExpenseReview(row);
     if (categoryFilter === "hidden") return row.hiddenFromReview;
-    if (categoryFilter === "uncategorized") return !row.categoryId;
+    if (categoryFilter === "uncategorized") return !row.categoryId && !row.cashTransferDate;
     return !categoryFilter || row.categoryId === categoryFilter;
   }) ?? [];
   useEffect(() => {
@@ -113,6 +114,23 @@ export default function BankPage() {
       setRowMessages(current => ({ ...current, [row.id]: { error: true, text: error instanceof Error ? error.message : "Не удалось сохранить категорию. Повторите попытку." } }));
     } finally { setSavingRows(current => ({ ...current, [row.id]: false })); }
   }
+  async function recordCashDeposit(row: Operation) {
+    if (!data?.accountId || !window.confirm("Подтвердите, что всю сумму по этой операции фактически внесли в открытую кассовую смену.")) return;
+    setSavingRows(current => ({ ...current, [row.id]: true }));
+    try {
+      const response = await fetch("/api/integrations/tbank/cash-transfer", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: data.accountId, operationId: row.id, bankDate: row.date.slice(0, 10) }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Не удалось связать операцию с кассой.");
+      setData(current => current ? { ...current, operations: current.operations.map(operation =>
+        operation.id === row.id ? { ...operation, cashTransferDate: result.cashDate } : operation
+      ) } : current);
+    } catch (error) {
+      setRowMessages(current => ({ ...current, [row.id]: { error: true, text: error instanceof Error ? error.message : "Не удалось связать операцию с кассой." } }));
+    } finally { setSavingRows(current => ({ ...current, [row.id]: false })); }
+  }
   function chooseCategory(id: string) {
     const category = data?.categories.find(item => item.id === id);
     setCategoryForm(category ? { id: category.id, name: category.name, kind: category.kind, archived: category.archived } : emptyCategoryForm);
@@ -137,13 +155,13 @@ export default function BankPage() {
   const currency = ({ "643": "₽", "810": "₽", "RUB": "₽", "840": "USD", "978": "EUR" } as Record<string, string>)[data?.currency ?? "RUB"] ?? data?.currency ?? "₽";
   const money = (cents: number) => `${(cents / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
   const kindLabel = (kind: string) => kind === "uncategorized" ? "Без категории" : BANK_CATEGORY_KINDS.find(item => item.value === kind)?.label ?? kind;
-  return <main className="eco-page eco-page--wide"><div className="eco-fc">
-    <header className="eco-fc-head"><div>
+  return <main className="eco-page eco-page--wide"><div className={`eco-fc ${styles.layout}`}>
+    <header className={`eco-fc-head ${styles.pageHead}`}><div>
       <Link href="/finance">← Финансы</Link>
       <h1 className="eco-page-title">Операции по счёту</h1>
       <p className="eco-page-subtitle">Банковская выписка Т-Банка и категории движения денег.</p>
     </div><Link className="eco-btn" href="/cabinet/integrations#finance">Настройки Т-Банка</Link></header>
-    <form className="eco-fc-filters" onSubmit={event => { event.preventDefault(); void load(); }}>
+    <form className={`eco-fc-filters ${styles.statementFilters}`} onSubmit={event => { event.preventDefault(); void load(); }}>
       <label><span>Подключение</span><select value={connectionId} disabled={busy} onChange={event => { setConnectionId(event.target.value); setAccountId(""); clearStatement(); }}>
         {connections.length === 0 && <option value="">Нет подключений</option>}
         {connections.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -155,9 +173,9 @@ export default function BankPage() {
       <label><span>Период по</span><input type="date" required min={dateFrom} value={dateTo} disabled={busy} onChange={event => { setDateTo(event.target.value); clearStatement(); }} /></label>
       <button className="eco-btn eco-btn--primary" disabled={busy || !connectionId}>{loading ? "Загружаем выписку…" : "Получить выписку"}</button>
     </form>
-    {error && <p role="alert">{error}</p>}
-    {loading && <p role="status">Получаем все операции за выбранный период…</p>}
-    {!data && !loading && !error && <p>Выберите период и получите выписку. Токен и номер расчётного счёта задаются в настройках интеграции.</p>}
+    {error && <p className={styles.feedback} role="alert">{error}</p>}
+    {loading && <p className={styles.feedback} role="status">Получаем все операции за выбранный период…</p>}
+    {!data && !loading && !error && <p className={styles.feedback}>Выберите счёт и период, затем нажмите «Получить выписку».</p>}
     {data && <>
       <section aria-label="Банковские итоги">
         <div className={styles.heading}><h2>Счёт {data.accountMasked}</h2><span>{formatServiceDate(data.dateFrom)} — {formatServiceDate(data.dateTo)}</span></div>
@@ -165,9 +183,68 @@ export default function BankPage() {
           {[['Остаток на начало периода',data.openingCents],['Поступило',data.incomeCents],['Списано',data.expenseCents],['Остаток на конец периода',data.closingCents]].map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{money(Number(value))}</dd></div>)}
         </dl>
       </section>
+      <section className={styles.workspace} aria-label="Банковские операции">
+        <div className={styles.workspaceHeader}>
+          <h2>{categoryFilter === "review" ? "Расходы к разбору" : "Операции"}</h2>
+          <span role="status">Показано {visibleOperations.length} из {data.operations.length}</span>
+        </div>
+        <div className={styles.toolbar}>
+          <div className={styles.views} role="group" aria-label="Вид операций">
+            {[{ id: "", label: "Все", count: data.operations.length }, { id: "review", label: "К разбору", count: reviewCount }, { id: "hidden", label: "Скрытые", count: hiddenCount }].map(view => (
+              <button key={view.id} type="button" aria-pressed={categoryFilter === view.id} onClick={() => setCategoryFilter(view.id)}>
+                {view.label} <span>{view.count}</span>
+              </button>
+            ))}
+          </div>
+          <label className={styles.filter}><span>Категория</span>
+            <select value={categoryFilter === "review" || categoryFilter === "hidden" ? "" : categoryFilter} onChange={event => setCategoryFilter(event.target.value)}>
+              <option value="">Все категории</option><option value="uncategorized">Без категории · {uncategorizedCount}</option>
+              {data.categories.map(category => <option key={category.id} value={category.id}>{category.name}{category.archived ? " (архив)" : ""}</option>)}
+            </select>
+          </label>
+        </div>
+        {!data.accountId && <p>Для назначения категорий обновите расчётный счёт в настройках интеграции.</p>}
+        {visibleOperations.length === 0 ? <p className={styles.feedback}>{categoryFilter === "review" ? "За выбранный период нет расходов к разбору." : categoryFilter ? "В выбранном периоде нет операций по этому фильтру." : "За этот период операций нет."}</p> : <div className={styles.tableScroll}><table className={`eco-table ${styles.operationTable}`} role="table">
+          <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Дата</th><th scope="col" role="columnheader">Операция</th><th scope="col" role="columnheader">Сумма</th><th scope="col" role="columnheader">Категория</th></tr></thead>
+          <tbody role="rowgroup">{visibleOperations.map((row,index) => <tr role="row" key={`${row.id}-${index}`}>
+            <td role="cell" className={styles.date}>{formatServiceDate(row.date)}</td>
+            <td role="cell" className={styles.operationInfo}>
+              <strong>{row.counterparty || (row.direction === "internal" ? "Перевод внутри счёта" : "Контрагент не указан")}</strong>
+              {row.purpose && <span>{row.purpose}</span>}
+              {(row.id || row.inn) && <details className={styles.requisites}><summary>Реквизиты</summary>
+                {row.inn && <div>ИНН {row.inn}</div>}{row.id && <div>Операция {row.id}</div>}
+              </details>}
+            </td>
+            <td role="cell" className={`${styles.amount} ${styles.operationAmount}`}><strong>
+              {row.direction === "expense" ? "−" : row.direction === "income" ? "+" : ""}{money(row.amountCents)}
+            </strong>{row.direction === "internal" && <small>Внутренний перевод</small>}</td>
+            <td role="cell" className={styles.operationCategory}>{row.cashTransferDate ? <strong>Внесено в кассу · {formatServiceDate(row.cashTransferDate)}</strong> : <><select aria-label={`Категория операции ${row.id}`} value={row.categoryId ?? ""} disabled={!data.accountId || !row.id || busy} onChange={event => void assign(row,event.target.value)}>
+              <option value="">Без категории</option>
+              {BANK_CATEGORY_KINDS.map(kind => <optgroup key={kind.value} label={kind.label}>{data.categories.filter(category => category.kind === kind.value && (!category.archived || category.id === row.categoryId)).map(category => <option key={category.id} value={category.id} disabled={category.archived}>{category.name}{category.archived ? " (архив)" : ""}</option>)}</optgroup>)}
+            </select>
+              {row.categorySource === "automatic" && <small className={styles.muted}>Назначена автоматически</small>}
+              {row.hiddenFromReview && <small className={styles.muted}>Скрыта из разбора</small>}
+              {data.accountId && row.id && row.direction === "expense" && (
+                <div className={styles.rowActions}>
+                  {!row.categoryId && <button type="button" className={styles.categoryLink} disabled={busy} onClick={() => void assign(row, null, { hiddenFromReview: !row.hiddenFromReview })}>
+                    {row.hiddenFromReview ? "Вернуть к разбору" : "Скрыть из разбора"}
+                  </button>}
+                  {row.canRemember && row.categoryId && !data.categories.find(category => category.id === row.categoryId)?.archived && (
+                    <button type="button" className={styles.categoryLink} disabled={busy} onClick={() => void assign(row, row.categoryId, { rule: "remember" })}>
+                      {row.hasRule ? "Обновить правило" : "Запомнить для получателя"}
+                    </button>
+                  )}
+                  {row.hasRule && <button type="button" className={styles.categoryLink} disabled={busy} onClick={() => void assign(row, null, { rule: "forget" })}>Удалить правило</button>}
+                  <button type="button" className={styles.categoryLink} disabled={busy} onClick={() => void recordCashDeposit(row)}>Подтвердить внесение в кассу</button>
+                </div>
+              )}</>}
+              {rowMessages[row.id] && <small role={rowMessages[row.id].error ? "alert" : "status"} className={rowMessages[row.id].error ? styles.rowError : styles.muted}>{rowMessages[row.id].text}</small>}</td>
+          </tr>)}</tbody>
+        </table></div>}
+      </section>
       <section aria-label="Статистика по категориям">
         <div className={styles.heading}><h2>По категориям</h2><span>Весь выбранный период · {data.operations.length} операций</span></div>
-        <p className={styles.muted}>Размечено {data.operations.length - uncategorizedCount} из {data.operations.length}. Переводы между своими счетами и личные средства выделены отдельными видами.</p>
+        <p className={styles.muted}>Операций без категории: {uncategorizedCount}. Подтверждённые внесения из банка показаны в списке операций.</p>
         <div className={styles.tableScroll}><table className="eco-table"><thead><tr><th scope="col">Категория</th><th scope="col">Вид</th><th scope="col">Операций</th><th scope="col">Поступило</th><th scope="col">Списано</th></tr></thead>
           <tbody>{summaries.map(summary => <tr key={summary.categoryId ?? "uncategorized"}>
             <td><button type="button" className={styles.categoryLink} onClick={() => setCategoryFilter(summary.categoryId ?? "uncategorized")}>{summary.name}{summary.archived ? " (архив)" : ""}</button></td>
@@ -188,42 +265,6 @@ export default function BankPage() {
         </form>
         {categoryMessage && <p role={categoryMessage.error ? "alert" : "status"}>{categoryMessage.text}</p>}
       </details>
-      <section aria-label="Банковские операции">
-        <div className={styles.heading}><h2>Операции · {visibleOperations.length}{categoryFilter ? ` из ${data.operations.length}` : ""}</h2>
-          <label className={styles.filter}><span>Показать</span><select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="">Все операции</option><option value="review">Расходы к разбору · {reviewCount}</option><option value="hidden">Скрытые из разбора</option><option value="uncategorized">Без категории · {uncategorizedCount}</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}{category.archived ? " (архив)" : ""}</option>)}</select></label>
-        </div>
-        {!data.accountId && <p>Для назначения категорий обновите расчётный счёт в настройках интеграции.</p>}
-        {visibleOperations.length === 0 ? <p>{categoryFilter === "review" ? "За выбранный период нет расходов к разбору." : categoryFilter ? "В выбранном периоде нет операций по этому фильтру." : "За этот период операций нет."}</p> : <div className={styles.tableScroll}><table className="eco-table">
-          <thead><tr><th scope="col">Дата / операция</th><th scope="col">Контрагент</th><th scope="col">Назначение</th><th scope="col">Категория</th><th scope="col">Поступление</th><th scope="col">Списание</th></tr></thead>
-          <tbody>{visibleOperations.map((row,index) => <tr key={`${row.id}-${index}`}>
-            <td>{formatServiceDate(row.date)}<br /><small>{row.id}</small></td>
-            <td>{row.counterparty || "—"}{row.inn && <><br /><small>ИНН {row.inn}</small></>}{row.direction === "internal" && <p>Перевод внутри счёта</p>}</td>
-            <td className={styles.purpose}>{row.purpose || "—"}</td>
-            <td className={styles.operationCategory}><select aria-label={`Категория операции ${row.id}`} value={row.categoryId ?? ""} disabled={!data.accountId || !row.id || busy} onChange={event => void assign(row,event.target.value)}>
-              <option value="">Без категории</option>
-              {BANK_CATEGORY_KINDS.map(kind => <optgroup key={kind.value} label={kind.label}>{data.categories.filter(category => category.kind === kind.value && (!category.archived || category.id === row.categoryId)).map(category => <option key={category.id} value={category.id} disabled={category.archived}>{category.name}{category.archived ? " (архив)" : ""}</option>)}</optgroup>)}
-            </select>
-              {row.categorySource === "automatic" && <small className={styles.muted}>Назначена автоматически</small>}
-              {row.hiddenFromReview && <small className={styles.muted}>Скрыта из разбора</small>}
-              {data.accountId && row.id && row.direction === "expense" && (
-                <div className={styles.rowActions}>
-                  {!row.categoryId && <button type="button" className={styles.categoryLink} disabled={busy} onClick={() => void assign(row, null, { hiddenFromReview: !row.hiddenFromReview })}>
-                    {row.hiddenFromReview ? "Вернуть к разбору" : "Скрыть из разбора"}
-                  </button>}
-                  {row.canRemember && row.categoryId && !data.categories.find(category => category.id === row.categoryId)?.archived && (
-                    <button type="button" className={styles.categoryLink} disabled={busy} onClick={() => void assign(row, row.categoryId, { rule: "remember" })}>
-                      {row.hasRule ? "Обновить правило" : "Запомнить для получателя"}
-                    </button>
-                  )}
-                  {row.hasRule && <button type="button" className={styles.categoryLink} disabled={busy} onClick={() => void assign(row, null, { rule: "forget" })}>Удалить правило</button>}
-                </div>
-              )}
-              {rowMessages[row.id] && <small role={rowMessages[row.id].error ? "alert" : "status"} className={rowMessages[row.id].error ? styles.rowError : styles.muted}>{rowMessages[row.id].text}</small>}</td>
-            <td className={styles.amount}>{row.direction !== "expense" ? money(row.amountCents) : "—"}</td>
-            <td className={styles.amount}>{row.direction !== "income" ? money(row.amountCents) : "—"}</td>
-          </tr>)}</tbody>
-        </table></div>}
-      </section>
     </>}
   </div></main>;
 }
