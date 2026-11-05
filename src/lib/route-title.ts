@@ -67,6 +67,7 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/inventory/writeoffs" || pathname === "/warehouse/adjustments", title: () => `Корректировки | Склад` },
   { match: (pathname) => pathname === "/inventory/restock", title: () => `Пополнение | Склад` },
   { match: (pathname) => pathname === "/inventory/profit", title: () => `Прибыль | Склад` },
+  { match: (pathname) => pathname === "/inventory/suppliers", title: () => "Поставщики | Склад" },
   { match: (pathname) => pathname === "/inventory/counterparties", title: () => `Контрагенты | Склад` },
   { match: (pathname) => pathname === "/inventory", title: () => `Склад | ${APP_SUFFIX}` },
 

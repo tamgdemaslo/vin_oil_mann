@@ -1,3 +1,4 @@
+import { assertCashAvailable, lockOpenCashShift } from "@/lib/cash-available";
 import { Prisma } from "@prisma/client";
 import { toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
@@ -246,7 +247,8 @@ export async function listCashExpenseItems(params: { search?: string; limit?: nu
 
 export async function createCashExpenseOrder(
   params: CashExpenseOrderMutationParams,
-  user: User
+  user: User,
+  tx?: Prisma.TransactionClient
 ): Promise<CashExpenseOrderRow> {
   const branchId = await activeBranchId();
   const status = normalizeStatus(params.status);
@@ -265,11 +267,13 @@ export async function createCashExpenseOrder(
   const article = normalizeNullable(params.article) ?? expenseItem.name;
   const paymentType = normalizePaymentType(params.paymentType);
   const now = new Date();
+  const needsCash = paymentType === "cash" && status === "posted";
+  if (needsCash && tx) await assertCashAvailable(tx, branchId, params.shiftId, amountCents);
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const number = await generateCashExpenseNumber(branchId, attempt);
     try {
-      return await prisma.cashExpenseOrder.create({
+      const create = (client: Prisma.TransactionClient) => client.cashExpenseOrder.create({
         data: {
           branchId,
           shiftId: params.shiftId,
@@ -299,8 +303,14 @@ export async function createCashExpenseOrder(
         },
         include: orderInclude,
       });
+      if (tx) return await create(tx);
+      if (!needsCash) return await create(prisma);
+      return await prisma.$transaction(async (client) => {
+        await assertCashAvailable(client, branchId, params.shiftId, amountCents);
+        return create(client);
+      }, { timeout: 25_000 });
     } catch (error) {
-      if (!isUniqueConstraintError(error) || attempt === 4) throw error;
+      if (tx || !isUniqueConstraintError(error) || attempt === 4) throw error;
     }
   }
 
@@ -347,7 +357,7 @@ export async function updateCashExpenseOrderDraft(
       : normalizeNullable(params.article) ?? expenseItemName;
 
   return prisma.cashExpenseOrder.update({
-    where: { id },
+    where: { id, branchId: current.branchId, status: "draft" },
     data: {
       amountCents: params.amount == null ? undefined : centsFromAmount(params.amount),
       expenseDate: params.expenseDate == null ? undefined : normalizeExpenseDate(params.expenseDate),
@@ -374,16 +384,15 @@ export async function postCashExpenseOrder(id: string, user: User): Promise<Cash
   }
   if (current.status === "posted") return current;
 
-  return prisma.cashExpenseOrder.update({
-    where: { id },
-    data: {
-      status: "posted",
-      postedAt: new Date(),
-      postedBy: user.login,
-      postedByName: user.name,
-    },
-    include: orderInclude,
-  });
+  return prisma.$transaction(async (tx) => {
+    if (current.paymentType === "cash") await assertCashAvailable(tx, current.branchId, current.shiftId, current.amountCents);
+    const result = await tx.cashExpenseOrder.updateMany({
+      where: { id, branchId: current.branchId, status: "draft", amountCents: current.amountCents, paymentType: current.paymentType },
+      data: { status: "posted", postedAt: new Date(), postedBy: user.login, postedByName: user.name },
+    });
+    if (result.count !== 1) throw new Error("Ордер изменился. Обновите список и повторите.");
+    return tx.cashExpenseOrder.findFirstOrThrow({ where: { id, branchId: current.branchId }, include: orderInclude });
+  }, { timeout: 25_000 });
 }
 
 export async function cancelCashExpenseOrder(
@@ -395,16 +404,25 @@ export async function cancelCashExpenseOrder(
   if (!current) throw new Error("Расходный ордер не найден");
   if (current.status === "cancelled") return current;
 
-  return prisma.cashExpenseOrder.update({
-    where: { id },
-    data: {
-      status: "cancelled",
-      cancelledAt: new Date(),
-      cancelledBy: user.login,
-      cancelledByName: user.name,
-      cancelReason: normalizeNullable(reason),
-    },
-    include: orderInclude,
+  return prisma.$transaction(async (tx) => {
+    await lockOpenCashShift(tx, current.branchId, current.shiftId);
+    const linkedPayment = await tx.localSupplierInvoicePayment.findFirst({
+      where: { branchId: current.branchId, cashExpenseOrderId: id, paymentType: "cash" },
+      select: { id: true },
+    });
+    if (linkedPayment) throw new Error("Этот ордер связан с оплатой поставщика. Измените способ оплаты в счёте поставщика.");
+
+    return tx.cashExpenseOrder.update({
+      where: { id },
+      data: {
+        status: "cancelled",
+        cancelledAt: new Date(),
+        cancelledBy: user.login,
+        cancelledByName: user.name,
+        cancelReason: normalizeNullable(reason),
+      },
+      include: orderInclude,
+    });
   });
 }
 

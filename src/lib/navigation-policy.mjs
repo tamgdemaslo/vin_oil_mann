@@ -122,7 +122,7 @@ export function resolveNavigationForUser({
       warehouseItems.push(branchOnly("/inventory/writeoffs", "Корректировки", "Списания и технические изменения."));
       warehouseItems.push(branchOnly("/warehouse/inventory", "Инвентаризации", "Сверка фактических остатков."));
       warehouseItems.push(branchOnly("/inventory/restock", "Пополнение", "Дефицит и заказ поставщикам."));
-      warehouseItems.push(branchOnly("/clients/counterparties", "Поставщики", "Контакты и документы поставщиков."));
+      warehouseItems.push(branchOnly("/inventory/suppliers", "Поставщики", "Карточки, контакты и банковские реквизиты."));
     }
     if (canViewWarehouseAnalytics) warehouseItems.push(item("/warehouse/product-analytics", "Аналитика товаров", "Продажи, маржа и неликвид."));
     sections.push({ id: "warehouse", label: "Склад", href: warehouseItems[0].href, items: warehouseItems });

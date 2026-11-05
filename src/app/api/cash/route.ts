@@ -21,6 +21,7 @@ function statusFromCashError(message: string): number {
   if (normalized.includes("требуется авторизация")) return 401;
   if (normalized.includes("доступ")) return 403;
   if (
+    normalized.includes("не хватает наличных") ||
     normalized.includes("не указан") ||
     normalized.includes("укажите") ||
     normalized.includes("выберите") ||

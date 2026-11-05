@@ -1,3 +1,5 @@
+import { getClientCaseAlertSnapshot, type OverdueClientCase } from "./client-case-alerts";
+import { assertCashAvailable, lockOpenCashShift } from "@/lib/cash-available";
 import fs from "fs";
 import path from "path";
 import { Prisma } from "@prisma/client";
@@ -5,7 +7,6 @@ import { getSession, type User } from "./auth";
 import { SERVICE_TIME_ZONE, toServiceDateInput } from "./date-time";
 import { prisma } from "./db";
 import { requireBranchContext } from "./branch-context";
-import { getClientCaseAlertSnapshot, type OverdueClientCase } from "./client-case-alerts";
 import {
   cancelCashExpenseOrder,
   cashExpenseOrderToOperation,
@@ -505,20 +506,23 @@ export async function addWithdrawal(params: {
   if (!Number.isFinite(params.amount) || params.amount <= 0) {
     throw new Error("Сумма должна быть положительным числом");
   }
-  const op = await prisma.cashWithdrawal.create({
-    data: {
-      id: generateId("op"),
-      branchId: shift.branchId,
-      shiftId: shift.id,
-      amountCents: centsFromRub(params.amount),
-      reason: params.reason.trim(),
-      comment: params.comment?.trim() || null,
-      createdBy: user.login,
-      createdByName: user.name,
-      createdByRole: user.role,
-      source: "local",
-    },
-  });
+  const op = await prisma.$transaction(async (tx) => {
+    await assertCashAvailable(tx, shift.branchId, shift.id, centsFromRub(params.amount));
+    return tx.cashWithdrawal.create({
+        data: {
+          id: generateId("op"),
+          branchId: shift.branchId,
+          shiftId: shift.id,
+          amountCents: centsFromRub(params.amount),
+          reason: params.reason.trim(),
+          comment: params.comment?.trim() || null,
+          createdBy: user.login,
+          createdByName: user.name,
+          createdByRole: user.role,
+          source: "local",
+      },
+    });
+  }, { timeout: 25_000 });
   return withdrawalRowToOperation(op);
 }
 
@@ -538,7 +542,7 @@ export async function addExpense(params: {
   comment?: string;
   attachmentUrl?: string;
   legacyCashoutHref?: string;
-}): Promise<CashExpense> {
+}, tx?: Prisma.TransactionClient): Promise<CashExpense> {
   const user = await requireSessionUser();
   assertOwnerOrAdmin(user);
   const shift = await findShiftRowById(params.shiftId);
@@ -576,7 +580,8 @@ export async function addExpense(params: {
       attachmentUrl: params.attachmentUrl,
       localHref: params.legacyCashoutHref,
     },
-    user
+    user,
+    tx
   );
   return cashExpenseOrderToOperation(order);
 }
@@ -660,28 +665,6 @@ export async function closeShift(params: {
     throw new Error("Открытая смена не найдена");
   }
 
-  const ops = await listOperationsForShift(shift.id, { strictLocalExpenses: true });
-  const withdrawalsTotal = ops
-    .filter((op): op is CashWithdrawal => op.type === "withdrawal")
-    .reduce((sum, op) => sum + (op.amount || 0), 0);
-  const cashExpensesTotal = ops
-    .filter(
-      (op): op is CashExpense =>
-        op.type === "expense" &&
-        op.paymentType === "cash" &&
-        op.status !== "draft" &&
-        op.status !== "cancelled"
-    )
-    .reduce((sum, op) => sum + (op.amount || 0), 0);
-
-  const opening = rubFromCents(shift.openingCashCents);
-  const cashOrders = Math.max(0, params.cashOrdersTotal || 0);
-  const cardOrders = Math.max(0, params.cardOrdersTotal || 0);
-
-  const expectedCash = opening + cashOrders - withdrawalsTotal - cashExpensesTotal;
-  const actualCash = Math.round((params.actualCash || 0) * 100) / 100;
-  const discrepancy = Math.round((actualCash - expectedCash) * 100) / 100;
-
   // Check the same live deadlines as the CRM board immediately before closing.
   // A notification snooze suppresses sound, but does not resolve overdue work.
   // Do not catch query failures: an unverified branch must remain open.
@@ -690,23 +673,48 @@ export async function closeShift(params: {
     throw new CashShiftOverdueCasesError(overdueCases);
   }
 
-  const updated = await prisma.cashShift.update({
-    where: { id: shift.id },
-    data: {
-      status: "closed",
-      closedAt: new Date(),
-      closedBy: user.login,
-      closedByName: user.name,
-      closedByRole: user.role,
-      cashOrdersTotalCents: centsFromRub(cashOrders),
-      cardOrdersTotalCents: centsFromRub(cardOrders),
-      withdrawalsTotalCents: centsFromRub(withdrawalsTotal),
-      cashExpensesTotalCents: centsFromRub(cashExpensesTotal),
-      expectedCashCents: centsFromRub(expectedCash),
-      actualCashCents: centsFromRub(actualCash),
-      discrepancyCents: centsFromRub(discrepancy),
-      discrepancyComment: discrepancy !== 0 ? params.comment?.trim() || "" : "",
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    await lockOpenCashShift(tx, shift.branchId, shift.id);
+    const ops = await listOperationsForShift(shift.id, { strictLocalExpenses: true });
+    const withdrawalsTotal = ops
+      .filter((op): op is CashWithdrawal => op.type === "withdrawal")
+      .reduce((sum, op) => sum + (op.amount || 0), 0);
+    const cashExpensesTotal = ops
+      .filter(
+        (op): op is CashExpense =>
+          op.type === "expense" &&
+          op.paymentType === "cash" &&
+          op.status !== "draft" &&
+          op.status !== "cancelled"
+      )
+      .reduce((sum, op) => sum + (op.amount || 0), 0);
+
+    const opening = rubFromCents(shift.openingCashCents);
+    const cashOrders = Math.max(0, params.cashOrdersTotal || 0);
+    const cardOrders = Math.max(0, params.cardOrdersTotal || 0);
+
+    const expectedCash = opening + cashOrders - withdrawalsTotal - cashExpensesTotal;
+    const actualCash = Math.round((params.actualCash || 0) * 100) / 100;
+    const discrepancy = Math.round((actualCash - expectedCash) * 100) / 100;
+
+    return tx.cashShift.update({
+      where: { id: shift.id },
+      data: {
+        status: "closed",
+        closedAt: new Date(),
+        closedBy: user.login,
+        closedByName: user.name,
+        closedByRole: user.role,
+        cashOrdersTotalCents: centsFromRub(cashOrders),
+        cardOrdersTotalCents: centsFromRub(cardOrders),
+        withdrawalsTotalCents: centsFromRub(withdrawalsTotal),
+        cashExpensesTotalCents: centsFromRub(cashExpensesTotal),
+        expectedCashCents: centsFromRub(expectedCash),
+        actualCashCents: centsFromRub(actualCash),
+        discrepancyCents: centsFromRub(discrepancy),
+        discrepancyComment: discrepancy !== 0 ? params.comment?.trim() || "" : "",
+      },
+    });
   });
   return shiftRowToCashShift(updated);
 }

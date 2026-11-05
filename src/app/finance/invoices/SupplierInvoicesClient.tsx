@@ -537,6 +537,28 @@ export default function SupplierInvoicesClient() {
     }
   }
 
+  async function correctCashPayment(invoice: SupplierInvoice, payment: SupplierInvoicePayment) {
+    if (!window.confirm(`Исправить оплату ${formatMoney(payment.amount)} на перевод? Связанный расходный ордер будет отменён.`)) return;
+    setPaymentSubmitting(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/local-inventory/supplier-invoices/${encodeURIComponent(invoice.id)}/payments`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId: payment.id, paymentType: "bank_transfer" }),
+      });
+      const data = await readJson<SupplierInvoice & { error?: string }>(response);
+      if (!response.ok || !data?.id) throw new Error(data?.error ?? "Не удалось исправить оплату.");
+      setInvoices((current) => current.map((row) => row.id === data.id ? data : row));
+      setNotice("Способ оплаты изменён на перевод.");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Не удалось исправить оплату.");
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  }
+
   async function cancelInvoice(invoice: SupplierInvoice) {
     if (invoice.payments.length > 0) {
       setActionError("Нельзя отменить счёт с сохранёнными оплатами");
@@ -1311,6 +1333,11 @@ export default function SupplierInvoicesClient() {
                   </div>
                 )}
 
+                {activeInvoice.supplierRequisites?.id && !allBranchesMode && (
+                  <Link className="eco-btn" href={`/inventory/suppliers?counterparty=${encodeURIComponent(activeInvoice.supplierRequisites.id)}`}>
+                    Карточка поставщика
+                  </Link>
+                )}
                 <div className="eco-tbank-actions">
                   <EcoButton type="button" onClick={() => void runTBankPrecheck()} disabled={tbankWorking !== null}>
                     {tbankWorking === "precheck" ? <Loader2 aria-hidden className="eco-icon eco-invoices-spin" /> : <CheckCircle2 aria-hidden className="eco-icon" />}
@@ -1386,7 +1413,19 @@ export default function SupplierInvoicesClient() {
                             {payment.comment ? ` · ${payment.comment}` : ""}
                           </small>
                         </span>
-                        {payment.cashExpenseOrder && <EcoBadge tone="success">РКО</EcoBadge>}
+                        {payment.cashExpenseOrder && (
+                          <EcoBadge tone={payment.cashExpenseOrder.status === "cancelled" ? "neutral" : "success"}>
+                            {payment.cashExpenseOrder.status === "cancelled" ? "РКО отменён" : "РКО"}
+                          </EcoBadge>
+                        )}
+                        {!allBranchesMode && (
+                          payment.paymentType === "cash" ||
+                          (payment.paymentType === "bank_transfer" && payment.cashExpenseOrder && payment.cashExpenseOrder.status !== "cancelled")
+                        ) && (
+                          <EcoButton type="button" size="sm" disabled={paymentSubmitting} onClick={() => void correctCashPayment(activeInvoice, payment)}>
+                            {payment.paymentType === "cash" ? "Исправить на перевод" : "Отменить связанный РКО"}
+                          </EcoButton>
+                        )}
                       </div>
                     ))}
                   </div>
