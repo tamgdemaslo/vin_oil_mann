@@ -74,3 +74,28 @@
   .operationTable .operationInfo,.operationTable .operationCategory { grid-column:1/-1; max-width:none; }
   .operationCategory select { max-width:none; }
 }
+
+.expenseOverview { border:1px solid var(--eco-line,#d8d6ce); border-radius:8px; background:var(--eco-surface,#fff); padding:16px; }
+.expenseHeader { display:flex; align-items:start; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; }
+.expenseHeader h2 { margin:0; font-size:1.15rem; }
+.expenseHeader p,.expenseEmpty { margin:4px 0 0; color:var(--eco-muted,#5e5e58); font-size:.875rem; }
+.expenseChart { display:grid; grid-template-columns:176px minmax(0,1fr); gap:20px; align-items:center; margin-top:12px; }
+.donut { position:relative; width:168px; aspect-ratio:1; margin-inline:auto; }
+.donut svg { display:block; width:100%; height:100%; }
+.donutTotal { position:absolute; inset:22%; display:grid; align-content:center; gap:4px; text-align:center; overflow-wrap:anywhere; }
+.donutTotal span { font-size:.72rem; color:var(--eco-muted,#5e5e58); }
+.donutTotal strong { font-size:.95rem; font-variant-numeric:tabular-nums; }
+.expenseLegend { display:grid; gap:2px; max-height:232px; overflow:auto; padding:2px; }
+.expenseLegend button { display:grid; grid-template-columns:10px minmax(0,1fr) auto minmax(45px,auto); gap:9px; align-items:center; min-height:36px; padding:5px 8px; border:1px solid transparent; border-radius:5px; background:transparent; color:inherit; text-align:left; font:inherit; font-size:.875rem; cursor:pointer; }
+.expenseLegend button:hover { background:var(--eco-surface-sunk,#f4f1ea); }
+.expenseLegend button[aria-pressed="true"] { background:#fff2e9; border-color:#e0c5b4; }
+.expenseLegend button:focus-visible { outline:2px solid var(--eco-accent,#ba3d00); outline-offset:-2px; }
+.legendDot { width:9px; height:9px; border-radius:50%; }
+.expenseLegend strong,.legendShare { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.legendShare { color:var(--eco-muted,#5e5e58); }
+.expenseEmpty { margin-top:12px; }
+@media(max-width:620px) {
+  .expenseChart { grid-template-columns:minmax(0,1fr); gap:8px; }
+  .donut { width:138px; }
+  .expenseLegend button { padding-inline:4px; gap:6px; font-size:.8125rem; }
+}
