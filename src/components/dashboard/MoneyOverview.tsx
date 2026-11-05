@@ -18,7 +18,7 @@ export function MoneyOverviewView({ data, loading, error, refresh }: { data: Das
     </>}
   </section>;
 }
-export default function MoneyOverview() {
+export default function MoneyOverview({ compact = false, refreshToken }: { compact?: boolean; refreshToken?: number | null } = {}) {
   const [data,setData] = useState<DashboardMoney | null>(null);
   const [loading,setLoading] = useState(true);
   const [error,setError] = useState<string | null>(null);
@@ -34,6 +34,17 @@ export default function MoneyOverview() {
     } catch (error) { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : 'Ошибка загрузки'); }
     finally { if (!controller.signal.aborted) setLoading(false); }
   },[]);
-  useEffect(() => { void load(); return () => request.current?.abort(); },[load]);
+  useEffect(() => { void load(); return () => request.current?.abort(); },[load, refreshToken]);
+  if (compact) {
+    return (
+      <section className="eco-owner-brief__cash" aria-label="Остатки сейчас" aria-busy={loading}>
+        <h2>Остатки сейчас</h2>
+        <div><span>В кассе</span><strong>{money(data?.cashCents)}</strong></div>
+        <div><span>На счёте</span><strong>{money(data?.bankCents)}</strong></div>
+        {error && <small role="status">{data ? "Показаны последние остатки" : "Остатки недоступны"}</small>}
+        <Link href="/finance/bank">Операции по счёту →</Link>
+      </section>
+    );
+  }
   return <MoneyOverviewView data={data} loading={loading} error={error} refresh={() => void load()} />;
 }

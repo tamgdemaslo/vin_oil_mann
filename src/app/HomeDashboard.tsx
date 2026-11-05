@@ -1611,6 +1611,56 @@ export default function HomeDashboard({
     );
   }
 
+  if (role === "owner" && dashboard) {
+    const { appointments, shipments } = dashboard;
+    const booked = appointments.rows.filter(row => !/отмен|не приш/.test(row.status)).length;
+    const next = appointments.next;
+    return (
+      <main className="eco-ops-dashboard is-role-owner eco-owner-brief" aria-busy={refreshing}>
+        <header className="eco-owner-brief__top">
+          <div><p>{todayShortPhrase()}</p><h1>Обзор филиала</h1></div>
+          <div className="eco-owner-brief__actions">
+            <Link className="eco-ops-btn eco-ops-btn--primary" href="/shipment/new">Новая отгрузка</Link>
+            <Link className="eco-ops-btn eco-ops-btn--ghost" href={recordCreateHref()}>Записать</Link>
+            <button className="eco-ops-btn eco-ops-btn--ghost eco-ops-icon-button" type="button" disabled={refreshing} aria-label="Обновить обзор" onClick={() => void loadSummary(true)}><RefreshCw aria-hidden className="eco-icon" /></button>
+          </div>
+        </header>
+        {loadState === "stale" && <p role="status">Не удалось обновить обзор. Показаны последние данные.</p>}
+        <MoneyOverview compact refreshToken={lastUpdatedAt} />
+        <div className="eco-owner-brief__grid">
+          <OwnerMonthCard refreshToken={lastUpdatedAt} />
+          <div className="eco-owner-brief__today">
+            <section className="eco-owner-brief__panel" aria-label="Журнал сегодня">
+              <header><h2>Журнал сегодня</h2><Link href="/records">Весь журнал →</Link></header>
+              <dl className="eco-owner-brief__metrics">
+                <div><dt>Всего окон</dt><dd>{formatCount(booked + appointments.freeWindows.length)}</dd></div>
+                <div><dt>Занято</dt><dd>{formatCount(booked)}</dd></div>
+                <div><dt>Свободно</dt><dd>{formatCount(appointments.freeWindows.length)}</dd></div>
+              </dl>
+              {appointments.freeWindows.length > 0 && <p className="eco-owner-brief__windows">{appointments.freeWindows.slice(0, 3).map(scheduleWindowLabel).join(" · ")}{appointments.freeWindows.length > 3 ? ` · ещё ${appointments.freeWindows.length - 3}` : ""}</p>}
+              {next ? <Link className="eco-owner-brief__next" href={recordHref(next)}><small>Ближайшая запись</small><strong>{next.time} · {next.client}</strong><span>{[next.vehicle, next.service].filter(Boolean).join(" · ")}</span></Link> : <p className="eco-owner-brief__muted">Ближайших записей нет</p>}
+            </section>
+            <section className="eco-owner-brief__panel" aria-label="Отгрузки сегодня">
+              <header><h2>Отгрузки сегодня</h2><Link href="/shipment">Все отгрузки →</Link></header>
+              <dl className="eco-owner-brief__metrics">
+                <div><dt>Всего</dt><dd>{formatCount(shipments.today)}</dd></div>
+                <div><dt>Черновики</dt><dd>{formatCount(shipments.drafts)}</dd></div>
+                <div><dt>Без оплаты</dt><dd>{formatCount(shipments.unpaid)}</dd></div>
+              </dl>
+              {shipments.rows.slice(0, 3).map(row => <Link key={row.id} className="eco-owner-brief__shipment" href={`/shipment/${row.id}`}><span>{row.name} · {row.client}</span><strong>{formatMoneyCents(row.sumCents)}</strong></Link>)}
+            </section>
+          </div>
+        </div>
+        {dashboard.finance && <footer className="eco-owner-brief__finance">
+          <Link href="/finance">Деньги сегодня →</Link>
+          <span>Выручка <b>{formatMoneyCents(dashboard.finance.revenueCents)}</b></span>
+          <span>Прибыль <b>{formatMoneyCents(dashboard.finance.grossProfitCents)}</b></span>
+          <span>Средний чек <b>{formatMoneyCents(dashboard.finance.averageCheckCents)}</b></span>
+        </footer>}
+      </main>
+    );
+  }
+
   return (
     <main className={`eco-ops-dashboard is-role-${role}`} aria-busy={loading || refreshing}>
       <div className="eco-visually-hidden" role="status" aria-live="polite">
