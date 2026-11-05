@@ -3,6 +3,7 @@ import KitTabs from "@/components/products/KitTabs";
 
 import BulkOilBarrelManager from "@/components/receipts/BulkOilBarrelManager";
 
+
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
@@ -1760,7 +1761,102 @@ function SupplierCombobox({
   );
 }
 
-export default function ProductsClient() {
+function ProductAverageCostEditor({
+  product,
+  stores,
+  refresh,
+}: {
+  product: ProductRow;
+  stores: ProductStoreOption[];
+  refresh: () => Promise<unknown>;
+}) {
+  const [selectedStore, setSelectedStore] = useState("");
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ error?: string; success?: string } | null>(null);
+  const storeId = selectedStore || stores.find((store) => store.isMain)?.id || stores[0]?.id || "";
+  const current = product.stock.find((stock) => stock.storeId === storeId)?.averageCost ?? null;
+  const expectedCostCents = current != null && current > 0 ? Math.round(current * 100) : null;
+  const trimmedAmount = amount.trim();
+  const cents = /^\d+(?:[,.]\d{1,2})?$/.test(trimmedAmount)
+    ? Math.round(Number(trimmedAmount.replace(",", ".")) * 100)
+    : 0;
+  const validAmount = cents > 0 && cents <= 2_147_483_647;
+  const money = (value: number) => value.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+
+  async function save() {
+    if (!storeId || !validAmount || !reason.trim() || saving) return;
+    setSaving(true);
+    setFeedback(null);
+    try {
+      const response = await fetch(`/api/local-inventory/products/${encodeURIComponent(product.id)}/average-cost`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId, averageCostCents: cents, expectedCostCents, reason }),
+      });
+      const data = await readJson<{ error?: string }>(response);
+      if (!response.ok) {
+        if (response.status === 409) await refresh().catch(() => undefined);
+        throw new Error(data?.error || "Не удалось сохранить себестоимость");
+      }
+      setAmount("");
+      setReason("");
+      const success = `Сохранено: ${money(cents / 100)} ₽ за единицу`;
+      setFeedback({ success });
+      await refresh().catch(() => {
+        setFeedback({ success, error: "Обновите страницу, чтобы увидеть новое значение в сводке." });
+      });
+    } catch (cause) {
+      setFeedback({ error: cause instanceof Error ? cause.message : "Не удалось сохранить себестоимость" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <details className="product-editor-extra-details mt-3">
+      <summary><span><b>Задать среднюю себестоимость</b><em>Отдельно для каждого склада</em></span></summary>
+      <p className="mt-2 text-sm">Значение применяется к остатку и новым движениям выбранного склада.</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <label className="product-editor-field">
+          <span className="product-editor-label">Склад</span>
+          <select className="eco-input product-editor-input" value={storeId} disabled={saving || !stores.length}
+            onChange={(event) => {
+              setSelectedStore(event.target.value);
+              setAmount("");
+              setReason("");
+              setFeedback(null);
+            }}>
+            {!stores.length && <option value="">Нет доступных складов</option>}
+            {stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
+          </select>
+        </label>
+        <label className="product-editor-field">
+          <span className="product-editor-label">Новая себестоимость, ₽ за единицу</span>
+          <input className="eco-input product-editor-input" inputMode="decimal" value={amount} disabled={saving}
+            aria-invalid={Boolean(trimmedAmount && !validAmount)}
+            onChange={(event) => setAmount(event.target.value)} />
+          <span className="text-sm">{expectedCostCents == null ? "Текущая себестоимость не задана" : `Сейчас ${money(expectedCostCents / 100)} ₽`}</span>
+        </label>
+        <label className="product-editor-field sm:col-span-2">
+          <span className="product-editor-label">Основание для изменения</span>
+          <input className="eco-input product-editor-input" value={reason} maxLength={500} disabled={saving}
+            onChange={(event) => setReason(event.target.value)} />
+        </label>
+      </div>
+      {trimmedAmount && !validAmount && <p className="product-editor-error mt-2">Введите положительную сумму с точностью до копейки.</p>}
+      {feedback?.error && <p role="alert" className="product-editor-error mt-2">{feedback.error}</p>}
+      {feedback?.success && <p role="status" className="mt-2 text-sm">{feedback.success}</p>}
+      <button type="button" className="eco-btn eco-btn--sm mt-3" onClick={() => void save()}
+        disabled={saving || !storeId || !validAmount || !reason.trim() || cents === expectedCostCents}>
+        {saving ? "Сохраняем…" : "Сохранить себестоимость"}
+      </button>
+    </details>
+  );
+}
+
+export default function ProductsClient({ canSetAverageCost = false }: { canSetAverageCost?: boolean }) {
   const searchParams = useSearchParams();
   const initialProductId = searchParams.get("product")?.trim() ?? "";
   const initialSearch = searchParams.get("search")?.trim() ?? "";
@@ -5728,6 +5824,11 @@ export default function ProductsClient() {
                         })}
                       </div>
                     ) : null}
+                    {canSetAverageCost && editingProduct && !editingProduct.archived &&
+                      ["product", "variant", "bundle"].includes(editingProduct.entityType) && (
+                        <ProductAverageCostEditor key={editingProduct.id} product={editingProduct} stores={storageStores}
+                          refresh={() => refreshProduct(editingProduct.id)} />
+                    )}
                     <div className="product-editor-summary-grid product-editor-stock-summary">
                       <span><em>Ячеек назначено</em><b>{editingProduct?.storageAssignments?.filter((assignment) => !assignment.cellArchived).length ?? 0}</b></span>
                       <span><em>Минимальный остаток</em><b>{compactHeaderValue(form.minimumBalance, "не задан")}</b></span>
