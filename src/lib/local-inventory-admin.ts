@@ -6049,6 +6049,19 @@ async function rollbackPostedReceiptStock(
     if (nextQuantity < -0.000001 || nextAvailable < -0.000001) {
       throw new Error(`Откат создаёт отрицательный остаток по товару «${position.productName}»`);
     }
+    const laterCostOverride = await tx.inventoryLedgerEntry.findFirst({
+      where: {
+        branchId: document.branchId,
+        productId: position.productId,
+        storeId: document.store.id,
+        sourceType: "MANUAL_AVERAGE_COST",
+        createdAt: { gt: productEntries[0].createdAt },
+      },
+      select: { id: true },
+    });
+    if (laterCostOverride) {
+      throw new Error(`После приёмки средняя себестоимость товара «${position.productName}» была задана вручную. Откат перезапишет её.`);
+    }
     const firstRaw = jsonRecord(productEntries[0]?.raw);
     const balanceBefore = jsonRecord(firstRaw.balanceBefore);
     const restoredAverageCandidate = balanceBefore.averageCostCents;
