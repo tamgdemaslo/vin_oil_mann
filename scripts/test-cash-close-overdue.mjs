@@ -16,7 +16,8 @@ const expense=stub('expense',`exports.listCashExpenseOrderOperationsForShift=asy
 const db=stub('db',`
 exports.state={rows:[],updates:[],fail:false,shift:{id:'shift-a',branchId:'a',status:'open',openingCashCents:10000,openedAt:new Date('2026-10-29T07:00:00Z'),openedBy:'vadim',openedByRole:'admin',serviceDate:'2026-10-29',timezone:'Europe/Kaliningrad'}};
 exports.prisma={
- cashShift:{findFirst:async({where})=>where.id===exports.state.shift.id&&where.branchId===exports.state.shift.branchId?exports.state.shift:null,update:async query=>{exports.state.updates.push(query);return {...exports.state.shift,...query.data};}},
+ $transaction:async callback=>callback(exports.prisma),
+ cashShift:{updateMany:async({where})=>({count:Number(where.id===exports.state.shift.id&&where.branchId===exports.state.shift.branchId&&where.status===exports.state.shift.status)}),findFirstOrThrow:async({where})=>{const row=await exports.prisma.cashShift.findFirst({where});if(!row)throw Error('Shift not found');return row;},findFirst:async({where})=>where.id===exports.state.shift.id&&where.branchId===exports.state.shift.branchId?exports.state.shift:null,update:async query=>{exports.state.updates.push(query);return {...exports.state.shift,...query.data};}},
  cashWithdrawal:{findMany:async()=>[]},
  crmDeal:{findMany:async({where})=>{if(exports.state.fail)throw Error('CRM unavailable');return exports.state.rows.filter(row=>row.branchId===where.branchId&&row.status==='open'&&!where.caseStatus.notIn.includes(row.caseStatus));}}
 };`);
