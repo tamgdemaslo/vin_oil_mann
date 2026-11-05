@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createJiti } from 'jiti';
 const jiti = createJiti(import.meta.url);
-const { summarizeBankCategories: summarize, bankCategoryNameKey } = await jiti.import('../src/lib/bank-operation-category-domain.ts');
+const { summarizeBankCategories: summarize, bankCategoryNameKey, automaticBankCategory, bankExpenseMerchantKey, needsBankExpenseReview } = await jiti.import('../src/lib/bank-operation-category-domain.ts');
 const categories = [
   { id: 'purchases', code: 'purchases', name: 'Закупки', kind: 'operating', archived: false },
   { id: 'fees', code: 'fees', name: 'Комиссии', kind: 'operating', archived: false },
@@ -33,3 +33,21 @@ assert.throws(()=>summarize([operation('x','unknown',100,null)],categories));
 assert.throws(()=>summarize([operation('x','expense',1.5,null)],categories));
 assert.throws(()=>summarize([operation('x','expense',Number.MAX_SAFE_INTEGER,null),operation('y','expense',2,null)],categories));
 console.log('Bank categories: kopeck totals, refunds, internal transfers, owner money, uncategorized and archived categories passed');
+
+const marketing = {id:'ads',code:'marketing',name:'Реклама',kind:'operating',archived:false};
+const catalog = [...categories, marketing];
+const expense = {id:'bank-operation',direction:'expense',amountCents:500,categoryId:null,counterparty:'ООО «Авито»',inn:'0000000000',purpose:'Оплата размещения'};
+assert.equal(automaticBankCategory(expense,catalog)?.id,marketing.id);
+assert.equal(automaticBankCategory(expense,catalog,'purchases')?.id,'purchases');
+assert.equal(automaticBankCategory({...expense,direction:'income'},catalog),undefined);
+assert.equal(automaticBankCategory({...expense,purpose:'Возврат услуги'},catalog),undefined);
+assert.equal(automaticBankCategory({...expense,counterparty:'Авитопром'},catalog),undefined);
+assert.equal(automaticBankCategory(expense,[{...marketing,archived:true}]),undefined);
+assert.equal(bankExpenseMerchantKey(expense),bankExpenseMerchantKey({...expense,counterparty:'  ООО   «АВИТО»  '}));
+assert.notEqual(bankExpenseMerchantKey(expense),bankExpenseMerchantKey({...expense,inn:'0000000001'}));
+assert.equal(bankExpenseMerchantKey({...expense,counterparty:'Перевод',inn:''}),null);
+assert.equal(needsBankExpenseReview(expense),true);
+assert.equal(needsBankExpenseReview({...expense,hiddenFromReview:true}),false);
+assert.equal(needsBankExpenseReview({...expense,categoryId:marketing.id}),false);
+assert.equal(needsBankExpenseReview({...expense,id:''}),false);
+console.log('Bank automation: merchant matching, manual rules, Avito, archive and review filters passed');

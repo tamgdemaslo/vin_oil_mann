@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatServiceDate, toServiceDateInput } from "@/lib/date-time";
-import { BANK_CATEGORY_KINDS, summarizeBankCategories, type BankCategory, type BankCategoryKind } from "@/lib/bank-operation-category-domain";
+import { BANK_CATEGORY_KINDS, needsBankExpenseReview, summarizeBankCategories, type BankCategory, type BankCategoryKind } from "@/lib/bank-operation-category-domain";
 import styles from "./bank.module.css";
 
-type Operation = { id: string; date: string; direction: string; amountCents: number; counterparty: string; inn: string; purpose: string; categoryId: string | null };
+type Operation = { id: string; date: string; direction: string; amountCents: number; counterparty: string; inn: string; purpose: string; categoryId: string | null; hiddenFromReview: boolean; categorySource: "manual" | "automatic" | null; canRemember: boolean; hasRule: boolean };
 type Statement = {
   connectionId: string; accountId: string | null; categories: BankCategory[];
   accountMasked: string; currency: string; dateFrom: string; dateTo: string;
@@ -36,7 +36,13 @@ export default function BankPage() {
   const busy = loading || savingCategory || Object.values(savingRows).some(Boolean);
   const summaries = useMemo(() => summarizeBankCategories(data?.operations ?? [], data?.categories ?? []), [data]);
   const uncategorizedCount = data?.operations.filter(row => !row.categoryId).length ?? 0;
-  const visibleOperations = data?.operations.filter(row => !categoryFilter || (categoryFilter === "uncategorized" ? !row.categoryId : row.categoryId === categoryFilter)) ?? [];
+  const reviewCount = data?.operations.filter(needsBankExpenseReview).length ?? 0;
+  const visibleOperations = data?.operations.filter(row => {
+    if (categoryFilter === "review") return needsBankExpenseReview(row);
+    if (categoryFilter === "hidden") return row.hiddenFromReview;
+    if (categoryFilter === "uncategorized") return !row.categoryId;
+    return !categoryFilter || row.categoryId === categoryFilter;
+  }) ?? [];
   useEffect(() => {
     const controller = new AbortController();
     void fetch("/api/integrations/tbank/status", { cache: "no-store", signal: controller.signal })
@@ -51,8 +57,16 @@ export default function BankPage() {
   function clearStatement() {
     setData(null); setError(""); setCategoryFilter(""); setRowMessages({}); setCategoryMessage(null); setCategoryForm(emptyCategoryForm);
   }
-  async function load() {
-    setLoading(true); setError(""); setData(null); setRowMessages({}); setCategoryFilter(""); setCategoryMessage(null); setCategoryForm(emptyCategoryForm);
+  const load = useCallback(async (keepView = false) => {
+    setLoading(true);
+    setError("");
+    if (!keepView) {
+      setData(null);
+      setRowMessages({});
+      setCategoryFilter(new URLSearchParams(window.location.search).get("review") === "1" ? "review" : "");
+      setCategoryMessage(null);
+      setCategoryForm(emptyCategoryForm);
+    }
     try {
       const query = new URLSearchParams({ dateFrom, dateTo, accountId, connectionId });
       const response = await fetch(`/api/integrations/tbank/statement?${query}`, { cache: "no-store" });
@@ -61,20 +75,40 @@ export default function BankPage() {
       setData(result);
     } catch (error) { setError(error instanceof Error ? error.message : "Ошибка загрузки выписки."); }
     finally { setLoading(false); }
-  }
-  async function assign(row: Operation, categoryId: string) {
+  }, [dateFrom, dateTo, accountId, connectionId]);
+  const openedFromReview = useRef(false);
+  useEffect(() => {
+    if (!connectionId || openedFromReview.current || new URLSearchParams(window.location.search).get("review") !== "1") return;
+    openedFromReview.current = true;
+    void load();
+  }, [connectionId, load]);
+  async function assign(
+    row: Operation,
+    categoryId: string | null,
+    options: { hiddenFromReview?: boolean; rule?: "remember" | "forget" } = {},
+  ) {
     if (!data?.accountId) return;
     setSavingRows(current => ({ ...current, [row.id]: true }));
     setRowMessages(current => ({ ...current, [row.id]: { error: false, text: "Сохраняем…" } }));
     try {
       const response = await fetch("/api/integrations/tbank/classification", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: data.accountId, operationId: row.id, categoryId: categoryId || null }),
+        body: JSON.stringify({
+          accountId: data.accountId, operationId: row.id, categoryId: categoryId || null,
+          ...options, counterparty: row.counterparty, inn: row.inn,
+        }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Не удалось сохранить категорию.");
-      setData(current => current ? { ...current, operations: current.operations.map(operation => operation.id === row.id ? { ...operation, categoryId: result.categoryId } : operation) } : current);
-      setRowMessages(current => ({ ...current, [row.id]: { error: false, text: "Сохранено" } }));
+      if (options.rule) {
+        await load(true);
+      } else {
+        setData(current => current ? { ...current, operations: current.operations.map(operation => operation.id === row.id
+          ? { ...operation, categoryId: result.categoryId, hiddenFromReview: result.hiddenFromReview, categorySource: "manual" }
+          : operation) } : current);
+      }
+      const text = options.rule === "remember" ? "Правило сохранено" : options.rule === "forget" ? "Правило удалено" : "Сохранено";
+      setRowMessages(current => ({ ...current, [row.id]: { error: false, text } }));
     } catch (error) {
       setRowMessages(current => ({ ...current, [row.id]: { error: true, text: error instanceof Error ? error.message : "Не удалось сохранить категорию. Повторите попытку." } }));
     } finally { setSavingRows(current => ({ ...current, [row.id]: false })); }
@@ -96,12 +130,13 @@ export default function BankPage() {
       const category = (result.categories as BankCategory[]).find(item => item.id === result.categoryId);
       if (category) setCategoryForm({ id: category.id, name: category.name, kind: category.kind, archived: category.archived });
       setCategoryMessage({ error: false, text: "Категория сохранена. Её можно выбрать у операции." });
+      await load(true);
     } catch (error) { setCategoryMessage({ error: true, text: error instanceof Error ? error.message : "Не удалось сохранить категорию." }); }
     finally { setSavingCategory(false); }
   }
   const currency = ({ "643": "₽", "810": "₽", "RUB": "₽", "840": "USD", "978": "EUR" } as Record<string, string>)[data?.currency ?? "RUB"] ?? data?.currency ?? "₽";
   const money = (cents: number) => `${(cents / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
-  const kindLabel = (kind: string) => kind === "uncategorized" ? "Нужно разобрать" : BANK_CATEGORY_KINDS.find(item => item.value === kind)?.label ?? kind;
+  const kindLabel = (kind: string) => kind === "uncategorized" ? "Без категории" : BANK_CATEGORY_KINDS.find(item => item.value === kind)?.label ?? kind;
   return <main className="eco-page eco-page--wide"><div className="eco-fc">
     <header className="eco-fc-head"><div>
       <Link href="/finance">← Финансы</Link>
@@ -155,19 +190,35 @@ export default function BankPage() {
       </details>
       <section aria-label="Банковские операции">
         <div className={styles.heading}><h2>Операции · {visibleOperations.length}{categoryFilter ? ` из ${data.operations.length}` : ""}</h2>
-          <label className={styles.filter}><span>Показать</span><select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="">Все операции</option><option value="uncategorized">Без категории · {uncategorizedCount}</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}{category.archived ? " (архив)" : ""}</option>)}</select></label>
+          <label className={styles.filter}><span>Показать</span><select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="">Все операции</option><option value="review">Расходы к разбору · {reviewCount}</option><option value="hidden">Скрытые из разбора</option><option value="uncategorized">Без категории · {uncategorizedCount}</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}{category.archived ? " (архив)" : ""}</option>)}</select></label>
         </div>
         {!data.accountId && <p>Для назначения категорий обновите расчётный счёт в настройках интеграции.</p>}
-        {visibleOperations.length === 0 ? <p>{categoryFilter ? "Операций с этой категорией в выбранном периоде нет." : "За этот период операций нет."}</p> : <div className={styles.tableScroll}><table className="eco-table">
+        {visibleOperations.length === 0 ? <p>{categoryFilter === "review" ? "За выбранный период нет расходов к разбору." : categoryFilter ? "В выбранном периоде нет операций по этому фильтру." : "За этот период операций нет."}</p> : <div className={styles.tableScroll}><table className="eco-table">
           <thead><tr><th scope="col">Дата / операция</th><th scope="col">Контрагент</th><th scope="col">Назначение</th><th scope="col">Категория</th><th scope="col">Поступление</th><th scope="col">Списание</th></tr></thead>
           <tbody>{visibleOperations.map((row,index) => <tr key={`${row.id}-${index}`}>
             <td>{formatServiceDate(row.date)}<br /><small>{row.id}</small></td>
             <td>{row.counterparty || "—"}{row.inn && <><br /><small>ИНН {row.inn}</small></>}{row.direction === "internal" && <p>Перевод внутри счёта</p>}</td>
             <td className={styles.purpose}>{row.purpose || "—"}</td>
-            <td className={styles.operationCategory}><select aria-label={`Категория операции ${row.id}`} value={row.categoryId ?? ""} disabled={!data.accountId || !row.id || savingRows[row.id] || savingCategory} onChange={event => void assign(row,event.target.value)}>
+            <td className={styles.operationCategory}><select aria-label={`Категория операции ${row.id}`} value={row.categoryId ?? ""} disabled={!data.accountId || !row.id || busy} onChange={event => void assign(row,event.target.value)}>
               <option value="">Без категории</option>
               {BANK_CATEGORY_KINDS.map(kind => <optgroup key={kind.value} label={kind.label}>{data.categories.filter(category => category.kind === kind.value && (!category.archived || category.id === row.categoryId)).map(category => <option key={category.id} value={category.id} disabled={category.archived}>{category.name}{category.archived ? " (архив)" : ""}</option>)}</optgroup>)}
-            </select>{rowMessages[row.id] && <small role={rowMessages[row.id].error ? "alert" : "status"} className={rowMessages[row.id].error ? styles.rowError : styles.muted}>{rowMessages[row.id].text}</small>}</td>
+            </select>
+              {row.categorySource === "automatic" && <small className={styles.muted}>Назначена автоматически</small>}
+              {row.hiddenFromReview && <small className={styles.muted}>Скрыта из разбора</small>}
+              {data.accountId && row.id && row.direction === "expense" && (
+                <div className={styles.rowActions}>
+                  {!row.categoryId && <button type="button" className={styles.categoryLink} disabled={busy} onClick={() => void assign(row, null, { hiddenFromReview: !row.hiddenFromReview })}>
+                    {row.hiddenFromReview ? "Вернуть к разбору" : "Скрыть из разбора"}
+                  </button>}
+                  {row.canRemember && row.categoryId && !data.categories.find(category => category.id === row.categoryId)?.archived && (
+                    <button type="button" className={styles.categoryLink} disabled={busy} onClick={() => void assign(row, row.categoryId, { rule: "remember" })}>
+                      {row.hasRule ? "Обновить правило" : "Запомнить для получателя"}
+                    </button>
+                  )}
+                  {row.hasRule && <button type="button" className={styles.categoryLink} disabled={busy} onClick={() => void assign(row, null, { rule: "forget" })}>Удалить правило</button>}
+                </div>
+              )}
+              {rowMessages[row.id] && <small role={rowMessages[row.id].error ? "alert" : "status"} className={rowMessages[row.id].error ? styles.rowError : styles.muted}>{rowMessages[row.id].text}</small>}</td>
             <td className={styles.amount}>{row.direction !== "expense" ? money(row.amountCents) : "—"}</td>
             <td className={styles.amount}>{row.direction !== "income" ? money(row.amountCents) : "—"}</td>
           </tr>)}</tbody>

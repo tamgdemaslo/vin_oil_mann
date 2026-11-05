@@ -1393,14 +1393,14 @@ export async function getTBankStatement(input: { dateFrom: string; dateTo: strin
         purpose: cleanText(row.paymentPurpose),
       };
     }).sort((a, b) => b.date.localeCompare(a.date));
-    const categoryData = await bankOperationCategoryData(hashSecret(number), operations.map(operation => operation.id));
+    const categoryData = await bankOperationCategoryData(hashSecret(number), operations);
     return { ok: true as const, statement: {
       connectionId: integration.id, accountId: account?.id ?? null, categories: categoryData.categories,
       accountMasked: maskAccount(number), currency: account?.currency ?? "RUB",
       dateFrom: input.dateFrom, dateTo: input.dateTo, fetchedAt: new Date().toISOString(),
       openingCents: money(body.saldoIn), closingCents: money(body.saldoOut),
       incomeCents: money(body.income), expenseCents: money(body.outcome),
-      operations: operations.map(operation => ({ ...operation, categoryId: categoryData.assignments.get(operation.id) ?? null })),
+      operations: operations.map(operation => ({ ...operation, ...categoryData.assignments.get(operation.id) })),
     } };
   } catch (error) {
     return { ok: false as const, status: 502, error: error instanceof TBankApiError

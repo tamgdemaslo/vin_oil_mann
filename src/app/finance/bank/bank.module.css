@@ -23,3 +23,7 @@
 .rowError { color:var(--eco-danger,#a0271c); }
 .operationCategory select:focus-visible,.categoryLink:focus-visible,.categoryForm :focus-visible,.filter select:focus-visible { outline:2px solid var(--eco-accent,#ba3d00); outline-offset:2px; }
 @media(max-width:700px) { .balances { grid-template-columns:repeat(2,minmax(0,1fr)); }.filter { width:100%; }.filter select { flex:1; max-width:none; }.categoryForm label { flex-basis:100%; }.categoryForm button { width:100%; } }
+
+.rowActions { display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:4px; font-size:.825rem; }
+.rowActions button { min-height:26px; }
+.rowActions button:disabled { opacity:.55; cursor:default; }
