@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput } from "@/components/platform/EcoUI";
 import { formatServiceTime, toServiceDateInput } from "@/lib/date-time";
+import styles from "./QuickOrderPreview.module.css";
 
 type RestockItem = {
   productId: string;
@@ -152,7 +153,6 @@ type ProcurementCoverage = {
   lines: SupplierOrderLine[];
 };
 type QuickOrderItem = {
-  key: string;
   productId: string;
   title: string;
   code: string;
@@ -977,8 +977,9 @@ export default function RestockClient() {
   );
 
   const categoryItems = useMemo(() => {
-    if (procurementCategory === "all") return items;
-    return items.filter((item) => {
+    const shortages = items.filter((item) => Number(item.minimumBalance) > 0 && Number(item.minimumBalance) > item.stock);
+    if (procurementCategory === "all") return shortages;
+    return shortages.filter((item) => {
       const route = routeByProduct.get(item.productId);
       if (!route) return false;
       if (procurementCategory === "setup") return route.category === "setup" || filterNotFoundInRossko(item);
@@ -1366,68 +1367,59 @@ export default function RestockClient() {
       setRosskoBulk({ active: true, current: index + 1, total: rows.length });
       const current = rosskoState[item.productId];
       const results = current?.results?.length ? current.results : await rosskoSearch(item.productId, item);
-      const picked = bestOffer(results, item, coverage.remaining);
-      if (!picked) {
-        previewRows.push({
-          key: item.productId,
-          productId: item.productId,
-          title: String(item.name ?? "Товар"),
-          code: String(item.code ?? ""),
-          available: coverage.available,
-          minimum: coverage.min,
-          ordered: coverage.ordered,
-          remaining: coverage.remaining,
-          quantity: 0,
-          included: false,
-          status: "no_offer",
-          message: "Нет предложения ROSSKO",
-          price: null,
-          delivery: "—",
-          availableFromOffer: null,
-        });
-        continue;
-      }
-      const count = stockCount(picked.stock);
-      const quantity = Math.max(1, Math.min(coverage.remaining, count ?? coverage.remaining));
-      const partial = count !== null && count < coverage.remaining;
-      previewRows.push({
-        key: offerStockKey(item.productId, picked.offer, picked.stock),
-        productId: item.productId,
-        title: String(item.name ?? "Товар"),
-        code: String(item.code ?? ""),
-        available: coverage.available,
-        minimum: coverage.min,
-        ordered: coverage.ordered,
-        remaining: coverage.remaining,
-        quantity,
-        included: quantity > 0,
-        status: partial ? "partial" : "ready",
-        message: partial ? `Закроет частично: доступно ${fmtNum(count)} из ${fmtNum(coverage.remaining)}` : "Готово к добавлению",
-        offer: picked.offer,
-        stock: picked.stock,
-        price: stockPrice(picked.stock),
-        delivery: deliveryLabel(picked.stock),
-        availableFromOffer: count,
-      });
+      previewRows.push(quickOrderItem(item, coverage, results));
     }
     setRosskoBulk({ active: false, current: rows.length, total: rows.length });
     setQuickPreview({ createdAt: Date.now(), items: previewRows });
     setQuickBusy(false);
   }
 
-  function updateQuickPreviewItem(key: string, patch: Partial<Pick<QuickOrderItem, "included" | "quantity">>) {
+  function updateQuickPreviewItem(productId: string, patch: Partial<Pick<QuickOrderItem, "included" | "quantity">>) {
     setQuickPreview((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
         items: prev.items.map((item) => {
-          if (item.key !== key) return item;
-          const max = item.availableFromOffer ?? item.remaining;
+          if (item.productId !== productId) return item;
+          const max = item.availableFromOffer ?? Math.ceil(item.remaining);
           const quantity = patch.quantity === undefined ? item.quantity : Math.max(1, Math.min(Math.floor(patch.quantity || 1), Math.max(1, max)));
           return { ...item, ...patch, quantity };
         }),
       };
     });
+  }
+
+  async function saveQuickMinimum(productId: string, minimumBalance: number) {
+    const response = await fetch(`/api/local-inventory/products/${encodeURIComponent(productId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minimumBalance }),
+    });
+    const product = await response.json().catch(() => null);
+    if (!response.ok || typeof product?.minimumBalance !== "number") {
+      throw new Error(product?.error || "Не удалось сохранить минимальный остаток");
+    }
+    const savedMinimum: number = product.minimumBalance;
+    const withMinimum = (item: RestockItem) => ({
+      ...item,
+      minimumBalance: savedMinimum,
+      shortage: Math.max(0, savedMinimum - item.stock),
+    });
+    setItems((current) => current.map((item) => item.productId === productId ? withMinimum(item) : item));
+    const source = items.find((item) => item.productId === productId);
+    if (source) {
+      const updated = withMinimum(source);
+      const coverage = coverageForItem(updated, cartQtyByProduct.get(productId) ?? 0, orderedLinesByProduct.get(productId) ?? []);
+      setQuickPreview((current) => current && ({
+        ...current,
+        items: current.items.map((item) => {
+          if (item.productId !== productId) return item;
+          const next = quickOrderItem(updated, coverage, rosskoState[productId]?.results);
+          return { ...next, included: next.included && (item.included || item.status === "covered") };
+        }),
+      }));
+    }
+    showToast("Минимальный остаток сохранён");
   }
 
   function applyQuickOrderPreview() {
@@ -2005,6 +1997,7 @@ export default function RestockClient() {
           preview={quickPreview}
           onClose={() => setQuickPreview(null)}
           onUpdate={updateQuickPreviewItem}
+          onSaveMinimum={saveQuickMinimum}
           onApply={applyQuickOrderPreview}
         />
       )}
@@ -2059,19 +2052,56 @@ function QuickOrderPreviewDrawer({
   preview,
   onClose,
   onUpdate,
+  onSaveMinimum,
   onApply,
 }: {
   preview: QuickOrderPreview;
   onClose: () => void;
-  onUpdate: (key: string, patch: Partial<Pick<QuickOrderItem, "included" | "quantity">>) => void;
+  onUpdate: (productId: string, patch: Partial<Pick<QuickOrderItem, "included" | "quantity">>) => void;
+  onSaveMinimum: (productId: string, value: number) => Promise<void>;
   onApply: () => void;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [minimumInput, setMinimumInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  async function saveMinimum(item: QuickOrderItem) {
+    if (saving) return;
+    const value = minimumInput.trim().replace(",", ".");
+    if (!/^\d{1,11}(?:\.\d{1,3})?$/.test(value)) {
+      setSaveError("Введите число от 0 с точностью до трёх знаков после запятой.");
+      return;
+    }
+    const minimum = Number(value);
+    if (minimum === item.minimum) {
+      setEditingId(null);
+      return;
+    }
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onSaveMinimum(item.productId, minimum);
+      setEditingId(null);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Не удалось сохранить минимальный остаток");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startEditing(item: QuickOrderItem) {
+    setMinimumInput(String(item.minimum));
+    setSaveError("");
+    setEditingId(item.productId);
+  }
+
   const ready = preview.items.filter((item) => item.included && item.offer && item.quantity > 0);
   const sum = ready.reduce((total, item) => total + Math.max(0, item.quantity) * Math.max(0, Number(item.price || 0)), 0);
   const noOffers = preview.items.filter((item) => item.status === "no_offer").length;
   return (
     <div className="eco-restock-cart-shell" role="presentation">
-      <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть быстрый заказ" onClick={onClose} />
+      <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть быстрый заказ" onClick={onClose} disabled={saving} />
       <aside className="eco-restock-cart-drawer eco-restock-quick-drawer" role="dialog" aria-modal="true" aria-label="Предварительный заказ фильтров">
         <header className="eco-restock-cart-head">
           <div>
@@ -2079,26 +2109,31 @@ function QuickOrderPreviewDrawer({
             <h2>Быстрый заказ ROSSKO</h2>
             <p>{ready.length} к добавлению · {noOffers} без предложения · сумма {fmtMoney(sum)} ₽</p>
           </div>
-          <button type="button" className="eco-icon-btn" onClick={onClose} aria-label="Закрыть">
+          <button type="button" className="eco-icon-btn" onClick={onClose} disabled={saving} aria-label="Закрыть">
             <X size={18} />
           </button>
         </header>
         <div className="eco-restock-cart-body">
           <div className="eco-restock-quick-list">
             {preview.items.map((item) => (
-              <article key={item.key} className={`eco-restock-quick-line ${item.included ? "is-included" : ""}`}>
+              <article key={item.productId} className={`eco-restock-quick-line ${styles.line} ${item.included ? "is-included" : ""}`}>
                 <label className="eco-restock-quick-line__check">
                   <input
                     type="checkbox"
                     checked={item.included}
-                    disabled={!item.offer}
-                    onChange={(event) => onUpdate(item.key, { included: event.target.checked })}
+                    disabled={!item.offer || saving}
+                    onChange={(event) => onUpdate(item.productId, { included: event.target.checked })}
                   />
                 </label>
                 <div className="eco-restock-quick-line__main">
                   <strong>{item.title}</strong>
                   <span>{item.code || "без кода"} · остаток {fmtNum(item.available)} · мин. {fmtNum(item.minimum)} · заказано {fmtNum(item.ordered)} · осталось {fmtNum(item.remaining)}</span>
                   <em>{item.message}</em>
+                  {editingId !== item.productId && (
+                    <EcoButton type="button" size="sm" variant="ghost" disabled={editingId !== null} aria-label={`Изменить минимум: ${item.title}`} onClick={() => startEditing(item)}>
+                      Изменить минимум
+                    </EcoButton>
+                  )}
                 </div>
                 <div className="eco-restock-quick-line__offer">
                   {item.offer && item.stock ? (
@@ -2113,19 +2148,45 @@ function QuickOrderPreviewDrawer({
                 <EcoInput
                   type="number"
                   min={1}
-                  max={item.availableFromOffer ?? item.remaining}
-                  value={item.quantity || 1}
-                  disabled={!item.offer || !item.included}
-                  onChange={(event) => onUpdate(item.key, { quantity: parseInt(event.target.value, 10) || 1 })}
+                  max={item.availableFromOffer ?? Math.ceil(item.remaining)}
+                  value={item.quantity || ""}
+                  placeholder="—"
+                  disabled={!item.offer || !item.included || saving}
+                  onChange={(event) => onUpdate(item.productId, { quantity: parseInt(event.target.value, 10) || 1 })}
                   aria-label="Количество к заказу"
                 />
+                {editingId === item.productId && (
+                  <form className={styles.minimumForm} onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveMinimum(item);
+                  }}>
+                    <label>
+                      Минимальный остаток, шт.
+                      <EcoInput
+                        autoFocus
+                        inputMode="decimal"
+                        value={minimumInput}
+                        onChange={(event) => setMinimumInput(event.target.value)}
+                        readOnly={saving}
+                        aria-invalid={Boolean(saveError)}
+                      />
+                    </label>
+                    <EcoButton type="submit" size="sm" variant="primary" disabled={saving}>
+                      {saving ? "Сохраняем…" : "Сохранить"}
+                    </EcoButton>
+                    <EcoButton type="button" size="sm" disabled={saving} onClick={() => setEditingId(null)}>
+                      Отмена
+                    </EcoButton>
+                    {saveError && <p role="alert">{saveError}</p>}
+                  </form>
+                )}
               </article>
             ))}
           </div>
         </div>
         <footer className="eco-restock-cart-footer">
-          <EcoButton type="button" onClick={onClose}>Отмена</EcoButton>
-          <EcoButton type="button" variant="primary" onClick={onApply} disabled={!ready.length}>
+          <EcoButton type="button" onClick={onClose} disabled={saving}>Отмена</EcoButton>
+          <EcoButton type="button" variant="primary" onClick={onApply} disabled={!ready.length || editingId !== null}>
             <ShoppingCart size={15} />
             Добавить выбранное в корзину
           </EcoButton>
@@ -2364,6 +2425,39 @@ function bestOffer(results: RosskoOffer[] | undefined, item: RestockItem, reques
     const bPrice = stockPrice(b.stock) ?? Number.MAX_SAFE_INTEGER;
     return aPrice - bPrice;
   })[0];
+}
+
+function quickOrderItem(item: RestockItem, coverage: ProcurementCoverage, results?: RosskoOffer[]): QuickOrderItem {
+  const remaining = coverage.min > 0 ? Number(coverage.remaining.toFixed(3)) : 0;
+  const needed = Math.ceil(remaining);
+  const picked = needed > 0 ? bestOffer(results, item, needed) : null;
+  const availableFromOffer = picked ? stockCount(picked.stock) : null;
+  const quantity = picked ? Math.max(0, Math.min(needed, Math.floor(availableFromOffer ?? needed))) : 0;
+  const status = needed === 0 ? "covered" : quantity === 0 ? "no_offer" : quantity < needed ? "partial" : "ready";
+  const messages = {
+    covered: "Пополнение не требуется",
+    no_offer: "Нет предложения ROSSKO с наличием",
+    partial: `Закроет частично: доступно ${fmtNum(quantity)} из ${fmtNum(needed)}`,
+    ready: "Готово к добавлению",
+  };
+  return {
+    productId: item.productId,
+    title: String(item.name ?? "Товар"),
+    code: String(item.code ?? ""),
+    available: coverage.available,
+    minimum: coverage.min,
+    ordered: coverage.ordered,
+    remaining,
+    quantity,
+    included: quantity > 0,
+    status,
+    message: messages[status],
+    offer: quantity > 0 ? picked?.offer : undefined,
+    stock: quantity > 0 ? picked?.stock : undefined,
+    price: picked ? stockPrice(picked.stock) : null,
+    delivery: picked ? deliveryLabel(picked.stock) : "—",
+    availableFromOffer,
+  };
 }
 
 function bestOfferLabel(results: RosskoOffer[] | undefined, item: RestockItem, requestedQty?: number): string {

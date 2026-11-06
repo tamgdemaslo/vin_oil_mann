@@ -1,0 +1,39 @@
+.minimumForm {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+
+.minimumForm label {
+  display: grid;
+  gap: 4px;
+  color: var(--eco-ink);
+  font-size: 12px;
+}
+
+.minimumForm input {
+  width: 100%;
+}
+
+.minimumForm p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--eco-danger, #b42318);
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .line:global(.eco-restock-quick-line) {
+    grid-template-columns: 26px minmax(0, 1fr) 64px;
+  }
+
+  .line :global(.eco-restock-quick-line__main) {
+    grid-column: 2 / -1;
+  }
+
+  .line :global(.eco-restock-quick-line__offer) {
+    grid-column: 2;
+  }
+}
