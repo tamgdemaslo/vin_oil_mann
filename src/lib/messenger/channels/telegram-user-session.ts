@@ -2451,6 +2451,21 @@ async function upsertTelegramConversationFromUser(input: {
   } satisfies TelegramResolvedPeer;
 }
 
+const lastPhoneLookupByAccount = new Map<string, number>();
+
+async function waitForTelegramPhoneLookup(accountId: string) {
+  // Telegram allows one contacts.resolvePhone call every three seconds.
+  for (;;) {
+    const now = Date.now();
+    const wait = (lastPhoneLookupByAccount.get(accountId) ?? 0) + 3_000 - now;
+    if (wait <= 0) {
+      lastPhoneLookupByAccount.set(accountId, now);
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, wait));
+  }
+}
+
 export async function resolveTelegramUserPeerByPhone(phoneInput: string): Promise<TelegramResolvedPeer | { ok: false; reason: string; message: string }> {
   const account = await getActiveTelegramUserAccount();
   if (!account || !canUseTelegramUserSession(account)) {
@@ -2469,10 +2484,19 @@ export async function resolveTelegramUserPeerByPhone(phoneInput: string): Promis
   if (!sessionString) {
     return { ok: false, reason: "telegram_session_missing", message: "Telegram user session не найдена. Подключите аккаунт заново." };
   }
-  const client = await getClient(sessionString);
+  let client: TelegramRuntimeClient;
+  try {
+    client = await getClient(sessionString);
+  } catch {
+    return { ok: false, reason: "telegram_connection_failed", message: "Не удалось подключиться к Telegram филиала. Проверьте подключение в интеграциях." };
+  }
   try {
     const { Api } = await loadGramJs();
-    const resolved = await client.invoke(new Api.contacts.ResolvePhone({ phone })).catch(() => null);
+    await waitForTelegramPhoneLookup(account.id);
+    const resolved = await client.invoke(new Api.contacts.ResolvePhone({ phone })).catch((error: unknown) => {
+      if (error instanceof Error && /\bPHONE_NOT_OCCUPIED\b/.test(error.message)) return null;
+      throw error;
+    });
     const resolvedUser = telegramUserFromResult(resolved);
     if (resolvedUser) {
       return upsertTelegramConversationFromUser({ account, user: resolvedUser, phone, source: "phone_lookup" });

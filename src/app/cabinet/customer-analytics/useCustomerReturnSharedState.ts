@@ -24,7 +24,14 @@ export function useCustomerReturnSharedState(branchId:string,today:string) {
       setStates(previous=>mergeCustomerReturnStates(previous,data.states));
       setPending(previous=>{
         const next={...previous};
-        for(const state of data.states as CustomerReturnSharedState[])if(state.deliveryStatus && state.deliveryStatus!=="none" && next[state.clientKey] && state.version>=next[state.clientKey].version){delete next[state.clientKey];pendingKeys.current.delete(state.clientKey);}
+        const persisted=new Map<string,CustomerReturnSharedState>(data.states.map((state:CustomerReturnSharedState)=>[state.clientKey,state]));
+        for(const [key,local] of Object.entries(previous)){
+          const state=persisted.get(key);
+          if(local.deliveryStatus==="unknown" || (state && state.version>local.version)){
+            delete next[key];
+            pendingKeys.current.delete(key);
+          }
+        }
         return next;
       });
       setLoaded(true);setError(null);
@@ -60,7 +67,7 @@ export function useCustomerReturnSharedState(branchId:string,today:string) {
       if(data.state)setStates(previous=>mergeCustomerReturnStates(previous,[data.state]));
       if(!res.ok){uncertain=res.status>=500;return {ok:false,error:data.error||"Результат не подтверждён. Обновите общий статус."};}
       return {ok:true,error:null};
-    }catch{uncertain=true;return {ok:false,error:"Связь прервалась. Проверьте вкладку «Ошибки» и диалог: повторная отправка заблокирована до выяснения результата."};}
+    }catch{uncertain=true;return {ok:false,error:"Ответ CRM не получен. Статус сверяется с сервером."};}
     finally{
       if(uncertain)setPending(previous=>({...previous,[change.clientKey]:{...optimistic,deliveryStatus:"unknown",deliveryError:"Не удалось подтвердить постановку в очередь. Обновите статус и проверьте диалог перед повторной отправкой."}}));
       else{pendingKeys.current.delete(change.clientKey);setPending(previous=>{const next={...previous};delete next[change.clientKey];return next;});}
@@ -79,23 +86,32 @@ export function useCustomerReturnSharedState(branchId:string,today:string) {
       // Bound each request by both item count and serialized size.
       let chunk:ReturnDelivery[]=[];
       let size=0;
+      const encoder=new TextEncoder();
       async function submit(items:ReturnDelivery[]){
         try{
           const res=await fetch("/api/analytics/customer-return/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({branchId,serviceDate:today,deliveries:items})});
-          const data=await res.json();
-          if(!res.ok){
-            results.push(...items.map(item=>({clientKey:item.clientKey,error:data.error||"Пакет не принят.",uncertain:res.status>=500})));
+          if(res.status===413 && items.length>1){
+            const middle=Math.ceil(items.length/2);
+            await submit(items.slice(0,middle));
+            await submit(items.slice(middle));
             return;
           }
+          const data=await res.json().catch(()=>null);
+          if(!res.ok){
+            const error=data?.error??(res.status===413?"Запрос для клиента превышает допустимый размер.":"CRM не подтвердила приём запроса.");
+            results.push(...items.map(item=>({clientKey:item.clientKey,error,uncertain:res.status>=500})));
+            return;
+          }
+          if(!Array.isArray(data?.results))throw new Error("Missing batch response");
           const incoming=new Map<string,BatchResult>(data.results.map((result:BatchResult)=>[result.clientKey,result]));
           for(const item of items)results.push(incoming.get(item.clientKey)??{clientKey:item.clientKey,error:"Постановка в очередь не подтверждена.",uncertain:true});
         }catch{
-          results.push(...items.map(item=>({clientKey:item.clientKey,error:"Связь прервалась. Проверьте статус отправки.",uncertain:true})));
+          results.push(...items.map(item=>({clientKey:item.clientKey,error:"Ответ CRM не получен. Статус сверяется с сервером.",uncertain:true})));
         }
       }
       for(const item of deliveries){
-        const itemSize=JSON.stringify(item).length;
-        if(chunk.length===50 || (chunk.length>0 && size+itemSize>1_900_000)){
+        const itemSize=encoder.encode(JSON.stringify(item)).byteLength;
+        if(chunk.length===8 || (chunk.length>0 && size+itemSize>96_000)){
           await submit(chunk);
           chunk=[];size=0;
         }

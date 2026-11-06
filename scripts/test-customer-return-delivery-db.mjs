@@ -7,6 +7,7 @@ const url=new URL(process.env.DATABASE_URL||'postgresql://invalid/invalid');
 assert.ok(['127.0.0.1','localhost','[::1]'].includes(url.hostname)&&url.pathname.startsWith('/eco_return_test_'),'Isolated local test DB only');
 const dir=mkdtempSync(join(tmpdir(),'return-delivery-db-')),mock=join(dir,'mock.ts');
 writeFileSync(mock,`export const test:any={calls:0,connected:true,wrongAccount:false,throws:false,queued:false,prepareFails:false,inputs:[]};
+export class ContactActionError extends Error {}
 export const getContactStatus=async()=>({canMessage:test.connected,telegramConnected:test.connected});
 export const startContactConversation=async(input:any)=>{test.inputs.push(input);if(test.prepareFails)throw Error('Test preparation failure');return {conversationId:'test-conversation'};};
 export const getConversation=async()=>({channel:'telegram',messengerAccountId:test.wrongAccount?'another-account':'branch-account'});

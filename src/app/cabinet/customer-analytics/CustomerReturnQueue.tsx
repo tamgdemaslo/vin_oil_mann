@@ -8,7 +8,7 @@ import { withCustomerReturnBookingLink } from "@/lib/customer-return-message";
 import { returnMoney } from "@/lib/customer-return-offer";
 import { returnCandidateFingerprint } from "@/lib/customer-return-shared-types";
 import { RETURN_TABS,customerReturnTab,customerReturnStatus,type ReturnTab } from "@/lib/customer-return-workflow";
-import { effectiveCustomerReturnState, returnFingerprintOffers } from "@/lib/customer-return-contact-policy";
+import { canRetryCustomerReturn, effectiveCustomerReturnState, returnFingerprintOffers } from "@/lib/customer-return-contact-policy";
 import { useCustomerReturnSharedState, type ReturnDelivery } from "./useCustomerReturnSharedState";
 import { formatServiceDate, formatServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 
@@ -83,7 +83,8 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
   ] as const;
   const batchEntries=candidates.flatMap(candidate=>{
     const state=states[candidate.id];
-    if(customerReturnTab(candidate,state)!=="ready" || candidate.needsReview || (!candidate.phone && !candidate.counterpartyId)
+    const retry=canRetryCustomerReturn(state);
+    if((customerReturnTab(candidate,state)!=="ready" && !(retry && candidate.offerReady)) || candidate.needsReview || (!candidate.phone && !candidate.counterpartyId)
       || edits[candidate.id] || shared.busy[candidate.id] || legacy.skipped.includes(candidate.id) && !state
       || legacy.drafts[candidate.id] && !state)return [];
     const currentFingerprint=fingerprint(candidate);
@@ -91,8 +92,9 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
     const draftText=(state?.draftText??candidate.draft).trim();
     if(!draftText || draftText.length>4096 || currentFingerprint.length>200000)return [];
     const delivery:ReturnDelivery={clientKey:candidate.id,expectedVersion:state?.version??0,fingerprint:currentFingerprint,draftText};
-    return [{candidate,delivery}];
+    return [{candidate,delivery,retry}];
   });
+  const batchReady=batchEntries.filter(entry=>!entry.retry).length;
   const visible = useMemo(() => reportCandidates.filter(candidate =>
     customerReturnTab(candidate,states[candidate.id])===tab &&
     (!todayResult || (!states[candidate.id]?.historyServiceDate && (todayResult==="processing" ? ["queued","sending"].includes(states[candidate.id]?.deliveryStatus??"") : states[candidate.id]?.deliveryStatus===todayResult))) &&
@@ -153,7 +155,7 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
       const names=new Map(batchEntries.map(({candidate})=>[candidate.id,candidate.displayName]));
       const errors=results.flatMap(result=>result.error?[{name:names.get(result.clientKey)??"Клиент",error:result.error}]:[]);
       setBatchErrors(errors);
-      setNotice(`Принято в обработку: ${results.length-errors.length} из ${results.length}. Результаты обновляются в сводке.`);
+      setNotice(`CRM подтвердила постановку в очередь для ${results.length-errors.length} из ${results.length}. Актуальные статусы появятся в сводке.`);
       setTodayResult(null);
       setScenario("all");
       setSearch("");
@@ -191,17 +193,17 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
             <strong>{shared.loaded?metric.value:"…"}</strong><span>{metric.label}</span>
           </button>)}
         </div>
-        {shared.loaded && counts.ready>batchEntries.length && !batchSending && <p className="eco-return-queue__note">Требуют ручной проверки перед включением в пакет: {counts.ready-batchEntries.length}.</p>}
+        {shared.loaded && counts.ready>batchReady && !batchSending && <p className="eco-return-queue__note">Требуют ручной проверки перед включением в пакет: {counts.ready-batchReady}.</p>}
         {batchPreview && <section id="return-batch-preview" className="eco-return-queue__batch" aria-labelledby="return-batch-title">
           <header>
             <h4 id="return-batch-title">Проверка пакета <span>{batchEntries.length}</span></h4>
             <p>Готовые предложения по всему филиалу за сегодня. Нажмите на клиента, чтобы прочитать сообщение.</p>
           </header>
           <ul className="eco-return-queue__batch-list">
-            {batchEntries.map(({candidate,delivery})=><li key={candidate.id}>
+            {batchEntries.map(({candidate,delivery,retry})=><li key={candidate.id}>
               <details>
                 <summary>
-                  <strong>{candidate.displayName}</strong>
+                  <strong>{candidate.displayName}{retry && <small>Повтор · отправка не начиналась</small>}</strong>
                   <span className="eco-return-queue__batch-offers">
                     {candidate.offers?.map((offer,index)=><span key={index}>
                       <span>{offer.vehicle}</span>
@@ -221,7 +223,7 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
             <button type="button" className="eco-btn" onClick={()=>{setBatchPreview(null);batchTriggerRef.current?.focus();}}>Отмена</button>
           </footer>
         </section>}
-        {!!batchErrors.length && <details open><summary>Не удалось подтвердить постановку в очередь ({batchErrors.length})</summary>
+        {!!batchErrors.length && <details><summary>Ответы CRM при запуске пакета ({batchErrors.length})</summary>
           <ul>{batchErrors.map(({name,error},index)=><li key={index}><strong>{name}</strong> · {error}</li>)}</ul>
         </details>}
       </section>

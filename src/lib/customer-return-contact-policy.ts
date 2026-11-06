@@ -22,3 +22,12 @@ export function effectiveCustomerReturnState(candidate:Pick<ReturnCandidate,"off
   if(!previous||!returnContactBlocks(candidate,previous))return state;
   return {...previous,version:state.version,serviceDate:state.serviceDate,previousDelivery:previous,historyServiceDate:previous.serviceDate};
 }
+
+const LEGACY_BEFORE_SEND_ERROR = "Отправка не началась. Проверьте подключение Telegram и привязку клиента.";
+export const RETURN_BEFORE_SEND_PREFIX = "Отправка не началась. ";
+
+export function canRetryCustomerReturn(state?: CustomerReturnSharedState): boolean {
+  return !!state && state.deliveryStatus==="failed" && !state.historyServiceDate && !state.skipped
+    && !state.deliveryMessageId && !state.deliveryConversationId
+    && (state.deliveryError===LEGACY_BEFORE_SEND_ERROR || state.deliveryError?.startsWith(RETURN_BEFORE_SEND_PREFIX)===true);
+}

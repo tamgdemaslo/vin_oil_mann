@@ -177,7 +177,7 @@ async function loadCounterparty(input: ContactActionInput) {
   });
 }
 
-async function findIdentity(organizationId: string, input: ContactActionInput, counterparty?: ContactRow | null) {
+async function findIdentity(organizationId: string, input: ContactActionInput, counterparty?: ContactRow | null, accountId?: string) {
   const id = counterparty?.id ?? contactId(input);
   const phone = normalizePhoneKey(phoneFromInput(input, counterparty));
   const rows = await prisma.$queryRaw<IdentityRow[]>`
@@ -199,6 +199,7 @@ async function findIdentity(organizationId: string, input: ContactActionInput, c
       AND branch_id = ${getScopedBranchId()}
       AND channel = 'telegram'
       AND status <> 'UNLINKED'
+      AND (${accountId ?? null}::text IS NULL OR messenger_account_id = ${accountId ?? null})
       AND (
         (${id}::text IS NOT NULL AND (client_id = ${id} OR supplier_id = ${id}))
         OR (${phone}::text IS NOT NULL AND phone_normalized = ${phone})
@@ -212,7 +213,7 @@ async function findIdentity(organizationId: string, input: ContactActionInput, c
   return rows[0] ?? null;
 }
 
-async function findConversation(organizationId: string, input: ContactActionInput, identity?: IdentityRow | null, counterparty?: ContactRow | null) {
+async function findConversation(organizationId: string, input: ContactActionInput, identity?: IdentityRow | null, counterparty?: ContactRow | null, accountId?: string) {
   const id = counterparty?.id ?? contactId(input);
   const rows = await prisma.$queryRaw<ConversationRow[]>`
     SELECT
@@ -230,6 +231,7 @@ async function findConversation(organizationId: string, input: ContactActionInpu
       AND branch_id = ${getScopedBranchId()}
       AND channel = 'telegram'
       AND status <> 'archived'
+      AND (${accountId ?? null}::text IS NULL OR messenger_account_id = ${accountId ?? null})
       AND (
         (${id}::text IS NOT NULL AND (client_id = ${id} OR supplier_id = ${id}))
         OR (${identity?.externalConversationId ?? null}::text IS NOT NULL AND external_conversation_id = ${identity?.externalConversationId ?? null})
@@ -425,7 +427,7 @@ export async function getContactStatus(input: ContactActionInput) {
   };
 }
 
-export async function startContactConversation(input: ContactActionInput, actor?: User | null) {
+export async function startContactConversation(input: ContactActionInput, actor?: User | null, accountId?: string) {
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = getMessengerOrganizationId();
   const counterparty = await loadCounterparty(input);
@@ -439,8 +441,8 @@ export async function startContactConversation(input: ContactActionInput, actor?
   const displayName = displayNameFromInput(input, counterparty);
   const phone = phoneFromInput(input, counterparty);
   const normalizedPhone = normalizePhoneKey(phone);
-  const identity = await findIdentity(organizationId, input, counterparty);
-  const existing = await findConversation(organizationId, input, identity, counterparty);
+  const identity = await findIdentity(organizationId, input, counterparty, accountId);
+  const existing = await findConversation(organizationId, input, identity, counterparty, accountId);
   if (existing) {
     await linkConversationEntities({
       organizationId,
@@ -464,6 +466,9 @@ export async function startContactConversation(input: ContactActionInput, actor?
   const resolved = await resolveTelegramUserPeerByPhone(phone ?? normalizedPhone);
   if ("ok" in resolved) {
     throw new ContactActionError(resolved.message, resolved.reason === "telegram_not_connected" ? 409 : 400, resolved.reason);
+  }
+  if (accountId && resolved.accountId !== accountId) {
+    throw new ContactActionError("Telegram-аккаунт филиала изменился. Проверьте подключение.", 409, "telegram_account_changed");
   }
   await assertNoIdentityConflict({
     organizationId,

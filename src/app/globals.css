@@ -72141,6 +72141,7 @@ select[size="1"]::-ms-expand {
   overflow-wrap: anywhere;
   list-style: none;
 }
+.eco-return-queue__batch summary small { display: block; margin-top: 3px; color: var(--eco-muted); font-weight: 400; }
 .eco-return-queue__batch summary::-webkit-details-marker { display: none; }
 .eco-return-queue__batch summary:focus-visible { outline-offset: -3px; }
 .eco-return-queue__batch summary:hover, .eco-return-queue__batch details[open] summary { background: var(--eco-hover); }

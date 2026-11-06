@@ -1,4 +1,4 @@
-import { returnContactBlocks,returnFingerprintOffers } from "./customer-return-contact-policy";
+import { canRetryCustomerReturn,returnContactBlocks,returnFingerprintOffers } from "./customer-return-contact-policy";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -25,7 +25,13 @@ export async function enqueueCustomerReturnDelivery(input:ReturnDeliveryRequest,
       const previous=await previousCustomerReturnDelivery(key.serviceDate,key.clientKey,tx);
       if(previous&&returnContactBlocks(returnFingerprintOffers(input.fingerprint),previous))throw new CustomerReturnDeliveryError("Клиенту уже отправлено приглашение или отправка ещё не завершена. Повторное сообщение заблокировано до нового обслуживания; проверьте историю отправки.");
       if(input.expectedVersion===0)return tx.customerReturnState.create({data:{...key,...change},select});
-      const result=await tx.customerReturnState.updateMany({where:{...key,version:input.expectedVersion,deliveryStatus:"none",skipped:false},data:{...change,version:{increment:1}}});
+      const current=await tx.customerReturnState.findUnique({where,select});
+      const retry=current && canRetryCustomerReturn(serializeCustomerReturnState(current));
+      const result=await tx.customerReturnState.updateMany({
+        where:{...key,version:input.expectedVersion,deliveryStatus:retry?"failed":"none",skipped:false,
+          ...(retry?{deliveryConversationId:null,deliveryMessageId:null,deliveryError:current.deliveryError}:{})},
+        data:{...change,version:{increment:1}},
+      });
       return result.count?tx.customerReturnState.findUniqueOrThrow({where,select}):null;
     });
     if(row)return serializeCustomerReturnState(row);
@@ -34,13 +40,26 @@ export async function enqueueCustomerReturnDelivery(input:ReturnDeliveryRequest,
   }
   const current=await prisma.customerReturnState.findUnique({where,select});
   // Repeated clicks are reads, never new sends, even if the original response was lost.
+  if(current?.deliveryStatus==="failed")throw new CustomerReturnDeliveryError("Отправка завершилась ошибкой. Обновите подборку и проверьте статус.");
   if(current && current.deliveryStatus!=="none")return serializeCustomerReturnState(current);
   throw new CustomerReturnDeliveryError("Черновик изменён коллегой или пропущен. Обновите общую подборку.");
 }
 
+const processingBranches=new Set<string>();
+
 /** Durable recovery: only explicitly queued, not-yet-submitted jobs. Never retry uncertain delivery. */
 export async function processPendingCustomerReturnDeliveries(limit=3) {
   const branchId=getScopedBranchId();
+  if(processingBranches.has(branchId))return {processed:0};
+  processingBranches.add(branchId);
+  try {
+    return await processBranchQueue(branchId,limit);
+  } finally {
+    processingBranches.delete(branchId);
+  }
+}
+
+async function processBranchQueue(branchId:string,limit:number) {
   const pending=await prisma.customerReturnState.findMany({where:{branchId,deliveryStatus:"queued",deliveryMessageId:null},orderBy:{updatedAt:"asc"},take:limit});
   if(!pending.length)return {processed:0};
   const users=await getPublicUsers();

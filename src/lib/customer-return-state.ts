@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
@@ -14,16 +15,32 @@ type Row = Omit<CustomerReturnSharedState, "updatedAt"|"deliveryAt"> & { updated
 export const serializeCustomerReturnState = (row: Row): CustomerReturnSharedState => ({ ...row, updatedAt: row.updatedAt.toISOString(),deliveryAt:row.deliveryAt?.toISOString()??null });
 const serialize=serializeCustomerReturnState;
 
+export function customerReturnDeliveryKey(key:{branchId:string;serviceDate:string;clientKey:string}) {
+  const {branchId,serviceDate,clientKey}=key;
+  return "customer-return:"+createHash("sha256").update(JSON.stringify({branchId,serviceDate,clientKey})).digest("hex");
+}
+
 type ContactDb=Pick<Prisma.TransactionClient,"customerReturnState"|"messengerOutbox">;
 async function reconcileCustomerReturnRows(rows:Row[],db:ContactDb=prisma):Promise<CustomerReturnSharedState[]> {
   const messageIds=rows.flatMap(row=>row.deliveryMessageId?[row.deliveryMessageId]:[]);
-  const deliveries=messageIds.length?await db.messengerOutbox.findMany({where:{branchId:getScopedBranchId(),messageId:{in:messageIds}},select:{messageId:true,status:true,updatedAt:true,nextAttemptAt:true}}):[];
+  const branchId=getScopedBranchId();
+  const uncertainKeys=rows.filter(row=>!row.deliveryMessageId && row.deliveryConversationId && ["sending","unknown","failed"].includes(row.deliveryStatus??""))
+    .map(row=>customerReturnDeliveryKey({branchId,serviceDate:row.serviceDate!,clientKey:row.clientKey}));
+  const deliveries=messageIds.length || uncertainKeys.length
+    ? await db.messengerOutbox.findMany({where:{branchId,OR:[{messageId:{in:messageIds}},{idempotencyKey:{in:uncertainKeys}}]},select:{messageId:true,idempotencyKey:true,status:true,updatedAt:true,nextAttemptAt:true}})
+    : [];
   return rows.map(row=>{
-    const delivery=deliveries.find(d=>d.messageId===row.deliveryMessageId);
+    const delivery=row.deliveryMessageId
+      ? deliveries.find(d=>d.messageId===row.deliveryMessageId)
+      : row.deliveryConversationId
+        ? deliveries.find(d=>d.idempotencyKey===customerReturnDeliveryKey({branchId,serviceDate:row.serviceDate!,clientKey:row.clientKey}))
+        : undefined;
+
     const state=serialize(row);
+    if(delivery?.messageId)state.deliveryMessageId=delivery.messageId;
     if(delivery && ["queued","sending","unknown","failed"].includes(state.deliveryStatus??"") && ["sent","failed","skipped"].includes(delivery.status)){
       state.deliveryStatus=delivery.status==="sent"?"sent":delivery.status==="skipped"?"unknown":delivery.nextAttemptAt?"queued":"failed";
-      if(delivery.status==="sent")state.deliveryAt=delivery.updatedAt.toISOString();
+      if(delivery.status==="sent"){state.deliveryAt=delivery.updatedAt.toISOString();state.deliveryError=null;}
     }else if(state.deliveryStatus==="sending" && Date.now()-row.updatedAt.getTime()>180000)state.deliveryStatus="unknown";
     return state;
   });

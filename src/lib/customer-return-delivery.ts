@@ -1,13 +1,13 @@
-import { returnContactBlocks } from "./customer-return-contact-policy";
-import { randomUUID,createHash } from "node:crypto";
+import { RETURN_BEFORE_SEND_PREFIX, returnContactBlocks } from "./customer-return-contact-policy";
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { User } from "@/lib/auth";
-import { getContactStatus,startContactConversation } from "@/lib/messenger/messenger-contact-actions";
+import { ContactActionError,getContactStatus,startContactConversation } from "@/lib/messenger/messenger-contact-actions";
 import { getConversation,sendMessage } from "@/lib/messenger/messenger-gateway";
 import { getActiveTelegramUserAccount } from "@/lib/messenger/channels/telegram-user-session";
 import { assertMessengerOutboundTextSafe } from "@/lib/messenger/messenger-security";
-import { customerReturnStateSelect,serializeCustomerReturnState,previousCustomerReturnDelivery } from "./customer-return-state";
+import { customerReturnDeliveryKey,customerReturnStateSelect,serializeCustomerReturnState,previousCustomerReturnDelivery } from "./customer-return-state";
 import { returnCandidateFingerprint } from "./customer-return-shared-types";
 import type { ReturnCandidate } from "./customer-return-candidates";
 
@@ -35,8 +35,11 @@ export async function sendCustomerReturnDraft(candidate:ReturnCandidate,input:{s
   // Identity and phone come only from freshly recomputed branch history, never from request fields.
   const contact={entityType:"counterparty",counterpartyId:candidate.counterpartyId,phone:candidate.phone,displayName:candidate.displayName,preferredChannel:"telegram"};
   if(!candidate.counterpartyId && !candidate.phone)throw new CustomerReturnDeliveryError("У клиента нет телефона или привязанной карточки.",400);
-  const status=await getContactStatus(contact);
-  if(!status.canMessage)throw new CustomerReturnDeliveryError(status.telegramConnected?"Клиент недоступен для сообщения в Telegram.":"Telegram филиала не подключён.");
+  async function checkContact(){
+    const status=await getContactStatus(contact);
+    if(!status.canMessage)throw new CustomerReturnDeliveryError(status.telegramConnected?"Клиент недоступен для сообщения в Telegram.":"Telegram филиала не подключён.");
+  }
+  if(!queuedAttempt)await checkContact();
   const attempt=queuedAttempt??randomUUID();
   const claimed=queuedAttempt?{count:1}:await prisma.customerReturnState.updateMany({where:{...key,version:input.expectedVersion,deliveryStatus:"none",skipped:false},data:{deliveryStatus:"sending",deliveryAttemptId:attempt,deliveryError:null,version:{increment:1},updatedByLogin:actor.login,updatedByName:actor.name,updatedAt:new Date()}});
   if(!claimed.count){
@@ -46,18 +49,24 @@ export async function sendCustomerReturnDraft(candidate:ReturnCandidate,input:{s
   }
   let sendStarted=false;
   try{
-    const start=await startContactConversation(contact,actor);
-    const conversation=await getConversation(start.conversationId);
+    if(queuedAttempt)await checkContact();
     const account=await getActiveTelegramUserAccount();
-    if(!conversation || conversation.channel!=="telegram" || !account?.isActive || account.status!=="connected" || conversation.messengerAccountId!==account.id)throw new CustomerReturnDeliveryError("Диалог не связан с текущим Telegram-аккаунтом филиала. Проверьте привязку в сообщениях.");
+    if(!account?.isActive || account.status!=="connected")throw new CustomerReturnDeliveryError("Telegram филиала не подключён.");
+    const start=await startContactConversation(contact,actor,account.id);
+    const conversation=await getConversation(start.conversationId);
+    const currentAccount=await getActiveTelegramUserAccount();
+    if(currentAccount?.id!==account.id || !currentAccount.isActive || currentAccount.status!=="connected" || !conversation || conversation.channel!=="telegram" || conversation.messengerAccountId!==account.id)throw new CustomerReturnDeliveryError("Диалог не связан с текущим Telegram-аккаунтом филиала. Проверьте привязку в сообщениях.");
     await prisma.customerReturnState.updateMany({where:{...key,deliveryAttemptId:attempt},data:{deliveryConversationId:start.conversationId,updatedAt:new Date()}});
     sendStarted=true;
-    const result=await sendMessage({conversationId:start.conversationId,text,createdByLogin:actor.login,idempotencyKey:"customer-return:"+createHash("sha256").update(JSON.stringify(key)).digest("hex")});
+    const result=await sendMessage({conversationId:start.conversationId,text,createdByLogin:actor.login,idempotencyKey:customerReturnDeliveryKey(key)});
     const deliveryStatus=result?.outbox?.status==="sent"||result?.message.status==="sent"?"sent":result?.outbox && ["queued","processing"].includes(result.outbox.status)?"queued":result?.outbox?.nextAttemptAt?"queued":result?.outbox?.status==="failed"?"failed":"unknown";
     await prisma.customerReturnState.updateMany({where:{...key,deliveryAttemptId:attempt},data:{deliveryStatus,deliveryMessageId:result?.message.id??null,deliveryAt:deliveryStatus==="sent"?new Date():null,deliveryError:["failed","unknown"].includes(deliveryStatus)?"Telegram не подтвердил отправку. Проверьте диалог перед повторными действиями.":null,version:{increment:1},updatedAt:new Date()}});
   }catch(error){
-    await prisma.customerReturnState.updateMany({where:{...key,deliveryAttemptId:attempt},data:{deliveryStatus:sendStarted?"unknown":queuedAttempt?"failed":"none",deliveryError:sendStarted?"Результат отправки не подтверждён. Проверьте диалог; повторная отправка заблокирована.":"Отправка не началась. Проверьте подключение Telegram и привязку клиента.",version:{increment:1},updatedAt:new Date()}});
-    if(!sendStarted)throw new CustomerReturnDeliveryError(error instanceof CustomerReturnDeliveryError?error.message:"Не удалось подготовить диалог Telegram. Сообщение не отправлялось.");
+    const detail=error instanceof ContactActionError || error instanceof CustomerReturnDeliveryError
+      ? error.message
+      : "Не удалось подготовить диалог Telegram. Проверьте подключение филиала.";
+    await prisma.customerReturnState.updateMany({where:{...key,deliveryAttemptId:attempt},data:{deliveryStatus:sendStarted?"unknown":queuedAttempt?"failed":"none",deliveryError:sendStarted?"Результат отправки не подтверждён. Проверьте диалог; повторная отправка заблокирована.":RETURN_BEFORE_SEND_PREFIX+detail,version:{increment:1},updatedAt:new Date()}});
+    if(!sendStarted)throw new CustomerReturnDeliveryError(detail);
   }
   return serializeCustomerReturnState(await prisma.customerReturnState.findUniqueOrThrow({where,select:customerReturnStateSelect}));
 }

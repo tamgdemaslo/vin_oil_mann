@@ -17,13 +17,14 @@ const table={
  updateMany:async({where,data}:any)=>{let count=0;for(const r of test.rows)if(match(r,where)){for(const [k,v] of Object.entries(data))r[k]=typeof v==='object'&&v&&'increment' in v?r[k]+(v as any).increment:v;count++;}return {count};},
  findMany:async({where,take}:any)=>test.rows.filter((r:any)=>match(r,where)).sort((a:any,b:any)=>b.serviceDate.localeCompare(a.serviceDate)).slice(0,take??Infinity).map((r:any)=>({...r})),
 };
-export const prisma:any={customerReturnState:table,messengerOutbox:{findMany:async()=>[]},$transaction:async(fn:any)=>fn({...prisma,$executeRaw:async()=>1})};
+export const prisma:any={customerReturnState:table,messengerOutbox:{findMany:async({where}:any)=>(test.outbox??[]).filter((row:any)=>row.branchId===where.branchId && where.OR.some((condition:any)=>match(row,condition)))},$transaction:async(fn:any)=>fn({...prisma,$executeRaw:async()=>1})};
 export const getScopedBranchId=()=>test.branch;
 export const getPublicUsers=async()=>[{login:'anna',name:'Анна',role:'admin'}];
 export const loadCustomerReturnQueue=async(date:any,key:any)=>{test.prepared.push({date,key});return test.candidates.filter((c:any)=>c.clientKey===key);};
 export const assertMessengerOutboundTextSafe=()=>{};
+export class ContactActionError extends Error {}
 export const getContactStatus=async()=>({canMessage:true,telegramConnected:true});
-export const startContactConversation=async(contact:any)=>{test.contact=contact;return {conversationId:'conv'};};
+export const startContactConversation=async(contact:any)=>{test.contact=contact;if(test.prepareFails)throw new ContactActionError('Не удалось найти Telegram по этому номеру.');return {conversationId:'conv'};};
 export const getConversation=async()=>({channel:'telegram',messengerAccountId:'acct'});
 export const getActiveTelegramUserAccount=async()=>({id:'acct',isActive:true,status:'connected'});
 export const sendMessage=async(input:any)=>{test.sent.push(input);if(test.gate)await test.gate;if(test.throwSend)throw Error('network unknown');return {outbox:{status:'sent'},message:{id:'m'+test.sent.length,status:'sent'}};};
@@ -56,6 +57,22 @@ await assert.rejects(()=>enqueue({...one,serviceDate:'2026-10-22'},actor),/По�
 const stale=input('stale');await enqueue(stale,actor);test.candidates.find(c=>c.clientKey==='stale').draft='new quote';await pump();
 assert.equal(test.rows.find(r=>r.clientKey==='stale').deliveryStatus,'failed');assert.equal(test.sent.length,2,'Stale quote blocked before transport');
 const lost=input('unknown');await enqueue(lost,actor);test.throwSend=true;await pump();assert.equal(test.rows.find(r=>r.clientKey==='unknown').deliveryStatus,'unknown');test.throwSend=false;await pump();assert.equal(test.sent.length,3,'Uncertain transport is not retried');
-const other=input('other-branch');await enqueue(other,actor);test.branch='b';await pump();assert.equal(test.sent.length,3,'Worker cannot claim another branch');test.branch='a';await pump();assert.equal(test.sent.length,4,'Persisted queued work survives worker restart');
+const beforeTransport=input('before-transport');
+await enqueue(beforeTransport,actor);test.prepareFails=true;await pump();test.prepareFails=false;
+const retryRow=test.rows.find(r=>r.clientKey===beforeTransport.clientKey);
+assert.equal(retryRow.deliveryStatus,'failed');
+assert.match(retryRow.deliveryError,/Отправка не началась.*Не удалось найти Telegram/);
+await enqueue({...beforeTransport,expectedVersion:retryRow.version},actor);
+await pump();
+assert.equal(retryRow.deliveryStatus,'sent','Only a proven pre-transport failure can be manually retried');
+const unknownRow=test.rows.find(r=>r.clientKey===lost.clientKey);
+assert.equal((await enqueue({...lost,expectedVersion:unknownRow.version},actor)).deliveryStatus,'unknown');
+const other=input('other-branch');await enqueue(other,actor);test.branch='b';await pump();assert.equal(test.sent.length,4,'Worker cannot claim another branch');test.branch='a';await pump();assert.equal(test.sent.length,5,'Persisted queued work survives worker restart');
+const {listCustomerReturnStates}=await jiti.import('../src/lib/customer-return-state.ts');
+test.outbox=[{branchId:'a',idempotencyKey:test.sent[2].idempotencyKey,messageId:'recovered-message',status:'sent',updatedAt:new Date()}];
+const recovered=(await listCustomerReturnStates(lost.serviceDate)).find(row=>row.clientKey===lost.clientKey);
+assert.equal(recovered.deliveryStatus,'sent','Outbox confirms a send even if its message ID was never written to the queue');
+assert.equal(recovered.deliveryMessageId,'recovered-message');
+assert.equal(recovered.deliveryError,null);
 assert.equal(tab({offerReady:true},{deliveryStatus:'none',skipped:true}),'skipped');assert.equal(tab({offerReady:false}),'review');assert.equal(tab({offerReady:true}),'ready');assert.equal(tab({}, {deliveryStatus:'unknown'}),'errors');
 console.log('PASS: durable atomic acceptance, duplicate clicks/workers, independent clients, targeted recompute, stale quote protection, uncertain outcome, branch isolation and recovery; no real messages.');

@@ -9,6 +9,7 @@ const mock=join(mkdtempSync(join(tmpdir(),'return-jobs-db-')),'mock.ts');
 writeFileSync(mock,`export const test:any={calls:[],candidates:[],unknown:false,prepared:[]};
 export const getPublicUsers=async()=>[{login:'anna',name:'Анна',role:'admin'}];
 export const loadCustomerReturnQueue=async(date:any,key:any)=>{test.prepared.push(key);return test.candidates.filter((c:any)=>c.clientKey===key);};
+export class ContactActionError extends Error {}
 export const getContactStatus=async()=>({canMessage:true,telegramConnected:true});
 export const startContactConversation=async()=>({conversationId:'test-conversation'});
 export const getConversation=async()=>({channel:'telegram',messengerAccountId:'test-account'});
