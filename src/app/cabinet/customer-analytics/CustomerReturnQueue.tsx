@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Copy, RefreshCw,Send } from "lucide-react";
+import { ChevronDown, Copy, RefreshCw, Send } from "lucide-react";
 import { RETURN_SCENARIO_LABELS, type ReturnCandidate, type ReturnScenario } from "@/lib/customer-return-candidates";
 import { withCustomerReturnBookingLink } from "@/lib/customer-return-message";
 import { returnMoney } from "@/lib/customer-return-offer";
 import { returnCandidateFingerprint } from "@/lib/customer-return-shared-types";
 import { RETURN_TABS,customerReturnTab,customerReturnStatus,type ReturnTab } from "@/lib/customer-return-workflow";
-import { effectiveCustomerReturnState } from "@/lib/customer-return-contact-policy";
-import { useCustomerReturnSharedState } from "./useCustomerReturnSharedState";
+import { effectiveCustomerReturnState, returnFingerprintOffers } from "@/lib/customer-return-contact-policy";
+import { useCustomerReturnSharedState, type ReturnDelivery } from "./useCustomerReturnSharedState";
 import { formatServiceDate, formatServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 
 type Saved = { drafts: Record<string, { text: string; fingerprint: string }>; skipped: string[] };
@@ -36,6 +36,7 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
 }) {
   const sectionRef=useRef<HTMLElement>(null);
   const titleRef=useRef<HTMLHeadingElement>(null);
+  const batchTriggerRef=useRef<HTMLButtonElement>(null);
   const storageKey = `eco:return-drafts:v1:${scope}:${today}`;
   const [legacy] = useState<Saved>(() => readSaved(storageKey));
   const [edits,setEdits]=useState<Record<string,Edit>>({});
@@ -48,6 +49,11 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
   const [search, setSearch] = useState("");
   const [tab,setTab]=useState<ReturnTab>("ready");
   const [notice, setNotice] = useState<string | null>(null);
+  const [batchPreview,setBatchPreview]=useState<ReturnDelivery[]|null>(null);
+  const [batchSending,setBatchSending]=useState(false);
+  const batchLock=useRef(false);
+  const [batchErrors,setBatchErrors]=useState<{name:string;error:string}[]>([]);
+  const [todayResult,setTodayResult]=useState<string|null>(null);
 
 
   useEffect(() => {
@@ -66,11 +72,33 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
   // A new visit can remove a client from today's candidates; their delivery report must survive.
   const reportCandidates=useMemo(()=>[...candidates,...Object.values(states).filter(state=>state.deliveryStatus && state.deliveryStatus!=="none" && !candidates.some(candidate=>candidate.id===state.clientKey)).map(state=>({id:state.clientKey,clientKey:state.clientKey,displayName:"Клиент вне текущей подборки",phone:null,reasons:[],draft:state.draftText??"",needsReview:false} as ReturnCandidate))],[candidates,states]);
   const counts=Object.fromEntries(Object.keys(RETURN_TABS).map(key=>[key,reportCandidates.filter(candidate=>customerReturnTab(candidate,states[candidate.id])===key).length])) as Record<ReturnTab,number>;
+  const todayStates=Object.values(states).filter(state=>!state.historyServiceDate);
+  const metrics=[
+    {label:"Готовы к отправке",value:counts.ready,tab:"ready",status:null},
+    {label:"В процессе",value:todayStates.filter(state=>["queued","sending"].includes(state.deliveryStatus??"")).length,tab:"processing",status:"processing"},
+    {label:"Отправлено",value:todayStates.filter(state=>state.deliveryStatus==="sent").length,tab:"sent",status:"sent"},
+    {label:"Не отправлено",value:todayStates.filter(state=>state.deliveryStatus==="failed").length,tab:"errors",status:"failed"},
+    {label:"Не подтверждено",value:todayStates.filter(state=>state.deliveryStatus==="unknown").length,tab:"errors",status:"unknown"},
+    {label:"Нужна проверка",value:counts.review,tab:"review",status:null},
+  ] as const;
+  const batchEntries=candidates.flatMap(candidate=>{
+    const state=states[candidate.id];
+    if(customerReturnTab(candidate,state)!=="ready" || candidate.needsReview || (!candidate.phone && !candidate.counterpartyId)
+      || edits[candidate.id] || shared.busy[candidate.id] || legacy.skipped.includes(candidate.id) && !state
+      || legacy.drafts[candidate.id] && !state)return [];
+    const currentFingerprint=fingerprint(candidate);
+    if(state?.draftText && state.draftFingerprint!==currentFingerprint)return [];
+    const draftText=(state?.draftText??candidate.draft).trim();
+    if(!draftText || draftText.length>4096 || currentFingerprint.length>200000)return [];
+    const delivery:ReturnDelivery={clientKey:candidate.id,expectedVersion:state?.version??0,fingerprint:currentFingerprint,draftText};
+    return [{candidate,delivery}];
+  });
   const visible = useMemo(() => reportCandidates.filter(candidate =>
     customerReturnTab(candidate,states[candidate.id])===tab &&
+    (!todayResult || (!states[candidate.id]?.historyServiceDate && (todayResult==="processing" ? ["queued","sending"].includes(states[candidate.id]?.deliveryStatus??"") : states[candidate.id]?.deliveryStatus===todayResult))) &&
     (scenario === "all" || candidate.reasons.some(reason => reason.scenario === scenario)) &&
     (!search.trim() || [candidate.displayName, candidate.phone, ...candidate.reasons.map(r => r.vehicle)].filter(Boolean).join(" ").toLowerCase().includes(search.trim().toLowerCase()))
-  ), [reportCandidates, scenario, search, tab, states]);
+  ), [reportCandidates, scenario, search, tab, states, todayResult]);
   const current = visible.find(c => c.id === selected) ?? visible[0];
   const currentBusy=!!current && !!shared.busy[current.id];
   const currentSaved = current ? states[current.id] : null;
@@ -112,6 +140,31 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
     setNotice(result.ok?"Локальные правки перенесены в общую подборку.":result.error);
   }
 
+  const batchChanged=batchPreview!==null && JSON.stringify(batchPreview)!==JSON.stringify(batchEntries.map(entry=>entry.delivery));
+  async function sendTodayBatch(){
+    if(batchLock.current || !shared.loaded || shared.error || shared.saving || !batchPreview?.length || batchChanged)return;
+    batchLock.current=true;
+    setBatchSending(true);
+    setBatchPreview(null);
+    setBatchErrors([]);
+    setNotice("Сохраняем сообщения в очереди отправки…");
+    try{
+      const results=await shared.sendBatch(batchPreview);
+      const names=new Map(batchEntries.map(({candidate})=>[candidate.id,candidate.displayName]));
+      const errors=results.flatMap(result=>result.error?[{name:names.get(result.clientKey)??"Клиент",error:result.error}]:[]);
+      setBatchErrors(errors);
+      setNotice(`Принято в обработку: ${results.length-errors.length} из ${results.length}. Результаты обновляются в сводке.`);
+      setTodayResult(null);
+      setScenario("all");
+      setSearch("");
+      setSelected(null);
+      setTab("processing");
+    }finally{
+      batchLock.current=false;
+      setBatchSending(false);
+    }
+  }
+
   async function copyDraft() {
     try { await navigator.clipboard.writeText(draft); setNotice("Черновик скопирован. Сообщение не отправлено."); }
     catch { setNotice("Не удалось скопировать. Выделите текст в поле и скопируйте вручную."); }
@@ -122,13 +175,59 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
       <div className="eco-ca-panel-head">
         <div>
           <h2 id="return-queue-title">Кого вернуть сегодня</h2>
-          <p>{formatServiceDate(today)} · Клиентов в подборке: {candidates.length}. История текущего филиала.</p>
+          <p>{formatServiceDate(today)} · Клиентов в подборке: {candidates.length}. Текущий филиал</p>
         </div>
         <button type="button" className="eco-btn" disabled={hasEdits || shared.saving} title={hasEdits?"Сначала сохраните или отмените свои правки":undefined} onClick={()=>{void shared.refresh();onRefresh();}}><RefreshCw size={15} /> Пересчитать</button>
       </div>
-      <p className="eco-return-queue__note">Отправка через Telegram филиала. После нажатия клиент перейдёт в «В процессе», и откроется следующий. Коллеги видят общую очередь. Отправки прошлых дней учитываются; без нового обслуживания повторное приглашение заблокировано.</p>
-      <nav className="eco-return-queue__tabs" aria-label="Статус предложения">{Object.entries(RETURN_TABS).map(([key,label])=><button key={key} type="button" aria-current={tab===key?"page":undefined} onClick={()=>{setTab(key as ReturnTab);setSelected(null);setNotice(null);}}>{label}<span>{shared.loaded?counts[key as ReturnTab]:"…"}</span></button>)}</nav>
-      <div className="eco-return-queue__summary"><p>{({ready:"Рассчитанные предложения. Проверьте текст и отправьте — следующий клиент откроется сразу.",processing:"Сообщения обрабатываются в фоне. Статусы обновляются каждые 3 секунды; результат сохранится после закрытия страницы.",sent:"Telegram подтвердил отправку. История сохраняется между днями. Повторное приглашение по тому же обслуживанию заблокировано.",errors:"Отправка не удалась или её результат не подтверждён. Проверьте причину и диалог.",review:"Не хватает данных для полного предложения. Причина указана в карточке.",skipped:"Клиенты, которых сотрудники пропустили сегодня."})[tab]}</p><button type="button" className="eco-btn" onClick={()=>void shared.refresh()}><RefreshCw size={14}/> Обновить статусы</button></div>
+      <section className="eco-return-queue__dashboard" aria-labelledby="return-dashboard-title">
+        <div className="eco-return-queue__dashboard-head">
+          <div><h3 id="return-dashboard-title">Сводка за сегодня</h3><p>Статусы сообщений в Telegram</p></div>
+          <button ref={batchTriggerRef} type="button" className={batchPreview ? "eco-btn" : "eco-btn eco-btn--primary"} aria-expanded={batchPreview!==null} aria-controls={batchPreview ? "return-batch-preview" : undefined} disabled={!shared.loaded || !!shared.error || batchSending || shared.saving || !batchEntries.length} onClick={()=>setBatchPreview(batchPreview?null:batchEntries.map(entry=>entry.delivery))}>
+            <Send size={15} aria-hidden="true"/>{batchSending?"Ставим в очередь…":batchPreview?"Свернуть пакет":`Проверить пакет (${shared.loaded?batchEntries.length:"…"})`}
+          </button>
+        </div>
+        <div className="eco-return-queue__metrics">
+          {metrics.map(metric=><button key={metric.label} type="button" data-status={metric.status ?? metric.tab} aria-pressed={tab===metric.tab && todayResult===metric.status} disabled={!shared.loaded || metric.value===0} onClick={()=>{setTodayResult(metric.status);setTab(metric.tab);setScenario("all");setSearch("");setSelected(null);}}>
+            <strong>{shared.loaded?metric.value:"…"}</strong><span>{metric.label}</span>
+          </button>)}
+        </div>
+        {shared.loaded && counts.ready>batchEntries.length && !batchSending && <p className="eco-return-queue__note">Требуют ручной проверки перед включением в пакет: {counts.ready-batchEntries.length}.</p>}
+        {batchPreview && <section id="return-batch-preview" className="eco-return-queue__batch" aria-labelledby="return-batch-title">
+          <header>
+            <h4 id="return-batch-title">Проверка пакета <span>{batchEntries.length}</span></h4>
+            <p>Готовые предложения по всему филиалу за сегодня. Нажмите на клиента, чтобы прочитать сообщение.</p>
+          </header>
+          <ul className="eco-return-queue__batch-list">
+            {batchEntries.map(({candidate,delivery})=><li key={candidate.id}>
+              <details>
+                <summary>
+                  <strong>{candidate.displayName}</strong>
+                  <span className="eco-return-queue__batch-offers">
+                    {candidate.offers?.map((offer,index)=><span key={index}>
+                      <span>{offer.vehicle}</span>
+                      {offer.totalCents!=null && <b>{returnMoney(offer.totalCents)}</b>}
+                    </span>)}
+                  </span>
+                  <ChevronDown size={16} aria-hidden="true" />
+                </summary>
+                <p className="eco-return-queue__batch-draft">{delivery.draftText}</p>
+              </details>
+            </li>)}
+          </ul>
+          {batchChanged && <p role="status">Состав пакета изменился. Проверьте обновлённый список перед запуском.</p>}
+          <footer className="eco-return-queue__batch-actions">
+            {batchChanged && <button type="button" className="eco-btn" disabled={!batchEntries.length} onClick={()=>setBatchPreview(batchEntries.map(entry=>entry.delivery))}>Подтвердить новый состав</button>}
+            <button type="button" className="eco-btn eco-btn--primary" disabled={batchChanged || !!shared.error || shared.saving} onClick={()=>void sendTodayBatch()}><Send size={15}/> Запустить отправку ({batchEntries.length})</button>
+            <button type="button" className="eco-btn" onClick={()=>{setBatchPreview(null);batchTriggerRef.current?.focus();}}>Отмена</button>
+          </footer>
+        </section>}
+        {!!batchErrors.length && <details open><summary>Не удалось подтвердить постановку в очередь ({batchErrors.length})</summary>
+          <ul>{batchErrors.map(({name,error},index)=><li key={index}><strong>{name}</strong> · {error}</li>)}</ul>
+        </details>}
+      </section>
+      <nav className="eco-return-queue__tabs" aria-label="Статус предложения">{Object.entries(RETURN_TABS).map(([key,label])=><button key={key} type="button" aria-current={tab===key?"page":undefined} onClick={()=>{setTodayResult(null);setTab(key as ReturnTab);setSelected(null);setNotice(null);}}>{label}<span>{shared.loaded?counts[key as ReturnTab]:"…"}</span></button>)}</nav>
+      <div className="eco-return-queue__summary"><p>{({ready:"Рассчитанные предложения. Проверьте текст и отправьте — следующий клиент откроется сразу.",processing:"Сообщения обрабатываются в фоне. Статусы обновляются каждые 3 секунды; результат сохранится после закрытия страницы.",sent:"Telegram принял сообщение. История отправок сохраняется между днями.",errors:"Отправка не удалась или её результат не подтверждён. Проверьте причину и диалог.",review:"Не хватает данных для полного предложения. Причина указана в карточке.",skipped:"Клиенты, которых сотрудники пропустили сегодня."})[tab]}</p><button type="button" className="eco-btn" onClick={()=>void shared.refresh()}><RefreshCw size={14}/> Обновить статусы</button></div>
+      {todayResult && <div className="eco-return-queue__result-filter"><strong>Сегодня · {metrics.find(metric=>metric.status===todayResult)?.label}</strong><button type="button" className="eco-btn" onClick={()=>setTodayResult(null)}>Показать всю вкладку</button></div>}
       <div className="eco-return-queue__filters">
         <label>Сценарий<select value={scenario} onChange={e => setScenario(e.target.value as ReturnScenario | "all")}>
           <option value="all">Все три сценария</option>
@@ -172,7 +271,10 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
               <p>{reason.scenario === "single_visit" ? "Визит" : "Последняя замена масла"}: {formatServiceDate(reason.lastVisit)} · {reason.confidence === "estimate" ? "Оценка по истории, не измеренный пробег" : "По записанным датам"}</p>
               <details><summary>Документы основания ({reason.documentIds.length})</summary><div className="eco-return-queue__documents">{reason.documentIds.map(id => <Link key={id} href={`/shipment/${encodeURIComponent(id)}`}>Открыть документ {id}</Link>)}</div></details>
             </li>)}</ul>
-            {current.offers && <section aria-label="Расчёт предложения">
+            {deliveryLocked && returnFingerprintOffers(currentSaved?.draftFingerprint??"").offers?.map((offer,index)=>
+              typeof offer.vehicle==="string" && typeof offer.totalCents==="number" && <p key={index}><strong>Предложение на момент запуска:</strong> {offer.vehicle} · {returnMoney(offer.totalCents)}</p>
+            )}
+            {!deliveryLocked && current.offers && <section aria-label="Расчёт предложения">
               <h4>{current.offerReady ? "Предложение рассчитано" : "Предложение требует проверки"}</h4>
               {current.offers.map((offer,index)=><div key={`${offer.vehicle}:${index}`}>
                 <p><strong>{offer.vehicle}</strong>{offer.sourceDate ? ` · состав от ${formatServiceDate(offer.sourceDate)}` : ""}</p>

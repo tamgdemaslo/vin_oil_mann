@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mergeCustomerReturnStates, type CustomerReturnSharedState } from "@/lib/customer-return-shared-types";
 
+export type ReturnDelivery = {clientKey:string;expectedVersion:number;fingerprint:string;draftText:string};
+type BatchResult = {clientKey:string;state?:CustomerReturnSharedState;error?:string;uncertain?:boolean};
 type Patch = {clientKey:string; expectedVersion:number; fingerprint:string; draftText?:string|null; skipped?:boolean};
 export function useCustomerReturnSharedState(branchId:string,today:string) {
   const [states,setStates]=useState<Record<string,CustomerReturnSharedState>>({});
@@ -65,5 +67,54 @@ export function useCustomerReturnSharedState(branchId:string,today:string) {
       void refresh();
     }
   }
-  return {states:{...states,...pending},loaded,error,busy,saving:Object.values(busy).some(Boolean),refresh,patch,send};
+  async function sendBatch(deliveries:ReturnDelivery[]):Promise<BatchResult[]> {
+    const reserved:Record<string,CustomerReturnSharedState>={};
+    for(const item of deliveries){
+      pendingKeys.current.add(item.clientKey);
+      reserved[item.clientKey]={serviceDate:today,clientKey:item.clientKey,draftText:item.draftText,draftFingerprint:item.fingerprint,version:item.expectedVersion,skipped:false,updatedByLogin:"",updatedByName:"",updatedAt:new Date().toISOString(),deliveryStatus:"queued"};
+    }
+    setPending(previous=>({...previous,...reserved}));
+    const results:BatchResult[]=[];
+    try{
+      // Bound each request by both item count and serialized size.
+      let chunk:ReturnDelivery[]=[];
+      let size=0;
+      async function submit(items:ReturnDelivery[]){
+        try{
+          const res=await fetch("/api/analytics/customer-return/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({branchId,serviceDate:today,deliveries:items})});
+          const data=await res.json();
+          if(!res.ok){
+            results.push(...items.map(item=>({clientKey:item.clientKey,error:data.error||"Пакет не принят.",uncertain:res.status>=500})));
+            return;
+          }
+          const incoming=new Map<string,BatchResult>(data.results.map((result:BatchResult)=>[result.clientKey,result]));
+          for(const item of items)results.push(incoming.get(item.clientKey)??{clientKey:item.clientKey,error:"Постановка в очередь не подтверждена.",uncertain:true});
+        }catch{
+          results.push(...items.map(item=>({clientKey:item.clientKey,error:"Связь прервалась. Проверьте статус отправки.",uncertain:true})));
+        }
+      }
+      for(const item of deliveries){
+        const itemSize=JSON.stringify(item).length;
+        if(chunk.length===50 || (chunk.length>0 && size+itemSize>1_900_000)){
+          await submit(chunk);
+          chunk=[];size=0;
+        }
+        chunk.push(item);size+=itemSize;
+      }
+      if(chunk.length)await submit(chunk);
+      const acknowledged=results.flatMap(result=>result.state?[result.state]:[]);
+      setStates(previous=>mergeCustomerReturnStates(previous,acknowledged));
+      setPending(previous=>{
+        const next={...previous};
+        for(const result of results){
+          if(result.uncertain && next[result.clientKey])next[result.clientKey]={...reserved[result.clientKey],deliveryStatus:"unknown",deliveryError:result.error};
+          else delete next[result.clientKey];
+        }
+        return next;
+      });
+      for(const result of results)if(!result.uncertain)pendingKeys.current.delete(result.clientKey);
+      return results;
+    }finally{void refresh();}
+  }
+  return {states:{...states,...pending},loaded,error,busy,saving:Object.values(busy).some(Boolean),refresh,patch,send,sendBatch};
 }
