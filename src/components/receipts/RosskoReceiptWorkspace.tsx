@@ -152,6 +152,7 @@ type IncomingOrder = {
 type IncomingOrdersResponse = {
   orders?: IncomingOrder[];
   updatedAt?: string | null;
+  syncErrors?: Record<string, string>;
   error?: string;
 };
 
@@ -313,6 +314,7 @@ export default function RosskoReceiptWorkspace({
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [filter, setFilter] = useState<IncomingFilter>("active");
+  const [focusedOrderId, setFocusedOrderId] = useState<string | null>(null);
   const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(new Set());
   const [historyOrderIds, setHistoryOrderIds] = useState<Set<string>>(new Set());
   const [actionOrderId, setActionOrderId] = useState<string | null>(null);
@@ -335,7 +337,6 @@ export default function RosskoReceiptWorkspace({
     setError("");
     try {
       const legacyOrders = importLegacy && !legacyImportedRef.current ? readTrackedOrders() : [];
-      legacyImportedRef.current = legacyImportedRef.current || importLegacy;
       const response = legacyOrders.length
         ? await fetch("/api/rossko/incoming-orders", {
             method: "POST",
@@ -346,6 +347,7 @@ export default function RosskoReceiptWorkspace({
       const data = await response.json() as IncomingOrdersResponse;
       if (!response.ok || data.error) throw new Error(data.error || "Не удалось загрузить заказы ROSSKO");
       applyOrdersResponse(data);
+      if (importLegacy) legacyImportedRef.current = true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось загрузить заказы ROSSKO");
     } finally {
@@ -354,12 +356,13 @@ export default function RosskoReceiptWorkspace({
   }, [applyOrdersResponse]);
 
   useEffect(() => {
-    void loadOrders(true, true);
+    void loadOrders(false, true);
   }, [loadOrders]);
 
   async function addOrder() {
-    const id = orderId.trim();
-    if (!/^\d+$/.test(id) || busy) {
+    if (busy || loadingOrders || closing) return;
+    const id = orderId.trim().replace(/^0+/, "");
+    if (!/^\d+$/.test(id)) {
       setError("Укажите корректный номер заказа ROSSKO");
       return;
     }
@@ -373,7 +376,15 @@ export default function RosskoReceiptWorkspace({
       });
       const data = await response.json() as IncomingOrdersResponse;
       if (!response.ok || data.error) throw new Error(data.error || "Не удалось добавить заказ ROSSKO");
+      const syncError = data.syncErrors?.[id];
+      if (syncError) throw new Error(`Не удалось загрузить заказ ROSSKO №${id}: ${syncError}`);
+      const order = data.orders?.find((item) => item.externalOrderId === id);
+      if (!order) throw new Error(`Заказ ROSSKO №${id} не найден`);
       applyOrdersResponse(data);
+      setFilter(order.isClosed ? "closed" : "active");
+      setFocusedOrderId(id);
+      setExpandedOrderIds((current) => new Set(current).add(id));
+      setActionOrderId(null);
       setOrderId("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось добавить заказ ROSSKO");
@@ -443,7 +454,9 @@ export default function RosskoReceiptWorkspace({
     if (filter === "partial") return order.hasPartialReceipt;
     if (filter === "cancelled") return order.hasProviderCancellation;
     return order.isClosed;
-  }), [filter, orders]);
+  }).sort((left, right) =>
+    Number(right.externalOrderId === focusedOrderId) - Number(left.externalOrderId === focusedOrderId)
+  ), [filter, focusedOrderId, orders]);
 
   const filterCount = useCallback((value: IncomingFilter) => orders.filter((order) => {
     if (value === "all") return true;
@@ -483,7 +496,7 @@ export default function RosskoReceiptWorkspace({
           </div>
           <div className="eco-restock-incoming-head-actions">
             <span>{relativeUpdatedAt(updatedAt)}</span>
-            <EcoButton type="button" size="sm" onClick={() => void loadOrders(true)} disabled={busy || loadingOrders}>
+            <EcoButton type="button" size="sm" onClick={() => void loadOrders(true, true)} disabled={busy || loadingOrders || closing}>
               {loadingOrders ? <Loader2 size={14} className="eco-spin" /> : <RefreshCw size={14} />}
               Обновить статусы
             </EcoButton>
@@ -509,7 +522,7 @@ export default function RosskoReceiptWorkspace({
                 placeholder="Например, 182269117"
               />
             </label>
-            <EcoButton type="button" variant="primary" onClick={() => void addOrder()} disabled={busy || !orderId.trim()}>
+            <EcoButton type="button" variant="primary" onClick={() => void addOrder()} disabled={busy || loadingOrders || closing || !orderId.trim()}>
               {busy ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />}
               Добавить
             </EcoButton>
@@ -527,7 +540,7 @@ export default function RosskoReceiptWorkspace({
           </div>
 
           <div className="eco-restock-incoming-list" aria-label="Заказы ROSSKO в пути">
-            {loadingOrders ? Array.from({ length: 3 }).map((_, index) => <div key={index} className="eco-restock-incoming-skeleton" aria-hidden="true"><span /><span /><span /></div>) : filteredOrders.length ? filteredOrders.map((order) => {
+            {loadingOrders && !orders.length ? Array.from({ length: 3 }).map((_, index) => <div key={index} className="eco-restock-incoming-skeleton" aria-hidden="true"><span /><span /><span /></div>) : filteredOrders.length ? filteredOrders.map((order) => {
               const expanded = expandedOrderIds.has(order.externalOrderId);
               const historyOpen = historyOrderIds.has(order.externalOrderId);
               const actionsOpen = actionOrderId === order.externalOrderId;
@@ -558,7 +571,7 @@ export default function RosskoReceiptWorkspace({
                   </dl>
 
                   {actionsOpen && <div className="eco-rossko-incoming-actions" aria-label={`Действия заказа ${order.externalOrderId}`}>
-                    <button type="button" onClick={() => void refreshTrackedOrder(order.externalOrderId)}><RefreshCw size={14} />Обновить статус ROSSKO</button>
+                    <button type="button" onClick={() => void refreshTrackedOrder(order.externalOrderId)} disabled={busy || loadingOrders || closing}><RefreshCw size={14} />Обновить статус ROSSKO</button>
                     <button type="button" onClick={() => { setExpandedOrderIds((current) => new Set(current).add(order.externalOrderId)); setActionOrderId(null); }}><ChevronDown size={14} />Открыть детали</button>
                     {order.readyToReceive && <button type="button" onClick={() => setActiveOrderId(order.externalOrderId)}><PackageCheck size={14} />Принять на склад</button>}
                     {order.lines.some((line) => line.canClose) && <button type="button" onClick={() => openCloseDialog(order)}><PackageX size={14} />Закрыть оставшиеся позиции</button>}

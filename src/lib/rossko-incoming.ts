@@ -16,6 +16,7 @@ import {
   type RosskoOrderPartState,
 } from "@/lib/rossko-order-status";
 import { rosskoConfig, rosskoOrders } from "@/lib/rossko";
+import { rosskoIntegrationError } from "@/lib/rossko-integration";
 
 const ROSSKO_SOURCE = "rossko";
 const MAX_TRACKED_ORDERS = 50;
@@ -571,7 +572,7 @@ export async function syncRosskoIncomingOrders(input: {
 }) {
   const branchId = input.context.branchId;
   if (!branchId) throw new RosskoIncomingError("Выберите активный филиал", 409, "CONCRETE_BRANCH_REQUIRED");
-  const knownEvents = await prisma.$transaction((tx) => trackedEvents(tx, branchId));
+  const knownEvents = await prisma.$transaction((tx) => trackedEvents(tx, branchId, input.orderIds));
   const knownIds = [...new Set(knownEvents.map((event) => event.entityId).filter((value): value is string => Boolean(value)))];
   const requested = input.orderIds?.length ? input.orderIds.map(assertOrderId) : knownIds;
   const orderIds = [...new Set(requested)].slice(0, MAX_TRACKED_ORDERS);
@@ -586,7 +587,7 @@ export async function syncRosskoIncomingOrders(input: {
     try {
       payload = await rosskoOrders(cfg, chunk.map(Number));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Не удалось получить GetOrders";
+      const message = rosskoIntegrationError(error).error;
       for (const orderId of chunk) {
         errors[orderId] = message;
         await recordSyncFailure(input.context, input.actor, orderId, message);
@@ -679,22 +680,25 @@ async function buildIncomingOrders(tx: IncomingDb, context: BranchContext, syncE
     take: 20_000,
   });
   const productById = new Map(products.map((product) => [product.id, product]));
-  const productForLine = (line: StoredSnapshotLine) => {
-    if (line.productId && productById.has(line.productId)) return productById.get(line.productId)!;
-    const article = normalizeRosskoArticle(line.article);
-    const brand = normalizeRosskoBrand(line.brand);
-    const matches = products.filter((product) => (
-      (normalizeRosskoArticle(product.rosskoPartNumber) === article && normalizeRosskoBrand(product.rosskoBrand) === brand) ||
-      (normalizeRosskoArticle(product.article) === article && normalizeRosskoBrand(product.brand) === brand)
-    ));
-    return matches.length === 1 ? matches[0] : null;
-  };
+  const productKey = (article: unknown, brand: unknown) => JSON.stringify([
+    normalizeRosskoArticle(article),
+    normalizeRosskoBrand(brand),
+  ]);
+  const productsByKey = new Map<string, (typeof products)[number] | null>();
+  for (const product of products) {
+    for (const key of new Set([productKey(product.article, product.brand), productKey(product.rosskoPartNumber, product.rosskoBrand)])) {
+      productsByKey.set(key, productsByKey.has(key) ? null : product);
+    }
+  }
+  const productForLine = (line: StoredSnapshotLine) =>
+    (line.productId ? productById.get(line.productId) : undefined) ??
+    productsByKey.get(productKey(line.article, line.brand)) ?? null;
   const today = currentServiceDateKey();
   const result: RosskoIncomingOrder[] = [];
   for (const orderId of orderIds) {
     const orderEvents = byOrder.get(orderId) ?? [];
     const seed = latestSeed(orderEvents);
-    const snapshot = latestSnapshot(orderEvents) ?? (seed ? snapshotFromSeed(seed) : null);
+    const snapshot = latestSnapshot(orderEvents) ?? (seed?.lines.length ? snapshotFromSeed(seed) : null);
     if (!snapshot) continue;
     const orderDocuments = documents.filter((document) => document.externalCode === orderId);
     const postedByLine = new Map<string, number>();
@@ -860,12 +864,13 @@ export async function listRosskoIncomingOrders(input: {
   context: BranchContext;
   actor: User;
   sync?: boolean;
+  syncOrderIds?: string[];
 }) {
   const branchId = input.context.branchId;
   if (!branchId) throw new RosskoIncomingError("Выберите активный филиал", 409, "CONCRETE_BRANCH_REQUIRED");
   const syncResult = input.sync === false
     ? { synced: 0, errors: {} as Record<string, string> }
-    : await syncRosskoIncomingOrders({ context: input.context, actor: input.actor });
+    : await syncRosskoIncomingOrders({ context: input.context, actor: input.actor, orderIds: input.syncOrderIds });
   const orders = await prisma.$transaction((tx) => buildIncomingOrders(tx, input.context, syncResult.errors));
   const updatedAt = orders.map((order) => order.updatedAt).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
   return { orders, updatedAt, synced: syncResult.synced, syncErrors: syncResult.errors };

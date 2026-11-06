@@ -54,8 +54,13 @@ export async function POST(request: NextRequest) {
       ...(Array.isArray(body.orderIds) ? body.orderIds.map((externalOrderId) => ({ externalOrderId: String(externalOrderId) })) : []),
     ];
     const result = await runWithBranchApiContext(branch.context, async () => {
-      await trackRosskoOrderSeeds({ context: branch.context, actor: session.user, orders });
-      return listRosskoIncomingOrders({ context: branch.context, actor: session.user, sync: body.sync !== false });
+      const orderIds = await trackRosskoOrderSeeds({ context: branch.context, actor: session.user, orders });
+      return listRosskoIncomingOrders({
+        context: branch.context,
+        actor: session.user,
+        sync: body.sync !== false,
+        syncOrderIds: Array.isArray(body.orderIds) && body.orderIds.length ? orderIds : undefined,
+      });
     });
     return NextResponse.json(result);
   } catch (error) {

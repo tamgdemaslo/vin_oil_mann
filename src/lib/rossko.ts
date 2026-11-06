@@ -35,7 +35,7 @@ type SoapClient = soap.Client & {
   GetSearchAsync?: (args: Record<string, unknown>, options?: { timeout?: number; signal?: AbortSignal }) => Promise<unknown[]>;
   GetCheckoutDetailsAsync?: (args: Record<string, unknown>) => Promise<unknown[]>;
   GetCheckoutAsync?: (args: Record<string, unknown>) => Promise<unknown[]>;
-  GetOrdersAsync?: (args: Record<string, unknown>) => Promise<unknown[]>;
+  GetOrdersAsync?: (args: Record<string, unknown>, options?: { timeout?: number; signal?: AbortSignal }) => Promise<unknown[]>;
 };
 
 class RateLimiter {
@@ -350,7 +350,7 @@ export async function rosskoOrders(cfg: RosskoConfig, orderIds: number[]): Promi
   };
   try {
     const client = await createClient("GetOrders", cfg);
-    const resp = await limiter(cfg).run(() => client.GetOrdersAsync!(payload));
+    const resp = await limiter(cfg).run(() => client.GetOrdersAsync!(payload, { timeout: Math.min(cfg.timeoutMs, assistantRemainingMs()), signal: assistantSignal() }));
     return assertSuccess(firstResult(resp), "ROSSKO GetOrders failed");
   } catch (e) {
     throw formatRosskoError(e);

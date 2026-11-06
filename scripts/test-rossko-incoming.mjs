@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, alias: { "@": resolve(process.cwd(), "src") } });
@@ -134,5 +135,77 @@ assert.match(restock, /activeIncomingQty/);
 assert.match(closeRoute, /requireBranchApi\(\{ allowAll: false, requireActive: true \}\)/);
 assert.match(listRoute, /sync/);
 assert.match(schema, /model BranchAuditLog/);
+
+// Run the receipt entry point with a full history and a provider that can
+// return either the requested order or only an unrelated old order.
+const stubDir = await mkdtemp(join(tmpdir(), "rossko-incoming-"));
+try {
+  const alias = { "@": resolve("src") };
+  const stubs = {
+    auth: 'exports.getSession = async () => ({ user: { login: "tester" } });',
+    "branch-api": `
+      exports.requireBranchApi = async () => ({ ok: true, context: { branchId: "test" } });
+      exports.runWithBranchApiContext = (_, run) => run();
+    `,
+    db: `
+      const events = Array.from({ length: 51 }, (_, i) => ({
+        entityId: String(i + 1), branchId: "test", action: "ROSSKO_ORDER_TRACKED",
+        createdAt: new Date(2025, 0, 1, 0, i),
+        metadata: { seed: { externalOrderId: String(i + 1), lines: [{ article: "X", brand: "MANN", orderedQty: 1 }] } },
+      }));
+      function insert(event) { events.push({ ...event, id: String(events.length), createdAt: new Date() }); }
+      const tx = {
+        branchAuditLog: {
+          findMany: async ({ where }) => events.filter((event) => event.branchId === where.branchId &&
+            (!where.entityId?.in || where.entityId.in.includes(event.entityId)) &&
+            (typeof where.action === "string" ? where.action === event.action : where.action.in.includes(event.action))),
+          createMany: async ({ data }) => data.forEach(insert),
+          create: async ({ data }) => insert(data),
+        },
+        localInventoryDocument: { findMany: async () => [] },
+        localProduct: { findMany: async () => [] },
+        $queryRaw: async () => [],
+      };
+      exports.prisma = { ...tx, $transaction: (run) => run(tx) };
+    `,
+    rossko: `
+      exports.calls = [];
+      exports.rosskoConfig = async () => ({});
+      exports.rosskoOrders = async (_, ids) => {
+        exports.calls.push(ids);
+        const id = ids.includes(100) ? 100 : 1;
+        return { OrdersList: { Order: { id, parts: { part: {
+          guid: "part-1", partnumber: "X", brand: "MANN", count: 1, price: 500, status: 6
+        } } } } };
+      };
+    `,
+    "rossko-integration": 'exports.rosskoIntegrationError = (error) => ({ error: error.message });',
+  };
+  for (const [name, source] of Object.entries(stubs)) {
+    const file = join(stubDir, name + ".cjs");
+    await writeFile(file, source);
+    alias[`@/lib/${name}`] = file;
+  }
+  const isolated = createJiti(import.meta.url, { alias });
+  const provider = await isolated.import(alias["@/lib/rossko"]);
+  const { GET, POST } = await isolated.import("../src/app/api/rossko/incoming-orders/route.ts");
+  const url = "http://test/api/rossko/incoming-orders";
+  const add = (id) => POST(new Request(url, { method: "POST", body: JSON.stringify({ orderIds: [id] }) }));
+
+  const cached = await GET({ nextUrl: new URL(url + "?sync=0") });
+  assert.equal((await cached.json()).orders.length, 51);
+  assert.deepEqual(provider.calls, [], "opening the saved list does not wait for the provider");
+
+  const found = await (await add("100")).json();
+  assert.deepEqual(provider.calls, [[100]], "look up the entered order even when history exceeds the sync limit");
+  assert.equal(found.orders.find((order) => order.externalOrderId === "100")?.readyToReceive, true);
+
+  const missing = await (await add("101")).json();
+  assert.deepEqual(provider.calls, [[100], [101]]);
+  assert.match(missing.syncErrors["101"], /101.*не найден/);
+  assert.ok(!missing.orders.some((order) => order.externalOrderId === "101"), "an unverified number does not become an empty order");
+} finally {
+  await rm(stubDir, { recursive: true, force: true });
+}
 
 console.log("ROSSKO incoming order lifecycle — passed");
