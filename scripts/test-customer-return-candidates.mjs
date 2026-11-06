@@ -14,6 +14,10 @@ assert.equal(customerVehicleIdentity([{name:'VIN номер',value:vin},{name:'�
 for(const [raw,value] of [['151200 км.',151200],['123 456',123456],['123.456',123456],['123 тыс.',123000],['0',null],['А123ВС39',null],['',null]])assert.equal(parseReturnMileage(raw),value);
 const regular=[doc('a','2025-08-01',100000),doc('b','2025-12-01',106000),doc('c','2026-04-01',112000)];
 assert.ok(kinds(analyze(regular)).includes('missed_interval'));
+const laterVisit=doc('later','2026-05-01',114000,{lines:[]});
+const missedReason=documents=>analyze(documents)[0].reasons.find(r=>r.scenario==='missed_interval');
+assert.equal(missedReason([...regular,laterVisit]).lastOilMileage,112000);
+assert.equal(missedReason([...regular,doc('conflict','2026-04-01',113000),laterVisit]).lastOilMileage,null);
 assert.ok(!kinds(analyze(regular)).includes('oil_soon'),'overdue oil does not qualify as upcoming');
 assert.ok(!kinds(analyze(regular.slice(1))).includes('missed_interval'),'two visits cannot establish cadence');
 const annual=[doc('annual','2025-11-10',100000)];

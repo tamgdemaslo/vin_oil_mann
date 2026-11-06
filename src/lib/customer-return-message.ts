@@ -53,13 +53,14 @@ export function customerReturnMaterialLabel(line:ReturnOfferLine):string {
 export function customerReturnReasonText(reason:ReturnReason):string {
   const previous=new Date(reason.lastVisit+"T00:00:00Z");
   const date=new Intl.DateTimeFormat("ru-RU",{timeZone:"UTC"}).format(previous);
-  if(reason.scenario==="missed_interval")return `После последней замены масла у нас ${date} на ${reason.vehicle} прошло больше времени, чем обычно между вашими обслуживаниями.`;
+  const mileage=reason.lastOilMileage==null?"":` Последняя замена была на пробеге ${amount(reason.lastOilMileage)} км.`;
+  if(reason.scenario==="missed_interval")return `После последней замены масла у нас ${date} на ${reason.vehicle} прошло больше времени, чем обычно между вашими обслуживаниями.${mileage}`;
   if(reason.scenario==="oil_soon"){
-    if(reason.confidence==="estimate")return `По истории ваших обслуживаний у нас на ${reason.vehicle} приближается ориентировочный срок следующей замены моторного масла.`;
+    if(reason.confidence==="estimate")return `По истории ваших обслуживаний у нас на ${reason.vehicle} приближается ориентировочный срок следующей замены моторного масла.${mileage}`;
     const year=previous.getUTCFullYear()+1,month=previous.getUTCMonth();
     const anniversary=new Date(Date.UTC(year,month,Math.min(previous.getUTCDate(),new Date(Date.UTC(year,month+1,0)).getUTCDate())));
     const label=new Intl.DateTimeFormat("ru-RU",{day:"numeric",month:"long",timeZone:"UTC"}).format(anniversary);
-    return `${label} будет год с последней замены масла у нас на ${reason.vehicle}. Напоминаю о следующем обслуживании.`;
+    return `${label} будет год с последней замены масла у нас на ${reason.vehicle}.${mileage} Напоминаю о следующем обслуживании.`;
   }
   return `Вы были у нас ${date} на ${reason.vehicle} — почти год назад. Приглашаю на следующее обслуживание.`;
 }

@@ -8,6 +8,7 @@ export type ReturnReason = {
   vehicleKey?: string;
   explanation: string;
   lastVisit: string;
+  lastOilMileage?: number | null;
   documentIds: string[];
   confidence: "history" | "estimate";
   needsReview: boolean;
@@ -117,7 +118,7 @@ export function buildCustomerReturnCandidates(input: {
       const estimate = forecastable && lastOil.mileage!=null ? lastPoint.mileage!+speed*(today-day(lastPoint.date))-lastOil.mileage : null;
       const knownDistance = !badMileage && lastOil.mileage!=null && lastPoint ? lastPoint.mileage!-lastOil.mileage : null;
       const elapsed = today-day(lastOil.date), vehicle=ordered.at(-1)!.label;
-      const base = {vehicle,vehicleKey,lastVisit:lastOil.date,documentIds:ordered.flatMap(v=>v.docs),needsReview:clientReview||badMileage};
+      const base = {vehicle,vehicleKey,lastVisit:lastOil.date,lastOilMileage:lastOil.mileage,documentIds:ordered.flatMap(v=>v.docs),needsReview:clientReview||badMileage};
       if (oil.length>=3) {
         const gaps=oil.slice(1).map((v,i)=>day(v.date)-day(oil[i].date)).slice(-4), usual=median(gaps);
         if (usual>=30 && usual<=400 && median(gaps.map(g=>Math.abs(g-usual)))/usual<=.35 && elapsed>usual*1.5 && elapsed-usual>=30) {

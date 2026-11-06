@@ -4,7 +4,7 @@ import {resolve} from 'node:path';
 const jiti=createJiti(import.meta.url,{alias:{'@':resolve('src')}});
 const {attachCustomerReturnOffers:attach,customerReturnSender:sender}=await jiti.import('../src/lib/customer-return-offer.ts');
 const {customerReturnMaterialLabel:label,customerReturnReasonText:reasonText,withCustomerReturnBookingLink:booking}=await jiti.import('../src/lib/customer-return-message.ts');
-const reason={scenario:'oil_soon',vehicle:'HONDA · С845ТМ39',lastVisit:'2025-11-13',documentIds:['last'],confidence:'history',needsReview:false,explanation:'Приближается год'};
+const reason={scenario:'oil_soon',vehicle:'HONDA · С845ТМ39',lastVisit:'2025-11-13',lastOilMileage:123456,documentIds:['last'],confidence:'history',needsReview:false,explanation:'Приближается год'};
 const products=[{id:'oil',name:'GENESIS ARMORTECH FD A5/B5 5W-30, моторное масло на розлив, 1 л.',unit:'л',priceCents:99000,available:51},{id:'filter',name:'Масляный фильтр Lynx LC-840 (OP617)',brand:'LYNXauto',unit:'шт',priceCents:69000,available:1},{id:'seal',name:'Уплотинительное кольцо сливной пробки Hyundai/Kia 45323-39000 (П05)',unit:'шт',priceCents:4000,available:21}].map(p=>({...p,archived:false,entityType:'product'}));
 const docs=[{id:'last',clientKey:'c',date:reason.lastVisit,attributes:[],lines:[{name:'Замена моторного масла',type:'service',quantity:1,metric:'ENGINE_OIL_CHANGE'},...products.map(p=>({productId:p.id,name:p.name,type:'product',quantity:p.id==='oil'?3.6:1,metric:p.id==='oil'?'ENGINE_OIL':p.id==='filter'?'OIL_FILTER':'SEALS_GASKETS'}))]}];
 const candidate={id:'c',clientKey:'c',displayName:'Артём',phone:null,reasons:[reason],draft:'',needsReview:false};
@@ -12,6 +12,9 @@ const context={sender:sender({slug:'dachnaya',name:'Дачная 6В',address:nu
 const before=JSON.stringify({docs,products});const result=attach(candidate,docs,context);const text=result.draft;
 assert.equal(result.offerReady,true);assert.equal(result.offers[0].totalCents,429400);
 assert.ok(text.startsWith('Артём, здравствуйте! Это Вадим'));assert.match(text,/на Дачной, 6В/);
+assert.match(text,/Последняя замена была на пробеге 123\s456 км\./);
+assert.doesNotMatch(reasonText({...reason,lastOilMileage:null}),/на пробеге/);
+assert.doesNotMatch(reasonText({...reason,scenario:'single_visit'}),/на пробеге/);
 assert.match(text,/13 ноября будет год с последней замены масла у нас на HONDA · С845ТМ39/);
 assert.match(text,/с материалами и работой: 4\s294 ₽/);assert.ok(text.indexOf('4\u00a0294 ₽')<text.indexOf('В стоимость входят:'));
 assert.match(text,/GENESIS ARMORTECH FD 5W-30 на розлив, 3,6 л/);assert.match(text,/• Масляный фильтр LYNX[;\n]/);assert.match(text,/• Универсальное уплотнительное кольцо сливной пробки — 40 ₽/);
