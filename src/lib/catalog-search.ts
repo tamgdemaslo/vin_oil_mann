@@ -261,7 +261,7 @@ export type CatalogSearchItem = {
 
 type FacetOption = { value: string; count: number };
 type StockFilter = "all" | "inStock" | "outOfStock";
-type SortKey = "relevance" | "name" | "article" | "code" | "available" | "quantity" | "buyPrice" | "salePrice" | "margin" | "updatedAt";
+type SortKey = "relevance" | "name" | "brand" | "article" | "code" | "available" | "quantity" | "buyPrice" | "salePrice" | "margin" | "updatedAt";
 type SortDirection = "asc" | "desc";
 
 export type CatalogSearchResult = {
@@ -335,7 +335,7 @@ export type CatalogSearchResult = {
 const DASH_RE = /[\u2010-\u2015\u2212]+/g;
 const SEPARATOR_RE = /[\s.,;:()[\]{}"'`«»/\\|+*_=-]+/g;
 const ruCollator = new Intl.Collator("ru", { numeric: true, sensitivity: "base" });
-const sortKeys = new Set<SortKey>(["relevance", "name", "article", "code", "available", "quantity", "buyPrice", "salePrice", "margin", "updatedAt"]);
+const sortKeys = new Set<SortKey>(["relevance", "name", "brand", "article", "code", "available", "quantity", "buyPrice", "salePrice", "margin", "updatedAt"]);
 
 const synonymGroups = [
   ["масляный", "масло", "масляного", "фильтр масла", "масляный фильтр"],
@@ -604,12 +604,26 @@ function fieldsForProduct(product: CatalogProduct): SearchField[] {
   ];
 }
 
-function matchTokenInField(token: CatalogSearchToken, field: SearchField): CatalogMatchedField | null {
+function prepareSearchField(field: SearchField) {
   const value = field.value.trim();
-  if (!value) return null;
   const normalized = normalizeSearchText(value);
-  const compact = compactIdentifier(value);
-  const words = normalized.split(" ").filter(Boolean);
+  return {
+    ...field,
+    value,
+    normalized,
+    compact: normalized.replace(/[^a-zа-я0-9]+/giu, ""),
+    words: normalized ? normalized.split(" ") : [],
+  };
+}
+
+function matchTokenInField(
+  token: CatalogSearchToken,
+  field: ReturnType<typeof prepareSearchField>,
+  variants: ReadonlyArray<readonly [string, string]>,
+  fuzzyDistance: number,
+): CatalogMatchedField | null {
+  const { value, compact, words } = field;
+  if (!value) return null;
 
   if (field.exact && token.compact.length >= 3 && compact === token.compact) {
     return { field: field.key, label: field.label, value, token: token.raw, match: "exact" };
@@ -617,8 +631,7 @@ function matchTokenInField(token: CatalogSearchToken, field: SearchField): Catal
   if (field.identifier && token.compact.length >= 3 && compact.includes(token.compact)) {
     return { field: field.key, label: field.label, value, token: token.raw, match: "compact" };
   }
-  for (const variant of token.variants) {
-    const variantCompact = compactIdentifier(variant);
+  for (const [variant, variantCompact] of variants) {
     if (!variantCompact) continue;
     if (words.some((word) => word === variant)) return { field: field.key, label: field.label, value, token: token.raw, match: "exact" };
     if (variantCompact.length >= 2 && words.some((word) => word.startsWith(variantCompact))) {
@@ -629,7 +642,6 @@ function matchTokenInField(token: CatalogSearchToken, field: SearchField): Catal
     }
   }
 
-  const fuzzyDistance = allowedFuzzyDistance(token);
   if (fuzzyDistance > 0) {
     for (const word of words) {
       if (word.length < 4 || Math.abs(word.length - token.normalized.length) > fuzzyDistance) continue;
@@ -646,36 +658,47 @@ function matchScore(field: SearchField, match: CatalogMatchedField): number {
   return field.weight * multipliers[match.match];
 }
 
-function scoreProduct(product: CatalogProduct, tokens: CatalogSearchToken[], normalizedQuery: string) {
-  const fields = fieldsForProduct(product);
+function prepareSearchQuery(tokens: CatalogSearchToken[], normalized: string) {
+  return {
+    normalized,
+    compact: compactIdentifier(normalized),
+    tokens: tokens.map((token) => ({
+      token,
+      variants: token.variants.map((variant) => [variant, compactIdentifier(variant)] as const),
+      fuzzyDistance: allowedFuzzyDistance(token),
+    })),
+  };
+}
+
+function scoreProduct(product: CatalogProduct, query: ReturnType<typeof prepareSearchQuery>) {
   const matched: CatalogMatchedField[] = [];
   let score = 0;
 
-  if (!tokens.length) {
+  if (!query.tokens.length) {
     return { ok: true, score: 0, matchedFields: matched };
   }
 
-  const normalizedName = normalizeSearchText(product.name);
-  if (normalizedName === normalizedQuery) {
+  const fields = fieldsForProduct(product).map(prepareSearchField);
+  if (fields.find((field) => field.key === "name")?.normalized === query.normalized) {
     matched.push({ field: "name", label: "Название", value: product.name, match: "exact" });
     score += 80;
   }
 
-  const compactQuery = compactIdentifier(normalizedQuery);
+  const compactQuery = query.compact;
   if (compactQuery.length >= 4 || (compactQuery.length >= 3 && /\d/.test(compactQuery))) {
     for (const field of fields.filter((item) => item.key === "name" || item.key === "oemParts")) {
-      if (compactIdentifier(field.value).includes(compactQuery)) {
-        matched.push({ field: field.key, label: field.label, value: field.value, token: normalizedQuery, match: "compact" });
+      if (field.compact.includes(compactQuery)) {
+        matched.push({ field: field.key, label: field.label, value: field.value, token: query.normalized, match: "compact" });
         score += field.weight;
       }
     }
   }
 
   let matchedTokens = 0;
-  for (const token of tokens) {
+  for (const { token, variants, fuzzyDistance } of query.tokens) {
     let best: { field: SearchField; match: CatalogMatchedField; score: number } | null = null;
     for (const field of fields) {
-      const match = matchTokenInField(token, field);
+      const match = matchTokenInField(token, field, variants, fuzzyDistance);
       if (!match) continue;
       const currentScore = matchScore(field, match);
       if (!best || currentScore > best.score) best = { field, match, score: currentScore };
@@ -686,8 +709,8 @@ function scoreProduct(product: CatalogProduct, tokens: CatalogSearchToken[], nor
     score += best.score;
   }
 
-  const allSignificant = matchedTokens === tokens.length;
-  const partialAllowed = tokens.length >= 3 && matchedTokens >= tokens.length - 1;
+  const allSignificant = matchedTokens === query.tokens.length;
+  const partialAllowed = query.tokens.length >= 3 && matchedTokens >= query.tokens.length - 1;
   if (!allSignificant && !partialAllowed) return { ok: false, score: 0, matchedFields: matched };
   if (!allSignificant) score -= 25;
   return { ok: true, score, matchedFields: dedupeMatchedFields(matched) };
@@ -756,15 +779,16 @@ async function findNormalizedCatalogCandidateIds(tokens: CatalogSearchToken[], p
   const branchId = getScopedBranchId();
   const terms = normalizedCatalogLookupTerms(tokens, params);
   if (terms.length === 0) return [];
-  const predicates = terms.map((term) => Prisma.sql`
-    regexp_replace(replace(lower(COALESCE(name, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${term}%`}
-    OR regexp_replace(replace(lower(COALESCE(oem_parts, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${term}%`}
-  `);
+  const patterns = Prisma.sql`ARRAY[${Prisma.join(terms.map((term) => `%${term}%`))}]::text[]`;
   const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id
     FROM local_products
     WHERE branch_id = ${branchId}
-      AND (${Prisma.join(predicates, " OR ")})
+      ${params.includeArchived ? Prisma.empty : Prisma.sql`AND NOT archived`}
+      AND (
+        regexp_replace(replace(lower(COALESCE(name, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ANY (${patterns})
+        OR regexp_replace(replace(lower(COALESCE(oem_parts, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ANY (${patterns})
+      )
     LIMIT 1000
   `);
   return rows.map((row) => row.id);
@@ -1005,16 +1029,6 @@ function normalizeType(value?: string): CatalogSearchType {
   return "all";
 }
 
-function filterValuesInclude(values: string[], candidates: string | string[] | null | undefined) {
-  if (!values.length) return true;
-  const candidateValues = Array.isArray(candidates) ? candidates : candidates ? [candidates] : [];
-  return candidateValues.some((candidate) => {
-    const clean = candidate.trim();
-    const normalized = normalizeSearchText(clean);
-    return clean ? values.some((value) => value === clean || normalizeSearchText(value) === normalized) : false;
-  });
-}
-
 type CatalogFacetKey = "brand" | "sae" | "supplier" | "group" | "entityType" | "apiSpec" | "acea" | "ilsac" | "engineOem" | "atf" | "oemAtf" | "packageVolume";
 
 function productFacetValues(item: CatalogSearchItem, key: CatalogFacetKey): string[] {
@@ -1033,21 +1047,9 @@ function productFacetValues(item: CatalogSearchItem, key: CatalogFacetKey): stri
   return parseStoredAttributeValues(item.apiSpec, profile === "TRANSMISSION_FLUID" ? "transmissionApi" : "engineApi");
 }
 
-function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult["meta"]["filters"], storeId?: string | null) {
-  if (filters.brand.length && !filterValuesInclude(filters.brand, productFacetValues(item, "brand"))) return false;
-  if (filters.sae.length && !filterValuesInclude(filters.sae, productFacetValues(item, "sae"))) return false;
-  if (filters.supplier.length && !filterValuesInclude(filters.supplier, productFacetValues(item, "supplier"))) return false;
-  if (filters.group.length && !filterValuesInclude(filters.group, productFacetValues(item, "group"))) return false;
-  if (filters.entityType.length && !filterValuesInclude(filters.entityType, productFacetValues(item, "entityType"))) return false;
-  if (filters.apiSpec.length && !filterValuesInclude(filters.apiSpec, productFacetValues(item, "apiSpec"))) return false;
-  if (filters.acea.length && !filterValuesInclude(filters.acea, productFacetValues(item, "acea"))) return false;
-  if (filters.ilsac.length && !filterValuesInclude(filters.ilsac, productFacetValues(item, "ilsac"))) return false;
-  if (filters.engineOem.length && !filterValuesInclude(filters.engineOem, productFacetValues(item, "engineOem"))) return false;
-  if (filters.atf.length && !filterValuesInclude(filters.atf, productFacetValues(item, "atf"))) return false;
-  if (filters.oemAtf.length && !filterValuesInclude(filters.oemAtf, productFacetValues(item, "oemAtf"))) return false;
-  if (filters.packageVolume.length && !filterValuesInclude(filters.packageVolume, productFacetValues(item, "packageVolume"))) return false;
-  if (filters.stock === "inStock" && item.totalAvailable <= 0) return false;
-  if (filters.stock === "outOfStock" && item.totalAvailable > 0) return false;
+type CatalogFilters = CatalogSearchResult["meta"]["filters"];
+
+function matchesFixedFilters(item: CatalogSearchItem, filters: CatalogFilters, storeId?: string | null) {
   if (filters.markingProblems && !productHasMarkingProblem({
     markingEnabled: item.markingEnabled,
     markingMode: item.markingMode,
@@ -1068,36 +1070,68 @@ function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult
   return true;
 }
 
-function facetOptions(items: CatalogSearchItem[], key: CatalogFacetKey): FacetOption[] {
-  const counts = new Map<string, { value: string; count: number }>();
+const facetCollections = {
+  brand: "brands", sae: "sae", supplier: "suppliers", group: "groups",
+  entityType: "entityTypes", apiSpec: "apiSpecs", acea: "acea", ilsac: "ilsac",
+  engineOem: "engineOem", atf: "atf", oemAtf: "oemAtf", packageVolume: "packageVolumes",
+} as const satisfies Record<CatalogFacetKey, string>;
+const facetKeys = Object.keys(facetCollections) as CatalogFacetKey[];
+
+function filterAndCountFacets(items: CatalogSearchItem[], filters: CatalogFilters, storeId?: string | null) {
+  const filtered: CatalogSearchItem[] = [];
+  const stock = { all: 0, inStock: 0, outOfStock: 0 };
+  const counts = new Map(facetKeys.map((key) => [key, new Map<string, FacetOption>()]));
+  const active = facetKeys.filter((key) => filters[key].length).map((key) => ({
+    key,
+    selected: new Set(filters[key].map(normalizeSearchText)),
+  }));
   for (const item of items) {
-    const uniqueValues = new Map(productFacetValues(item, key).map((value) => [normalizeSearchText(value), value]));
-    for (const [normalized, value] of uniqueValues) {
-      if (!normalized) continue;
-      const current = counts.get(normalized);
-      counts.set(normalized, { value: current?.value ?? value, count: (current?.count ?? 0) + 1 });
+    if (!matchesFixedFilters(item, filters, storeId)) continue;
+    const stockKey = item.totalAvailable > 0 ? "inStock" : "outOfStock";
+    const stockMatches = filters.stock === "all" || filters.stock === stockKey;
+    const values = new Map<CatalogFacetKey, Map<string, string>>();
+    const valuesFor = (key: CatalogFacetKey) => {
+      const existing = values.get(key);
+      if (existing) return existing;
+      const normalized = new Map(productFacetValues(item, key).map((value) => [normalizeSearchText(value), value]));
+      normalized.delete("");
+      values.set(key, normalized);
+      return normalized;
+    };
+
+    // A row that misses just one facet still counts towards alternatives in that facet.
+    let mismatch: CatalogFacetKey | undefined;
+    let multipleMismatches = false;
+    for (const { key, selected } of active) {
+      if ([...valuesFor(key).keys()].some((value) => selected.has(value))) continue;
+      if (mismatch) {
+        multipleMismatches = true;
+        break;
+      }
+      mismatch = key;
+    }
+    if (multipleMismatches) continue;
+    if (!mismatch) {
+      stock.all++;
+      stock[stockKey]++;
+      if (stockMatches) filtered.push(item);
+    }
+    if (!stockMatches) continue;
+    for (const key of mismatch ? [mismatch] : facetKeys) {
+      const facet = counts.get(key)!;
+      for (const [normalized, value] of valuesFor(key)) {
+        const entry = facet.get(normalized);
+        if (entry) entry.count++;
+        else facet.set(normalized, { value, count: 1 });
+      }
     }
   }
-  return [...counts.values()].sort((a, b) => b.count - a.count || ruCollator.compare(a.value, b.value));
-}
 
-function buildFacets(items: CatalogSearchItem[], filters: CatalogSearchResult["meta"]["filters"], storeId?: string | null) {
-  // Each facet counts products matching the other conditions so alternatives remain selectable.
-  const options = (key: CatalogFacetKey) => facetOptions(
-    items.filter((item) => rowMatchesFilters(item, { ...filters, [key]: [] }, storeId)), key,
-  );
-  const rowsForStock = items.filter((item) => rowMatchesFilters(item, { ...filters, stock: "all" }, storeId));
-  return {
-    brands: options("brand"), sae: options("sae"), suppliers: options("supplier"),
-    groups: options("group"), entityTypes: options("entityType"), apiSpecs: options("apiSpec"),
-    acea: options("acea"), ilsac: options("ilsac"), engineOem: options("engineOem"),
-    atf: options("atf"), oemAtf: options("oemAtf"), packageVolumes: options("packageVolume"),
-    stock: {
-      all: rowsForStock.length,
-      inStock: rowsForStock.filter((item) => item.totalAvailable > 0).length,
-      outOfStock: rowsForStock.filter((item) => item.totalAvailable <= 0).length,
-    },
-  };
+  const collections = Object.fromEntries(facetKeys.map((key) => [
+    facetCollections[key],
+    [...counts.get(key)!.values()].sort((a, b) => b.count - a.count || ruCollator.compare(a.value, b.value)),
+  ])) as Record<(typeof facetCollections)[CatalogFacetKey], FacetOption[]>;
+  return { filtered, facets: { ...collections, stock } };
 }
 
 function normalizeSort(value?: string): SortKey {
@@ -1135,6 +1169,12 @@ function compareItems(a: CatalogSearchItem, b: CatalogSearchItem, sort: SortKey,
   }
   let result = 0;
   if (sort === "name") result = ruCollator.compare(a.name, b.name);
+  if (sort === "brand") {
+    const aBrand = a.brand.trim();
+    const bBrand = b.brand.trim();
+    if (Boolean(aBrand) !== Boolean(bBrand)) return aBrand ? -1 : 1;
+    result = ruCollator.compare(aBrand, bBrand);
+  }
   if (sort === "article") result = ruCollator.compare(a.article || a.code || a.name, b.article || b.code || b.name);
   if (sort === "code") result = ruCollator.compare(a.code || a.article || a.name, b.code || b.article || b.name);
   if (sort === "available") result = compareNullableNumber(a.totalAvailable, b.totalAvailable, direction);
@@ -1145,7 +1185,7 @@ function compareItems(a: CatalogSearchItem, b: CatalogSearchItem, sort: SortKey,
   if (sort === "updatedAt") result = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
   if (sort === "relevance") result = 0;
   if (direction === "desc" && !["available", "quantity", "buyPrice", "salePrice", "margin"].includes(sort)) result = -result;
-  return result || ruCollator.compare(a.name, b.name);
+  return result || ruCollator.compare(a.name, b.name) || a.id.localeCompare(b.id);
 }
 
 function mapProduct(product: CatalogProduct, relevance: number, matchedFields: CatalogMatchedField[]): CatalogSearchItem {
@@ -1283,7 +1323,7 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
 async function resolveStoreId(params: CatalogSearchParams): Promise<string | null> {
   const storeId = params.warehouseId?.trim() || params.storeId?.trim() || "";
   if (storeId) {
-    const store = await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { id: storeId }] }, select: { id: true } });
+    const store = await prisma.localStore.findFirst({ where: { id: storeId }, select: { id: true } });
     return store?.id ?? null;
   }
   const storeName = params.storeName?.trim() ?? "";
@@ -1384,7 +1424,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
               include: { storefrontProduct: { select: { id: true, publicationState: true, contentSourceProductId: true } } },
             },
           },
-          orderBy: [{ name: "asc" }],
+          orderBy: [{ name: "asc" }, { id: "asc" }],
           take: params.internalLimit != null || filters.oemParts !== "all" || filters.qualityIssue !== "all"
             ? 5001
             : Math.min(1000, Math.max(limit * 30, 100)),
@@ -1405,8 +1445,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
       const score = matchedFields.reduce((sum, field) => sum + (field.field === "oemParts" ? 100 : 90), 0);
       return [mapProduct(product, score, matchedFields)];
     });
-    const facets = buildFacets(scored, filters, storeId);
-    const filtered = scored.filter((item) => rowMatchesFilters(item, filters, storeId));
+    const { facets, filtered } = filterAndCountFacets(scored, filters, storeId);
     const sorted = filtered.sort((a, b) => compareItems(a, b, sort, direction, context));
     const items = sorted.slice(offset, offset + limit);
     return {
@@ -1485,17 +1524,17 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
         include: { storefrontProduct: { select: { id: true, publicationState: true, contentSourceProductId: true } } },
       },
     },
-    orderBy: [{ name: "asc" }],
+    orderBy: [{ name: "asc" }, { id: "asc" }],
     ...(candidateTake === undefined ? {} : { take: candidateTake }),
   });
 
+  const query = prepareSearchQuery(tokens, normalizedQuery);
   const scored = products.flatMap((product) => {
-    const score = scoreProduct(product, tokens, normalizedQuery);
+    const score = scoreProduct(product, query);
     if (!score.ok) return [];
     return [mapProduct(product, score.score, score.matchedFields)];
   });
-  const facets = buildFacets(scored, filters, storeId);
-  const filtered = scored.filter((item) => rowMatchesFilters(item, filters, storeId));
+  const { facets, filtered } = filterAndCountFacets(scored, filters, storeId);
   const matchedOutsideFilters = Math.max(0, scored.length - filtered.length);
   const sorted = filtered.sort((a, b) => compareItems(a, b, sort, direction, context));
   const items = sorted.slice(offset, offset + limit);

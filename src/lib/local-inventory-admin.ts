@@ -3128,11 +3128,14 @@ export async function updateLocalAdminProduct(
   options: { transaction?: Prisma.TransactionClient } = {},
 ): Promise<{ ok: true; product: ReturnType<typeof mapProduct> } | { ok: false; error: string; notFound?: boolean }> {
   if (!options.transaction) {
-    return prisma.$transaction(async (tx) => updateLocalAdminProduct(id, body, actor, branchId, { transaction: tx }));
+    return prisma.$transaction(
+      (tx) => updateLocalAdminProduct(id, body, actor, branchId, { transaction: tx }),
+      { maxWait: 8_000, timeout: 12_000 },
+    );
   }
   const client = options.transaction;
   await lockBarrelProducts(client, branchId, [id]);
-  const current = await client.localProduct.findFirst({ where: { branchId, OR: [{ id }, { id: id }] } });
+  const current = await client.localProduct.findFirst({ where: { branchId, id } });
   if (!current) return { ok: false as const, error: "Товар не найден", notFound: true };
   const name = body.name == null ? current.name : body.name.trim();
   if (!name) return { ok: false as const, error: "Укажите название товара" };

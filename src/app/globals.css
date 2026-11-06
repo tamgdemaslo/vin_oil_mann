@@ -16508,6 +16508,17 @@ select.eco-input::-ms-expand,
   font-weight: 750;
 }
 
+.eco-products-sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eco-products-sort-control .eco-input {
+  width: auto;
+  min-width: 0;
+}
+
 .eco-products-selection-summary {
   display: inline-flex;
   flex-wrap: wrap;

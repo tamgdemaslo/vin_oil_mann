@@ -6,7 +6,7 @@ import {createJiti} from 'jiti';
 const dir=mkdtempSync(resolve(tmpdir(),'approval-filters-'));
 try {
 const fixture=(id,fields)=>({id,name:`Масло ${id}`,article:id,entityType:'product',groupPath:'Моторные масла',uomName:'шт',brand:'TEST',salePriceCents:500000,updatedAt:new Date('2026-10-23'),stockBalances:[],photos:[],storageAssignments:[],storefrontBindings:[],...fields});
-const rows=[fixture('multi',{acea:'C3; C4',aceaExtra:'C4',ilsac:'GF-6A',oem:'BMW Longlife-04; VW 504.00/507.00'}),fixture('legacy',{aceaExtra:'C4',ilsac:'GF-5'}),fixture('other',{acea:'C3',ilsac:'GF-6A',oem:'MB 229.51'}),fixture('transmission',{groupPath:'Трансмиссионные масла',atf:'Dexron VI; Dexron III',oemAtf:'MB 236.14'})];
+const rows=[fixture('multi',{name:'Bardahl XTEC 5W-30',brand:'Bardahl',stockBalances:[{storeId:'test-store',quantity:2,reserve:0,available:2}],acea:'C3; C4',aceaExtra:'C4',ilsac:'GF-6A',oem:'BMW Longlife-04; VW 504.00/507.00'}),fixture('legacy',{brand:'Mannol',aceaExtra:'C4',ilsac:'GF-5'}),fixture('other',{acea:'C3',ilsac:'GF-6A',oem:'MB 229.51'}),fixture('transmission',{groupPath:'Трансмиссионные масла',atf:'Dexron VI; Dexron III',oemAtf:'MB 236.14'})];
 writeFileSync(resolve(dir,'db.cjs'),`exports.prisma={$queryRaw:async()=>[],localProduct:{findMany:async()=>${JSON.stringify(rows)}.map(row=>({...row,updatedAt:new Date(row.updatedAt)}))}}`);
 writeFileSync(resolve(dir,'tenant.cjs'),'exports.getScopedBranchId=()=>"fixture";');
 const jiti=createJiti(import.meta.url,{interopDefault:true,alias:{'@/lib/db':resolve(dir,'db.cjs'),'@/lib/request-tenant-store':resolve(dir,'tenant.cjs'),'@':resolve('src')}});
@@ -14,6 +14,15 @@ const {searchCatalog,normalizeCatalogProductSelectionSnapshot}=await jiti.import
 const search=filters=>searchCatalog({context:'products',...filters});
 const ids=result=>result.products.map(row=>row.id).sort();
 assert.deepEqual(ids(await search({q:'C4'})),['legacy','multi'],'the main search also finds a short specification');
+assert.deepEqual(ids(await search({q:'Bardahl XTEC 5W-30'})),['multi'],'search finds the brand, series and viscosity together');
+const branded = await search({brand:['bardahl'],acea:['C4'],stock:'inStock'});
+assert.deepEqual(ids(branded),['multi']);
+assert.deepEqual(branded.meta.facets.stock,{all:1,inStock:1,outOfStock:0});
+const brands = await search({brand:['Bardahl'],acea:['C4']});
+assert.deepEqual(brands.meta.facets.brands.map(option=>option.value),['Bardahl','Mannol'],'show other brands that match the selected approval');
+const sorted = await search({acea:['C4'],sort:'brand',direction:'desc',limit:1});
+assert.equal(sorted.products[0].id,'legacy');
+assert.equal((await search({acea:['C4'],sort:'brand',direction:'desc',limit:1,offset:1})).products[0].id,'multi');
 assert.deepEqual(ids(await search({acea:['C4']})),['legacy','multi'],'C4 includes multivalue and legacy ACEA');
 assert.deepEqual(ids(await search({acea:['C4'],ilsac:['GF-6A']})),['multi'],'different standards intersect');
 assert.deepEqual(ids(await search({ilsac:['GF-5','GF-6A']})),['legacy','multi','other'],'values within one standard are alternatives');
