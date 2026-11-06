@@ -183,6 +183,8 @@ type ProductRow = {
 type ProductFormErrors = Partial<Record<keyof ProductForm, string>>;
 
 type ProductSortKey =
+  | "relevance"
+  | "brand"
   | "name"
   | "article"
   | "code"
@@ -671,10 +673,12 @@ const productEditorSections: Array<{ id: ProductEditorSectionId; label: string; 
 
 const sortOptions: Array<{ key: ProductSortKey; label: string; defaultDirection: SortDirection }> = [
   { key: "name", label: "Название", defaultDirection: "asc" },
+  { key: "relevance", label: "Точность совпадения", defaultDirection: "desc" },
+  { key: "brand", label: "Бренд", defaultDirection: "asc" },
   { key: "article", label: "Артикул", defaultDirection: "asc" },
   { key: "code", label: "Код", defaultDirection: "asc" },
-  { key: "available", label: "Остаток", defaultDirection: "desc" },
-  { key: "quantity", label: "Остаток общий", defaultDirection: "desc" },
+  { key: "available", label: "Доступно", defaultDirection: "desc" },
+  { key: "quantity", label: "Общий остаток", defaultDirection: "desc" },
   { key: "buyPrice", label: "Последняя закупка", defaultDirection: "desc" },
   { key: "salePrice", label: "Цена продажи", defaultDirection: "desc" },
   { key: "margin", label: "Маржа", defaultDirection: "desc" },
@@ -756,6 +760,8 @@ const qualityIssueOptions: Array<{ value: QualityIssueFilter; label: string }> =
   { value: "name_review", label: "Название требует проверки" },
 ];
 const PRODUCT_PAGE_LIMIT = 50;
+const PRODUCT_LIST_TIMEOUT_MS = 15_000;
+const PRODUCT_LIST_ERROR = "Не удалось выполнить поиск";
 const NEW_GROUP_VALUE = "__new_group__";
 const PRODUCT_UOM_OPTIONS = [
   { value: "шт", label: "Штука (шт.)" },
@@ -1899,6 +1905,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [saving, setSaving] = useState(false);
+  const productSaveInFlightRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [toast, setToast] = useState<ProductToast | null>(null);
@@ -1992,6 +1999,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const loadMoreTargetRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
+  const lastScheduledSearchRef = useRef(search);
   const initialLoadStartedRef = useRef(false);
   const skipNextListLoadRef = useRef(false);
   const handledTerminalOemBatchesRef = useRef<Set<string>>(new Set());
@@ -2448,6 +2456,11 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     setLoadingMore(false);
     loadingMoreRef.current = false;
     setError(null);
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, PRODUCT_LIST_TIMEOUT_MS);
     try {
       const params = buildListParams(nextSearch, nextSort, nextDirection, nextFilters);
       params.set("context", "products");
@@ -2456,18 +2469,20 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
         signal: controller.signal,
       });
       const data = await readJson<ProductListResponse>(res);
+      controller.signal.throwIfAborted();
       if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить товары");
       setRows(Array.isArray(data?.products) ? data.products : []);
       setMeta(data?.meta ?? null);
       setMatchedOutsideFilters(data?.matchedOutsideFilters ?? 0);
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (controller.signal.aborted && !timedOut) return;
       console.error("[inventory-products] list load failed:", e);
-      setError("Не удалось выполнить поиск");
+      setError(PRODUCT_LIST_ERROR);
       setRows([]);
       setMeta(null);
       setMatchedOutsideFilters(0);
     } finally {
+      window.clearTimeout(timeout);
       if (listAbortRef.current === controller) {
         listAbortRef.current = null;
         setLoading(false);
@@ -2482,6 +2497,11 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     setError(null);
     const controller = new AbortController();
     loadMoreAbortRef.current = controller;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, PRODUCT_LIST_TIMEOUT_MS);
     try {
       const nextOffset = meta.offset + meta.limit;
       const params = buildListParams(search, sort, direction, filters, nextOffset);
@@ -2491,6 +2511,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
         signal: controller.signal,
       });
       const data = await readJson<ProductListResponse>(res);
+      controller.signal.throwIfAborted();
       if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить товары");
       const nextProducts = Array.isArray(data?.products) ? data.products : [];
       setRows((prev) => {
@@ -2500,10 +2521,11 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       setMeta(data?.meta ?? null);
       setMatchedOutsideFilters(data?.matchedOutsideFilters ?? 0);
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (controller.signal.aborted && !timedOut) return;
       console.error("[inventory-products] load more failed:", e);
-      setError("Не удалось выполнить поиск");
+      setError(PRODUCT_LIST_ERROR);
     } finally {
+      window.clearTimeout(timeout);
       if (loadMoreAbortRef.current === controller) {
         loadMoreAbortRef.current = null;
         loadingMoreRef.current = false;
@@ -2737,7 +2759,12 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       skipNextListLoadRef.current = false;
       return;
     }
-    const delay = initialLoadStartedRef.current ? 320 : 0;
+    listAbortRef.current?.abort();
+    listAbortRef.current = null;
+    loadMoreAbortRef.current?.abort();
+    setLoading(true);
+    const delay = initialLoadStartedRef.current && search !== lastScheduledSearchRef.current ? 280 : 0;
+    lastScheduledSearchRef.current = search;
     initialLoadStartedRef.current = true;
     const timer = window.setTimeout(() => {
       void load(search, sort, direction, filters);
@@ -2777,7 +2804,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
 
   useEffect(() => {
     const target = loadMoreTargetRef.current;
-    if (!target || !meta?.hasMore) return;
+    if (!target || !meta?.hasMore || loading || loadingMore || error === PRODUCT_LIST_ERROR) return;
     let frame = 0;
     const checkPosition = () => {
       frame = 0;
@@ -2805,7 +2832,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       if (frame) window.cancelAnimationFrame(frame);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meta?.hasMore, rows.length, loading, loadingMore, search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult]);
+  }, [meta?.hasMore, rows.length, loading, loadingMore, error, search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult, storageStoreId, storageCellFilter]);
 
 
   function updateForm(patch: Partial<ProductForm>) {
@@ -2860,10 +2887,10 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     updateForm(patch);
   }
 
-  async function loadStorefrontStatus(productId: string) {
+  async function loadStorefrontStatus(productId: string, options?: { signal: AbortSignal; silent: boolean }) {
     setStorefrontStatusLoading(true);
     try {
-      const response = await fetch(`/api/storefront/products/${encodeURIComponent(productId)}/status`, { cache: "no-store" });
+      const response = await fetch(`/api/storefront/products/${encodeURIComponent(productId)}/status`, { cache: "no-store", signal: options?.signal });
       const data = await readJson<StorefrontPublicationStatus & { error?: string }>(response);
       if (!response.ok) throw new Error(data?.error ?? "Не удалось прочитать публикацию");
       if (!data) throw new Error("Сервер не вернул статус витрины");
@@ -2872,6 +2899,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       setStorefrontBindingCandidateId("");
       return data;
     } catch (statusError) {
+      if (options?.silent) return null;
       setStorefrontStatus(null);
       setFormError(statusError instanceof Error ? statusError.message : String(statusError));
       return null;
@@ -3032,6 +3060,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
   }
 
   function closeForm() {
+    if (productSaveInFlightRef.current) return;
     if (formDirty && !window.confirm("Закрыть карточку без сохранения изменений?")) return;
     resetForm();
   }
@@ -3283,12 +3312,14 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
 
   async function requestStorefrontPublicationPreview(
     state: StorefrontPublicationState,
-    input: { productIds?: string[]; selection?: Record<string, unknown> }
+    input: { productIds?: string[]; selection?: Record<string, unknown> },
+    signal?: AbortSignal,
   ) {
     const response = await fetch("/api/storefront/publication/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ state, ...input }),
+      signal,
     });
     const payload = await readJson<StorefrontPublicationPreview & { error?: string }>(response);
     if (!response.ok) throw new Error(payload?.error ?? "Не удалось подготовить предпросмотр");
@@ -3296,11 +3327,12 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     return payload;
   }
 
-  async function applyStorefrontPublicationBatch(batchId: string) {
+  async function applyStorefrontPublicationBatch(batchId: string, signal?: AbortSignal) {
     const response = await fetch("/api/storefront/publication/apply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ batchId }),
+      signal,
     });
     const payload = await readJson<{
       appliedItems?: number;
@@ -3358,18 +3390,20 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     }
   }
 
-  async function synchronizeSingleProductPublication(productId: string) {
+  async function synchronizeSingleProductPublication(productId: string, refreshStatus: boolean) {
     if (!storefrontStatus) return;
     const currentState = storefrontStatus.state;
     if (storefrontPublicationDraft === currentState) return;
-    const preview = await requestStorefrontPublicationPreview(storefrontPublicationDraft, { productIds: [productId] });
+    const signal = AbortSignal.timeout(20_000);
+    const preview = await requestStorefrontPublicationPreview(storefrontPublicationDraft, { productIds: [productId] }, signal);
     const item = preview.items[0];
     if (!item?.ready) throw new Error(item?.problems.join(" ") || "Карточка не готова к публикации.");
-    const result = await applyStorefrontPublicationBatch(preview.batchId);
+    const result = await applyStorefrontPublicationBatch(preview.batchId, signal);
     if ((result.failedItems ?? 0) > 0 || (result.blockedItems ?? 0) > 0) {
       throw new Error("Публикация не изменена: обновите карточку и повторите.");
     }
-    await loadStorefrontStatus(productId);
+    setStorefrontStatus((current) => current ? { ...current, state: storefrontPublicationDraft } : current);
+    if (refreshStatus) await loadStorefrontStatus(productId, { signal: AbortSignal.timeout(4_000), silent: true });
   }
 
   async function bindSelectedStorefrontCandidate() {
@@ -3766,9 +3800,13 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     const selectedSet = new Set(selected.map((value) => facetStableKey(key, value)));
     const pinnedSet = facetPreviewPinsRef.current[key];
     const isSpecification = ["acea", "apiSpec", "ilsac", "engineOem", "atf", "oemAtf"].includes(key);
-    const needle = normalizeFieldSearch(specSearch[key] ?? "").replace(/с/g, "c");
-    const matchingOptions = isSpecification && needle
-      ? options.filter((option) => normalizeFieldSearch(option.value).replace(/с/g, "c").includes(needle))
+    const canSearch = isSpecification || key === "brand";
+    const normalizeFacetSearch = (value: string) => isSpecification
+      ? normalizeFieldSearch(value).replace(/с/g, "c")
+      : normalizeFieldSearch(value);
+    const needle = normalizeFacetSearch(specSearch[key] ?? "");
+    const matchingOptions = canSearch && needle
+      ? options.filter((option) => normalizeFacetSearch(filterLabel(key, option.value)).includes(needle))
       : options;
     const preview = matchingOptions.filter((option, index) => {
       const stableKey = facetStableKey(key, option.value);
@@ -3777,7 +3815,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     return (
       <div className="eco-filter-group">
         <div className="eco-filter-title">{facetLabels[key].title}</div>
-        {isSpecification ? <input className="eco-input eco-spec-search" aria-label={`Поиск ${facetLabels[key].title}`} placeholder={key === "acea" ? "Например, C4" : facetLabels[key].search} value={specSearch[key] ?? ""} onChange={(event) => setSpecSearch((prev) => ({ ...prev, [key]: event.target.value }))} /> : null}
+        {canSearch ? <input type="search" className="eco-input eco-spec-search" aria-label={facetLabels[key].search} placeholder={key === "acea" ? "Например, C4" : facetLabels[key].search} value={specSearch[key] ?? ""} onChange={(event) => setSpecSearch((prev) => ({ ...prev, [key]: event.target.value }))} /> : null}
         {preview.length ? (
           <div className="eco-filter-list">
             {preview.map((option) => {
@@ -3800,7 +3838,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
             })}
           </div>
         ) : (
-          <div className="eco-filter-empty">{needle ? "Допуск не найден. Попробуйте другой запрос." : "Нет значений для текущих условий"}</div>
+          <div className="eco-filter-empty">{needle ? (key === "brand" ? "Бренд не найден" : "Допуск не найден") : loading ? "Загружаем варианты…" : "Нет значений для текущих условий"}</div>
         )}
         {matchingOptions.length > preview.length ? (
           <button type="button" className="eco-filter-more" onClick={() => openFacetDialog(key)}>
@@ -4222,7 +4260,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
   }
 
   async function submit(closeAfter = false) {
-    if (rosskoLinkLoading) return;
+    if (rosskoLinkLoading || productSaveInFlightRef.current) return;
     const validation = validateProductForm(form);
     if (Object.keys(validation).length) {
       setFormErrors(validation);
@@ -4230,114 +4268,143 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       return;
     }
 
+    productSaveInFlightRef.current = true;
     setSaving(true);
     setError(null);
     setFormError(null);
     setInfo(null);
     try {
-      const payload: Record<string, unknown> = {
-        name: form.name.trim(),
-        article: form.article.trim() || undefined,
-        code: form.code.trim() || undefined,
-        externalCode: form.externalCode.trim() || undefined,
-        groupPath: form.groupPath.trim() || undefined,
-        uomName: form.uomName.trim() || undefined,
-        entityType: form.entityType,
-        salePrice: parseMoneyInput(form.salePrice),
-        buyPrice: form.buyPrice.trim() ? parseMoneyInput(form.buyPrice) : null,
-        currencyName: form.currencyName.trim() || "руб.",
-        minimumBalance: form.minimumBalance.trim() || null,
-        barcodeEan13: form.barcodeEan13.trim() || undefined,
-        barcodeEan8: form.barcodeEan8.trim() || undefined,
-        barcodeCode128: form.barcodeCode128.trim() || undefined,
-        description: form.description.trim() || undefined,
-        minPrice: form.minPrice.trim() ? parseMoneyInput(form.minPrice) : null,
-        minPriceCurrencyName: form.minPriceCurrencyName.trim() || undefined,
-        countryName: form.countryName.trim() || undefined,
-        vatLabel: form.vatLabel.trim() || undefined,
-        supplierCounterpartyId: form.supplierCounterpartyId || null,
-        weight: form.weight.trim() || null,
-        volume: form.volume.trim() || null,
-        modificationCode: form.modificationCode.trim() || undefined,
-        tnvedCode: form.tnvedCode.trim() || undefined,
-        sae: form.sae.trim() || null,
-        oem: form.oem.trim() || null,
-        acea: form.acea.trim() || null,
-        apiSpec: form.apiSpec.trim() || null,
-        packageVolume: form.packageVolume.trim() || null,
-        avito: form.avito === "" ? null : form.avito === "true",
-        brand: form.brand.trim() || null,
-        atf: form.atf.trim() || null,
-        ilsac: form.ilsac.trim() || null,
-        aceaExtra: form.aceaExtra.trim() || null,
-        oemAtf: form.oemAtf.trim() || null,
-        rosskoPartNumber: form.rosskoPartNumber.trim() || undefined,
-        rosskoBrand: form.rosskoBrand.trim() || undefined,
-        rosskoMin: form.rosskoMin.trim() || undefined,
-        supplierAttribute: form.supplierAttribute.trim() || undefined,
-        oemParts: form.oemParts.trim() || undefined,
-        mannCharacteristicName: form.mannCharacteristicName.trim() || undefined,
-        markingEnabled: isMarkingEnabled(form),
-        markingMode: formMarkingMode(form),
-        markingConfiguredManually: Boolean(editingProduct?.markingConfiguredManually) || markingTouched,
-        markingSettings: formMarkingMode(form) === "BULK_OIL_FROM_MARKED_BARREL"
-          ? {
-              allowRepeatedBarrelCode: form.markingAllowRepeatedBarrelCode === "true",
-              partialWithdrawalEnabled: form.markingPartialWithdrawalEnabled === "true",
-              allowSaleWithoutActiveBarrel: form.markingAllowSaleWithoutActiveBarrel === "true",
-              declaredVolumeLiters: form.markingDeclaredVolumeLiters.trim() || null,
-              nonDrainableRemainderPercent: form.markingNonDrainableRemainderPercent.trim() || null,
-              activeBarrelName: form.markingActiveBarrelName.trim(),
-              activeBarrelMarkingCode: form.markingActiveBarrelCode.trim(),
-              activeBarrelGtin: form.markingActiveBarrelGtin.trim(),
-              verificationStatus: form.markingVerificationStatus.trim(),
-              currentVolumeLiters: form.markingCurrentVolumeLiters.trim() || null,
+      let savedId = editingId;
+      if (!editingId || isProductFormDirty(form, formBaseline)) {
+        const payload: Record<string, unknown> = {
+          name: form.name.trim(),
+          article: form.article.trim() || undefined,
+          code: form.code.trim() || undefined,
+          externalCode: form.externalCode.trim() || undefined,
+          groupPath: form.groupPath.trim() || undefined,
+          uomName: form.uomName.trim() || undefined,
+          entityType: form.entityType,
+          salePrice: parseMoneyInput(form.salePrice),
+          buyPrice: form.buyPrice.trim() ? parseMoneyInput(form.buyPrice) : null,
+          currencyName: form.currencyName.trim() || "руб.",
+          minimumBalance: form.minimumBalance.trim() || null,
+          barcodeEan13: form.barcodeEan13.trim() || undefined,
+          barcodeEan8: form.barcodeEan8.trim() || undefined,
+          barcodeCode128: form.barcodeCode128.trim() || undefined,
+          description: form.description.trim() || undefined,
+          minPrice: form.minPrice.trim() ? parseMoneyInput(form.minPrice) : null,
+          minPriceCurrencyName: form.minPriceCurrencyName.trim() || undefined,
+          countryName: form.countryName.trim() || undefined,
+          vatLabel: form.vatLabel.trim() || undefined,
+          supplierCounterpartyId: form.supplierCounterpartyId || null,
+          weight: form.weight.trim() || null,
+          volume: form.volume.trim() || null,
+          modificationCode: form.modificationCode.trim() || undefined,
+          tnvedCode: form.tnvedCode.trim() || undefined,
+          sae: form.sae.trim() || null,
+          oem: form.oem.trim() || null,
+          acea: form.acea.trim() || null,
+          apiSpec: form.apiSpec.trim() || null,
+          packageVolume: form.packageVolume.trim() || null,
+          avito: form.avito === "" ? null : form.avito === "true",
+          brand: form.brand.trim() || null,
+          atf: form.atf.trim() || null,
+          ilsac: form.ilsac.trim() || null,
+          aceaExtra: form.aceaExtra.trim() || null,
+          oemAtf: form.oemAtf.trim() || null,
+          rosskoPartNumber: form.rosskoPartNumber.trim() || undefined,
+          rosskoBrand: form.rosskoBrand.trim() || undefined,
+          rosskoMin: form.rosskoMin.trim() || undefined,
+          supplierAttribute: form.supplierAttribute.trim() || undefined,
+          oemParts: form.oemParts.trim() || undefined,
+          mannCharacteristicName: form.mannCharacteristicName.trim() || undefined,
+          markingEnabled: isMarkingEnabled(form),
+          markingMode: formMarkingMode(form),
+          markingConfiguredManually: Boolean(editingProduct?.markingConfiguredManually) || markingTouched,
+          markingSettings: formMarkingMode(form) === "BULK_OIL_FROM_MARKED_BARREL"
+            ? {
+                allowRepeatedBarrelCode: form.markingAllowRepeatedBarrelCode === "true",
+                partialWithdrawalEnabled: form.markingPartialWithdrawalEnabled === "true",
+                allowSaleWithoutActiveBarrel: form.markingAllowSaleWithoutActiveBarrel === "true",
+                declaredVolumeLiters: form.markingDeclaredVolumeLiters.trim() || null,
+                nonDrainableRemainderPercent: form.markingNonDrainableRemainderPercent.trim() || null,
+                activeBarrelName: form.markingActiveBarrelName.trim(),
+                activeBarrelMarkingCode: form.markingActiveBarrelCode.trim(),
+                activeBarrelGtin: form.markingActiveBarrelGtin.trim(),
+                verificationStatus: form.markingVerificationStatus.trim(),
+                currentVolumeLiters: form.markingCurrentVolumeLiters.trim() || null,
+              }
+            : null,
+        };
+        if (editingId) {
+          for (const key of Object.keys(payload)) {
+            if (key.startsWith("marking")) continue;
+            const field = key as keyof ProductForm;
+            if (form[field] === formBaseline[field]) delete payload[key];
+            // An omitted field leaves the stored value unchanged; send explicit clears.
+            else if (payload[key] === undefined) payload[key] = "";
+          }
+          const markingChanged = productFormKeys.some((key) => key.startsWith("marking") &&
+            key !== "markingStatus" && form[key] !== formBaseline[key]);
+          if (!markingChanged) {
+            for (const key of Object.keys(payload)) {
+              if (key.startsWith("marking")) delete payload[key];
             }
-          : null,
-      };
-      if (editingId) {
-        const attributeKeys: Array<keyof ProductForm> = ["brand", "sae", "packageVolume", "acea", "apiSpec", "ilsac", "atf", "oem", "oemAtf", "aceaExtra"];
-        for (const key of attributeKeys) {
-          if (form[key] === formBaseline[key]) delete payload[key];
+          }
         }
-      }
-      const res = await fetch(
-        editingId ? `/api/local-inventory/products/${editingId}` : "/api/local-inventory/products",
-        {
-          method: editingId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+        const signal = AbortSignal.timeout(30_000);
+        const res = await fetch(
+          editingId ? `/api/local-inventory/products/${editingId}` : "/api/local-inventory/products",
+          {
+            method: editingId ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal,
+          }
+        );
+        const data = await readJson<ProductRow & { error?: string }>(res);
+        if (!res.ok) throw new Error(data?.error ?? (res.status >= 500
+          ? "Не удалось подтвердить сохранение. Проверьте карточку перед повтором."
+          : "Не удалось сохранить товар"));
+        if (!data?.id) throw new Error("Не удалось подтвердить сохранение. Проверьте карточку перед повтором.");
+        savedId = data.id;
+        const savedForm = formFromProduct(data);
+        const savedGroup = data.groupPath?.trim();
+        if (savedGroup) {
+          setEditorGroupOptions((prev) => (
+            prev.includes(savedGroup)
+              ? prev
+              : [...prev, savedGroup].sort((a, b) => a.localeCompare(b, "ru", { numeric: true, sensitivity: "base" }))
+          ));
+          setEditorGroupsLoaded(true);
         }
-      );
-      const data = await readJson<ProductRow & { error?: string }>(res);
-      if (!res.ok) throw new Error(data?.error ?? "Не удалось сохранить товар");
-      if (!data) throw new Error("Сервер не вернул карточку товара");
-      const savedForm = formFromProduct(data);
-      const savedGroup = data.groupPath?.trim();
-      if (savedGroup) {
-        setEditorGroupOptions((prev) => (
-          prev.includes(savedGroup)
-            ? prev
-            : [...prev, savedGroup].sort((a, b) => a.localeCompare(b, "ru", { numeric: true, sensitivity: "base" }))
-        ));
-        setEditorGroupsLoaded(true);
+        setRows((prev) => [data, ...prev.filter((row) => row.id !== data.id)]);
+        setActiveProduct(data);
+        setEditingId(data.id);
+        setForm(savedForm);
+        setFormBaseline(savedForm);
+        setMarkingTouched(false);
+        setFormErrors({});
       }
-      setRows((prev) => [data, ...prev.filter((row) => row.id !== data.id)]);
-      setActiveProduct(data);
-      setEditingId(data.id);
-      setForm(savedForm);
-      setFormBaseline(savedForm);
-      setMarkingTouched(false);
-      setFormErrors({});
-      await synchronizeSingleProductPublication(data.id);
+      if (!savedId) return;
+      try {
+        await synchronizeSingleProductPublication(savedId, !closeAfter);
+      } catch (publicationError) {
+        const detail = publicationError instanceof Error && publicationError.name === "Error" ? publicationError.message : "Проверьте статус на вкладке «Клиентский сайт» и повторите.";
+        setFormError(`Карточка сохранена. Не удалось подтвердить изменение публикации. ${detail}`);
+        return;
+      }
       if (closeAfter) {
         setInfo(editingId ? "Товар обновлён" : "Товар добавлен");
         resetForm();
-        await load(search, sort, direction, filters);
+        void load(search, sort, direction, filters);
       }
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : String(e));
+      setFormError(e instanceof Error && e.name === "Error"
+        ? e.message
+        : "Сервер не подтвердил сохранение. Изменения остались в форме. Проверьте, сохранилась ли карточка, перед повтором.");
     } finally {
+      productSaveInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -6727,6 +6794,8 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
               ))}
             </div>
 
+            {renderFacetFilter("brand", 5)}
+
             <section className="eco-specifications" aria-label="Допуски и спецификации">
               <h2>Допуски и спецификации</h2>
               <p>Выберите стандарт, затем нужный допуск. Например: ACEA → C4.</p>
@@ -6856,7 +6925,6 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
             </div>
 
             {renderFacetFilter("group", 7)}
-            {renderFacetFilter("brand", 8)}
             {renderFacetFilter("sae", 8)}
 
             </aside>
@@ -6869,7 +6937,6 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
               {activeFiltersCount > 0 ? <b>{activeFiltersCount}</b> : null}
             </button>
 
-        {(hasActiveSearchOrFilters || selectedProductsCount > 0) ? (
           <div className="eco-products-strip">
             <div className="eco-products-chips">
               {rosskoLastImportVisible ? (
@@ -6919,10 +6986,27 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                   </button>
                 </div>
               ) : null}
-              <span className="eco-products-visible-count">{visibleProductsLabel} из {totalProductsLabel}</span>
+              <label className="eco-products-sort-control">
+                Сортировка
+                <select className="eco-input" value={sort} onChange={(event) => changeSort(event.target.value as ProductSortKey)}>
+                  {sortOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                </select>
+              </label>
+              {sort !== "relevance" ? (
+                <button
+                  type="button"
+                  className="eco-btn eco-btn--sm"
+                  onClick={() => changeSort(sort)}
+                  aria-label={direction === "asc" ? "Сортировать по убыванию" : "Сортировать по возрастанию"}
+                >
+                  {direction === "asc" ? "↑" : "↓"}
+                </button>
+              ) : null}
+              <span className="eco-products-visible-count" role="status">
+                {loading ? "Ищем товары…" : error === PRODUCT_LIST_ERROR && !rows.length ? "Поиск не завершён" : `${visibleProductsLabel} из ${totalProductsLabel}`}
+              </span>
             </div>
           </div>
-        ) : null}
 
         {knownOemBatch ? <div className={`eco-oem-batch-banner ${["QUEUED", "RUNNING"].includes(knownOemBatch.status) ? "is-active" : knownOemBatch.status === "COMPLETED" ? "is-success" : "has-warning"}`}>
           <div><b>{["QUEUED", "RUNNING"].includes(knownOemBatch.status) ? "Заполняем OEM в фоне" : knownOemBatch.status === "COMPLETED" ? "Заполнение OEM завершено" : "OEM заполнены с замечаниями"}</b><span>{knownOemBatch.processedItems} из {knownOemBatch.totalItems} обработано · {knownOemBatch.completedItems} заполнено{knownOemBatch.remainingItems ? ` · ${knownOemBatch.remainingItems} требуют внимания` : ""}</span></div>
@@ -6930,7 +7014,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
           <button type="button" className="eco-btn" onClick={() => setOemBatchDialog({ productIds: [], source: knownOemBatch.source, existingBatchId: knownOemBatch.id })}>Открыть</button>
         </div> : null}
 
-        {((error && !(error === "Не удалось выполнить поиск" && rows.length === 0)) || info) && (
+        {((error && !(error === PRODUCT_LIST_ERROR && rows.length === 0)) || info) && (
           <div className={`eco-products-notice ${error ? "is-error" : "is-success"}`}>
             {error || info}
           </div>
@@ -6948,15 +7032,15 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                     aria-label="Выбрать видимые товары"
                   />
                 </th>
-                <th>{sortHeader("Название / категория", "name")}</th>
+                <th aria-sort={sort === "name" ? (direction === "asc" ? "ascending" : "descending") : undefined}>{sortHeader("Название / категория", "name")}</th>
                 <th>Ячейка</th>
                 <th>OEM</th>
                 <th>Сайт</th>
-                <th style={{ textAlign: "right" }}>{sortHeader("Остаток", "quantity", "right")}</th>
-                <th style={{ textAlign: "right" }}>{sortHeader("Доступно", "available", "right")}</th>
-                <th style={{ textAlign: "right" }}>{sortHeader("Посл. закупка", "buyPrice", "right")}</th>
-                <th style={{ textAlign: "right" }}>{sortHeader("Цена", "salePrice", "right")}</th>
-                <th style={{ textAlign: "right" }}>{sortHeader("Маржа", "margin", "right")}</th>
+                <th style={{ textAlign: "right" }} aria-sort={sort === "quantity" ? (direction === "asc" ? "ascending" : "descending") : undefined}>{sortHeader("Остаток", "quantity", "right")}</th>
+                <th style={{ textAlign: "right" }} aria-sort={sort === "available" ? (direction === "asc" ? "ascending" : "descending") : undefined}>{sortHeader("Доступно", "available", "right")}</th>
+                <th style={{ textAlign: "right" }} aria-sort={sort === "buyPrice" ? (direction === "asc" ? "ascending" : "descending") : undefined}>{sortHeader("Посл. закупка", "buyPrice", "right")}</th>
+                <th style={{ textAlign: "right" }} aria-sort={sort === "salePrice" ? (direction === "asc" ? "ascending" : "descending") : undefined}>{sortHeader("Цена", "salePrice", "right")}</th>
+                <th style={{ textAlign: "right" }} aria-sort={sort === "margin" ? (direction === "asc" ? "ascending" : "descending") : undefined}>{sortHeader("Маржа", "margin", "right")}</th>
                 <th style={{ width: 84 }} />
               </tr>
             </thead>
@@ -6964,12 +7048,12 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
               {loading && (
                 renderSkeletonRows()
               )}
-              {!loading && error === "Не удалось выполнить поиск" && rows.length === 0 && (
+              {!loading && error === PRODUCT_LIST_ERROR && rows.length === 0 && (
                 <tr>
                   <td colSpan={11}>
                     <div className="eco-products-empty is-error">
                       <strong>Не удалось выполнить поиск</strong>
-                      <span>Попробуйте обновить страницу или изменить запрос.</span>
+                      <span>Повторите поиск или уточните запрос.</span>
                       <button type="button" className="eco-btn eco-btn--sm" onClick={() => void load(search, sort, direction, filters)}>
                         Повторить
                       </button>
@@ -6977,7 +7061,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                   </td>
                 </tr>
               )}
-              {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.length === 0 && (
+              {!loading && !(error === PRODUCT_LIST_ERROR && rows.length === 0) && rows.length === 0 && (
                 <tr>
                   <td colSpan={11}>
                     <div className="eco-products-empty">
@@ -7002,7 +7086,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                   </td>
                 </tr>
               )}
-              {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.map((row) => {
+              {!loading && !(error === PRODUCT_LIST_ERROR && rows.length === 0) && rows.map((row) => {
                 const markingBadge = productMarkingListBadge(row);
                 const normalizedOemParts = splitProductCrossReferences(row.oemParts);
                 const storageAssignment = row.storageAssignments?.find((assignment) => assignment.storeId === storageStoreId && !assignment.cellArchived)
@@ -7107,7 +7191,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                 disabled={loading || loadingMore}
                 className="eco-btn eco-btn--sm"
               >
-                {loadingMore ? "Загружаю..." : "Показать ещё"}
+                {loadingMore ? "Загружаем…" : error === PRODUCT_LIST_ERROR ? "Повторить загрузку" : "Показать ещё"}
               </button>
             ) : (
               <span>Все найденные товары загружены.</span>
