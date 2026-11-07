@@ -1,3 +1,4 @@
+import { readJournalContact } from "./journal-contact";
 import { BOOKING_VEHICLE_CLARIFICATION_MARKER, type BookingWithDetails } from "./service";
 import { publicServicePresentation } from "./public-service-presentation";
 
@@ -14,12 +15,12 @@ function vehicleDto(vehicle: BookingWithDetails["vehicle"]) {
   };
 }
 
-function snapshotVehicleDto(value: BookingWithDetails["vehicleSnapshot"]) {
+export function snapshotVehicleDto(value: BookingWithDetails["vehicleSnapshot"]) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const vehicle = value as Record<string, unknown>;
   const make = typeof vehicle.make === "string" ? vehicle.make : "";
   const model = typeof vehicle.model === "string" ? vehicle.model : "";
-  if (!make || !model) return null;
+  if (!make && !model && !vehicle.generation && !vehicle.year && !vehicle.plate && !vehicle.vin) return null;
   const year = typeof vehicle.year === "number" && Number.isInteger(vehicle.year) ? vehicle.year : null;
   return {
     id: null,
@@ -71,7 +72,7 @@ export function bookingDto(booking: BookingWithDetails) {
     requiresConfirmation: booking.requiresConfirmation,
     confirmationState: booking.confirmationState,
     comment: booking.comment,
-    internalComment: booking.internalComment,
+    internalComment: readJournalContact(booking.internalComment).comment,
     conflictOverride: booking.conflictOverride,
     cancelledAt: booking.cancelledAt?.toISOString() ?? null,
     cancellationReason: booking.cancellationReason,

@@ -1,3 +1,4 @@
+import { readJournalContact } from "./booking/journal-contact";
 import {
   appointmentDateTime,
   type AppointmentLike,
@@ -8,7 +9,7 @@ import { prisma } from "@/lib/db";
 import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
 
 function attendanceFromBooking(booking: BookingWithDetails) {
-  const comment = `${booking.comment ?? ""}\n${booking.internalComment ?? ""}`.toLowerCase();
+  const comment = `${booking.comment ?? ""}\n${readJournalContact(booking.internalComment).comment ?? ""}`.toLowerCase();
   if (/не приехал|no[-_\s]?show/u.test(comment)) return -1;
   if (/клиент приехал|в работе|готово|клиент уехал/u.test(comment)) return 1;
   return 0;
@@ -25,7 +26,7 @@ function appointmentRow(booking: BookingWithDetails, localDate: string): Appoint
     staff_id: booking.masterMembershipId,
     seance_length: booking.durationMinutes * 60,
     length: booking.durationMinutes * 60,
-    comment: [booking.comment, booking.internalComment].filter(Boolean).join("\n"),
+    comment: [booking.comment, readJournalContact(booking.internalComment).comment].filter(Boolean).join("\n"),
     attendance: attendanceFromBooking(booking),
     confirmed: booking.confirmationState === "PENDING" ? 0 : 1,
     status: booking.status.toLowerCase(),

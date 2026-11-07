@@ -1,3 +1,4 @@
+import { readJournalContact, writeJournalContact } from "./journal-contact";
 import { Prisma, type Booking, type PrismaClient } from "@prisma/client";
 import { isAnonymousRetailCounterparty } from "@/lib/anonymous-retail-counterparty";
 import { createLocalAdminCounterparty } from "@/lib/local-inventory-admin";
@@ -60,6 +61,7 @@ export type BookingActor = {
   userId?: string | null;
   allowConflictOverride?: boolean;
   respectLeadTime?: boolean;
+  allowIncompleteVehicle?: boolean;
 };
 
 export type RescheduleBookingInput = {
@@ -151,10 +153,10 @@ function normalizeYear(value: number | string | null | undefined) {
   return year;
 }
 
-function normalizeVehicleInput(input: BookingVehicleInput | null | undefined) {
+function normalizeVehicleInput(input: BookingVehicleInput | null | undefined, allowIncomplete = false) {
   const make = clean(input?.make);
   const model = clean(input?.model);
-  if (!make || !model) {
+  if (!allowIncomplete && (!make || !model)) {
     throw new BookingError("Укажите марку и модель автомобиля", "booking_vehicle_required");
   }
   return {
@@ -487,9 +489,10 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
       endsAt,
     }, appliedOverrideReason === "slot_taken");
     const requiredFields = requiredServiceFields(services);
-    const requiresVin = requiredFields.has("vin");
+    const allowIncomplete = actor.kind === "USER" && actor.allowIncompleteVehicle === true;
+    const requiresVin = !allowIncomplete && requiredFields.has("vin");
     const needsVehicleClarification = actor.kind === "PUBLIC" && requiresVin && input.needsVehicleClarification === true;
-    const submittedVehicle = !input.vehicleId ? normalizeVehicleInput(input.vehicle) : null;
+    const submittedVehicle = !input.vehicleId ? normalizeVehicleInput(input.vehicle, allowIncomplete) : null;
     const vehicleVin = submittedVehicle?.vin ?? null;
     if (requiresVin && !needsVehicleClarification && !vehicleVin && !input.vehicleId) {
       throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
@@ -498,23 +501,24 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
     const client = await inBookingCreatePhase("client", () => resolveClient(tx, input, normalizedPhone));
     // A public form submission is a snapshot for this booking, not permission
     // to select or mutate a vehicle in somebody else's canonical CRM profile.
+    const shouldLinkVehicle = !allowIncomplete || input.vehicleId || (submittedVehicle?.make && submittedVehicle.model);
     const vehicle = actor.kind === "PUBLIC"
       ? null
-      : await inBookingCreatePhase("vehicle", () => resolveVehicle(tx, input, client.id));
+      : shouldLinkVehicle ? await inBookingCreatePhase("vehicle", () => resolveVehicle(tx, input, client.id)) : null;
     // When a plate/VIN matches an older profile, keep the association but use
     // the values submitted for this visit in its immutable booking snapshot.
     // Canonical vehicle data can be reviewed separately by an authorised user.
     const bookingVehicle = submittedVehicle ?? vehicle;
-    if (!bookingVehicle) {
+    if (!bookingVehicle && !allowIncomplete) {
       throw new BookingError("Укажите автомобиль", "booking_vehicle_required");
     }
-    if (requiresVin && !needsVehicleClarification && !bookingVehicle.vin) {
+    if (requiresVin && !needsVehicleClarification && !bookingVehicle?.vin) {
       throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
     }
     if (requiredFields.has("email") && !clean(input.email)) {
       throw new BookingError("Для выбранной услуги нужен email", "booking_email_required");
     }
-    if (requiredFields.has("plate") && !bookingVehicle.plate) {
+    if (requiredFields.has("plate") && !bookingVehicle?.plate) {
       throw new BookingError("Для выбранной услуги нужен госномер", "booking_plate_required");
     }
     const requiresConfirmation = services.some((service) => service.requiresConfirmation) || needsVehicleClarification;
@@ -532,14 +536,14 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
         normalizedPhone,
         email: clean(input.email),
         vehicleSnapshot: {
-          make: bookingVehicle.make,
-          model: bookingVehicle.model,
-          generation: bookingVehicle.generation,
-          year: bookingVehicle.year,
-          plate: bookingVehicle.plate,
-          vin: bookingVehicle.vin,
+          make: bookingVehicle?.make ?? null,
+          model: bookingVehicle?.model ?? null,
+          generation: bookingVehicle?.generation ?? null,
+          year: bookingVehicle?.year ?? null,
+          plate: bookingVehicle?.plate ?? null,
+          vin: bookingVehicle?.vin ?? null,
         },
-        vin: bookingVehicle.vin,
+        vin: bookingVehicle?.vin ?? null,
         startsAt,
         endsAt,
         durationMinutes,
@@ -818,7 +822,7 @@ export async function updateBookingDetails(bookingId: string, input: UpdateBooki
         normalizedPhone,
         email: input.email === undefined ? undefined : clean(input.email),
         comment: input.comment === undefined ? undefined : clean(input.comment),
-        internalComment: input.internalComment === undefined ? undefined : clean(input.internalComment),
+        internalComment: input.internalComment === undefined ? undefined : writeJournalContact({ ...readJournalContact(current.internalComment), comment: clean(input.internalComment) }),
         vin: vehicle?.vin ?? current.vin,
         vehicleSnapshot: (vehicle ? {
           make: vehicle.make,
@@ -921,8 +925,12 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
       vehicle: input.vehicle,
     };
     const client = await resolveClient(tx, clientInput, normalizedPhone);
-    let vehicle = current.vehicle;
-    if (clientInput.vehicleId || input.vehicle) {
+    const allowIncomplete = actor.kind === "USER" && actor.allowIncompleteVehicle === true;
+    const replacingVehicle = input.vehicle !== undefined || input.vehicleId !== undefined;
+    const submittedVehicle = allowIncomplete && replacingVehicle && !clientInput.vehicleId
+      ? normalizeVehicleInput(input.vehicle, true) : null;
+    let vehicle = replacingVehicle && !clientInput.vehicleId && allowIncomplete ? null : current.vehicle;
+    if (clientInput.vehicleId || (input.vehicle && (!allowIncomplete || (submittedVehicle?.make && submittedVehicle.model)))) {
       vehicle = await resolveVehicle(tx, clientInput, client.id);
       if (vehicle && input.vehicle && clientInput.vehicleId) {
         vehicle = await tx.clientVehicle.update({
@@ -938,14 +946,18 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
         });
       }
     }
-    if (!vehicle || vehicle.counterpartyId !== client.id) {
+    if ((!vehicle && !allowIncomplete) || (vehicle && vehicle.counterpartyId !== client.id)) {
       throw new BookingError("Выберите автомобиль клиента", "booking_vehicle_required");
     }
     const requiredFields = requiredServiceFields(loaded.services);
+    const bookingVehicle = submittedVehicle ?? vehicle;
+    const snapshot = bookingVehicle
+      ? { make: bookingVehicle.make, model: bookingVehicle.model, generation: bookingVehicle.generation, year: bookingVehicle.year, plate: bookingVehicle.plate, vin: bookingVehicle.vin }
+      : undefined;
     const nextEmail = input.email === undefined ? current.email : clean(input.email);
-    if (loaded.services.some((service) => service.requiresVin) && !vehicle.vin) throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
+    if (!allowIncomplete && loaded.services.some((service) => service.requiresVin) && !bookingVehicle?.vin) throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
     if (requiredFields.has("email") && !nextEmail) throw new BookingError("Для выбранной услуги нужен email", "booking_email_required");
-    if (requiredFields.has("plate") && !vehicle.plate) throw new BookingError("Для выбранной услуги нужен госномер", "booking_plate_required");
+    if (requiredFields.has("plate") && !(bookingVehicle?.plate ?? (!replacingVehicle ? (current.vehicleSnapshot as BookingVehicleInput | null)?.plate : null))) throw new BookingError("Для выбранной услуги нужен госномер", "booking_plate_required");
 
     await tx.localCounterparty.update({
       where: { branchId_id: { branchId: current.branchId, id: client.id } },
@@ -970,14 +982,14 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
       where: { branchId_id: { branchId: current.branchId, id: current.id } },
       data: {
         clientId: client.id,
-        vehicleId: vehicle.id,
+        vehicleId: vehicle?.id ?? null,
         masterMembershipId,
         customerName,
         phone,
         normalizedPhone,
         email: nextEmail,
-        vehicleSnapshot: { make: vehicle.make, model: vehicle.model, generation: vehicle.generation, year: vehicle.year, plate: vehicle.plate, vin: vehicle.vin },
-        vin: vehicle.vin,
+        vehicleSnapshot: snapshot ?? (replacingVehicle ? {} : undefined),
+        vin: bookingVehicle?.vin ?? (replacingVehicle ? null : current.vin),
         startsAt,
         endsAt,
         durationMinutes,

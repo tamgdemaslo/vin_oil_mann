@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import BookingCalendar from "../booking/BookingCalendar";
+import { journalContactSources, journalContactUrl } from "@/lib/booking/journal-contact";
 import RecordsSlotPicker from "./RecordsSlotPicker";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
@@ -40,7 +42,7 @@ import {
 } from "@/lib/booking/journal-time";
 import { retainsBookingAssignment } from "@/lib/booking/existing-assignment";
 import { availableJournalServices, canCreateJournalBooking, visibleJournalStaff } from "@/lib/booking/journal-staff";
-import { formatLocalDate } from "@/lib/booking/timezone";
+import { addLocalDays, formatLocalDate } from "@/lib/booking/timezone";
 import {
   DEFAULT_BOOKING_STEP_MINUTES,
   DEFAULT_BOOKING_WORKING_HOURS,
@@ -101,6 +103,9 @@ type RecordItem = {
   confirmed?: number;
   online?: boolean;
   record_from?: string;
+  internal_comment?: string | null;
+  contact_source?: string | null;
+  contact_link?: string | null;
   from_url?: string;
   bookform_id?: number;
   services?: Array<{ id?: number; title?: string; cost?: number; price?: number }>;
@@ -187,6 +192,8 @@ type TimelineRecord = {
   vehicle: VehicleInfo;
   comment: string;
   internalComment: string;
+  contactSource: string;
+  contactLink: string;
   statusKey: AppointmentStatusKey;
   statusLabel: string;
   startedAtText: string;
@@ -225,6 +232,7 @@ type RecordFormState = {
   clientName: string;
   clientPhone: string;
   clientEmail: string;
+  vehicleMake: string;
   vehicleModel: string;
   vehiclePlate: string;
   vehicleVin: string;
@@ -233,6 +241,8 @@ type RecordFormState = {
   datetimeEnd: string;
   comment: string;
   internalComment: string;
+  contactSource: string;
+  contactLink: string;
   statusKey: AppointmentStatusKey;
   manualDuration: boolean;
   overrideReason: "slot_taken" | "outside_schedule" | "nonstandard_start" | null;
@@ -334,6 +344,7 @@ const emptyForm: RecordFormState = {
   clientName: "",
   clientPhone: "",
   clientEmail: "",
+  vehicleMake: "",
   vehicleModel: "",
   vehiclePlate: "",
   vehicleVin: "",
@@ -342,6 +353,8 @@ const emptyForm: RecordFormState = {
   datetimeEnd: "",
   comment: "",
   internalComment: "",
+  contactSource: "",
+  contactLink: "",
   statusKey: "new",
   manualDuration: false,
   overrideReason: null,
@@ -789,11 +802,6 @@ function confirmedForStatus(statusKey: AppointmentStatusKey) {
   return ["confirmed", "arrived", "in_work", "done", "left"].includes(statusKey) ? 1 : undefined;
 }
 
-function replaceDatePart(datetime: string, date: string) {
-  const time = datetime.includes("T") ? datetime.slice(11, 16) : "09:00";
-  return `${date}T${time}`;
-}
-
 function replaceTimePart(datetime: string, time: string, fallbackDate: string) {
   const date = datetime.includes("T") ? datetime.slice(0, 10) : fallbackDate;
   return `${date}T${time || "09:00"}`;
@@ -801,6 +809,15 @@ function replaceTimePart(datetime: string, time: string, fallbackDate: string) {
 
 function shipmentHref(shipment: ShipmentLookupRow) {
   return shipment.applicable ? `/shipment/${shipment.id}` : `/shipment/${shipment.id}/edit`;
+}
+
+function RecordContact({ record, interactive = true }: { record: TimelineRecord; interactive?: boolean }) {
+  if (!record.internalComment && !record.contactSource && !record.contactLink) return null;
+  return <span className="eco-records-contact-note">
+    {record.internalComment ? <><b>Внутренний комментарий</b><span>{record.internalComment}</span></> : null}
+    {record.contactSource ? <small>{record.contactSource}</small> : null}
+    {record.contactLink && interactive ? <a href={record.contactLink} target="_blank" rel="noopener noreferrer">Открыть переписку ↗</a> : null}
+  </span>;
 }
 
 function SectionTitle({ icon, title, action }: { icon: ReactNode; title: string; action?: ReactNode }) {
@@ -973,7 +990,9 @@ export default function RecordsPageClient() {
         email: record.client?.email ?? "",
         vehicle,
         comment: commentParts.clientComment,
-        internalComment: commentParts.internalComment,
+        internalComment: record.internal_comment ?? commentParts.internalComment,
+        contactSource: record.contact_source ?? "",
+        contactLink: journalContactUrl(record.contact_link) ?? "",
         statusKey,
         statusLabel: STATUS_META[statusKey].label,
         startedAtText: formatMinute(startMinute),
@@ -1855,7 +1874,8 @@ export default function RecordsPageClient() {
       clientSearch: clientName || phone,
       clientName,
       clientPhone: phone,
-      vehicleModel: vehicle,
+      vehicleMake: vehicle.trim().split(/\s+/u)[0] ?? "",
+      vehicleModel: vehicle.trim().split(/\s+/u).slice(1).join(" "),
       comment,
       internalComment: crmDealId ? `Источник: CRM-дело ${crmDealId}` : "",
     });
@@ -1934,7 +1954,8 @@ export default function RecordsPageClient() {
       clientName: record.clientName,
       clientPhone: record.phone,
       clientEmail: record.email,
-      vehicleModel: selectedVehicle.model,
+      vehicleMake: selectedVehicle.make ?? "",
+      vehicleModel: selectedVehicle.modelName || (selectedVehicle.make ? "" : selectedVehicle.model),
       vehiclePlate: selectedVehicle.plate,
       vehicleVin: selectedVehicle.vin,
       vehicleYear: selectedVehicle.year ?? "",
@@ -1942,12 +1963,15 @@ export default function RecordsPageClient() {
       datetimeEnd: normalizedEnd || (normalizedDate ? addSecondsToDateTimeLocal(normalizedDate, Number(original.seance_length ?? original.length ?? DEFAULT_RECORD_DURATION_SECONDS) || DEFAULT_RECORD_DURATION_SECONDS) : ""),
       comment: record.comment,
       internalComment: record.internalComment,
+      contactSource: record.contactSource,
+      contactLink: record.contactLink,
       statusKey: record.statusKey,
       manualDuration: false,
     };
     setForm(nextForm);
     formOpenedSnapshotRef.current = JSON.stringify(nextForm);
     setSelectedClientVehicles(selectedVehicle.id || vehicleLabel(selectedVehicle) ? [selectedVehicle] : []);
+    setServiceSearch("");
     setEditingRecordId(record.id);
     setFormMode("edit");
     setFormError(null);
@@ -1974,7 +1998,7 @@ export default function RecordsPageClient() {
   );
 
   const selectClient = useCallback((option: ClientOption) => {
-    const hasUnsavedVehicle = !form.selectedVehicleId && Boolean(form.vehicleModel.trim() || form.vehiclePlate.trim() || form.vehicleVin.trim() || form.vehicleYear.trim());
+    const hasUnsavedVehicle = !form.selectedVehicleId && Boolean(form.vehicleMake.trim() || form.vehicleModel.trim() || form.vehiclePlate.trim() || form.vehicleVin.trim() || form.vehicleYear.trim());
     if (hasUnsavedVehicle && !window.confirm("Сменить клиента? Несохранённые данные другого автомобиля будут очищены.")) return;
     setForm((prev) => ({
       ...prev,
@@ -1984,6 +2008,7 @@ export default function RecordsPageClient() {
       clientName: option.name,
       clientPhone: option.phone,
       clientEmail: option.email,
+      vehicleMake: "",
       vehicleModel: "",
       vehiclePlate: "",
       vehicleVin: "",
@@ -1991,13 +2016,14 @@ export default function RecordsPageClient() {
     }));
     setSelectedClientVehicles(option.vehicles);
     setClientDropdownOpen(false);
-  }, [form.selectedVehicleId, form.vehicleModel, form.vehiclePlate, form.vehicleVin, form.vehicleYear]);
+  }, [form.selectedVehicleId, form.vehicleMake, form.vehicleModel, form.vehiclePlate, form.vehicleVin, form.vehicleYear]);
 
   const selectVehicle = useCallback((vehicle: VehicleInfo | null) => {
     setForm((prev) => ({
       ...prev,
       selectedVehicleId: vehicle?.id ?? "",
-      vehicleModel: vehicle?.model ?? "",
+      vehicleMake: vehicle?.make ?? "",
+      vehicleModel: vehicle?.modelName || (vehicle?.make ? "" : vehicle?.model ?? ""),
       vehiclePlate: vehicle?.plate ?? "",
       vehicleVin: vehicle?.vin ?? "",
       vehicleYear: vehicle?.year ?? "",
@@ -2028,16 +2054,13 @@ export default function RecordsPageClient() {
         setFormError("Укажите телефон клиента цифрами");
         return;
       }
-      if (!form.selectedVehicleId && !form.vehicleModel.trim()) {
-        setFormError("Выберите автомобиль клиента или добавьте другой автомобиль");
+      const contactLink = journalContactUrl(form.contactLink.trim());
+      if (form.contactLink.trim() && !contactLink) {
+        setFormError("Укажите ссылку на переписку с http или https");
         return;
       }
       const chosenServices = form.serviceIds.map((id) => serviceById.get(id)).filter((item): item is Service => Boolean(item));
       const requiredFields = new Set(chosenServices.flatMap((service) => Array.isArray(service.required_fields) ? service.required_fields : []));
-      if ((chosenServices.some((service) => service.requires_vin) || requiredFields.has("vin")) && !form.vehicleVin.trim()) {
-        setFormError("Для выбранных работ нужен VIN");
-        return;
-      }
       if (requiredFields.has("email") && !form.clientEmail.trim()) {
         setFormError("Для выбранных работ нужен email клиента");
         return;
@@ -2056,10 +2079,9 @@ export default function RecordsPageClient() {
       setError(null);
       const seanceLength = manualSeanceLength ?? selectedServiceDurationSeconds;
       const comment = composeRecordComment({ comment: form.comment, vehicle: emptyVehicle, internalComment: "", statusKey: form.statusKey });
-      const selectedVehicleParts = form.vehicleModel.trim().split(/\s+/u).filter(Boolean);
       const vehicle = {
-        make: selectedVehicleParts[0] ?? "",
-        model: selectedVehicleParts.slice(1).join(" ") || selectedVehicleParts[0] || "",
+        make: form.vehicleMake.trim(),
+        model: form.vehicleModel.trim(),
         plate: form.vehiclePlate.trim(),
         vin: form.vehicleVin.trim(),
         year: form.vehicleYear.trim() || null,
@@ -2082,7 +2104,9 @@ export default function RecordsPageClient() {
             seance_length: seanceLength,
             comment: comment || undefined,
             client_comment: comment || undefined,
-            internal_comment: form.internalComment.trim() || undefined,
+            internal_comment: form.internalComment.trim() || null,
+            contact_source: form.contactSource || null,
+            contact_link: contactLink,
             override_reason_code: form.overrideReason,
             send_sms: false,
           };
@@ -2149,7 +2173,7 @@ export default function RecordsPageClient() {
                 clientName: form.clientName.trim(),
                 clientPhone: phone,
                 clientEmail: form.clientEmail.trim(),
-                vehicle: { model: form.vehicleModel, plate: form.vehiclePlate, vin: form.vehicleVin },
+                vehicle: { model: [form.vehicleMake, form.vehicleModel].filter(Boolean).join(" "), plate: form.vehiclePlate, vin: form.vehicleVin },
                 comment: form.comment,
                 internalComment: form.internalComment,
                 services: form.serviceIds.map((id) => serviceById.get(id)?.title ?? "").filter(Boolean),
@@ -2184,7 +2208,9 @@ export default function RecordsPageClient() {
           seance_length: seanceLength,
           comment: comment || undefined,
           client_comment: comment || undefined,
-          internal_comment: form.internalComment.trim() || undefined,
+          internal_comment: form.internalComment.trim() || null,
+          contact_source: form.contactSource || null,
+          contact_link: contactLink,
           override_reason_code: form.overrideReason,
           confirmed: confirmedForStatus(form.statusKey),
           attendance: attendanceForStatus(form.statusKey),
@@ -2275,7 +2301,7 @@ export default function RecordsPageClient() {
           vehicle_id: selectedTimelineRecord.vehicleId || null,
           vehicle: {
             make: selectedTimelineRecord.vehicle.make || null,
-            model: selectedTimelineRecord.vehicle.modelName || selectedTimelineRecord.vehicle.model || null,
+            model: selectedTimelineRecord.vehicle.modelName || (selectedTimelineRecord.vehicle.make ? null : selectedTimelineRecord.vehicle.model || null),
             plate: selectedTimelineRecord.vehicle.plate || null,
             vin: selectedTimelineRecord.vehicle.vin || null,
             year: selectedTimelineRecord.vehicle.year || null,
@@ -2636,6 +2662,7 @@ export default function RecordsPageClient() {
   );
 
   const formDate = form.datetime ? form.datetime.slice(0, 10) : scheduleDate;
+  const calendarToday = formatLocalDate(new Date(), branchTimeZone);
   const formStartTime = form.datetime ? form.datetime.slice(11, 16) : "";
   const formEndTime = form.datetimeEnd ? form.datetimeEnd.slice(11, 16) : "";
   const formDurationMinutes = form.datetime && form.datetimeEnd ? Math.round((calculateSeanceLengthSeconds(form.datetime, form.datetimeEnd) ?? 0) / 60) : 0;
@@ -2644,7 +2671,6 @@ export default function RecordsPageClient() {
   const normalizedServiceSearch = serviceSearch.trim().toLocaleLowerCase("ru-RU");
   const visibleFormServices = availableJournalServices(services, staff, selectedFormMaster?.membership_id, formMode === "edit" ? form.serviceIds : []).filter((service) => !normalizedServiceSearch || `${service.title} ${service.description ?? ""}`.toLocaleLowerCase("ru-RU").includes(normalizedServiceSearch));
   const requiredFormFields = new Set(selectedFormServices.flatMap((service) => Array.isArray(service.required_fields) ? service.required_fields : []));
-  const formRequiresVin = selectedFormServices.some((service) => service.requires_vin) || requiredFormFields.has("vin");
   const formRequiresEmail = requiredFormFields.has("email");
   const formRequiresPlate = requiredFormFields.has("plate");
   const editingFormRecord = formMode === "edit" ? records.find((item) => item.id === editingRecordId) : null;
@@ -3039,6 +3065,8 @@ export default function RecordsPageClient() {
                                 formatPhone(block.phone),
                                 block.statusLabel,
                                 block.sourceLabel,
+                                block.contactSource,
+                                block.internalComment ? `Внутренний комментарий: ${block.internalComment}` : "",
                               ]
                                 .filter(Boolean)
                                 .join(" · ");
@@ -3091,6 +3119,7 @@ export default function RecordsPageClient() {
                                   <span className="eco-record-card__time">{block.startedAtText}–{block.endedAtText}</span>
                                   <strong className="eco-record-card__service">{shortServiceTitle(block.serviceTitle)}</strong>
                                   {secondaryText ? <span className="eco-record-card__client">{secondaryText}</span> : null}
+                                  {block.internalComment && block.displayMode === "long" ? <span className="eco-record-card__note"><MessageSquare size={12} aria-hidden /> <span>{block.internalComment}</span></span> : null}
                                   {block.displayMode === "normal" || block.displayMode === "long" ? (
                                     <small>
                                       {block.displayMode === "long" && block.phone ? `${formatPhone(block.phone)} · ` : ""}
@@ -3150,7 +3179,7 @@ export default function RecordsPageClient() {
                               <td>{record.clientName}</td>
                               <td>{formatPhone(record.phone)}</td>
                               <td>{vehicleLabel(record.vehicle) || "—"}</td>
-                              <td>{record.serviceTitle}</td>
+                              <td>{record.serviceTitle}<RecordContact record={record} /></td>
                               <td>{record.staffName}</td>
                               <td><span className={cx("eco-record-status", `eco-record-status--${record.statusKey}`)}>{record.statusLabel}</span></td>
                               <td>
@@ -3203,6 +3232,7 @@ export default function RecordsPageClient() {
                     <span>{record.startedAtText}–{record.endedAtText}</span>
                     <strong>{record.serviceTitle}</strong>
                     <small>{record.clientName} · {formatPhone(record.phone)}</small>
+                    <RecordContact record={record} interactive={false} />
                     <i className={cx("eco-record-status", `eco-record-status--${record.statusKey}`)}>{record.statusLabel}</i>
                     {crmDealByRecordId[String(record.id)] ? <em>Есть дело</em> : null}
                   </button>
@@ -3273,7 +3303,7 @@ export default function RecordsPageClient() {
                   <section className="eco-records-detail-block">
                     <SectionTitle icon={<MessageSquare size={15} />} title="Комментарии" action={<button type="button" onClick={() => setCommentDialogOpen(true)}>Открыть</button>} />
                     <p>{selectedTimelineRecord.comment || "Комментария клиента нет"}</p>
-                    {selectedTimelineRecord.internalComment ? <small>Внутренний: {selectedTimelineRecord.internalComment}</small> : null}
+                    <RecordContact record={selectedTimelineRecord} />
                   </section>
 
                   <section className="eco-records-detail-block">
@@ -3446,12 +3476,11 @@ export default function RecordsPageClient() {
       </div>
 
       {formOpen ? (
-        <div ref={formDialogRef} className="eco-records-drawer-backdrop" role="dialog" aria-modal="true" aria-labelledby="records-form-title">
+        <div ref={formDialogRef} className="eco-records-drawer-backdrop eco-records-booking-backdrop" role="dialog" aria-modal="true" aria-labelledby="records-form-title">
           <div className="eco-records-drawer">
             <div className="eco-records-drawer-head">
               <div>
-                <span>{formMode === "create" ? "Новая запись" : "Редактирование"}</span>
-                <strong id="records-form-title">{formMode === "create" ? "Создать запись" : "Изменить запись"}</strong>
+                <strong id="records-form-title">{formMode === "create" ? "Новая запись" : "Редактирование записи"}</strong>
               </div>
               <button type="button" onClick={closeForm} aria-label="Закрыть">
                 <X size={18} />
@@ -3459,9 +3488,9 @@ export default function RecordsPageClient() {
             </div>
 
             <nav className="eco-records-form-nav" aria-label="Разделы записи">
-              {[['records-client', 'Клиент'], ['records-services', 'Услуги'], ['records-time', 'Время']].map(([id, label]) => <button key={id} type="button" onClick={() => document.getElementById(id)?.scrollIntoView({ block: "start" })}>{label}</button>)}
+              {[['records-client', 'Клиент'], ['records-services', 'Услуги'], ['records-time', 'Время'], ['records-note', 'Комментарий']].map(([id, label]) => <button key={id} type="button" onClick={() => document.getElementById(id)?.scrollIntoView({ block: "start" })}>{label}</button>)}
             </nav>
-            <div className="eco-records-form">
+            <div className="eco-records-form eco-records-booking-form">
             <div className="eco-records-form-summary">
               <span><small>Филиал</small><strong>{companyTitle}</strong></span>
               <span><small>Дата и время</small><strong>{form.datetime ? `${formDate} · ${formStartTime || "—"}–${formEndTime || "—"}` : "Не выбрано"}</strong></span>
@@ -3472,8 +3501,9 @@ export default function RecordsPageClient() {
               </span>
             </div>
 
+              <div className="eco-records-booking-main">
               <section id="records-client">
-                <SectionTitle icon={<UserRound size={15} />} title="Клиент и автомобиль" />
+                <SectionTitle icon={<UserRound size={15} />} title="Клиент" />
                 <div className="eco-records-client-field" ref={clientPickerRef}>
                 <label>
                   <span>Поиск клиента</span>
@@ -3508,6 +3538,7 @@ export default function RecordsPageClient() {
                         selectedVehicleId: "",
                         clientName: looksLikePhone ? "" : query,
                         clientPhone: looksLikePhone ? query : prev.clientPhone,
+                        vehicleMake: "",
                         vehicleModel: "",
                         vehiclePlate: "",
                         vehicleVin: "",
@@ -3534,18 +3565,6 @@ export default function RecordsPageClient() {
                   </label>
                   {formRequiresEmail ? <label><span>Email *</span><input type="email" value={form.clientEmail} onChange={(event) => setFormValue("clientEmail", event.target.value)} /></label> : null}
                 </div>
-                {selectedClientVehicles.length ? <div className="eco-records-vehicle-options" role="group" aria-label="Автомобили клиента">
-                  {selectedClientVehicles.map((vehicle) => <button key={vehicle.id || vehicleLabel(vehicle)} type="button" className={form.selectedVehicleId === vehicle.id ? "is-selected" : undefined} onClick={() => selectVehicle(vehicle)}>
-                    <Car size={15} /><span><strong>{[vehicle.year, vehicle.model].filter(Boolean).join(" ")}</strong><small>{[vehicle.plate, vehicle.vin ? `VIN ${vehicle.vin}` : ""].filter(Boolean).join(" · ") || "Без номера"}</small></span>
-                  </button>)}
-                  <button type="button" className={!form.selectedVehicleId ? "is-selected" : undefined} onClick={() => selectVehicle(null)}><Plus size={15} /><span><strong>Другой автомобиль</strong><small>Сохранится в карточке клиента</small></span></button>
-                </div> : null}
-                {!form.selectedVehicleId ? <div className="eco-records-form-grid">
-                  <label><span>Марка и модель *</span><input value={form.vehicleModel} onChange={(event) => setFormValue("vehicleModel", event.target.value)} placeholder="Mitsubishi ASX" /></label>
-                  <label><span>Год (необязательно)</span><input inputMode="numeric" value={form.vehicleYear} onChange={(event) => setFormValue("vehicleYear", event.target.value)} placeholder="2020" /></label>
-                  <label><span>Госномер{formRequiresPlate ? " *" : ""}</span><input value={form.vehiclePlate} onChange={(event) => setFormValue("vehiclePlate", event.target.value)} placeholder="А123ВС39" /></label>
-                  <label><span>VIN{formRequiresVin ? " *" : ""}</span><input value={form.vehicleVin} onChange={(event) => setFormValue("vehicleVin", event.target.value)} placeholder="17 символов" /></label>
-                </div> : null}
                 {selectedClientShipments.length > 0 ? (
                   <div className="eco-records-client-history">
                     <strong>История клиента</strong>
@@ -3557,12 +3576,15 @@ export default function RecordsPageClient() {
               </section>
 
               <section id="records-services">
-                <SectionTitle icon={<Wrench size={15} />} title="Что делаем" />
+                <SectionTitle icon={<Wrench size={15} />} title="Услуги" />
                 {selectedFormServices.length ? <div className="eco-records-selected-services">
                   {selectedFormServices.map((service) => <button key={service.id} type="button" onClick={() => toggleService(String(service.id))}><span>{service.title}</span><small>{durationLabel(Math.round(getServiceDurationSeconds(service) / 60))}</small><X size={13} /></button>)}
                 </div> : <p className="eco-records-muted">Выберите одну или несколько работ.</p>}
+                <details className="eco-records-booking-catalog" key={editingRecordId ?? "create"}>
+                  <summary>Выбрать услуги <small>{services.length} в каталоге</small></summary>
                 <label><span>Найти услугу</span><input value={serviceSearch} onChange={(event) => setServiceSearch(event.target.value)} placeholder="Например, замена масла" /></label>
                 <div className="eco-records-service-picker">
+                  {!visibleFormServices.length ? <p className="eco-records-muted">Услуги не найдены.</p> : null}
                   {visibleFormServices.map((service) => {
                     const id = String(service.id);
                     const selected = form.serviceIds.includes(id);
@@ -3578,26 +3600,58 @@ export default function RecordsPageClient() {
                           ? `Не назначена мастеру ${selectedFormMaster.name}`
                           : null;
                     const selectionBlocked = Boolean(unavailableReason) && !selected;
-                    return <button key={service.id} type="button" className={selected ? "is-selected" : undefined} onClick={() => { if (!selectionBlocked) toggleService(id); }} aria-disabled={selectionBlocked} title={unavailableReason ?? undefined}><strong>{service.title}</strong><span>{unavailableReason ?? `${durationLabel(Math.round(getServiceDurationSeconds(service) / 60))} · ${getServicePriceLabel(service)}`}</span></button>;
+                    return <button key={service.id} type="button" className={selected ? "is-selected" : undefined} onClick={() => { if (!selectionBlocked) toggleService(id); }} aria-pressed={selected} aria-disabled={selectionBlocked} title={unavailableReason ?? undefined}><strong>{service.title}</strong><span>{unavailableReason ?? `${durationLabel(Math.round(getServiceDurationSeconds(service) / 60))} · ${getServicePriceLabel(service)}`}</span></button>;
                   })}
                 </div>
+                {visibleFormServices.length > 5 ? <small className="eco-records-muted">Прокрутите список или найдите услугу по названию.</small> : null}
                 {visibleFormServices.some((service) => service.duration_configured === false || (service.assigned_master_count ?? service.master_membership_ids?.length ?? 0) === 0) ? <p className="eco-records-service-note">Услуги без готовой настройки тоже показаны. Чтобы выбрать отмеченную услугу, задайте ей длительность и назначьте мастера в разделе «Управление → Запись».</p> : null}
+                </details>
               </section>
+              <section id="records-vehicle">
+                <SectionTitle icon={<Car size={15} />} title="Автомобиль" />
+                <p className="eco-records-muted">Марка, модель, год и VIN необязательны</p>
+                {selectedClientVehicles.length ? <div className="eco-records-vehicle-options" role="group" aria-label="Автомобили клиента">
+                  {selectedClientVehicles.map((vehicle) => <button key={vehicle.id || vehicleLabel(vehicle)} type="button" className={form.selectedVehicleId === vehicle.id ? "is-selected" : undefined} onClick={() => selectVehicle(vehicle)}>
+                    <Car size={15} /><span><strong>{[vehicle.year, vehicle.model].filter(Boolean).join(" ")}</strong><small>{[vehicle.plate, vehicle.vin ? `VIN ${vehicle.vin}` : ""].filter(Boolean).join(" · ") || "Без номера"}</small></span>
+                  </button>)}
+                  <button type="button" className={!form.selectedVehicleId ? "is-selected" : undefined} onClick={() => selectVehicle(null)}><Plus size={15} /><span><strong>Другой автомобиль</strong><small>Сохранится в карточке клиента</small></span></button>
+                </div> : null}
+                {!form.selectedVehicleId ? <div className="eco-records-form-grid">
+                  <label><span>Марка</span><input value={form.vehicleMake} onChange={(event) => setFormValue("vehicleMake", event.target.value)} placeholder="Mitsubishi" /></label>
+                  <label><span>Модель</span><input value={form.vehicleModel} onChange={(event) => setFormValue("vehicleModel", event.target.value)} placeholder="ASX" /></label>
+                  <label><span>Год</span><input inputMode="numeric" value={form.vehicleYear} onChange={(event) => setFormValue("vehicleYear", event.target.value)} placeholder="2020" /></label>
+                  <label><span>Госномер{formRequiresPlate ? " *" : ""}</span><input value={form.vehiclePlate} onChange={(event) => setFormValue("vehiclePlate", event.target.value)} placeholder="А123ВС39" /></label>
+                  <label><span>VIN</span><input value={form.vehicleVin} onChange={(event) => setFormValue("vehicleVin", event.target.value)} placeholder="17 символов" /></label>
+                </div> : null}
+              </section>
+              <section id="records-note">
+                <SectionTitle icon={<MessageSquare size={15} />} title="Внутренний комментарий" />
+                <p className="eco-records-muted" id="records-note-hint">Виден сотрудникам в журнале записей</p>
+                <textarea aria-label="Внутренний комментарий" aria-describedby="records-note-hint" rows={4} value={form.internalComment} onChange={(event) => setFormValue("internalComment", event.target.value)} placeholder="Что согласовали с клиентом, какие есть нюансы" />
+                <fieldset className="eco-records-contact-source">
+                  <legend>Откуда обратился клиент</legend>
+                  <div>{[...journalContactSources, ""].map(source => <label key={source}><input type="radio" name="records-contact-source" checked={form.contactSource === source} onChange={() => setFormValue("contactSource", source)} /><span>{source || "Не указан"}</span></label>)}</div>
+                </fieldset>
+                <label><span>Ссылка на переписку <small>Необязательно</small></span><input type="url" value={form.contactLink} onChange={(event) => setFormValue("contactLink", event.target.value)} placeholder="https://…" /></label>
+              </section>
+              </div>
 
               <section id="records-time">
                 <SectionTitle icon={<Clock3 size={15} />} title="Когда и у кого" />
-                <div className="eco-records-form-grid">
-                  <label><span>Дата</span><input type="date" value={formDate} onChange={(event) => {
-                    const nextStart = replaceDatePart(form.datetime || `${event.target.value}T09:00`, event.target.value);
-                    setForm((prev) => ({ ...prev, datetime: nextStart, datetimeEnd: addSecondsToDateTimeLocal(nextStart, prev.manualDuration && prev.datetimeEnd ? (calculateSeanceLengthSeconds(prev.datetime, prev.datetimeEnd) ?? selectedServiceDurationSeconds) : selectedServiceDurationSeconds) }));
-                  }} /></label>
+                <label><span>Мастер</span><select value={form.staffId} onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value, datetime: formDate, datetimeEnd: "", manualDuration: false, overrideReason: null }))}><option value="">Любой свободный мастер</option>{eligibleFormMasters.map((item) => <option key={item.id} value={item.id}>{item.name}{item.bookable === false ? " · текущий мастер" : ""}</option>)}</select>{form.serviceIds.length > 0 && eligibleFormMasters.length === 0 ? <small className="eco-records-warning">Для выбранных работ нет действующего мастера. Назначьте услуги в настройках записи.</small> : null}</label>
+                <div className="eco-records-booking-calendar">
+                  <BookingCalendar value={formDate} today={formDate < calendarToday ? formDate : calendarToday} max={addLocalDays(formDate > calendarToday ? formDate : calendarToday, 365)} onChange={(date) => setForm(prev => date === formDate ? prev : { ...prev, datetime: date, datetimeEnd: "", manualDuration: false, overrideReason: null })} />
+                </div>
+                <details className="eco-records-booking-manual">
+                  <summary>Настроить время вручную</summary>
+                  <div className="eco-records-form-grid">
                   <label><span>Начало</span><input type="time" step={bookingStepMinutes * 60} value={formStartTime} onChange={(event) => {
                     const nextStart = replaceTimePart(form.datetime, event.target.value, formDate || scheduleDate);
                     setForm((prev) => ({ ...prev, datetime: nextStart, datetimeEnd: addSecondsToDateTimeLocal(nextStart, prev.manualDuration && prev.datetimeEnd ? (calculateSeanceLengthSeconds(prev.datetime, prev.datetimeEnd) ?? selectedServiceDurationSeconds) : selectedServiceDurationSeconds) }));
                   }} /></label>
                   <label><span>Окончание</span><input type="time" value={formEndTime} onChange={(event) => setForm((prev) => ({ ...prev, datetimeEnd: replaceTimePart(prev.datetimeEnd || prev.datetime, event.target.value, formDate), manualDuration: true }))} /></label>
-                  <label><span>Мастер</span><select value={form.staffId} onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value }))}><option value="">Выберите мастера</option>{eligibleFormMasters.map((item) => <option key={item.id} value={item.id}>{item.name}{item.bookable === false ? " · текущий мастер" : ""}</option>)}</select>{form.serviceIds.length > 0 && eligibleFormMasters.length === 0 ? <small className="eco-records-warning">Для выбранных работ нет действующего мастера. Назначьте услуги в настройках записи.</small> : null}</label>
-                </div>
+                  </div>
+                </details>
                 <RecordsSlotPicker
                   localDate={formDate}
                   serviceIds={selectedFormServices.map(service => service.booking_service_id).filter((id): id is string => Boolean(id))}
@@ -3625,7 +3679,7 @@ export default function RecordsPageClient() {
                         {form.overrideReason === formAvailability.reasonCode ? "Исключение подтверждено" : formAvailability.reasonCode === "slot_taken" ? "Создать пересечение" : formAvailability.reasonCode === "outside_schedule" ? "Записать вне графика" : "Подтвердить нестандартное начало"}
                       </button>
                     ) : null}
-                    {formAvailability.alternatives.length ? <div className="eco-records-slot-suggestions">{formAvailability.alternatives.map((slot) => {
+                    {formAvailability.state === "unavailable" && formAvailability.alternatives.length ? <div className="eco-records-slot-suggestions">{formAvailability.alternatives.map((slot) => {
                       const local = utcInstantToJournalLocal(slot.startsAt, branchTimeZone);
                       return <button key={`${slot.master.membershipId}-${slot.startsAt}`} type="button" onClick={() => {
                         const staffOption = staff.find((item) => item.membership_id === slot.master.membershipId);
@@ -3636,11 +3690,10 @@ export default function RecordsPageClient() {
                 </div>
               </section>
 
-              <details className="eco-records-additional">
+              <details className="eco-records-additional eco-records-booking-wide">
                 <summary>Дополнительно</summary>
                 {!formRequiresEmail ? <label><span>Email</span><input type="email" value={form.clientEmail} onChange={(event) => setFormValue("clientEmail", event.target.value)} placeholder="Необязательно" /></label> : null}
                 <label><span>Комментарий клиента</span><textarea rows={3} value={form.comment} onChange={(event) => setFormValue("comment", event.target.value)} /></label>
-                <label><span>Внутренний комментарий</span><textarea rows={2} value={form.internalComment} onChange={(event) => setFormValue("internalComment", event.target.value)} /></label>
 
               {formMode === "edit" ? (
                 <section className="eco-records-additional-status">
@@ -3657,8 +3710,8 @@ export default function RecordsPageClient() {
               ) : null}
               </details>
 
-              {formMode === "create" ? <button type="button" className="eco-records-inline-action eco-records-create-order" onClick={() => void handleSubmitRecord(true)} disabled={formSaving}><PackagePlus size={15} /> Создать и открыть заказ-наряд</button> : null}
-              {formError ? <div ref={formErrorRef} className="eco-records-form-error" role="alert" tabIndex={-1}>{formError}</div> : null}
+              {formMode === "create" ? <button type="button" className="eco-records-inline-action eco-records-create-order eco-records-booking-wide" onClick={() => void handleSubmitRecord(true)} disabled={formSaving}><PackagePlus size={15} /> Создать и открыть заказ-наряд</button> : null}
+              {formError ? <div ref={formErrorRef} className="eco-records-form-error eco-records-booking-wide" role="alert" tabIndex={-1}>{formError}</div> : null}
             </div>
 
             <div className="eco-records-drawer-footer">
@@ -3688,7 +3741,7 @@ export default function RecordsPageClient() {
             </div>
             <div className="eco-records-comment-body">
               <p>{selectedTimelineRecord.comment || "Комментария клиента нет"}</p>
-              {selectedTimelineRecord.internalComment ? <small>{selectedTimelineRecord.internalComment}</small> : null}
+              <RecordContact record={selectedTimelineRecord} />
             </div>
           </div>
         </div>
