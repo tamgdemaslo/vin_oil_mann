@@ -8,7 +8,7 @@ import { EcoButton } from "@/components/platform/EcoUI";
 import { formatServiceDate, formatServiceDateTime, parseServiceDateTime, toServiceMomentString } from "@/lib/date-time";
 import { formatPhoneForDisplay, normalizePhoneKey } from "@/lib/phone-normalize";
 import { simpleCaseDeadline, simpleCaseStatus, WORK_CASE_LABELS, WORK_CASE_STATUSES, type SimpleCaseStatus, type WorkCaseStatus } from "@/lib/client-case-simple";
-import { caseRosskoOrder, caseTimeRemaining, validCaseRosskoOrder } from "@/lib/client-case-parts";
+import { caseRosskoOrder, caseTimeRemaining, parseRosskoOrderNumber } from "@/lib/client-case-parts";
 import { CASE_CORRESPONDENCE_CHANNELS, caseCorrespondence, caseCorrespondenceLink, withoutCaseCorrespondence } from "@/lib/client-case-correspondence";
 import { caseCounterpartyHref, caseCustomerTitle } from "@/lib/client-case-counterparty";
 import { caseChatPhoneLink, validCaseChatLink } from "@/lib/client-case-chat-link";
@@ -24,7 +24,7 @@ type Deal = {
   createdAt: string; updatedAt: string; status: string; caseStatus?: string | null;
   nextAction?: string | null; nextActionAt?: string | null; nextContactAt?: string | null;
   yclientsRecordId: string | null; appointmentId?: string | null; shipmentId: string | null;
-  suppliesNote?: string | null; suppliesSupplier?: string | null; suppliesExpectedAt?: string | null; closeReason?: string | null;
+  suppliesNote?: string | null; suppliesSupplier?: string | null; rosskoOrderStatus?: string | null; suppliesExpectedAt?: string | null; closeReason?: string | null;
 };
 type Stage = { id: string; name: string; deals: Deal[] };
 type Case = Deal & { stage: Stage };
@@ -60,14 +60,7 @@ function recordsHref(deal: Deal) {
   return `/records?${params}`;
 }
 
-function calculationHref(deal: Deal) {
-  if (deal.shipmentId) return `/shipment/${encodeURIComponent(deal.shipmentId)}/edit`;
-  const params = new URLSearchParams({ crmDealId: deal.id, comment: [deal.title, withoutCaseCorrespondence(deal.notes)].filter(Boolean).join("\n") });
-  if (deal.customerName) params.set("counterparty", deal.customerName);
-  if (deal.phoneNormalized) params.set("phone", deal.phoneNormalized);
-  if (deal.vehicle) params.set("vehicle", deal.vehicle);
-  return `/shipment/new?${params}`;
-}
+
 
 export default function CrmPipelineClient({ userLogin, userName }: { userLogin: string; userName: string | null }) {
   const searchParams = useSearchParams();
@@ -89,6 +82,8 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   const [bookingMenuPlacement, setBookingMenuPlacement] = useState<"above" | "below">("below");
   const partsOrderRef = useRef<HTMLInputElement>(null);
   const [partsRow, setPartsRow] = useState<Case | null>(null);
+  const [partsSource, setPartsSource] = useState<"rossko" | "manual">("rossko");
+  const [partsSupplier, setPartsSupplier] = useState("");
   const [partsOrder, setPartsOrder] = useState("");
   const [partsExpected, setPartsExpected] = useState("");
   const [partsError, setPartsError] = useState<string | null>(null);
@@ -112,19 +107,23 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   const phoneRef = useRef<HTMLInputElement>(null);
   const submitting = useRef(false);
   const focusedId = useRef<string | null>(null);
+  const loadVersion = useRef(0);
 
   const load = useCallback(async (initial = false) => {
+    const version = ++loadVersion.current;
     if (initial) setLoading(true);
     try {
       const res = await fetch("/api/crm/deals", { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Не удалось загрузить заявки");
+      if (version !== loadVersion.current) return;
+      setNow(new Date());
       setCases((data.stages ?? []).flatMap((stage: Stage) => stage.deals.map(deal => ({ ...deal, stage }))));
       setLoadError(null);
       window.dispatchEvent(new Event("eco-client-cases-changed"));
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Не удалось загрузить заявки");
-    } finally { setLoading(false); }
+      if (version === loadVersion.current) setLoadError(error instanceof Error ? error.message : "Не удалось загрузить заявки");
+    } finally { if (version === loadVersion.current) setLoading(false); }
   }, []);
 
   useEffect(() => { void load(true); }, [load]);
@@ -154,10 +153,12 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   useEffect(() => {
     const id = searchParams.get("dealId") || searchParams.get("crmDealId") || searchParams.get("deal");
     const found = cases.find(row => row.id === id);
+    if (!id) focusedId.current = null;
     if (found && focusedId.current !== found.id) {
       focusedId.current = found.id;
-      setView(simpleCaseStatus(found)); setUrgentOnly(false); setQuery(""); setEditing(found.id);
-      setEdit({ title: found.title, phone: found.phoneNormalized || "", customerName: found.customerName || "", vehicle: found.vehicle || "", notes: withoutCaseCorrespondence(found.notes) });
+      setView(simpleCaseStatus(found) === "closed" ? "closed" : "board");
+      setMobileFocus(false); setUrgentOnly(false); setQuery(""); setEditing(null);
+      requestAnimationFrame(() => document.getElementById(`case-${found.id}`)?.scrollIntoView({ block: "nearest", inline: "nearest" }));
     }
   }, [searchParams, cases]);
 
@@ -197,13 +198,15 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     finally { submitting.current = false; setSaving(false); requestAnimationFrame(() => phoneRef.current?.focus()); }
   }
 
-  async function action(row: Case, action: ClientCaseAction, body: Record<string, unknown> = {}, successMessage?: string, partsConfirmed = false) {
+  async function action(row: Case, action: ClientCaseAction, body: Record<string, unknown> = {}, successMessage?: string, partsConfirmed = false, saveSource = false) {
     if (mutationPending.current) return false;
     if (action === "waiting_parts" && !partsConfirmed) { openPartsOrder(row); return false; }
     mutationPending.current = true;
     setBusy(row.id); setActionError(null); setNotice("");
     try {
-      const res = await fetch(`/api/client-cases/${encodeURIComponent(row.id)}/action`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, action }) });
+      const id = encodeURIComponent(row.id);
+      const endpoint = saveSource ? `/api/crm/deals/${id}/order` : `/api/client-cases/${id}/action`;
+      const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(saveSource ? body : { ...body, action }) });
       const data = await res.json();
       if (!res.ok) { if (res.status === 409) await load(); throw new Error(data.error || "Не удалось обновить заявку"); }
       if (data.case?.id === row.id) setCases(current => current.map(item => item.id === row.id ? { ...item, ...data.case, stage: item.stage } : item));
@@ -307,7 +310,10 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   function openPartsOrder(row: Case) {
     if (mutationPending.current || saving) return;
     setPartsRow(row);
-    setPartsOrder(caseRosskoOrder(row.suppliesNote));
+    const orderNumber = caseRosskoOrder(row.suppliesNote);
+    setPartsSource(orderNumber || !row.suppliesSupplier ? "rossko" : "manual");
+    setPartsSupplier(orderNumber ? "" : row.suppliesSupplier ?? "");
+    setPartsOrder(orderNumber);
     setPartsExpected(row.suppliesExpectedAt ? toServiceMomentString(row.suppliesExpectedAt).slice(0, 16).replace(" ", "T") : "");
     setPartsError(null);
     requestAnimationFrame(() => { partsDialogRef.current?.showModal(); partsOrderRef.current?.focus(); });
@@ -317,11 +323,16 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     if (!partsRow || mutationPending.current) return;
     const row = cases.find(item => item.id === partsRow.id);
     if (!row || simpleCaseStatus(row) === "closed") { setPartsError("Заявка уже закрыта или недоступна. Обновите доску."); return; }
-    if (!skip && !validCaseRosskoOrder(partsOrder)) { setPartsError("Номер заказа — только цифры, до 20 символов."); return; }
+    const orderNumber = parseRosskoOrderNumber(partsOrder);
+    if (!skip && partsSource === "rossko" && !orderNumber) { setPartsError("Укажите номер заказа РОССКО цифрами."); return; }
+    if (!skip && partsSource === "manual" && !partsSupplier.trim()) { setPartsError("Укажите поставщика."); return; }
     const expected = partsExpected ? parseServiceDateTime(partsExpected) : null;
-    if (!skip && partsExpected && !expected) { setPartsError("Проверьте дату и время поставки."); return; }
+    if (!skip && partsSource === "manual" && partsExpected && !expected) { setPartsError("Проверьте дату и время поставки."); return; }
     setPartsError(null);
-    const ok = await action(row, "waiting_parts", skip ? {} : { rosskoOrderNumber: partsOrder.trim(), suppliesExpectedAt: expected?.toISOString() ?? null }, skip ? "Заявка перемещена: Запчасти заказаны" : "Заказ и срок сохранены", true);
+    const body = partsSource === "rossko"
+      ? { source: "rossko", orderNumber }
+      : { source: "manual", supplier: partsSupplier.trim(), expectedAt: expected?.toISOString() ?? null };
+    const ok = await action(row, "waiting_parts", skip ? {} : body, skip ? "Заявка перемещена: Запчасти заказаны" : "Источник заказа сохранён", true, !skip);
     if (ok) partsDialogRef.current?.close();
   }
 
@@ -390,6 +401,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     const isOverdue = due && due < now;
     const isEditing = editing === row.id;
     const orderNumber = caseRosskoOrder(row.suppliesNote);
+    const orderSource = orderNumber ? "РОССКО № " + orderNumber : row.suppliesSupplier;
     const partsDue = row.suppliesExpectedAt ? parseServiceDateTime(row.suppliesExpectedAt) : null;
     const hasBooking = Boolean(row.yclientsRecordId || row.appointmentId);
     const clientHref = caseCounterpartyHref(row);
@@ -422,7 +434,8 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
       <div className={styles.deadline}>
         {status === "calculation_needed" && due && deadlineInfo(due, "Рассчитать до")}
         {status === "parts_arrived" && <><span className={styles.arrivedBadge}>Позвонить и записать</span>{due && deadlineInfo(due, "Записать до")}</>}
-        {status === "waiting_parts" ? <button type="button" className={styles.orderNumber} disabled={Boolean(busy) || Boolean(loadError)} onClick={() => openPartsOrder(row)}>{orderNumber ? "РОССКО № " + orderNumber : "Указать № РОССКО"}</button> : status === "parts_arrived" && orderNumber && <span className={styles.orderNumber}>РОССКО № {orderNumber}</span>}
+        {status === "waiting_parts" ? <button type="button" className={styles.orderNumber} disabled={Boolean(busy) || Boolean(loadError)} onClick={() => openPartsOrder(row)}>{orderSource || "Указать источник заказа"}</button> : status === "parts_arrived" && orderSource && <span className={styles.orderNumber}>{orderSource}</span>}
+        {orderNumber && (status === "waiting_parts" || status === "parts_arrived") && <span>{row.rosskoOrderStatus || "Ожидаем обновления статуса РОССКО"}</span>}
         {status === "waiting_parts" && (partsDue ? deadlineInfo(partsDue, "Поставка до") : <span>Срок поставки не указан</span>)}
         {status === "calculation_sent" && <span>Расчёт у клиента</span>}
         {status === "closed" && <span>{row.closeReason || "Закрыто"}</span>}
@@ -441,7 +454,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
       {quickError?.id === row.id && <p className={styles.formError} role="alert">{quickError.message}</p>}
       {status === "closed" && <p className={styles.closureMeta}>Закрыл: {row.closure?.actorLogin ? creatorName(row.closure.actorLogin) : "сотрудник не указан"}<span> · {row.closure?.closedAt ? <time dateTime={row.closure.closedAt}>{formatServiceDateTime(row.closure.closedAt)}</time> : "время не сохранено"}</span></p>}
       <div className={styles.actions}>
-        {status === "calculation_needed" && <Link className="eco-btn eco-btn--primary" href={calculationHref(row)}>Рассчитать <ArrowRight size={15} /></Link>}
+        {status === "calculation_needed" && <EcoButton type="button" variant="primary" disabled={Boolean(busy) || Boolean(loadError)} onClick={() => void action(row, "mark_calculation_sent")}>Расчёт отправлен <ArrowRight size={15} /></EcoButton>}
         {status === "calculation_sent" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "waiting_parts")}>Отметить заказ</EcoButton>}
         {status === "waiting_parts" && <EcoButton disabled={Boolean(busy)} onClick={() => void action(row, "parts_arrived")}>Отметить поступление</EcoButton>}
         {status === "parts_arrived" && <>{row.phoneNormalized && <a className="eco-btn" href={phoneHref(row.phoneNormalized)}><Phone size={15} />Позвонить</a>}
@@ -532,11 +545,14 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     </dialog>
     <dialog ref={partsDialogRef} className={styles.dialog} aria-labelledby="parts-order-title"
       onClose={() => setPartsRow(null)} onCancel={event => { if (busy) event.preventDefault(); }}>
-      <div className={styles.dialogHeading}><div><h2 id="parts-order-title">Заказ и срок поставки</h2><p>Добавьте номер заказа РОССКО и когда ждёте запчасти. Можно заполнить позже.</p></div><button type="button" aria-label="Отменить перенос" disabled={Boolean(busy)} onClick={() => partsDialogRef.current?.close()}><X size={20} /></button></div>
+      <div className={styles.dialogHeading}><div><h2 id="parts-order-title">Источник заказа</h2><p>Для РОССКО дата и статус подтянутся по номеру заказа.</p></div><button type="button" aria-label="Отменить перенос" disabled={Boolean(busy)} onClick={() => partsDialogRef.current?.close()}><X size={20} /></button></div>
       <form className={styles.quickForm} onSubmit={event => { event.preventDefault(); void saveParts(); }}>
         {partsRow && <div className={styles.formHeading}>{partsRow.vehicle || partsRow.customerName || "Заявка клиента"}</div>}
-        <label>Номер заказа РОССКО · необязательно<input ref={partsOrderRef} className="eco-input" inputMode="numeric" maxLength={20} pattern="[0-9]{1,20}" placeholder="Например: 123456789" value={partsOrder} disabled={Boolean(busy)} onChange={event => setPartsOrder(event.target.value)} /></label>
-        <label>Когда ждём запчасти · необязательно<input className="eco-input" type="datetime-local" value={partsExpected} disabled={Boolean(busy)} onInput={event => setPartsExpected(event.currentTarget.value)} onChange={event => setPartsExpected(event.target.value)} /></label>
+        <label>Поставщик<select className="eco-input" value={partsSource} disabled={Boolean(busy)} onChange={event => { setPartsSource(event.target.value === "rossko" ? "rossko" : "manual"); setPartsError(null); }}><option value="rossko">РОССКО</option><option value="manual">Другой поставщик</option></select></label>
+        {partsSource === "rossko" ? <label>Номер заказа РОССКО<input ref={partsOrderRef} className="eco-input" inputMode="numeric" maxLength={20} pattern="[0-9]{1,20}" required value={partsOrder} disabled={Boolean(busy)} onChange={event => setPartsOrder(event.target.value)} /></label> : <>
+          <label>Название поставщика<input className="eco-input" maxLength={200} required value={partsSupplier} disabled={Boolean(busy)} onChange={event => setPartsSupplier(event.target.value)} /></label>
+          <label>Когда ждём запчасти · необязательно<input className="eco-input" type="datetime-local" value={partsExpected} disabled={Boolean(busy)} onChange={event => setPartsExpected(event.target.value)} /></label>
+        </>}
         {partsError && <p className={styles.formError} role="alert">{partsError}</p>}
         <EcoButton type="submit" variant="primary" className={styles.submit} disabled={Boolean(busy)}>{busy ? "Сохраняем…" : partsRow && simpleCaseStatus(partsRow) === "waiting_parts" ? "Сохранить" : "Сохранить и перенести"}</EcoButton>
         <div className={styles.partsDialogActions}><EcoButton type="button" disabled={Boolean(busy)} onClick={() => partsDialogRef.current?.close()}>Отмена</EcoButton>{partsRow && simpleCaseStatus(partsRow) !== "waiting_parts" && <EcoButton type="button" disabled={Boolean(busy)} onClick={() => void saveParts(true)}>Пропустить</EcoButton>}</div>
