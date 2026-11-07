@@ -66863,228 +66863,274 @@ html.tgm-print-active .tgm-client-report .qr {
   }
 }
 
-/* Restock workspace: calculation, selection and ordering in one task flow. */
+/* Restock workspace */
 .eco-restock-page {
-  gap: 14px;
+  gap: 12px;
 }
 
 .eco-restock-head {
   min-height: auto;
-  padding-block: 14px;
+  padding-block: 12px;
 }
 
-.eco-restock-head .eco-page-subtitle {
-  max-width: 72ch;
-}
-
-.eco-restock-head-actions .eco-btn {
+.eco-restock-head-actions .eco-btn,
+.eco-restock-source > .eco-btn,
+.eco-restock-toolbar > .eco-btn {
   min-height: 44px;
 }
 
-.eco-restock-cockpit {
-  overflow: hidden;
-  background: var(--eco-surface);
+.eco-restock-source {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 8px;
   border: 1px solid var(--eco-line);
   border-radius: 8px;
-}
-
-.eco-restock-workflow {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-bottom: 1px solid var(--eco-line);
-}
-
-.eco-restock-workflow > a {
-  position: relative;
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  gap: 10px;
-  min-height: 64px;
-  align-items: center;
-  padding: 10px 16px;
-  color: var(--eco-ink-3);
-  text-decoration: none;
-}
-
-.eco-restock-workflow > a + a {
-  border-left: 1px solid var(--eco-line);
-}
-
-.eco-restock-workflow > a::after {
-  content: "";
-  position: absolute;
-  right: 16px;
-  bottom: -1px;
-  left: 16px;
-  height: 2px;
-  background: transparent;
-}
-
-.eco-restock-workflow > a:hover,
-.eco-restock-workflow > a:focus-visible {
-  color: var(--eco-ink);
-  background: var(--eco-hover);
-  outline: none;
-}
-
-.eco-restock-workflow > a:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--eco-focus, #155eef);
-}
-
-.eco-restock-workflow > a.is-current {
-  color: var(--eco-ink);
-  background: color-mix(in srgb, var(--eco-rust-tint) 52%, var(--eco-surface));
-}
-
-.eco-restock-workflow > a.is-current::after {
-  background: var(--eco-rust);
-}
-
-.eco-restock-workflow > a.is-upcoming {
-  color: var(--eco-muted);
-}
-
-.eco-restock-workflow > a > span:first-child {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  color: var(--eco-muted);
   background: var(--eco-surface);
-  border: 1px solid var(--eco-line-strong);
-  border-radius: 50%;
-  font-size: 11px;
-  font-weight: 850;
 }
 
-.eco-restock-workflow > a.is-current > span:first-child {
-  color: #fff;
-  background: var(--eco-rust);
-  border-color: var(--eco-rust);
+.eco-restock-source > .eco-btn {
+  margin-inline: auto 0;
+  flex-shrink: 0;
 }
 
-.eco-restock-workflow > a.is-complete > span:first-child {
-  color: #fff;
-  background: var(--eco-success, #167247);
-  border-color: var(--eco-success, #167247);
-}
-
-.eco-restock-workflow > a > span:last-child {
+.eco-restock-mode-group {
   display: grid;
-  gap: 2px;
-  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  max-width: 620px;
+  flex: 1 1 auto;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--eco-soft);
 }
 
-.eco-restock-workflow strong,
-.eco-restock-workflow small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.eco-restock-workflow strong {
-  color: inherit;
-  font-size: 13px;
-  font-weight: 850;
-  line-height: 1.25;
-}
-
-.eco-restock-workflow small {
-  color: var(--eco-muted);
-  font-size: 11px;
-  line-height: 1.3;
-}
-
-.eco-restock-command-grid {
+.eco-restock-mode {
   display: grid;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(480px, 1.35fr);
-  align-items: stretch;
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--eco-ink-2);
+  background: transparent;
+  text-align: left;
 }
 
-.eco-restock-command-section {
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  min-width: 0;
-  padding: 16px;
-  scroll-margin-top: 20px;
+.eco-restock-mode:hover:not(:disabled) {
+  background: var(--eco-hover);
 }
 
-.eco-restock-command-section + .eco-restock-command-section {
-  border-left: 1px solid var(--eco-line);
-}
-
-.eco-restock-command-section > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.eco-restock-command-section > header h2,
-.eco-restock-command-section > header p {
-  margin: 0;
-}
-
-.eco-restock-command-section > header h2 {
+.eco-restock-mode[aria-pressed="true"] {
+  border-color: var(--eco-line-strong);
   color: var(--eco-ink);
-  font-size: 17px;
-  font-weight: 850;
+  background: var(--eco-surface);
+}
+
+.eco-restock-mode:disabled {
+  opacity: .65;
+  cursor: wait;
+}
+
+.eco-restock-mode span {
+  display: grid;
+  gap: 3px;
+}
+
+.eco-restock-mode strong {
+  font-size: 14px;
   line-height: 1.2;
 }
 
-.eco-restock-command-section > header p {
-  max-width: 58ch;
-  margin-top: 3px;
-  color: var(--eco-muted);
+.eco-restock-mode small {
+  color: var(--eco-ink-3);
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.25;
 }
 
-.eco-restock-calculation-controls,
-.eco-restock-order-controls,
+.eco-restock-mode-check {
+  color: var(--eco-rust);
+}
+
+.eco-restock-mode:focus-visible,
+.eco-restock-page .eco-restock-category-tab:focus-visible,
+.eco-restock-page .eco-restock-supplier-btn:focus-visible,
+.eco-restock-page .eco-restock-table-wrap:focus-visible {
+  outline: 2px solid var(--eco-focus, #155eef);
+  outline-offset: -2px;
+}
+
+.eco-restock-page .eco-restock-count {
+  display: inline-grid;
+  min-width: 22px;
+  min-height: 22px;
+  padding-inline: 4px;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--eco-ink-2);
+  background: var(--eco-soft);
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-restock-page .eco-restock-category-tab {
+  min-height: 44px;
+  padding-inline: 12px;
+}
+
+.eco-restock-layout {
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.eco-restock-layout.is-sidebar-collapsed {
+  grid-template-columns: 48px minmax(0, 1fr);
+}
+
+.eco-restock-channel-select {
+  display: none;
+}
+
+.eco-restock-page .eco-restock-supplier-btn {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.eco-restock-page .eco-restock-supplier-btn em {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-restock-toolbar {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--eco-surface);
+}
+
+.eco-restock-toolbar__title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.eco-restock-toolbar__title h2,
+.eco-restock-toolbar__title span {
+  margin: 0;
+}
+
+.eco-restock-toolbar__title h2 {
+  color: var(--eco-ink);
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.eco-restock-toolbar__title span {
+  color: var(--eco-ink-3);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.eco-restock-page .eco-restock-rossko-status.is-ok {
+  border-color: var(--eco-line);
+  color: var(--eco-ink-2);
+  background: var(--eco-surface);
+}
+
+.eco-restock-page .eco-restock-incoming-strip > span {
+  min-height: 0;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--eco-ink-3);
+  background: transparent;
+  font-weight: 500;
+}
+
+.eco-restock-page .eco-restock-incoming-strip b {
+  color: var(--eco-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-restock-page .eco-restock-incoming-strip > .eco-restock-incoming-needed {
+  color: var(--eco-ink);
+  background: var(--eco-soft);
+}
+
+.eco-restock-orders-link {
+  margin-left: auto;
+  padding: 6px;
+  color: var(--eco-ink);
+  font-size: 12px;
+  text-underline-offset: 3px;
+  text-decoration: underline;
+}
+
+.eco-restock-page .eco-restock-incoming-strip button {
+  gap: 4px;
+  margin-left: 0;
+}
+
+.eco-restock-page .eco-restock-rossko-table {
+  min-width: 940px;
+}
+
+.eco-restock-page .eco-restock-rossko-table .eco-restock-product {
+  min-width: 200px;
+  max-width: 290px;
+}
+
+.eco-restock-page .eco-restock-rossko-table :is(th, td) {
+  padding-inline: 9px;
+}
+
+.eco-restock-page .eco-restock-rossko-table th,
+.eco-restock-page .eco-restock-supplier-table th {
+  color: var(--eco-ink-3);
+  text-transform: none;
+  font-size: 12px;
+}
+
+.eco-restock-page .eco-restock-rossko-table th.l-number,
+.eco-restock-page .eco-restock-supplier-table th.l-number {
+  white-space: normal;
+}
+
+.eco-restock-page .eco-restock-table-emphasis {
+  color: var(--eco-ink);
+  font-weight: 750;
+}
+
+.eco-restock-page .eco-restock-covered {
+  display: inline-block;
+  max-width: 12ch;
+  color: var(--eco-ink-3);
+  font-weight: 500;
+  white-space: normal;
+}
+
+#restock-supplier-message {
+  scroll-margin-top: 20px;
+}
+
 .eco-restock-import-group {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-.eco-restock-calculation-controls {
-  justify-content: space-between;
-}
-
-.eco-restock-calculation-controls .eco-seg-btn,
-.eco-restock-calculation-controls .eco-btn,
-.eco-restock-order-controls > .eco-btn,
-.eco-restock-import-group > .eco-btn {
-  min-height: 44px;
-}
-
-.eco-restock-calculation-controls .eco-seg {
-  min-height: 44px;
-}
-
-.eco-restock-command-section .eco-restock-period-panel {
-  gap: 8px;
-  margin-top: 0;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-}
-
-.eco-restock-command-section .eco-restock-period-panel .eco-input,
-.eco-restock-command-section .eco-restock-period-panel .eco-btn {
-  min-height: 40px;
-}
-
-.eco-restock-order-controls {
-  align-items: stretch;
-}
-
-.eco-restock-import-group {
   flex: 1 1 260px;
   flex-wrap: nowrap;
 }
@@ -67099,173 +67145,85 @@ html.tgm-print-active .tgm-client-report .qr {
   width: 100%;
 }
 
-.eco-restock-command-note {
-  margin: 0;
-  padding: 10px 12px;
-  color: var(--eco-ink-2);
-  background: var(--eco-soft);
-  border-radius: 6px;
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.eco-restock-cockpit .eco-restock-decisionbar {
-  grid-template-columns: repeat(4, minmax(132px, 1fr));
-  border: 0;
-  border-top: 1px solid var(--eco-line);
-  border-radius: 0;
-  box-shadow: none;
-}
-
-.eco-restock-cockpit .eco-restock-decisionbar__item + .eco-restock-decisionbar__item {
-  border-left: 1px solid var(--eco-line);
-}
-
-.eco-restock-cockpit .eco-restock-decisionbar__item {
-  min-height: 56px;
-}
-
-.eco-restock-category-tabs,
-.eco-restock-layout,
-.eco-restock-main,
-#restock-selection,
-#restock-position-workspace {
-  scroll-margin-top: 20px;
-}
-
-.eco-restock-category-tab {
-  min-height: 44px;
-  padding-inline: 12px;
-}
-
-.eco-restock-layout {
-  grid-template-columns: 216px minmax(0, 1fr);
-  gap: 14px;
-}
-
-.eco-restock-layout.is-sidebar-collapsed {
-  grid-template-columns: 48px minmax(0, 1fr);
-}
-
-.eco-restock-rail {
-  padding: 10px;
-}
-
-.eco-restock-supplier-btn {
-  min-height: 44px;
-}
-
-.eco-restock-toolbar {
-  display: flex;
-  min-height: 60px;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: var(--eco-surface);
-  border-radius: 8px;
-}
-
-.eco-restock-toolbar__title {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.eco-restock-toolbar__title h2,
-.eco-restock-toolbar__title span {
-  margin: 0;
-}
-
-.eco-restock-toolbar__title h2 {
-  color: var(--eco-ink);
-  font-size: 17px;
-  font-weight: 850;
-  line-height: 1.2;
-}
-
-.eco-restock-toolbar__title span {
-  overflow: hidden;
-  color: var(--eco-muted);
-  font-size: 12px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (max-width: 1180px) {
-  .eco-restock-command-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 980px) {
+  .eco-restock-layout,
+  .eco-restock-layout.is-sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .eco-restock-command-section + .eco-restock-command-section {
-    border-top: 1px solid var(--eco-line);
-    border-left: 0;
+  .eco-restock-page .eco-restock-rail {
+    display: none;
   }
 
-  .eco-restock-cockpit .eco-restock-decisionbar {
-    grid-template-columns: repeat(4, minmax(120px, 1fr));
+  .eco-restock-channel-select {
+    display: grid;
+    gap: 4px;
+    color: var(--eco-ink-3);
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .eco-restock-channel-select .eco-input {
+    min-height: 44px;
+    width: 100%;
   }
 }
 
 @media (max-width: 760px) {
-  .eco-restock-workflow {
-    grid-template-columns: repeat(3, minmax(220px, 1fr));
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-    scrollbar-width: thin;
-  }
-
-  .eco-restock-workflow > a {
-    scroll-snap-align: start;
-  }
-
-  .eco-restock-command-section {
-    padding: 14px;
-  }
-
-  .eco-restock-calculation-controls,
-  .eco-restock-order-controls,
   .eco-restock-import-group {
     align-items: stretch;
     flex-direction: column;
+    flex-basis: auto;
   }
 
-  .eco-restock-calculation-controls .eco-seg,
-  .eco-restock-calculation-controls .eco-btn,
-  .eco-restock-order-controls > .eco-btn,
   .eco-restock-import-group,
   .eco-restock-import-group .eco-restock-import-order,
   .eco-restock-import-group > .eco-btn {
     width: 100%;
   }
+}
 
-  .eco-restock-import-group {
-    flex-basis: auto;
-  }
-
-  .eco-restock-cockpit .eco-restock-decisionbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .eco-restock-cockpit .eco-restock-decisionbar__item + .eco-restock-decisionbar__item {
-    border-left: 0;
-  }
-
-  .eco-restock-cockpit .eco-restock-decisionbar__item:nth-child(even) {
-    border-left: 1px solid var(--eco-line);
-  }
-
-  .eco-restock-cockpit .eco-restock-decisionbar__item:nth-child(n + 3) {
-    border-top: 1px solid var(--eco-line);
-  }
-
-  .eco-restock-toolbar {
-    align-items: flex-start;
+@media (max-width: 600px) {
+  .eco-restock-source {
+    align-items: stretch;
     flex-direction: column;
+    gap: 8px;
   }
 
-  .eco-restock-toolbar__title span {
-    white-space: normal;
+  .eco-restock-mode {
+    grid-template-columns: minmax(0, 1fr) 16px;
+    gap: 4px;
+  }
+
+  .eco-restock-mode > svg:first-child {
+    display: none;
+  }
+
+  .eco-restock-source > .eco-btn {
+    align-self: flex-end;
+  }
+
+  .eco-restock-page .eco-restock-head-actions .eco-btn {
+    width: auto;
+  }
+
+  .eco-restock-toolbar > .eco-btn {
+    width: 100%;
+  }
+
+  .eco-restock-orders-link {
+    margin-left: 0;
+  }
+
+  .eco-restock-page .eco-restock-rossko-table .eco-restock-product,
+  .eco-restock-page .eco-restock-supplier-table .eco-restock-product {
+    min-width: 148px;
+    max-width: 170px;
+  }
+
+  .eco-restock-page .eco-restock-rossko-table :is(th, td),
+  .eco-restock-page .eco-restock-supplier-table :is(th, td) {
+    padding-inline: 8px;
   }
 }
 
