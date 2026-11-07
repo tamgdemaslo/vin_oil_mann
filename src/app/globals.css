@@ -72423,3 +72423,125 @@ select[size="1"]::-ms-expand {
   font-size: 13px;
   color: var(--ops-muted);
 }
+
+/* Appointment editor */
+.eco-records-booking-backdrop {
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+}
+.eco-records-booking-backdrop .eco-records-drawer {
+  width: min(1180px, 100%);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: none;
+}
+.eco-records-booking-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+  align-content: start;
+  align-items: start;
+  gap: 14px;
+}
+.eco-records-booking-form > .eco-records-form-summary,
+.eco-records-booking-wide { grid-column: 1 / -1; }
+.eco-records-booking-main { display: grid; gap: 12px; min-width: 0; }
+.eco-records-booking-form section { scroll-margin-top: 12px; min-width: 0; }
+.eco-records-booking-form .eco-records-section-title strong {
+  color: var(--eco-ink);
+  font-size: 16px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.eco-records-booking-form label { min-width: 0; font-size: 13px; font-weight: 600; }
+.eco-records-booking-catalog {
+  border: 1px solid var(--eco-line);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.eco-records-booking-catalog summary,
+.eco-records-booking-manual summary { cursor: pointer; font-weight: 650; }
+.eco-records-booking-catalog summary small { float: right; font-weight: 400; color: var(--eco-muted); }
+.eco-records-booking-catalog label,
+.eco-records-booking-catalog .eco-records-service-picker { margin-top: 8px; }
+.eco-records-booking-catalog .eco-records-service-picker {
+  max-height: 196px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-inline-end: 4px;
+}
+.eco-records-booking-catalog .eco-records-service-picker button strong { overflow-wrap: anywhere; }
+.eco-records-booking-form .eco-records-selected-services {
+  grid-template-columns: minmax(0, 1fr);
+  max-height: 108px;
+  overflow: auto;
+}
+.eco-records-booking-form .eco-records-selected-services button span {
+  flex: 1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.eco-records-booking-calendar {
+  --booking-surface: var(--eco-surface);
+  --booking-ink: var(--eco-ink);
+  --booking-muted: var(--eco-muted);
+  --booking-line: var(--eco-line);
+  --booking-soft: var(--eco-surface-sunk);
+  --booking-accent: var(--eco-rust);
+  margin-block: 12px;
+}
+.eco-records-booking-calendar button strong { text-transform: none; }
+.eco-records-booking-calendar button:not(:disabled) { cursor: pointer; }
+.eco-records-booking-calendar button:focus-visible { outline: 2px solid var(--eco-rust); outline-offset: 2px; }
+.eco-records-booking-calendar > section { padding: 10px; margin: 0; }
+.eco-records-booking-manual { margin-block: 10px; color: var(--eco-ink-2); }
+.eco-records-booking-manual .eco-records-form-grid { margin-top: 8px; }
+.eco-records-booking-form #records-note { background: var(--eco-surface-sunk); }
+.eco-records-booking-form #records-note textarea { width: 100%; resize: vertical; }
+.eco-records-contact-source { margin: 12px 0; padding: 0; border: 0; min-width: 0; }
+.eco-records-contact-source legend { margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+.eco-records-contact-source > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.eco-records-contact-source label { position: relative; cursor: pointer; }
+.eco-records-contact-source input[type="radio"] { position: absolute; opacity: 0; min-height: 0; width: 1px; height: 1px; padding: 0; }
+.eco-records-contact-source label span {
+  display: grid;
+  place-items: center;
+  min-height: 36px;
+  padding: 4px;
+  border: 1px solid var(--eco-line);
+  border-radius: 6px;
+  background: var(--eco-surface);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.eco-records-contact-source input:checked + span { border-color: var(--eco-rust); color: var(--eco-rust); font-weight: 700; }
+.eco-records-contact-source label:last-child input:checked + span { border-color: var(--eco-muted); color: var(--eco-ink); }
+.eco-records-contact-source input:focus-visible + span { outline: 2px solid var(--eco-rust); outline-offset: 2px; }
+.eco-records-booking-form #records-note label small { float: right; font-weight: 400; }
+.eco-records-contact-note {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  margin-top: 5px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: var(--eco-surface-sunk);
+  color: var(--eco-ink);
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+.eco-records-contact-note > span { white-space: pre-wrap; }
+.eco-records-contact-note b { font-size: 11px; }
+@media (max-width: 760px) {
+  .eco-records-booking-backdrop { padding: 0; }
+  .eco-records-booking-backdrop .eco-records-drawer { border-radius: 0; }
+  .eco-records-booking-form { grid-template-columns: minmax(0, 1fr); }
+  .eco-records-contact-source label span { min-height: 44px; }
+}
+.eco-records-slot-picker__master summary { cursor: pointer; }
+.eco-records-slot-picker__times button small { display: block; font-size: 10px; font-weight: 400; }
+.eco-records-booking-backdrop #records-form-title { margin-top: 0; font-size: 22px; }
+.eco-record-card__note { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.eco-record-card__note svg { flex: none; }
+.eco-record-card__note > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

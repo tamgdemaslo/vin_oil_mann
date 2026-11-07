@@ -25,6 +25,14 @@ const customerName = await jiti.import("../src/lib/booking/customer-name.ts");
 const bookingIdempotency = await jiti.import("../src/lib/booking/idempotency.ts");
 const { getBookingAvailability } = await jiti.import("../src/lib/booking/availability.ts");
 const bookingAccess = await jiti.import("../src/lib/booking/access.ts");
+const journalContact = await jiti.import("../src/lib/booking/journal-contact.ts");
+
+const journalNote = { comment: "Согласовали работы.\nКлиент привезёт масло.", source: "Авито", link: "https://www.avito.ru/profile/messenger" };
+assert.deepEqual(journalContact.readJournalContact(journalContact.writeJournalContact(journalNote)), journalNote);
+assert.deepEqual(journalContact.readJournalContact("Старый комментарий"), { comment: "Старый комментарий", source: null, link: null });
+assert.equal(journalContact.journalContactUrl("javascript:alert(1)"), null);
+assert.equal(journalContact.journalContactUrl("https://user:password@example.com/"), null);
+
 
 const masterReceptionistContext = {
   groupRole: null,

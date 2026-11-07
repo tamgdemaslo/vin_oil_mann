@@ -27,6 +27,7 @@ export default function RecordsSlotPicker({ localDate, serviceIds, masterMembers
   const requestKey = JSON.stringify([localDate, serviceKey, masterMembershipId, durationMinutes, excludeBookingId, retry]);
   const ready = serviceIds.length > 0;
   const current = result?.key === requestKey ? result : null;
+  const showMaster = !masterMembershipId && new Set(current?.slots.map(slot => slot.master.membershipId)).size > 1;
 
   useEffect(() => {
     if (!ready) return;
@@ -51,11 +52,21 @@ export default function RecordsSlotPicker({ localDate, serviceIds, masterMembers
     <div className="eco-records-slot-picker__head"><Clock3 size={16} aria-hidden="true" /><strong>Свободное время</strong></div>
     {!ready ? <p>Выберите услуги — покажем время, которого хватит на все работы.</p> : !current ? <p role="status"><Loader2 size={16} className="eco-spin" /> Проверяем расписание мастеров…</p> : current.error ? <div role="status"><p>{current.message}</p><button type="button" className="eco-records-inline-action" onClick={() => setRetry(value => value + 1)}><RefreshCw size={15} /> Повторить</button></div> : current.slots.length ? <>
       <p>Нажмите время начала. Длительность работ уже учтена.</p>
-      {[...new Set(current.slots.map(slot => slot.master.membershipId))].map(masterId => {
-        const slots = current.slots.filter(slot => slot.master.membershipId === masterId);
-        return <div key={masterId} className="eco-records-slot-picker__master"><strong>{slots[0].master.name}</strong><div className="eco-records-slot-picker__times" role="group" aria-label={`Свободное время: ${slots[0].master.name}`}>
-          {slots.map(slot => <button key={slot.startsAt} type="button" aria-pressed={slot.localTime === selectedLocalTime && slot.master.membershipId === masterMembershipId} onClick={() => onSelect(slot)} aria-label={`${slot.localTime}, ${slot.master.name}, ${slot.durationMinutes} мин`}>{slot.localTime}</button>)}
-        </div></div>;
+      {[
+        { label: "Утро", from: "00:00", to: "12:00" },
+        { label: "День", from: "12:00", to: "17:00" },
+        { label: "Вечер", from: "17:00", to: "24:00" },
+      ].map(({ label, from, to }) => {
+        const slots = current.slots.filter(slot => slot.localTime >= from && slot.localTime < to);
+        if (!slots.length) return null;
+        return <details open key={label} className="eco-records-slot-picker__master">
+          <summary>{label}</summary>
+          <div className="eco-records-slot-picker__times" role="group" aria-label={`Свободное время: ${label.toLowerCase()}`}>
+            {slots.map(slot => <button key={`${slot.startsAt}-${slot.master.membershipId}`} type="button" aria-pressed={slot.localTime === selectedLocalTime && slot.master.membershipId === masterMembershipId} onClick={() => onSelect(slot)} aria-label={`${slot.localTime}, ${slot.master.name}, ${slot.durationMinutes} мин`}>
+              {slot.localTime}{showMaster ? <small>{slot.master.name}</small> : null}
+            </button>)}
+          </div>
+        </details>;
       })}
     </> : <p role="status">{current.message}</p>}
   </div>;

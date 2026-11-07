@@ -1,3 +1,4 @@
+import { readJournalContact } from "@/lib/booking/journal-contact";
 import { lockBarrelProducts, syncBulkOilWarehouseTx, shipmentBulkOilWithdrawals } from "@/lib/bulk-oil-barrels";
 import { resolveServicePositionName } from "@/lib/demand-position-name";
 import { Prisma, type LocalCounterparty } from "@prisma/client";
@@ -1533,7 +1534,7 @@ export async function createLocalDemandFromRecord(
         year: booking.vehicle.year ? String(booking.vehicle.year) : null,
       } : input.vehicle,
       comment: booking.comment,
-      internalComment: booking.internalComment,
+      internalComment: readJournalContact(booking.internalComment).comment,
       services: booking.serviceItems.map((item) => item.serviceNameSnapshot),
     } : input;
     const moment = parseMoment(cleanRecordText(effectiveInput.recordDateTime) || undefined);

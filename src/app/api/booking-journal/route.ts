@@ -1,3 +1,5 @@
+import { journalContactSources, journalContactUrl, readJournalContact, writeJournalContact } from "@/lib/booking/journal-contact";
+import { snapshotVehicleDto } from "@/lib/booking/dto";
 import type { PrismaClient } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { bookingViewIsSelfOnly, canConfirmBookings, canManageBookings, canOverrideBookingConflict, canViewBookings, requireBookingCapability } from "@/lib/booking/access";
@@ -93,12 +95,12 @@ function parseComment(comment: string | null) {
   return {
     comment: clientLines.join("\n") || null,
     internalComment,
-    vehicle: {
+    vehicle: words.length || plate || vin ? {
       make: words[0] || "Автомобиль",
       model: words.slice(1).join(" ") || words[0] || "Не указан",
       plate,
       vin,
-    },
+    } : null,
   };
 }
 
@@ -122,21 +124,34 @@ function statusAttendance(comment: string | null) {
   return 0;
 }
 
+function journalContactInput(payload: JsonObject, fallback: string | null, existing?: string | null) {
+  const current = readJournalContact(existing);
+  const source = "contact_source" in payload ? text(payload.contact_source) : current.source;
+  const linkText = "contact_link" in payload ? text(payload.contact_link) : current.link;
+  const link = journalContactUrl(linkText);
+  if (source && !journalContactSources.some(item => item === source)) {
+    throw new BookingError("Выберите источник записи из списка", "booking_contact_source_invalid");
+  }
+  if (linkText && !link) {
+    throw new BookingError("Укажите действительную ссылку на переписку с http или https", "booking_contact_link_invalid");
+  }
+  const comment = "internal_comment" in payload ? text(payload.internal_comment) : fallback ?? current.comment;
+  return writeJournalContact({ comment, source, link });
+}
+
 function composeJournalComment(booking: BookingWithDetails) {
   const lines = [booking.comment?.trim() || ""];
   if (booking.vehicle) {
     const vehicle = [booking.vehicle.make, booking.vehicle.model, booking.vehicle.plate, booking.vehicle.vin ? `VIN ${booking.vehicle.vin}` : null].filter(Boolean).join(" · ");
     if (vehicle && !/^авто:/imu.test(booking.comment ?? "")) lines.push(`Авто: ${vehicle}`);
   }
-  if (booking.internalComment && !/^внутренний комментарий:/imu.test(booking.comment ?? "")) {
-    lines.push(`Внутренний комментарий: ${booking.internalComment}`);
-  }
   return lines.filter(Boolean).join("\n");
 }
 
 function recordDto(booking: BookingWithDetails) {
   const comment = composeJournalComment(booking);
-  const vehicle = booking.vehicle;
+  const vehicle = booking.vehicle ?? snapshotVehicleDto(booking.vehicleSnapshot);
+  const contact = readJournalContact(booking.internalComment);
   return {
     id: journalId(booking.id),
     booking_id: booking.id,
@@ -154,6 +169,9 @@ function recordDto(booking: BookingWithDetails) {
     seance_length: booking.durationMinutes * 60,
     length: booking.durationMinutes * 60,
     comment,
+    internal_comment: contact.comment ?? parseComment(booking.comment).internalComment,
+    contact_source: contact.source,
+    contact_link: contact.link,
     attendance: statusAttendance(comment),
     confirmed: booking.confirmationState === "PENDING" ? 0 : 1,
     online: booking.source === "PUBLIC",
@@ -398,7 +416,7 @@ export async function POST(request: NextRequest) {
         vehicleId: text(payload.vehicle_id),
         vehicle: vehicle ?? parsed.vehicle,
         comment: text(payload.client_comment) ?? parsed.comment,
-        internalComment: text(payload.internal_comment) ?? parsed.internalComment,
+        internalComment: journalContactInput(payload, parsed.internalComment),
         source: "ADMIN",
         overrideConflict: payload.save_if_busy === true,
         overrideReason: overrideReason(payload.override_reason_code),
@@ -408,6 +426,7 @@ export async function POST(request: NextRequest) {
         userId: access.context.userId,
         allowConflictOverride: canOverrideBookingConflict(access.context),
         respectLeadTime: false,
+        allowIncompleteVehicle: true,
       });
     });
     const url = managementUrl(request, result.booking);
@@ -457,16 +476,17 @@ export async function PUT(request: NextRequest) {
         phone: text(client.phone) ?? booking.phone,
         email: text(client.email),
         clientId: text(payload.client_id) ?? booking.clientId,
-        vehicleId: text(payload.vehicle_id) ?? booking.vehicleId,
+        vehicleId: "vehicle_id" in payload ? text(payload.vehicle_id) : undefined,
         comment: text(payload.client_comment) ?? parsed.comment,
-        internalComment: text(payload.internal_comment) ?? parsed.internalComment,
-        vehicle: vehicle ?? parsed.vehicle,
+        internalComment: journalContactInput(payload, parsed.internalComment, booking.internalComment),
+        vehicle: "vehicle" in payload ? vehicle : parsed.vehicle ?? undefined,
         confirm: payload.confirmed === 1,
       }, {
         kind: "USER",
         userId: access.context.userId,
         allowConflictOverride: canOverrideBookingConflict(access.context),
         respectLeadTime: false,
+        allowIncompleteVehicle: true,
       });
     });
     const url = managementUrl(request, result.booking);
