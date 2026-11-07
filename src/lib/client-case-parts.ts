@@ -10,6 +10,11 @@ export function withCaseRosskoOrder(note: string | null | undefined, order: stri
   const rest = (note ?? "").split("\n").filter(line => !ORDER_LINE.test(line)).join("\n").trim();
   return [order.trim() ? `Заказ РОССКО № ${order.trim()}` : "", rest].filter(Boolean).join("\n") || null;
 }
+export function parseRosskoOrderNumber(value: unknown) {
+  if (!validCaseRosskoOrder(value) || !value.trim()) return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? String(number) : null;
+}
 export function caseTimeRemaining(deadline: Date, now: Date): { expired: boolean; label: string } {
   const delta = deadline.getTime() - now.getTime();
   if (Math.abs(delta) < 60000) return { expired: delta <= 0, label: delta <= 0 ? "Срок истёк" : "Осталось менее минуты" };

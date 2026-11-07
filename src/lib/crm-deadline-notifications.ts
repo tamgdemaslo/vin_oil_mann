@@ -1,3 +1,4 @@
+import { refreshCrmRosskoOrders } from "@/lib/crm-rossko-orders";
 import crypto from "crypto";
 import { getUsersFromEnv, type User } from "@/lib/auth";
 import { processClientCaseWorkflowTransitions } from "@/lib/client-case-workflow";
@@ -358,6 +359,7 @@ export async function notifyClientCaseTaskAssigned(input: {
 }
 
 export async function processClientCaseDeadlineNotifications(now = new Date()) {
+  await refreshCrmRosskoOrders();
   const config = getCrmNotificationConfig();
   if (!config.enabled) return { sent: 0, skipped: 0, failed: 0 };
   const transitions = await processClientCaseWorkflowTransitions(now);

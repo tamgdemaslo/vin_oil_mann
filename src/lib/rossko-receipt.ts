@@ -547,6 +547,18 @@ async function loadReceiptHistory(tx: ReceiptDb, branchId: string, orderId: stri
   });
 }
 
+export async function loadPostedRosskoOrderQuantities(branchId: string, order: NormalizedRosskoOrder) {
+  const parts = sourcePartByLineKey(order);
+  const history = await loadReceiptHistory(prisma, branchId, order.id, [...parts.keys()]);
+  const quantities = new Map<string, number>();
+  for (const position of history) {
+    const { document, externalCode } = position;
+    if (!externalCode || document.status !== "posted" || !document.applicable) continue;
+    quantities.set(externalCode, (quantities.get(externalCode) ?? 0) + position.quantity.toNumber());
+  }
+  return [...parts].map(([key, part]) => ({ part, postedQty: quantities.get(key) ?? 0 }));
+}
+
 async function loadManualClosedQuantityByLine(tx: ReceiptDb, branchId: string, orderId: string) {
   const events = await tx.branchAuditLog.findMany({
     where: {

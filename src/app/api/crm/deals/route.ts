@@ -1,3 +1,5 @@
+import { caseRosskoOrder } from "@/lib/client-case-parts";
+import { loadCrmRosskoStatuses } from "@/lib/crm-rossko-orders";
 import { caseCounterpartyPhoneKeys, uniqueCaseCounterpartyId } from "@/lib/client-case-counterparty";
 import { caseClosureById } from "@/lib/client-case-closure";
 import { anonymousRetailCounterpartyExclusion } from "@/lib/anonymous-retail-counterparty";
@@ -300,14 +302,18 @@ export async function GET() {
       }
 
       const branchId = branchAccess.context.branchId!;
-      const closures = await caseClosureById(stages.flatMap(stage => stage.deals), branchId);
+      const deals = stages.flatMap(stage => stage.deals);
+      const [closures, rosskoStatuses] = await Promise.all([
+        caseClosureById(deals, branchId),
+        loadCrmRosskoStatuses(branchId, deals.filter(deal => caseRosskoOrder(deal.suppliesNote))),
+      ]);
       const phones = [...new Set(stages.flatMap(stage => stage.deals.flatMap(deal => caseCounterpartyPhoneKeys(deal.phoneNormalized))))];
       const clients = phones.length ? await prisma.localCounterparty.findMany({
         where: { branchId, archived: false, ...anonymousRetailCounterpartyExclusion(branchId), normalizedPhone: { in: phones } },
         select: { id: true, normalizedPhone: true },
       }) : [];
       return NextResponse.json({ stages: stages.map(stage => ({ ...stage, deals: stage.deals.map(deal => ({
-        ...deal, clientCounterpartyId: uniqueCaseCounterpartyId(deal.phoneNormalized, clients), closure: closures.get(deal.id) ?? null,
+        ...deal, clientCounterpartyId: uniqueCaseCounterpartyId(deal.phoneNormalized, clients), closure: closures.get(deal.id) ?? null, rosskoOrderStatus: rosskoStatuses.get(deal.id) ?? null,
       })) })) });
     } catch (error) {
       console.error("[crm/deals GET]", error);
