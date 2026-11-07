@@ -1353,7 +1353,7 @@ type SupplierInvoiceAdminList = {
   meta: { total: number; limit: number; offset: number };
   invoices: ReturnType<typeof mapSupplierInvoice>[];
 };
-type LocalRestockMode = "below_min" | "outflow";
+type LocalRestockMode = "below_min" | "outflow" | "daily_usage";
 type LocalRestockNeedItem = {
   productId: string;
   name: string | null;
@@ -1367,10 +1367,11 @@ type LocalRestockNeedItem = {
   quantity: number;
   shortage: number;
   spentInPeriod?: number;
+  unit?: string | null;
 };
 type LocalRestockNeedsList = {
   ok: true;
-  rule: "below_min" | "below_min_with_period_outflow";
+  rule: "below_min" | "below_min_with_period_outflow" | "daily_usage";
   source: "local";
   timezone: string;
   dateLabel?: string;
@@ -2719,7 +2720,7 @@ export async function listLocalAdminProducts(params: {
 }
 
 function normalizeRestockMode(value?: string): LocalRestockMode {
-  return value === "outflow" ? "outflow" : "below_min";
+  return value === "outflow" || value === "daily_usage" ? value : "below_min";
 }
 
 function localDateKey(date = new Date()) {
@@ -2749,19 +2750,20 @@ function formatRestockDateLabel(dateFrom: string, dateTo: string) {
 
 function restockItemFromLocalProduct(
   product: RestockProductWithStock,
-  spentInPeriod?: number
+  spentInPeriod?: number,
+  includeUsageAboveMinimum = false
 ): LocalRestockNeedItem | null {
   if (!isStockTrackedType(product.entityType)) return null;
   const minimumBalance = decimalToNullableNumber(product.minimumBalance);
-  if (minimumBalance == null || minimumBalance <= 0) return null;
+  if (!includeUsageAboveMinimum && (minimumBalance == null || minimumBalance <= 0)) return null;
   const stockRows = product.stockBalances.map((balance) => ({
     quantity: decimalToNumber(balance.quantity),
     reserve: decimalToNumber(balance.reserve),
     available: decimalToNumber(balance.available),
   }));
   const stock = stockRows.reduce((sum, row) => sum + row.available, 0);
-  const shortageValue = minimumBalance - stock;
-  if (shortageValue <= 0) return null;
+  const shortageValue = minimumBalance != null && minimumBalance > 0 ? Math.max(0, minimumBalance - stock) : 0;
+  if (!includeUsageAboveMinimum && shortageValue <= 0) return null;
   return {
     productId: product.id,
     name: product.name,
@@ -2775,11 +2777,12 @@ function restockItemFromLocalProduct(
     quantity: stockRows.reduce((sum, row) => sum + row.quantity, 0),
     shortage: shortageValue,
     ...(spentInPeriod != null ? { spentInPeriod } : {}),
+    ...(includeUsageAboveMinimum ? { unit: product.uomName } : {}),
   };
 }
 
 function compareRestockItems(a: LocalRestockNeedItem, b: LocalRestockNeedItem, mode: LocalRestockMode) {
-  if (mode === "outflow") {
+  if (mode !== "below_min") {
     const spentDiff = (b.spentInPeriod ?? 0) - (a.spentInPeriod ?? 0);
     if (spentDiff !== 0) return spentDiff;
   }
@@ -2827,9 +2830,9 @@ async function aggregateLocalOutflowByProduct(dateFrom: string, dateTo: string) 
   return totals;
 }
 
-async function getRestockProductsForAdmin() {
+async function getRestockProductsForAdmin(productIds?: string[]) {
   return prisma.localProduct.findMany({
-    where: { archived: false },
+    where: { archived: false, ...(productIds ? { id: { in: productIds } } : {}) },
     include: restockProductInclude,
     orderBy: [{ name: "asc" }],
   });
@@ -2846,8 +2849,8 @@ export async function listLocalRestockNeeds(params: {
   const timezone = process.env.APP_TIMEZONE?.trim() || "Europe/Kaliningrad";
   const rawDateFrom = params.dateFrom?.trim() || "";
   const rawDateTo = params.dateTo?.trim() || "";
-  const dateFrom = mode === "outflow" ? rawDateFrom || localDateKey() : undefined;
-  const dateTo = mode === "outflow" ? rawDateTo || dateFrom : undefined;
+  const dateFrom = mode === "daily_usage" ? localDateKey() : mode === "outflow" ? rawDateFrom || localDateKey() : undefined;
+  const dateTo = mode === "outflow" ? rawDateTo || dateFrom : dateFrom;
 
   if (mode === "outflow") {
     if (!dateFrom || !dateTo || !isDateKey(dateFrom) || !isDateKey(dateTo)) {
@@ -2865,13 +2868,13 @@ export async function listLocalRestockNeeds(params: {
   const cached = inventoryListsCache.restockNeeds.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.value;
 
-  const rows = await getRestockProductsForAdmin();
-  const outflowByProduct = mode === "outflow" && dateFrom && dateTo
+  const outflowByProduct = dateFrom && dateTo
     ? await aggregateLocalOutflowByProduct(dateFrom, dateTo)
     : new Map<string, number>();
 
+  const rows = await getRestockProductsForAdmin(mode === "daily_usage" ? [...outflowByProduct.keys()] : undefined);
   const items = rows
-    .map((row) => restockItemFromLocalProduct(row, mode === "outflow" ? outflowByProduct.get(row.id) ?? 0 : undefined))
+    .map((row) => restockItemFromLocalProduct(row, outflowByProduct.get(row.id), mode === "daily_usage"))
     .filter((item): item is LocalRestockNeedItem => {
       if (!item) return false;
       return mode !== "outflow" || (item.spentInPeriod ?? 0) > 0;
@@ -2880,10 +2883,10 @@ export async function listLocalRestockNeeds(params: {
 
   const value: LocalRestockNeedsList = {
     ok: true,
-    rule: mode === "outflow" ? "below_min_with_period_outflow" : "below_min",
+    rule: mode === "outflow" ? "below_min_with_period_outflow" : mode,
     source: "local",
     timezone,
-    ...(mode === "outflow" && dateFrom && dateTo
+    ...(dateFrom && dateTo
       ? {
           dateLabel: formatRestockDateLabel(dateFrom, dateTo),
           dateFrom,

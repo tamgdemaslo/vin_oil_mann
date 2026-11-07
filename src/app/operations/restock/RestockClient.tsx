@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Copy,
   FilePlus2,
   Loader2,
@@ -19,10 +20,9 @@ import {
   Settings2,
   ShoppingCart,
   Trash2,
-  Truck,
   X,
 } from "lucide-react";
-import { EcoBadge, EcoButton, EcoInput } from "@/components/platform/EcoUI";
+import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import { formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 import styles from "./QuickOrderPreview.module.css";
 
@@ -38,9 +38,10 @@ type RestockItem = {
   inTransit?: number;
   shortage?: number;
   spentInPeriod?: number;
+  unit?: string | null;
 };
 
-type Mode = "below_min" | "outflow";
+type Mode = "below_min" | "daily_usage";
 type RosskoStock = {
   id: string;
   count: string | number;
@@ -100,6 +101,7 @@ type SupplierOrderLine = RosskoCartLine & {
   receivedQty: number;
   remainingQty: number;
   status: SupplierOrderStatus;
+  statusLabel?: string;
   expectedAt?: number;
 };
 type SupplierOrder = {
@@ -131,7 +133,8 @@ type ServerIncomingOrder = {
     postedReceivedQty: number;
     activeIncomingQty: number;
     expectedDate: string | null;
-    state: string;
+    stateLabel: string;
+    sourceStatusLabel: string;
   }>;
 };
 type ServerIncomingResponse = { orders?: ServerIncomingOrder[]; updatedAt?: string | null; error?: string };
@@ -148,9 +151,6 @@ type ProcurementCoverage = {
   overdue: number;
   remaining: number;
   expectedLabel: string;
-  status: string;
-  tone: "neutral" | "success" | "warning" | "danger" | "info";
-  lines: SupplierOrderLine[];
 };
 type QuickOrderItem = {
   productId: string;
@@ -192,8 +192,6 @@ type ProcurementTab = {
   id: ProcurementCategory;
   label: string;
   count: number;
-  shortage: number;
-  selectedQty: number;
 };
 
 const LS_QTY = "vin-oil-restock-qty";
@@ -240,6 +238,7 @@ function fmtTime(ts: number | undefined): string {
 }
 
 function defaultQty(it: RestockItem): number {
+  if (it.spentInPeriod !== undefined) return it.spentInPeriod;
   const s = it.shortage;
   if (s !== undefined && s !== null && Number.isFinite(s)) return Math.max(1, Math.ceil(s));
   return 1;
@@ -535,7 +534,7 @@ function normalizeSupplierOrders(orders: SupplierOrder[]): SupplierOrder[] {
       const orderedQty = Math.max(1, Math.floor(Number(line.orderedQty ?? normalizedCart.count ?? 1)));
       const receivedQty = Math.max(0, Math.floor(Number(line.receivedQty ?? 0)));
       const remainingQty = Math.max(0, Math.floor(Number(line.remainingQty ?? orderedQty - receivedQty)));
-      if (!normalizedCart.productId || remainingQty <= 0) continue;
+      if (!normalizedCart.productId) continue;
       lines.push({
         ...normalizedCart,
         id: line.id || uuidLike("pol"),
@@ -546,6 +545,7 @@ function normalizeSupplierOrders(orders: SupplierOrder[]): SupplierOrder[] {
         receivedQty,
         remainingQty,
         status: line.status || order.status || "ordered",
+        statusLabel: line.statusLabel,
         expectedAt: typeof line.expectedAt === "number" ? line.expectedAt : expectedAtFromDelivery(normalizedCart.delivery, orderedAt),
       });
     }
@@ -580,7 +580,7 @@ function supplierOrdersFromServer(orders: ServerIncomingOrder[]): SupplierOrder[
       partnumber: line.article,
       brand: line.brand,
       stock: "ROSSKO",
-      count: line.activeIncomingQty,
+      count: line.orderedQty,
       title: line.name,
       code: line.article,
       price: null,
@@ -591,7 +591,12 @@ function supplierOrdersFromServer(orders: ServerIncomingOrder[]): SupplierOrder[
       orderedQty: line.orderedQty,
       receivedQty: line.postedReceivedQty,
       remainingQty: line.activeIncomingQty,
-      status: line.postedReceivedQty > 0 ? "partially_received" : line.activeIncomingQty > 0 ? "confirmed" : "received",
+      status: line.activeIncomingQty > 0
+        ? line.postedReceivedQty > 0 ? "partially_received" : "confirmed"
+        : line.postedReceivedQty >= line.orderedQty ? "received" : "cancelled",
+      statusLabel: line.activeIncomingQty > 0 && line.sourceStatusLabel && line.sourceStatusLabel !== line.stateLabel
+        ? `${line.sourceStatusLabel} · ${line.stateLabel}`
+        : line.stateLabel,
       expectedAt: line.expectedDate ? new Date(line.expectedDate).getTime() : undefined,
     }));
     return {
@@ -674,35 +679,35 @@ function incomingLabel(lines: SupplierOrderLine[]): string {
   return Array.from(buckets.entries()).map(([label, qty]) => `${fmtNum(qty)} ${label}`).join(", ");
 }
 
-function coverageForItem(item: RestockItem, cartQty: number, orderLines: SupplierOrderLine[]): ProcurementCoverage {
+const supplierOrderStatusLabels: Record<SupplierOrderStatus, string> = {
+  ordered: "Отправлен в ROSSKO",
+  confirmed: "Подтверждён",
+  partially_received: "Принято частично",
+  received: "Принято",
+  cancelled: "Отменено",
+  failed: "Ошибка заказа",
+};
+
+function isIncomingOrderLine(line: SupplierOrderLine): boolean {
+  return line.remainingQty > 0 && !["cancelled", "failed", "received"].includes(line.status);
+}
+
+function coverageForItem(item: RestockItem, cartQty: number, orderLines: SupplierOrderLine[], orderedToday = 0): ProcurementCoverage {
   const available = Number(item.stock || 0);
   const reserve = Number(item.reserve || 0);
   const min = Math.max(0, Number(item.minimumBalance || 0));
   const deficit = Math.max(0, min - available);
-  const activeLines = orderLines.filter((line) => !["cancelled", "failed", "received"].includes(line.status));
+  const activeLines = orderLines.filter(isIncomingOrderLine);
   const ordered = activeLines.reduce((sum, line) => sum + Math.max(0, Number(line.remainingQty || 0)), 0);
   const dueToday = activeLines.filter((line) => expectedBucket(line.expectedAt) === "today").reduce((sum, line) => sum + line.remainingQty, 0);
   const dueTomorrow = activeLines.filter((line) => expectedBucket(line.expectedAt) === "tomorrow").reduce((sum, line) => sum + line.remainingQty, 0);
   const dueLater = activeLines.filter((line) => expectedBucket(line.expectedAt) === "later" || expectedBucket(line.expectedAt) === "unknown").reduce((sum, line) => sum + line.remainingQty, 0);
   const overdue = activeLines.filter((line) => expectedBucket(line.expectedAt) === "overdue").reduce((sum, line) => sum + line.remainingQty, 0);
-  const remaining = Math.max(0, min - available - ordered - cartQty);
+  const remaining = Math.max(0, item.spentInPeriod !== undefined
+    ? Math.ceil(item.spentInPeriod) - orderedToday - cartQty
+    : min - available - ordered - cartQty);
   const expectedLabel = incomingLabel(activeLines);
-  const status = (() => {
-    if (cartQty > 0 && remaining > 0) return "Частично в корзине";
-    if (cartQty > 0) return "В корзине";
-    if (remaining <= 0 && ordered > 0) return "Закрыто заказом";
-    if (ordered > 0 && remaining > 0) return "Частично закрыто";
-    return "Нужно заказать";
-  })();
-  const tone: ProcurementCoverage["tone"] =
-    status === "В корзине" || status === "Частично в корзине"
-      ? "info"
-      : status === "Закрыто заказом"
-        ? "success"
-        : status === "Частично закрыто"
-          ? "warning"
-          : "warning";
-  return { available, reserve, min, deficit, inCart: cartQty, ordered, dueToday, dueTomorrow, dueLater, overdue, remaining, expectedLabel, status, tone, lines: activeLines };
+  return { available, reserve, min, deficit, inCart: cartQty, ordered, dueToday, dueTomorrow, dueLater, overdue, remaining, expectedLabel };
 }
 
 function routeText(it: RestockItem): string {
@@ -780,16 +785,10 @@ export default function RestockClient() {
   const [items, setItems] = useState<RestockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [meta, setMeta] = useState<{
-    dateLabel?: string;
-    note?: string;
-    fetchedRows?: number;
-    catalogSize?: number;
-  }>({});
-
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [outflowLoaded, setOutflowLoaded] = useState(false);
+  const [usageDate, setUsageDate] = useState<{ key: string; label: string; timezone: string } | null>(null);
+  const [dailyQtyDrafts, setDailyQtyDrafts] = useState<Record<string, string>>({});
+  const restockRequest = useRef<AbortController | null>(null);
+  const showSpend = mode === "daily_usage";
 
   const [procurementCategory, setProcurementCategory] = useState<ProcurementCategory>("all");
   const [selectedChannel, setSelectedChannel] = useState<string>("all");
@@ -898,68 +897,35 @@ export default function RestockClient() {
     }
   }, []);
 
-  const loadBelowMin = useCallback(async (refresh: boolean) => {
+  const loadRestock = useCallback(async (mode: Mode, refresh = false) => {
+    restockRequest.current?.abort();
+    const controller = new AbortController();
+    restockRequest.current = controller;
     setLoading(true);
     setError(null);
+    setItems([]);
+    setUsageDate(null);
+    setMessageText("");
     try {
-      const u = new URL("/api/local-inventory/restock", window.location.origin);
-      u.searchParams.set("mode", "below_min");
-      if (refresh) u.searchParams.set("refresh", "1");
-      const res = await fetch(u.toString());
+      const params = new URLSearchParams({ mode });
+      if (refresh) params.set("refresh", "1");
+      const res = await fetch(`/api/local-inventory/restock?${params}`, { signal: controller.signal });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Ошибка загрузки");
+      if (controller.signal.aborted) return;
       setItems(data.items ?? []);
-      setMeta({
-        fetchedRows: data.fetchedRows,
-        catalogSize: data.catalogSize,
-        note: data.note,
-      });
-      setOutflowLoaded(false);
+      if (mode === "daily_usage") setUsageDate({ key: data.dateFrom, label: data.dateLabel, timezone: data.timezone });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setItems([]);
+      if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, []);
 
-  const loadOutflow = useCallback(async (refresh: boolean) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const u = new URL("/api/local-inventory/restock", window.location.origin);
-      u.searchParams.set("mode", "outflow");
-      if (refresh) u.searchParams.set("refresh", "1");
-      if (dateFrom && dateTo) {
-        u.searchParams.set("date_from", dateFrom);
-        u.searchParams.set("date_to", dateTo);
-      }
-      const res = await fetch(u.toString());
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Ошибка загрузки");
-      setItems(data.items ?? []);
-      setMeta({
-        dateLabel: data.dateLabel,
-        note: data.note,
-        fetchedRows: data.fetchedRows,
-        catalogSize: data.catalogSize,
-      });
-      setOutflowLoaded(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo]);
-
-  const loadOutflowRef = useRef(loadOutflow);
-  loadOutflowRef.current = loadOutflow;
-
   useEffect(() => {
-    if (mode === "below_min") void loadBelowMin(false);
-    else void loadOutflowRef.current(false);
-  }, [mode, loadBelowMin]);
+    void loadRestock(mode);
+    return () => restockRequest.current?.abort();
+  }, [mode, loadRestock]);
 
   const routeByProduct = useMemo(() => {
     const map = new Map<string, ProcurementRoute>();
@@ -1048,10 +1014,10 @@ export default function RestockClient() {
   }, [categoryItems, filterNotFoundInRossko, procurementCategory, routeByProduct]);
 
   useEffect(() => {
-    if (!channelStats.some((channel) => channel.name === selectedChannel)) {
+    if (!loading && !channelStats.some((channel) => channel.name === selectedChannel)) {
       setSelectedChannel(channelStats[0]?.name ?? "all");
     }
-  }, [channelStats, selectedChannel]);
+  }, [channelStats, loading, selectedChannel]);
 
   const filteredItems = useMemo(() => {
     if (selectedChannel === "all") return categoryItems;
@@ -1101,12 +1067,14 @@ export default function RestockClient() {
     }
     return map;
   }, [rosskoCart]);
-  const orderedLinesByProduct = useMemo(() => {
+  const orderStatusesByProduct = useMemo(() => {
     const map = new Map<string, SupplierOrderLine[]>();
-    for (const order of rosskoOrders) {
-      if (["cancelled", "failed", "received"].includes(order.status)) continue;
+    const latestOrderByProduct = new Map<string, string>();
+    for (const order of [...rosskoOrders].sort((a, b) => b.orderedAt - a.orderedAt)) {
       for (const line of order.lines) {
-        if (["cancelled", "failed", "received"].includes(line.status)) continue;
+        const latestOrderId = latestOrderByProduct.get(line.productId) ?? order.id;
+        latestOrderByProduct.set(line.productId, latestOrderId);
+        if (order.id !== latestOrderId && !isIncomingOrderLine(line)) continue;
         const rows = map.get(line.productId) ?? [];
         rows.push(line);
         map.set(line.productId, rows);
@@ -1114,13 +1082,44 @@ export default function RestockClient() {
     }
     return map;
   }, [rosskoOrders]);
+  const orderedLinesByProduct = useMemo(() => {
+    const map = new Map<string, SupplierOrderLine[]>();
+    for (const order of rosskoOrders) {
+      if (["cancelled", "failed", "received"].includes(order.status)) continue;
+      for (const line of order.lines) {
+        if (!isIncomingOrderLine(line)) continue;
+        const rows = map.get(line.productId) ?? [];
+        rows.push(line);
+        map.set(line.productId, rows);
+      }
+    }
+    return map;
+  }, [rosskoOrders]);
+  const orderedTodayByProduct = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!usageDate) return map;
+    const dateKey = new Intl.DateTimeFormat("sv-SE", { timeZone: usageDate.timezone, dateStyle: "short" });
+    for (const order of rosskoOrders) {
+      if (!Number.isFinite(order.orderedAt) || dateKey.format(order.orderedAt) !== usageDate.key) continue;
+      for (const line of order.lines) {
+        const incoming = isIncomingOrderLine(line) ? line.remainingQty : 0;
+        map.set(line.productId, (map.get(line.productId) ?? 0) + line.receivedQty + incoming);
+      }
+    }
+    return map;
+  }, [rosskoOrders, usageDate]);
   const coverageByProduct = useMemo(() => {
     const map = new Map<string, ProcurementCoverage>();
     for (const item of items) {
-      map.set(item.productId, coverageForItem(item, cartQtyByProduct.get(item.productId) ?? 0, orderedLinesByProduct.get(item.productId) ?? []));
+      map.set(item.productId, coverageForItem(
+        item,
+        cartQtyByProduct.get(item.productId) ?? 0,
+        orderedLinesByProduct.get(item.productId) ?? [],
+        orderedTodayByProduct.get(item.productId),
+      ));
     }
     return map;
-  }, [cartQtyByProduct, items, orderedLinesByProduct]);
+  }, [cartQtyByProduct, items, orderedLinesByProduct, orderedTodayByProduct]);
   const incomingSummary = useMemo(() => {
     const lines = Array.from(orderedLinesByProduct.values()).flat();
     return {
@@ -1138,38 +1137,20 @@ export default function RestockClient() {
     }
     return map;
   }, [rosskoCart]);
-  const procurementTabs = useMemo<ProcurementTab[]>(() => {
-    const tabIds: ProcurementCategory[] = ["all", "oils", "filters", "other", "setup"];
-    return tabIds.map((id) => {
-      const rows =
-        id === "all"
-          ? items
-          : items.filter((item) => {
-              const route = routeByProduct.get(item.productId);
-              if (id === "setup") return route?.category === "setup" || filterNotFoundInRossko(item);
-              return route?.category === id;
-            });
-      const selectedQty = rows.reduce((sum, item) => {
-        const route = routeByProduct.get(item.productId);
-        if (route?.mode === "rossko_only") return sum + (cartQtyByProduct.get(item.productId) ?? 0);
-        if (excluded[item.productId]) return sum;
-        return sum + ensureQty(item.productId, item);
-      }, 0);
-      return {
-        id,
-        label: categoryTitle(id),
-        count: rows.length,
-        shortage: rows.reduce((sum, item) => sum + Math.max(0, Number(item.shortage ?? 0)), 0),
-        selectedQty,
-      };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cartQtyByProduct, excluded, filterNotFoundInRossko, items, qtyByProduct, routeByProduct]);
-  const isRosskoMode =
+  const procurementTabs: ProcurementTab[] = (["all", "oils", "filters", "other", "setup"] as const).map((id) => ({
+    id,
+    label: categoryTitle(id),
+    count: id === "all" ? items.length : items.filter((item) => {
+      const route = routeByProduct.get(item.productId);
+      return id === "setup" ? route?.category === "setup" || filterNotFoundInRossko(item) : route?.category === id;
+    }).length,
+  }));
+  const isSetupMode = procurementCategory === "setup";
+  const isRosskoMode = !isSetupMode && (
     (filteredItems.length > 0 && filteredItems.every((item) => routeByProduct.get(item.productId)?.mode === "rossko_only")) ||
     procurementCategory === "filters" ||
-    (procurementCategory === "all" && selectedChannel === "ROSSKO");
-  const isSetupMode = procurementCategory === "setup";
+    (procurementCategory === "all" && selectedChannel === "ROSSKO")
+  );
   const isSupplierMessageMode = !isRosskoMode && !isSetupMode && selectedChannel !== "all";
   const selectedChannelLabel = channelStats.find((channel) => channel.name === selectedChannel)?.label ?? categoryTitle(procurementCategory);
   const sidebarTitle =
@@ -1180,20 +1161,6 @@ export default function RestockClient() {
         : procurementCategory === "all"
           ? "Каналы закупки"
           : "Поставщики";
-  const restockStats = useMemo(
-    () => ({
-      all: categoryItems.length,
-      shown: filteredItems.length,
-      shortage: filteredItems.reduce((sum, item) => sum + Math.max(0, Number(item.shortage ?? 0)), 0),
-      suppliers: channelStats.filter((channel) => channel.name !== "all").length,
-      excluded: filteredItems.filter((item) => excluded[item.productId]).length,
-      inCart: rosskoCartTotal,
-    }),
-    [categoryItems.length, channelStats, excluded, filteredItems, rosskoCartTotal]
-  );
-  const activeTab = procurementTabs.find((tab) => tab.id === procurementCategory);
-  const calculationStepReady = mode === "below_min" || outflowLoaded;
-  const selectionStepReady = (activeTab?.selectedQty ?? 0) > 0;
   const offerDrawerItem = useMemo(
     () => (offerDrawerProductId ? items.find((item) => item.productId === offerDrawerProductId) ?? null : null),
     [items, offerDrawerProductId]
@@ -1201,7 +1168,7 @@ export default function RestockClient() {
   const canBuildMessage = useMemo(
     () => isSupplierMessageMode && filteredItems.some((it) => !excluded[it.productId] && ensureQty(it.productId, it) > 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [excluded, filteredItems, isSupplierMessageMode, qtyByProduct]
+    [dailyQtyDrafts, excluded, filteredItems, isSupplierMessageMode, qtyByProduct, usageDate]
   );
 
   useEffect(() => {
@@ -1209,17 +1176,29 @@ export default function RestockClient() {
   }, [checkRosskoApi, isRosskoMode, rosskoHealth.checkedAt]);
 
   function ensureQty(pid: string, it: RestockItem): number {
+    if (it.spentInPeriod !== undefined) {
+      const draft = dailyQtyDrafts[`${usageDate?.key}:${pid}`];
+      if (draft === undefined) return defaultQty(it);
+      const qty = Number(draft);
+      return Number.isFinite(qty) && qty > 0 ? qty : 0;
+    }
     const q = qtyByProduct[pid];
     if (typeof q === "number" && q > 0) return Math.floor(q);
     return defaultQty(it);
   }
 
-  function setQty(pid: string, it: RestockItem, value: number) {
-    const v = Math.max(0, Math.floor(value));
+  function setQty(pid: string, it: RestockItem, value: string) {
+    setMessageText("");
+    if (it.spentInPeriod !== undefined) {
+      setDailyQtyDrafts((drafts) => ({ ...drafts, [`${usageDate?.key}:${pid}`]: value }));
+      return;
+    }
+    const v = Math.max(0, Math.floor(Number(value) || 0));
     persistQty({ ...qtyByProduct, [pid]: v > 0 ? v : defaultQty(it) });
   }
 
   function toggleExcluded(pid: string) {
+    setMessageText("");
     persistExcluded({ ...excluded, [pid]: !excluded[pid] });
   }
 
@@ -1234,7 +1213,9 @@ export default function RestockClient() {
       if (q <= 0) continue;
       const code = it.code ? String(it.code) : "—";
       const name = it.name ? String(it.name) : "—";
-      lines.push(`— ${code} / ${name} — ${q} шт. (остаток ${fmtNum(it.stock)}, мин. ${fmtNum(it.minimumBalance)})`);
+      const quantity = `${fmtNum(q)} ${it.unit || "шт."}`;
+      const stockNote = showSpend ? "" : ` (остаток ${fmtNum(it.stock)}, мин. ${fmtNum(it.minimumBalance)})`;
+      lines.push(`— ${code} / ${name} — ${quantity}${stockNote}`);
     }
     return lines.length > 2 ? lines.join("\n") : "";
   }
@@ -1355,7 +1336,7 @@ export default function RestockClient() {
       return route?.mode === "rossko_only" && !excluded[item.productId] && (coverage?.remaining ?? 0) > 0;
     });
     if (!rows.length || quickBusy) {
-      showToast("Нет фильтров, которые нужно заказать сейчас");
+      showToast("Нет позиций ROSSKO, которые нужно заказать сейчас");
       return;
     }
     setQuickBusy(true);
@@ -1451,9 +1432,9 @@ export default function RestockClient() {
   }
 
   function offerQty(key: string, it: RestockItem, stock: RosskoStock): number {
-    const saved = rosskoOfferQty[key];
+    const saved = showSpend ? Number(dailyQtyDrafts[`${usageDate?.key}:offer:${key}`]) : rosskoOfferQty[key];
     const available = stockCount(stock);
-    const wanted = Math.max(1, coverageByProduct.get(it.productId)?.remaining || defaultQty(it));
+    const wanted = Math.max(1, Math.ceil(coverageByProduct.get(it.productId)?.remaining || defaultQty(it)));
     const fallback = available !== null ? Math.min(wanted, Math.max(1, Math.floor(available))) : wanted;
     const qty = typeof saved === "number" && saved > 0 ? Math.floor(saved) : fallback;
     if (available !== null) return Math.min(Math.max(1, qty), Math.max(1, Math.floor(available)));
@@ -1461,7 +1442,12 @@ export default function RestockClient() {
   }
 
   function setOfferQtyValue(key: string, value: number) {
-    const next = { ...rosskoOfferQty, [key]: Math.max(1, Math.floor(value || 1)) };
+    const quantity = Math.max(1, Math.floor(value || 1));
+    if (showSpend) {
+      setDailyQtyDrafts((drafts) => ({ ...drafts, [`${usageDate?.key}:offer:${key}`]: String(quantity) }));
+      return;
+    }
+    const next = { ...rosskoOfferQty, [key]: quantity };
     persistRosskoOfferQty(next);
   }
 
@@ -1603,166 +1589,60 @@ export default function RestockClient() {
           </div>
           <div className="eco-title-row">
             <h1 className="eco-page-title">Пополнение остатков</h1>
-            <EcoBadge tone="rust">{mode === "below_min" ? "ниже минимума" : "расход за период"}</EcoBadge>
-            <EcoBadge tone="success" dot>
-              {categoryTitle(procurementCategory)}
-            </EcoBadge>
           </div>
-          <p className="eco-page-subtitle">
-            Соберите заказ по дефициту, проверьте канал закупки и сформируйте корзину или сообщение поставщику.
-          </p>
         </div>
         <div className="eco-page-actions eco-restock-head-actions">
-          <EcoButton type="button" onClick={() => setSettingsOpen(true)}>
+          {(isRosskoMode || rosskoCartTotal > 0) && (
+            <EcoButton type="button" onClick={() => setCartOpen(true)}>
+              <ShoppingCart size={15} />
+              Корзина ROSSKO{rosskoCartTotal > 0 && <span className="eco-restock-count">{rosskoCartTotal}</span>}
+            </EcoButton>
+          )}
+          <EcoButton type="button" variant="ghost" onClick={() => setSettingsOpen(true)}>
             <Settings2 size={15} />
-            О расчёте
+            О данных
           </EcoButton>
         </div>
       </section>
 
-      <section className="eco-restock-cockpit" aria-label="Рабочий процесс пополнения">
-        <nav className="eco-restock-workflow" aria-label="Этапы пополнения остатков">
-          <a href="#restock-calculation" className={calculationStepReady ? "is-complete" : "is-current"} aria-current={!calculationStepReady ? "step" : undefined}>
-            <span aria-hidden>{calculationStepReady ? "✓" : "1"}</span>
-            <span><strong>Расчёт потребности</strong><small>{mode === "below_min" ? "Ниже минимума" : "По расходу за период"}</small></span>
-          </a>
-          <a
-            href="#restock-selection"
-            className={!calculationStepReady ? "is-upcoming" : selectionStepReady ? "is-complete" : "is-current"}
-            aria-current={!selectionStepReady && calculationStepReady ? "step" : undefined}
-          >
-            <span aria-hidden>{selectionStepReady ? "✓" : "2"}</span>
-            <span><strong>Отбор позиций</strong><small>{selectionStepReady ? `${fmtNum(activeTab?.selectedQty ?? 0)} ед. выбрано` : "Выберите товары и количество"}</small></span>
-          </a>
-          <a
-            href="#restock-order-actions"
-            className={calculationStepReady && selectionStepReady ? "is-current" : "is-upcoming"}
-            aria-current={calculationStepReady && selectionStepReady ? "step" : undefined}
-          >
-            <span aria-hidden>3</span>
-            <span><strong>Оформление заказа</strong><small>{isRosskoMode ? `В корзине ${fmtNum(rosskoCartTotal)} ед.` : isSupplierMessageMode ? selectedChannelLabel : "Выберите канал закупки"}</small></span>
-          </a>
-        </nav>
-
-        <div className="eco-restock-command-grid">
-          <section id="restock-calculation" className="eco-restock-command-section" aria-labelledby="restock-calculation-title">
-            <header>
-              <div>
-                <h2 id="restock-calculation-title">Расчёт потребности</h2>
-                <p>Выберите способ, по которому сформировать список дефицита.</p>
-              </div>
-            </header>
-            <div className="eco-restock-calculation-controls">
-              <div className="eco-seg eco-restock-seg">
-                <button
-                  type="button"
-                  onClick={() => setMode("below_min")}
-                  className={`eco-seg-btn ${mode === "below_min" ? "is-active" : ""}`}
-                >
-                  Ниже минимума
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("outflow")}
-                  className={`eco-seg-btn ${mode === "outflow" ? "is-active" : ""}`}
-                >
-                  С расходом
-                </button>
-              </div>
-              {mode === "below_min" && (
-                <EcoButton type="button" onClick={() => void loadBelowMin(true)} disabled={loading}>
-                  <RefreshCw size={15} />
-                  Обновить данные
-                </EcoButton>
-              )}
-            </div>
-            {mode === "outflow" && (
-              <div className="eco-restock-period-panel">
-                <label className="eco-restock-field">
-                  <span>С даты</span>
-                  <EcoInput type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-                </label>
-                <label className="eco-restock-field">
-                  <span>По дату</span>
-                  <EcoInput type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-                </label>
-                <EcoButton type="button" onClick={() => void loadOutflow(true)} disabled={loading} variant="primary">
-                  <Truck size={15} />
-                  Рассчитать
-                </EcoButton>
-                {outflowLoaded && meta.dateLabel && (
-                  <span className="eco-restock-period-panel__summary">Период: <strong>{meta.dateLabel}</strong></span>
-                )}
-              </div>
-            )}
-          </section>
-
-          <section id="restock-order-actions" className="eco-restock-command-section eco-restock-command-section--order" aria-labelledby="restock-order-title">
-            <header>
-              <div>
-                <h2 id="restock-order-title">{isRosskoMode ? "Заказ через ROSSKO" : isSetupMode ? "Настройка каталога" : "Заказ поставщику"}</h2>
-                <p>{isRosskoMode ? "Соберите и оформите новый заказ поставщику." : isSetupMode ? "Уточните маршруты закупки для неподготовленных товаров." : isSupplierMessageMode ? `Канал: ${selectedChannelLabel}` : "Сначала выберите конкретного поставщика."}</p>
-              </div>
-            </header>
-            {isRosskoMode ? (
-              <div className="eco-restock-order-controls">
-                <EcoButton type="button" variant="primary" onClick={() => void buildQuickOrderPreview()} disabled={quickBusy || rosskoHealth.status === "error"}>
-                  {quickBusy ? <Loader2 size={15} className="eco-spin" /> : <PackageCheck size={15} />}
-                  Быстрый заказ
-                </EcoButton>
-                <EcoButton type="button" variant="primary" onClick={() => setCartOpen(true)}>
-                  <ShoppingCart size={15} />
-                  Корзина ({rosskoCartTotal})
-                </EcoButton>
-                <Link className="eco-btn" href="/inventory/receipts?rossko=1">
-                  <PackageSearch size={15} />
-                  Заказы ROSSKO
-                </Link>
-              </div>
-            ) : isSetupMode ? (
-              <p className="eco-restock-command-note">Откройте товар из списка ниже и укажите категорию либо поставщика.</p>
-            ) : (
-              <div className="eco-restock-order-controls">
-                <EcoButton type="button" variant="primary" onClick={buildMessage} disabled={!canBuildMessage}>
-                  <FilePlus2 size={15} />
-                  Сформировать заказ
-                </EcoButton>
-              </div>
-            )}
-          </section>
+      <section className="eco-restock-source" aria-label="Что пополнить">
+        <div className="eco-restock-mode-group" role="group" aria-label="Режим пополнения">
+          {([
+            { id: "below_min", title: "Ниже минимума", hint: "Товары, которых не хватает на складе", icon: PackageSearch },
+            { id: "daily_usage", title: "Расход за сегодня", hint: "Товары из отгрузок и списаний", icon: ClipboardList },
+          ] as const).map(({ id, title, hint, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                if (id === mode) return;
+                setLoading(true);
+                setItems([]);
+                setMessageText("");
+                setMode(id);
+              }}
+              disabled={quickBusy}
+              aria-pressed={mode === id}
+              className="eco-restock-mode"
+            >
+              <Icon size={18} aria-hidden="true" />
+              <span><strong>{title}</strong><small>{hint}</small></span>
+              {mode === id && <CheckCircle2 size={16} className="eco-restock-mode-check" aria-hidden="true" />}
+            </button>
+          ))}
         </div>
-
-      <div className="eco-restock-decisionbar" aria-label="Сводка пополнения">
-        <div className="eco-restock-decisionbar__item is-primary">
-          <span>В выборке</span>
-          <strong>{fmtNum(restockStats.shown)}</strong>
-          <em>из {fmtNum(restockStats.all)}</em>
-        </div>
-        <div className="eco-restock-decisionbar__item">
-          <span>Дефицит</span>
-          <strong>{fmtNum(restockStats.shortage)}</strong>
-          <em>{selectedChannelLabel}</em>
-        </div>
-        <div className="eco-restock-decisionbar__item">
-          <span>Выбрано</span>
-          <strong>{fmtNum(activeTab?.selectedQty ?? 0)}</strong>
-          <em>к заказу</em>
-        </div>
-        <div className="eco-restock-decisionbar__item">
-          <span>{isRosskoMode ? "Корзина" : "Исключено"}</span>
-          <strong>{fmtNum(isRosskoMode ? restockStats.inCart : restockStats.excluded)}</strong>
-          <em>{isRosskoMode ? "ROSSKO" : "строк"}</em>
-        </div>
-      </div>
+        <EcoButton type="button" onClick={() => void loadRestock(mode, true)} disabled={loading || quickBusy}>
+          <RefreshCw size={15} />
+          Обновить список
+        </EcoButton>
       </section>
 
-      <div id="restock-selection" className="eco-restock-category-tabs" role="tablist" aria-label="Категории закупки">
+      <div id="restock-selection" className="eco-restock-category-tabs" role="group" aria-label="Категории закупки">
         {procurementTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
-            role="tab"
-            aria-selected={procurementCategory === tab.id}
+            aria-pressed={procurementCategory === tab.id}
             className={`eco-restock-category-tab ${procurementCategory === tab.id ? "is-active" : ""}`}
             onClick={() => {
               setProcurementCategory(tab.id);
@@ -1770,14 +1650,21 @@ export default function RestockClient() {
             }}
           >
             <span>{tab.label}</span>
-            <strong>{tab.count}</strong>
-            <em>деф. {fmtNum(tab.shortage)} · выбрано {fmtNum(tab.selectedQty)}</em>
+            <span className="eco-restock-count">{tab.count}</span>
           </button>
         ))}
       </div>
 
       <div className={`eco-restock-layout ${sidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
       <aside className="eco-restock-sidebar">
+        <label className="eco-restock-channel-select">
+          <span>{sidebarTitle}</span>
+          <EcoSelect value={selectedChannel} onChange={(event) => setSelectedChannel(event.target.value)}>
+            {channelStats.map((channel) => (
+              <option key={channel.name} value={channel.name}>{channel.label} ({channel.count})</option>
+            ))}
+          </EcoSelect>
+        </label>
         <div className="eco-filter-rail eco-restock-rail">
           <div className="eco-restock-rail-head">
             {!sidebarCollapsed && <span>{sidebarTitle}</span>}
@@ -1785,6 +1672,7 @@ export default function RestockClient() {
               type="button"
               className="eco-restock-sidebar-toggle"
               onClick={() => setSidebarCollapsed((value) => !value)}
+              aria-expanded={!sidebarCollapsed}
               aria-label={sidebarCollapsed ? "Показать каналы" : "Свернуть каналы"}
               title={sidebarCollapsed ? "Показать каналы" : "Свернуть каналы"}
             >
@@ -1799,10 +1687,11 @@ export default function RestockClient() {
                     key={supplier.name}
                     type="button"
                     onClick={() => setSelectedChannel(supplier.name)}
+                    aria-pressed={selectedChannel === supplier.name}
                     className={`eco-restock-supplier-btn ${selectedChannel === supplier.name ? "is-active" : ""}`}
                   >
                     <span>{supplier.label}</span>
-                    <em>{supplier.count} · деф. {fmtNum(supplier.shortage)}</em>
+                    <em>{supplier.count}</em>
                   </button>
                 ))}
               </div>
@@ -1814,26 +1703,36 @@ export default function RestockClient() {
       <section id="restock-position-workspace" className="eco-restock-main" aria-labelledby="restock-position-title">
         <div className="eco-table-toolbar eco-restock-toolbar">
           <div className="eco-restock-toolbar__title">
-            <h2 id="restock-position-title">Позиции к пополнению</h2>
+            <h2 id="restock-position-title">{isSetupMode ? "Требуют настройки" : showSpend ? "Что израсходовали" : "Позиции ниже минимума"}</h2>
             <span>
-              {categoryTitle(procurementCategory)} · {selectedChannelLabel} · {restockStats.shown} позиций · дефицит{" "}
-              {fmtNum(restockStats.shortage)}
+              {usageDate && `${usageDate.label} · `}{selectedChannelLabel} · Позиций: {filteredItems.length}
             </span>
-          </div>
-          <div className="grow" />
-          <div className="flex flex-wrap gap-2">
-            {isRosskoMode && rosskoCartTotal > 0 && (
-              <EcoBadge tone="success">ROSSKO: {rosskoCartTotal}</EcoBadge>
+            {isSetupMode && <span>Откройте товар, чтобы указать категорию или поставщика.</span>}
+            {!isRosskoMode && !isSetupMode && !isSupplierMessageMode && (
+              <span>Выберите поставщика, чтобы сформировать заказ.</span>
             )}
           </div>
+          {isRosskoMode && (
+            <EcoButton
+              type="button"
+              variant="primary"
+              onClick={() => void buildQuickOrderPreview()}
+              disabled={loading || quickBusy || rosskoBulk.active || incomingLoading || !filteredItems.length || rosskoHealth.status === "error"}
+            >
+              {quickBusy ? <Loader2 size={15} className="eco-spin" /> : <PackageCheck size={15} />}
+              Подобрать для заказа
+            </EcoButton>
+          )}
+          {isSupplierMessageMode && (
+            <EcoButton type="button" variant="primary" onClick={() => {
+              buildMessage();
+              document.getElementById("restock-supplier-message")?.scrollIntoView({ block: "start" });
+            }} disabled={!canBuildMessage}>
+              <FilePlus2 size={15} />
+              Сформировать сообщение
+            </EcoButton>
+          )}
         </div>
-
-        {meta.fetchedRows !== undefined && (
-          <p className="eco-restock-meta-note">
-            Товаров проверено: {meta.fetchedRows}, позиций в каталоге: {meta.catalogSize ?? "—"}.
-            {meta.note && <span>{meta.note}</span>}
-          </p>
-        )}
 
         {error && (
           <div className="eco-restock-alert is-error">
@@ -1845,37 +1744,53 @@ export default function RestockClient() {
         {loading && (
           <div className="eco-restock-loading">
             <Loader2 size={18} className="eco-spin" />
-            <span>Загрузка данных из локальной БД…</span>
+            <span>Загружаем товары…</span>
           </div>
         )}
 
-        {!loading && isRosskoMode && (
+        {!loading && !error && items.length === 0 && (
+          <div className="eco-restock-empty-state">
+            <PackageSearch size={28} />
+            <strong>{showSpend ? "Сегодня ещё нет проведённого расхода" : "Нет товаров ниже минимума"}</strong>
+          </div>
+        )}
+
+        {!loading && items.length > 0 && isRosskoMode && (
           <div className="eco-restock-flow-stack">
             <div className="eco-restock-incoming-strip">
-              <span>Нужно заказать {fmtNum(filteredItems.reduce((sum, item) => sum + (coverageByProduct.get(item.productId)?.remaining ?? 0), 0))}</span>
-              <span>В пути {fmtNum(incomingSummary.total)}</span>
-              <span>Сегодня {fmtNum(incomingSummary.today)}</span>
-              <span>Завтра {fmtNum(incomingSummary.tomorrow)}</span>
-              <span>Позже {fmtNum(incomingSummary.later)}</span>
+              <span className="eco-restock-incoming-needed">
+                К заказу <b>{fmtNum(filteredItems.reduce((sum, item) => sum + (coverageByProduct.get(item.productId)?.remaining ?? 0), 0))}</b>
+              </span>
+              <span>В пути <b>{fmtNum(incomingSummary.total)}</b></span>
+              <span>На сегодня <b>{fmtNum(incomingSummary.today)}</b></span>
+              <span>На завтра <b>{fmtNum(incomingSummary.tomorrow)}</b></span>
+              <span>Позже <b>{fmtNum(incomingSummary.later)}</b></span>
               {!!incomingSummary.overdue && <strong>Просрочено {fmtNum(incomingSummary.overdue)}</strong>}
-              <button type="button" onClick={() => void loadServerIncomingOrders([], true)} disabled={incomingLoading}>
+              <Link className="eco-restock-orders-link" href="/inventory/receipts?rossko=1">Заказы ROSSKO</Link>
+              <button
+                type="button"
+                onClick={() => void loadServerIncomingOrders([], true)}
+                disabled={incomingLoading}
+                aria-label="Обновить статусы заказов ROSSKO"
+                title="Обновить статусы заказов ROSSKO"
+              >
                 {incomingLoading ? <Loader2 size={13} className="eco-spin" /> : <RefreshCw size={13} />}
                 {incomingUpdatedAt ? `Статусы: ${fmtTime(new Date(incomingUpdatedAt).getTime())}` : "Обновить статусы заказов"}
               </button>
+              {rosskoHealth.status === "ok" && (
+                <button type="button" onClick={() => void bulkRosskoSearch()} disabled={!filteredItems.length || rosskoBulk.active}>
+                  <PackageSearch size={13} />
+                  Проверить наличие
+                </button>
+              )}
             </div>
-            <RosskoStatusPanel
-              health={rosskoHealth}
-              bulk={rosskoBulk}
-              disabled={!filteredItems.length || rosskoBulk.active || rosskoHealth.status === "error"}
-              onRetry={() => void checkRosskoApi()}
-              onBulk={() => void bulkRosskoSearch()}
-              onQuick={() => void buildQuickOrderPreview()}
-              quickBusy={quickBusy}
-            />
+            {(rosskoHealth.status !== "ok" || rosskoBulk.active) && (
+              <RosskoStatusPanel health={rosskoHealth} bulk={rosskoBulk} onRetry={() => void checkRosskoApi()} />
+            )}
             <RosskoItemsTable
               grouped={grouped}
-              showSpend={mode === "outflow" && outflowLoaded}
-              ensureQty={ensureQty}
+              showSpend={showSpend}
+              orderStatusesByProduct={orderStatusesByProduct}
               rosskoState={rosskoState}
               cartQtyByProduct={cartQtyByProduct}
               coverageByProduct={coverageByProduct}
@@ -1886,10 +1801,10 @@ export default function RestockClient() {
           </div>
         )}
 
-        {!loading && isSetupMode && (
+        {!loading && items.length > 0 && isSetupMode && (
           <SetupItemsTable
             grouped={grouped}
-            showSpend={mode === "outflow" && outflowLoaded}
+            showSpend={showSpend}
             excluded={excluded}
             toggleExcluded={toggleExcluded}
             routeByProduct={routeByProduct}
@@ -1897,19 +1812,19 @@ export default function RestockClient() {
           />
         )}
 
-        {!loading && !isRosskoMode && !isSetupMode && (
+        {!loading && items.length > 0 && !isRosskoMode && !isSetupMode && (
           <div className="eco-restock-flow-stack">
             <ItemsTable
               supplier={selectedChannelLabel}
               grouped={grouped}
-              showSpend={mode === "outflow" && outflowLoaded}
-              ensureQty={ensureQty}
+              showSpend={showSpend}
+              inputQty={(pid, item) => showSpend ? dailyQtyDrafts[`${usageDate?.key}:${pid}`] ?? ensureQty(pid, item) : ensureQty(pid, item)}
               setQty={setQty}
               excluded={excluded}
               toggleExcluded={toggleExcluded}
-              readOnly={false}
+              readOnly={!isSupplierMessageMode}
             />
-            <section className="eco-restock-message-panel">
+            <section id="restock-supplier-message" className="eco-restock-message-panel">
               <div className="eco-restock-message-head">
                 <div>
                   <span>Сообщение поставщику</span>
@@ -2029,13 +1944,10 @@ export default function RestockClient() {
             </button>
           </header>
           <ul>
-            <li>В список попадают только локальные товары с заполненным неснижаемым остатком.</li>
-            <li>Условие: доступный остаток в локальной БД меньше неснижаемого.</li>
-            <li>
-              Режим «С расходом за период» дополнительно отбирает позиции, по которым был расход за выбранные даты
-              (локальные отгрузки и списания).
-            </li>
-            <li>Количества для сообщения и исключения позиций хранятся в браузере на этом устройстве.</li>
+            <li>«Ниже минимума» показывает товары, у которых доступный остаток меньше установленного минимума.</li>
+            <li>«Расход за сегодня» показывает количество из проведённых отгрузок и списаний за текущий день по времени сервиса.</li>
+            <li>При подборе ROSSKO из расхода вычитаются товары в корзине и позиции из сегодняшних заказов, которые ещё ждут или уже приняли.</li>
+            <li>Для других поставщиков раздел готовит сообщение. Его можно скопировать и отправить поставщику.</li>
           </ul>
           <footer>
             <EcoButton type="button" variant="primary" onClick={() => setSettingsOpen(false)}>
@@ -2200,19 +2112,11 @@ function QuickOrderPreviewDrawer({
 function RosskoStatusPanel({
   health,
   bulk,
-  disabled,
   onRetry,
-  onBulk,
-  onQuick,
-  quickBusy,
 }: {
   health: RosskoHealth;
   bulk: RosskoBulkState;
-  disabled: boolean;
   onRetry: () => void;
-  onBulk: () => void;
-  onQuick: () => void;
-  quickBusy: boolean;
 }) {
   const ok = health.status === "ok";
   const checking = health.status === "checking";
@@ -2222,13 +2126,8 @@ function RosskoStatusPanel({
         {checking ? <Loader2 size={18} className="eco-spin" /> : ok ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
       </div>
       <div className="eco-restock-rossko-status__body">
-        <strong>{ok || checking ? "ROSSKO подключён" : "ROSSKO недоступен"}</strong>
-        <span>
-          {ok || checking
-            ? "Можно искать наличие, добавлять позиции в корзину и оформлять заказ"
-            : "Поиск предложений временно невозможен. Попробуйте обновить позже"}
-        </span>
-        <em>Проверено: {fmtTime(health.checkedAt)}</em>
+        <strong>{checking ? "Проверяем связь с ROSSKO…" : ok ? "ROSSKO подключён" : "ROSSKO недоступен"}</strong>
+        {!ok && !checking && <span>Попробуйте повторить проверку.</span>}
         {bulk.active && (
           <div className="eco-restock-rossko-progress">
             <span>Проверяем {bulk.current} из {bulk.total}…</span>
@@ -2236,26 +2135,14 @@ function RosskoStatusPanel({
           </div>
         )}
       </div>
-      <div className="eco-restock-rossko-status__actions">
-        {ok && (
-          <>
-            <EcoButton type="button" onClick={onQuick} disabled={disabled || quickBusy} size="sm" variant="primary">
-              {quickBusy ? <Loader2 size={14} className="eco-spin" /> : <PackageCheck size={14} />}
-              Быстрый заказ ROSSKO
-            </EcoButton>
-            <EcoButton type="button" onClick={onBulk} disabled={disabled} size="sm">
-              {bulk.active ? <Loader2 size={14} className="eco-spin" /> : <PackageSearch size={14} />}
-              Проверить наличие
-            </EcoButton>
-          </>
-        )}
-        {!ok && (
-          <EcoButton type="button" onClick={onRetry} disabled={checking} size="sm">
-            <RefreshCw size={14} className={checking ? "eco-spin" : ""} />
+      {!ok && !checking && (
+        <div className="eco-restock-rossko-status__actions">
+          <EcoButton type="button" onClick={onRetry} size="sm">
+            <RefreshCw size={14} />
             Повторить проверку
           </EcoButton>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -2754,7 +2641,7 @@ function RosskoOfferPanel({
 function RosskoItemsTable({
   grouped,
   showSpend,
-  ensureQty,
+  orderStatusesByProduct,
   rosskoState,
   cartQtyByProduct,
   coverageByProduct,
@@ -2764,7 +2651,7 @@ function RosskoItemsTable({
 }: {
   grouped: [string, RestockItem[]][];
   showSpend: boolean;
-  ensureQty: (pid: string, it: RestockItem) => number;
+  orderStatusesByProduct: Map<string, SupplierOrderLine[]>;
   rosskoState: Record<string, RosskoSearchState>;
   cartQtyByProduct: Map<string, number>;
   coverageByProduct: Map<string, ProcurementCoverage>;
@@ -2787,23 +2674,19 @@ function RosskoItemsTable({
       {grouped.map(([groupName, rows]) => (
         <section key={groupName} className="eco-restock-table-section">
           <div className="eco-restock-group-label">{groupName}</div>
-          <div className="eco-restock-table-wrap">
+          <div className="eco-restock-table-wrap" tabIndex={0} role="region" aria-label={groupName}>
             <table className="eco-restock-rossko-table">
               <thead>
                 <tr>
                   <th>Товар</th>
-                  <th>Код / артикул</th>
-                  <th>Остаток</th>
-                  <th>Мин.</th>
-                  <th>Дефицит</th>
-                  <th>Заказано</th>
+                  {showSpend && <th className="l-number">Расход сегодня</th>}
+                  <th className="l-number">К заказу</th>
+                  <th className="l-number">Остаток</th>
+                  <th className="l-number">Мин.</th>
+                  <th className="l-number">Дефицит</th>
+                  <th>Заказы ROSSKO</th>
                   <th>Ожидается</th>
-                  <th>Осталось</th>
-                  {showSpend && (
-                    <th>Расход</th>
-                  )}
                   <th>Предложения ROSSKO</th>
-                  <th>К заказу</th>
                   <th>Действия</th>
                 </tr>
               </thead>
@@ -2813,7 +2696,7 @@ function RosskoItemsTable({
                   const st = rosskoState[pid] ?? {};
                   const inCartQty = cartQtyByProduct.get(pid) ?? 0;
                   const coverage = coverageByProduct.get(pid) ?? coverageForItem(it, inCartQty, []);
-                  const meta = coverage.remaining <= 0 && coverage.ordered > 0 ? { label: coverage.status, tone: coverage.tone } : statusLabel(st, inCartQty);
+                  const meta = statusLabel(st, inCartQty);
                   const hasResults = Boolean(st.results?.length);
                   const actionLabel = (() => {
                     if (apiUnavailable) return "Повторить проверку";
@@ -2827,31 +2710,35 @@ function RosskoItemsTable({
                       <tr className={`eco-restock-product-row ${inCartQty ? "is-in-cart" : ""} ${coverage.remaining <= 0 ? "is-covered" : ""}`}>
                         <td className="eco-restock-product">
                           <strong>{it.name ?? "—"}</strong>
-                          {it.group && <span>{it.group}</span>}
+                          {it.code && <span className="l-mono">{it.code}</span>}
                         </td>
-                        <td className="l-mono">{it.code ?? "—"}</td>
+                        {showSpend && <td className="l-number eco-restock-table-emphasis">{fmtNum(it.spentInPeriod)} {it.unit || "шт."}</td>}
+                        <td className="l-number">
+                          {coverage.remaining > 0
+                            ? <strong className="eco-restock-table-emphasis">{fmtNum(coverage.remaining)} шт.</strong>
+                            : <span className="eco-restock-covered">Докупать не нужно</span>}
+                          {inCartQty > 0 && <span className="eco-restock-in-cart">В корзине: {fmtNum(inCartQty)}</span>}
+                        </td>
                         <td className="l-number">{fmtNum(it.stock)}</td>
                         <td className="l-number">{fmtNum(it.minimumBalance)}</td>
                         <td className="l-number is-shortage">{fmtNum(coverage.deficit)}</td>
-                        <td className="l-number">{coverage.ordered ? fmtNum(coverage.ordered) : "—"}</td>
+                        <td className="eco-restock-expected-cell">
+                          {coverage.ordered > 0 && <strong>В поставке: {fmtNum(coverage.ordered)} шт.</strong>}
+                          {(orderStatusesByProduct.get(pid) ?? []).map((line) => (
+                            <div key={`${line.orderId}:${line.id}`}>
+                              {line.externalOrderId && <span>№{line.externalOrderId} · </span>}
+                              {line.statusLabel || supplierOrderStatusLabels[line.status] || "Статус уточняется"}
+                            </div>
+                          ))}
+                          {!orderStatusesByProduct.has(pid) && "—"}
+                        </td>
                         <td className="eco-restock-expected-cell">{coverage.expectedLabel}</td>
-                        <td className="l-number is-shortage">{fmtNum(coverage.remaining)}</td>
-                        {showSpend && <td className="l-number">{fmtNum(it.spentInPeriod)}</td>}
                         <td>
                           <EcoBadge tone={meta.tone} dot={meta.tone === "success"}>
                             {meta.label}
                           </EcoBadge>
                           {hasResults && <span className="eco-restock-best-offer">{bestOfferLabel(st.results, it, coverage.remaining)}</span>}
                           {st.checkedAt && <span className="eco-restock-check-time">Проверено: {fmtTime(st.checkedAt)}</span>}
-                        </td>
-                        <td className="l-number">
-                          {inCartQty ? (
-                            <span className="eco-restock-in-cart">В корзине: {fmtNum(inCartQty)}</span>
-                          ) : coverage.remaining <= 0 ? (
-                            <span className="eco-restock-covered">Закрыто</span>
-                          ) : (
-                            <span>{fmtNum(coverage.remaining || ensureQty(pid, it))} шт.</span>
-                          )}
                         </td>
                         <td className="eco-restock-row-actions">
                           <EcoButton
@@ -2862,7 +2749,7 @@ function RosskoItemsTable({
                               if (hasResults || st.status === "error" || st.status === "not_found") openOffers(pid);
                               else refreshRossko(pid, it);
                             }}
-                            variant={hasResults || st.status === "error" || st.status === "not_found" ? "secondary" : "primary"}
+                            variant="secondary"
                           >
                             {st.loading ? <Loader2 size={14} className="eco-spin" /> : hasResults ? <ChevronDown size={14} /> : <Search size={14} />}
                             {actionLabel}
@@ -2885,7 +2772,7 @@ function ItemsTable({
   supplier,
   grouped,
   showSpend,
-  ensureQty,
+  inputQty,
   setQty,
   excluded,
   toggleExcluded,
@@ -2894,8 +2781,8 @@ function ItemsTable({
   supplier: string;
   grouped: [string, RestockItem[]][];
   showSpend: boolean;
-  ensureQty: (pid: string, it: RestockItem) => number;
-  setQty: (pid: string, it: RestockItem, value: number) => void;
+  inputQty: (pid: string, it: RestockItem) => number | string;
+  setQty: (pid: string, it: RestockItem, value: string) => void;
   excluded: Record<string, boolean>;
   toggleExcluded: (pid: string) => void;
   readOnly: boolean;
@@ -2905,7 +2792,7 @@ function ItemsTable({
       <div className="eco-restock-empty-state">
         <PackageSearch size={28} />
         <strong>Нет позиций для отображения</strong>
-        <span>Для выбранного поставщика сейчас нет товаров ниже минимума.</span>
+        <span>{showSpend ? "В этой выборке сегодня не было расхода." : "В этой выборке нет товаров ниже минимума."}</span>
       </div>
     );
   }
@@ -2921,24 +2808,22 @@ function ItemsTable({
             </div>
             <div className="eco-restock-supplier-group__stats">
               <span>{rows.length} позиций</span>
-              <span>Дефицит {fmtNum(rows.reduce((sum, item) => sum + Math.max(0, Number(item.shortage ?? 0)), 0))}</span>
+              {!showSpend && <span>Дефицит {fmtNum(rows.reduce((sum, item) => sum + Math.max(0, Number(item.shortage ?? 0)), 0))}</span>}
             </div>
           </header>
-          <div className="eco-restock-table-wrap">
+          <div className="eco-restock-table-wrap" tabIndex={0} role="region" aria-label={groupName}>
             <table className="eco-restock-supplier-table">
               <thead>
                 <tr>
                   <th>Товар</th>
+                  {showSpend && <th className="l-number">Расход сегодня</th>}
                   <th>Код / артикул</th>
-                  <th>Остаток</th>
-                  <th>Мин.</th>
-                  <th>Дефицит</th>
-                  {showSpend && (
-                    <th>Расход</th>
-                  )}
+                  <th className="l-number">Остаток</th>
+                  <th className="l-number">Мин.</th>
+                  <th className="l-number">Дефицит</th>
                   {!readOnly && (
                     <>
-                      <th>К заказу</th>
+                      <th className="l-number">К заказу</th>
                       <th>Вкл. / исключить</th>
                       <th>Действия</th>
                     </>
@@ -2957,22 +2842,20 @@ function ItemsTable({
                       <strong>{it.name ?? "—"}</strong>
                       {it.group && <span>{it.group}</span>}
                     </td>
+                    {showSpend && <td className="l-number eco-restock-table-emphasis">{fmtNum(it.spentInPeriod)} {it.unit || "шт."}</td>}
                     <td className="l-mono">{it.code ?? "—"}</td>
                     <td className="l-number">{fmtNum(it.stock)}</td>
                     <td className="l-number">{fmtNum(it.minimumBalance)}</td>
                     <td className="l-number is-shortage">{fmtNum(it.shortage)}</td>
-                    {showSpend && (
-                      <td className="l-number">{fmtNum(it.spentInPeriod)}</td>
-                    )}
                     {!readOnly && (
                       <>
                         <td className="eco-restock-order-qty">
                           <EcoInput
                             type="number"
-                            min={1}
-                            step={1}
-                            value={ensureQty(it.productId, it)}
-                            onChange={(e) => setQty(it.productId, it, parseInt(e.target.value, 10) || 0)}
+                            min={showSpend ? 0.001 : 1}
+                            step={showSpend ? "any" : 1}
+                            value={inputQty(it.productId, it)}
+                            onChange={(e) => setQty(it.productId, it, e.target.value)}
                             disabled={isExcluded}
                             aria-label={`Количество к заказу: ${it.name ?? it.code ?? "товар"}`}
                           />
@@ -3037,20 +2920,20 @@ function SetupItemsTable({
             </div>
             <div className="eco-restock-supplier-group__stats">
               <span>{rows.length} позиций</span>
-              <span>Дефицит {fmtNum(rows.reduce((sum, item) => sum + Math.max(0, Number(item.shortage ?? 0)), 0))}</span>
+              {!showSpend && <span>Дефицит {fmtNum(rows.reduce((sum, item) => sum + Math.max(0, Number(item.shortage ?? 0)), 0))}</span>}
             </div>
           </header>
-          <div className="eco-restock-table-wrap">
+          <div className="eco-restock-table-wrap" tabIndex={0} role="region" aria-label={groupName}>
             <table className="eco-restock-supplier-table eco-restock-setup-table">
               <thead>
                 <tr>
                   <th>Товар</th>
                   <th>Код / артикул</th>
                   <th>Причина</th>
-                  <th>Остаток</th>
-                  <th>Мин.</th>
-                  <th>Дефицит</th>
-                  {showSpend && <th>Расход</th>}
+                  <th className="l-number">Остаток</th>
+                  <th className="l-number">Мин.</th>
+                  <th className="l-number">Дефицит</th>
+                  {showSpend && <th className="l-number">Потратили сегодня</th>}
                   <th>Статус</th>
                   <th>Действия</th>
                 </tr>
@@ -3080,7 +2963,7 @@ function SetupItemsTable({
                       <td className="l-number">{fmtNum(it.stock)}</td>
                       <td className="l-number">{fmtNum(it.minimumBalance)}</td>
                       <td className="l-number is-shortage">{fmtNum(it.shortage)}</td>
-                      {showSpend && <td className="l-number">{fmtNum(it.spentInPeriod)}</td>}
+                      {showSpend && <td className="l-number">{fmtNum(it.spentInPeriod)} {it.unit || "шт."}</td>}
                       <td>
                         <EcoBadge tone={isExcluded ? "neutral" : "warning"} dot={!isExcluded}>
                           {isExcluded ? "Исключено" : "Нужно настроить"}
