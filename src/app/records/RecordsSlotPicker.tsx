@@ -17,10 +17,11 @@ type Props = {
   durationMinutes?: number;
   excludeBookingId?: string | null;
   selectedLocalTime?: string;
+  onNextWorkingDay?: () => void;
   onSelect: (slot: RecordBookingSlot) => void;
 };
 
-export default function RecordsSlotPicker({ localDate, serviceIds, masterMembershipId, durationMinutes, excludeBookingId, selectedLocalTime, onSelect }: Props) {
+export default function RecordsSlotPicker({ localDate, serviceIds, masterMembershipId, durationMinutes, excludeBookingId, selectedLocalTime, onNextWorkingDay, onSelect }: Props) {
   const serviceKey = JSON.stringify(serviceIds);
   const [retry, setRetry] = useState(0);
   const [result, setResult] = useState<{ key: string; slots: RecordBookingSlot[]; message: string; error: boolean } | null>(null);
@@ -41,8 +42,8 @@ export default function RecordsSlotPicker({ localDate, serviceIds, masterMembers
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Не удалось загрузить свободное время");
         if (!controller.signal.aborted) setResult({ key: requestKey, slots: Array.isArray(data.slots) ? data.slots : [], message: data.message || "На эту дату подходящих окон нет. Выберите другой день или мастера.", error: false });
-      } catch {
-        if (!controller.signal.aborted) setResult({ key: requestKey, slots: [], message: "Не удалось загрузить свободное время. Повторите проверку.", error: true });
+      } catch (error) {
+        if (!controller.signal.aborted) setResult({ key: requestKey, slots: [], message: error instanceof Error && error.message !== "Failed to fetch" && !(error instanceof SyntaxError) ? error.message : "Не удалось загрузить свободное время. Повторите проверку.", error: true });
       }
     }, 200);
     return () => { window.clearTimeout(timer); controller.abort(); };
@@ -52,6 +53,7 @@ export default function RecordsSlotPicker({ localDate, serviceIds, masterMembers
     <div className="eco-records-slot-picker__head"><Clock3 size={16} aria-hidden="true" /><strong>Свободное время</strong></div>
     {!ready ? <p>Выберите услуги — покажем время, которого хватит на все работы.</p> : !current ? <p role="status"><Loader2 size={16} className="eco-spin" /> Проверяем расписание мастеров…</p> : current.error ? <div role="status"><p>{current.message}</p><button type="button" className="eco-records-inline-action" onClick={() => setRetry(value => value + 1)}><RefreshCw size={15} /> Повторить</button></div> : current.slots.length ? <>
       <p>Нажмите время начала. Длительность работ уже учтена.</p>
+      <div className="eco-records-slot-picker__choices">
       {[
         { label: "Утро", from: "00:00", to: "12:00" },
         { label: "День", from: "12:00", to: "17:00" },
@@ -68,6 +70,7 @@ export default function RecordsSlotPicker({ localDate, serviceIds, masterMembers
           </div>
         </details>;
       })}
-    </> : <p role="status">{current.message}</p>}
+      </div>
+    </> : <div role="status"><p>{current.message}</p>{onNextWorkingDay ? <button type="button" className="eco-records-inline-action" onClick={onNextWorkingDay}>Следующий рабочий день</button> : null}</div>}
   </div>;
 }
