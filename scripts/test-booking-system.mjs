@@ -366,7 +366,8 @@ assert.match(schema, /@@unique\(\[branchId, legacyExternalId\]\)/);
 
 const service = source("src/lib/booking/service.ts");
 function extractBookingFunction(code, name, bindings = {}) {
-  const start = code.indexOf(`function ${name}(`);
+  const declaration = code.indexOf(`function ${name}(`);
+  const start = code.slice(declaration - 6, declaration) === "async " ? declaration - 6 : declaration;
   const functionSource = code.slice(start, code.indexOf("\n}", start) + 2);
   const javascript = ts.transpile(functionSource, { target: ts.ScriptTarget.ES2022 });
   return new Function(...Object.keys(bindings), `${javascript}; return ${name};`)(...Object.values(bindings));
@@ -422,6 +423,31 @@ assert.match(availability, /status: BOOKING_STATUS\.ACTIVE/);
 assert.match(availability, /roleId: BOOKING_MASTER_ROLE_ID/);
 
 const bookingJournal = source("src/app/api/booking-journal/route.ts");
+const readServiceIds = extractBookingFunction(bookingJournal, "idsFromPayload", Object.fromEntries(
+  ["object", "text", "number"].map((name) => [name, extractBookingFunction(bookingJournal, name)]),
+));
+const journalId = extractBookingFunction(bookingJournal, "journalId");
+const catalogId = "catalog-service:air-filter";
+const legacyId = journalId(catalogId);
+let serviceFilter;
+const resolveJournalServices = extractBookingFunction(bookingJournal, "resolveServiceIds", {
+  BookingError: Error,
+  journalId,
+  prisma: { bookingService: { findMany: async ({ where }) => {
+    serviceFilter = where;
+    return [{ id: catalogId }];
+  } } },
+});
+assert.deepEqual(
+  await resolveJournalServices("branch-a", readServiceIds({ services: [{ id: 123, booking_service_id: catalogId }] })),
+  [catalogId],
+);
+assert.deepEqual(serviceFilter, { branchId: "branch-a", status: "ACTIVE", id: { in: [catalogId] } });
+assert.deepEqual(await resolveJournalServices("branch-a", readServiceIds({ services: [{ id: legacyId }] })), [catalogId]);
+await assert.rejects(
+  () => resolveJournalServices("branch-a", readServiceIds({ services: [{ id: legacyId, booking_service_id: "missing" }] })),
+  /Одна из услуг не найдена/,
+);
 assert.match(bookingJournal, /roleId: BOOKING_MASTER_ROLE_ID/);
 assert.match(bookingJournal, /starts_at_utc/);
 assert.match(bookingJournal, /local_start_time/);

@@ -2091,7 +2091,7 @@ export default function RecordsPageClient() {
         if (formMode === "create") {
           const payload = {
             staff_id: Number(form.staffId),
-            services: form.serviceIds.map((id) => ({ id: Number(id) })),
+            services: form.serviceIds.map((id) => ({ id: Number(id), booking_service_id: serviceById.get(id)?.booking_service_id })),
             client: {
               name: form.clientName.trim(),
               phone,
@@ -2195,7 +2195,7 @@ export default function RecordsPageClient() {
         }
         const payload = {
           staff_id: Number(form.staffId),
-          services: form.serviceIds.map((id) => ({ id: Number(id) })),
+          services: form.serviceIds.map((id) => ({ id: Number(id), booking_service_id: serviceById.get(id)?.booking_service_id })),
           client: {
               name: form.clientName.trim(),
               phone,
