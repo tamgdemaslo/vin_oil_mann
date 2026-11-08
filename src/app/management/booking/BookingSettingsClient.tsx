@@ -771,7 +771,30 @@ export default function BookingSettingsClient() {
             {state.masters.map((master) => {
               const open = openMasterId === master.membershipId;
               const hours = sevenHours(master.workingHours, state.workingHours);
-              return <article key={master.membershipId}><button type="button" className={styles.masterHead} onClick={() => setOpenMasterId(open ? null : master.membershipId)}><span><strong>{master.name}</strong><small>{master.position || master.roleId} · {master.serviceIds.length} услуг</small></span><ChevronDown aria-hidden className={open ? styles.rotated : ""} /></button>{open && <div className={styles.masterBody}><h3>Услуги</h3><div className={styles.assignmentGrid}>{activeServices.map((service) => <label key={service.id}><input type="checkbox" checked={master.serviceIds.includes(service.id)} onChange={() => updateMaster(master.membershipId, { serviceIds: master.serviceIds.includes(service.id) ? master.serviceIds.filter((id) => id !== service.id) : [...master.serviceIds, service.id] })} disabled={!state.canManage} />{service.name}</label>)}</div><h3>Рабочая неделя</h3><div className={styles.hoursTable}>{hours.map((row) => <div key={row.weekday}><label><input type="checkbox" checked={row.isWorking} onChange={(event) => updateMaster(master.membershipId, { workingHours: hours.map((item) => item.weekday === row.weekday ? { ...item, isWorking: event.target.checked, startTime: event.target.checked ? item.startTime || "09:00" : null, endTime: event.target.checked ? item.endTime || "19:00" : null } : item) })} disabled={!state.canManage} />{DAYS[row.weekday - 1]}</label><input type="time" value={row.startTime ?? ""} onChange={(event) => updateMaster(master.membershipId, { workingHours: hours.map((item) => item.weekday === row.weekday ? { ...item, startTime: event.target.value } : item) })} disabled={!row.isWorking || !state.canManage} /><span>—</span><input type="time" value={row.endTime ?? ""} onChange={(event) => updateMaster(master.membershipId, { workingHours: hours.map((item) => item.weekday === row.weekday ? { ...item, endTime: event.target.value } : item) })} disabled={!row.isWorking || !state.canManage} /></div>)}</div>{state.canManage && <button type="button" className={styles.primary} onClick={() => saveMaster({ ...master, workingHours: hours })} disabled={saving}><Save aria-hidden /> Сохранить мастера</button>}</div>}</article>;
+              const unavailableServiceIds = master.serviceIds.filter((id) => !activeServices.some((service) => service.id === id));
+              return <article key={master.membershipId}><button type="button" className={styles.masterHead} onClick={() => setOpenMasterId(open ? null : master.membershipId)}><span><strong>{master.name}</strong><small>{master.position || master.roleId} · {master.serviceIds.length} услуг</small></span><ChevronDown aria-hidden className={open ? styles.rotated : ""} /></button>{open && <div className={styles.masterBody}><h3>Услуги</h3><div className={styles.assignmentGrid}>{activeServices.map((service) => <label key={service.id}><input type="checkbox" checked={master.serviceIds.includes(service.id)} onChange={() => updateMaster(master.membershipId, { serviceIds: master.serviceIds.includes(service.id) ? master.serviceIds.filter((id) => id !== service.id) : [...master.serviceIds, service.id] })} disabled={!state.canManage} />{service.name}</label>)}</div>
+                {unavailableServiceIds.length > 0 && (
+                  <>
+                    <h3>Недоступные услуги</h3>
+                    {state.canManage && <p className={styles.createHint}>Снимите галочки с этих услуг, чтобы сохранить расписание.</p>}
+                    <div className={styles.assignmentGrid}>
+                      {unavailableServiceIds.map((id) => (
+                        <label key={id}>
+                          <input
+                            type="checkbox"
+                            checked
+                            disabled={!state.canManage || saving}
+                            onChange={() => updateMaster(master.membershipId, {
+                              serviceIds: master.serviceIds.filter((serviceId) => serviceId !== id),
+                            })}
+                          />
+                          {state.services.find((service) => service.id === id)?.name ?? `Услуга ${id}`}
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <h3>Рабочая неделя</h3><div className={styles.hoursTable}>{hours.map((row) => <div key={row.weekday}><label><input type="checkbox" checked={row.isWorking} onChange={(event) => updateMaster(master.membershipId, { workingHours: hours.map((item) => item.weekday === row.weekday ? { ...item, isWorking: event.target.checked, startTime: event.target.checked ? item.startTime || "09:00" : null, endTime: event.target.checked ? item.endTime || "19:00" : null } : item) })} disabled={!state.canManage} />{DAYS[row.weekday - 1]}</label><input type="time" value={row.startTime ?? ""} onChange={(event) => updateMaster(master.membershipId, { workingHours: hours.map((item) => item.weekday === row.weekday ? { ...item, startTime: event.target.value } : item) })} disabled={!row.isWorking || !state.canManage} /><span>—</span><input type="time" value={row.endTime ?? ""} onChange={(event) => updateMaster(master.membershipId, { workingHours: hours.map((item) => item.weekday === row.weekday ? { ...item, endTime: event.target.value } : item) })} disabled={!row.isWorking || !state.canManage} /></div>)}</div>{state.canManage && <button type="button" className={styles.primary} onClick={() => saveMaster({ ...master, workingHours: hours })} disabled={saving || unavailableServiceIds.length > 0}><Save aria-hidden /> Сохранить мастера</button>}</div>}</article>;
             })}
           </div>
         </section>
