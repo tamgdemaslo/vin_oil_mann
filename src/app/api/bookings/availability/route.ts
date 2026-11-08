@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bookingViewIsSelfOnly, canManageBookings, canViewBookings, requireBookingCapability } from "@/lib/booking/access";
-import { getBookingAvailability } from "@/lib/booking/availability";
+import { getBookingAvailability, getBookingMonthLoad } from "@/lib/booking/availability";
 import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
 import { bookingErrorPayload } from "@/lib/booking/errors";
 import { addLocalDays, localTimeToMinutes, zonedLocalToUtc } from "@/lib/booking/timezone";
@@ -48,6 +48,11 @@ export async function POST(request: NextRequest) {
       preserveExistingAssignment: canManageBookings(access.context),
       durationOverrideMinutes,
     };
+    const month = typeof body?.month === "string" ? body.month : null;
+    if (month !== null) {
+      const days = await runWithBranchApiContext(access.context, () => getBookingMonthLoad(baseInput, month));
+      return NextResponse.json({ days });
+    }
     const result = await runWithBranchApiContext(access.context, () => getBookingAvailability({ ...baseInput, localDate }));
     if (!requestedLocalTime) return NextResponse.json(result);
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import BookingCalendar from "../booking/BookingCalendar";
+import type { BookingDayLoad } from "@/lib/booking/availability";
 import { journalContactSources, journalContactUrl } from "@/lib/booking/journal-contact";
 import RecordsSlotPicker from "./RecordsSlotPicker";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -2701,6 +2702,30 @@ export default function RecordsPageClient() {
   const requiredFormFields = new Set(selectedFormServices.flatMap((service) => Array.isArray(service.required_fields) ? service.required_fields : []));
   const formRequiresEmail = requiredFormFields.has("email");
   const formRequiresPlate = requiredFormFields.has("plate");
+  const formBookingServiceKey = JSON.stringify(selectedFormServices.map((service) => service.booking_service_id).filter(Boolean));
+  const formBookingMasterId = selectedFormMaster?.membership_id ?? null;
+  const formBookingDuration = form.manualDuration ? formDurationMinutes || null : null;
+  const formBookingExcludeId = formMode === "edit"
+    ? (records.find((record) => record.id === editingRecordId)?.booking_id ?? records.find((record) => record.id === editingRecordId)?.local_booking_id ?? null)
+    : null;
+  const loadBookingMonth = useCallback(async (month: string, signal: AbortSignal): Promise<BookingDayLoad[]> => {
+    const response = await fetch("/api/bookings/availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({
+        month,
+        serviceIds: JSON.parse(formBookingServiceKey),
+        masterMembershipId: formBookingMasterId,
+        durationOverrideMinutes: formBookingDuration,
+        excludeBookingId: formBookingExcludeId,
+      }),
+    });
+    if (!response.ok) throw new Error("Не удалось загрузить занятость");
+    const result = await response.json() as { days: BookingDayLoad[] };
+    return result.days;
+  }, [formBookingServiceKey, formBookingMasterId, formBookingDuration, formBookingExcludeId]);
+
   const editingFormRecord = formMode === "edit" ? records.find((item) => item.id === editingRecordId) : null;
   const eligibleFormMasters = staff.filter((item) => {
     const retainsExisting = editingFormRecord && retainsBookingAssignment({
@@ -3640,15 +3665,15 @@ export default function RecordsPageClient() {
                 <h2 className="eco-records-booking-step"><span aria-hidden="true">2</span>Время</h2>
                 <div className="eco-records-booking-calendar">
                   <span className="eco-records-booking-date-label">Дата</span>
-                  <BookingCalendar initiallyExpanded={false} value={formDate} today={formDate < calendarToday ? formDate : calendarToday} max={addLocalDays(formDate > calendarToday ? formDate : calendarToday, 365)} onChange={chooseFormDate} />
+                  <BookingCalendar initiallyExpanded={false} value={formDate} today={formDate < calendarToday ? formDate : calendarToday} max={addLocalDays(formDate > calendarToday ? formDate : calendarToday, 365)} onChange={chooseFormDate} loadMonth={loadBookingMonth} />
                 </div>
                 <RecordsSlotPicker
                   localDate={formDate}
                   onNextWorkingDay={nextWorkingDate ? () => chooseFormDate(nextWorkingDate) : undefined}
                   serviceIds={selectedFormServices.map(service => service.booking_service_id).filter((id): id is string => Boolean(id))}
-                  masterMembershipId={selectedFormMaster?.membership_id ?? undefined}
-                  durationMinutes={form.manualDuration ? formDurationMinutes || undefined : undefined}
-                  excludeBookingId={formMode === "edit" ? (records.find(record => record.id === editingRecordId)?.booking_id ?? records.find(record => record.id === editingRecordId)?.local_booking_id ?? null) : null}
+                  masterMembershipId={formBookingMasterId ?? undefined}
+                  durationMinutes={formBookingDuration ?? undefined}
+                  excludeBookingId={formBookingExcludeId}
                   selectedLocalTime={formStartTime}
                   onSelect={slot => {
                     setFormError(null);
