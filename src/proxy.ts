@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { rejectDisallowedPublicOrigin } from "@/lib/public-api";
 import { NextRequest, NextResponse } from "next/server";
-import { clientSiteLegacyRedirectEnabled, clientSitePagePath, clientSitePublicBackend, isClientSitePublicPath, isClientSiteRoot, CLIENT_SITE_OLD_PATHS } from "@/lib/client-site-domain";
+import { clientSiteLegacyRedirectEnabled, clientSitePagePath, clientSitePublicBackend, isClientBookingManagementPath, isClientSitePublicPath, isClientSiteRoot, CLIENT_SITE_OLD_PATHS } from "@/lib/client-site-domain";
 
 const ACTIVE_BRANCH_COOKIE = "eco_active_branch";
 const SESSION_COOKIE = "eco_session";
@@ -60,6 +60,9 @@ function passThroughResponse(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-eco-page-path", request.nextUrl.pathname);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
+  if (isClientBookingManagementPath(request.nextUrl.pathname)) {
+    response.headers.set("Referrer-Policy", "no-referrer");
+  }
   if (!request.nextUrl.pathname.startsWith("/api/") && isHtmlDocumentRequest(request)) {
     // HTML must always belong to the current deployment. Hashed JS/CSS/image
     // assets stay outside the proxy matcher and retain their immutable cache.

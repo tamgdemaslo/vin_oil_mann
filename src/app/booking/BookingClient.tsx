@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isValidBookingCustomerName } from "@/lib/booking/customer-name";
-import { trackClientBookingSuccess } from "@/lib/client-site-analytics";
+import { trackClientBookingSuccess, trackClientGoal } from "@/lib/client-site-analytics";
 import { publicBookingBranchFromSearch } from "@/lib/booking/public-link";
 import type { PublicServiceGroup } from "@/lib/booking/public-service-presentation";
 import { isStandaloneTransmissionLevel, isTransmissionOilVariant, normalizeBookingServiceSelection, toggleBookingServiceSelection } from "@/lib/booking/transmission-selection";
@@ -160,6 +160,7 @@ function errorCopy(error: unknown) {
 }
 
 export default function BookingClient() {
+  const bookingStarted = useRef(false);
   const [step, setStep] = useState(1), [enteredByBranchLink, setEnteredByBranchLink] = useState(false);
   const [branchLinkError, setBranchLinkError] = useState(""), [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState(""), [services, setServices] = useState<Service[]>([]);
@@ -284,14 +285,22 @@ export default function BookingClient() {
   useEffect(() => { if (step === 3) void loadAvailability(); return () => availabilityAbortRef.current?.abort(); }, [loadAvailability, step]);
 
   function openBranchChooser() { setEnteredByBranchLink(false); setBranchLinkError(""); setFormError(""); setStep(1); }
+  function trackBookingStart(selectedBranchId: string) {
+    if (!bookingStarted.current && selectedBranchId) {
+      bookingStarted.current = trackClientGoal("booking_start", { branch_id: selectedBranchId });
+    }
+  }
+
   function chooseBranch(nextId: string) {
     const next = branches.find((item) => item.id === nextId), changed = Boolean(branchId && branchId !== nextId);
+    if (next) trackBookingStart(next.id);
     setBranchId(nextId); if (changed) { setServiceIds([]); setServices([]); }
     setLocalDate(next ? branchToday(next.timezone) : ""); setAvailability(null); setAvailabilityError("");
     setNearestDays([]); setSelectedSlot(null); setSlotNotice(changed ? "Филиал изменён. Услуги и время будут рассчитаны заново." : "");
     setBranchLinkError(""); setFormError(""); setSubmissionUnknown(false);
   }
   function toggleService(id: string) {
+    trackBookingStart(branchId);
     const hadSlot = Boolean(selectedSlot);
     setServiceIds((current) => toggleBookingServiceSelection(current, id, services));
     setAvailability(null); setAvailabilityError(""); setNearestDays([]); setSelectedSlot(null);

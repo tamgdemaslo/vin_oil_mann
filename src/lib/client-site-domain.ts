@@ -38,6 +38,10 @@ export function clientSiteLegacyRedirectEnabled() {
   return process.env.PUBLIC_CLIENT_SITE_REDIRECT_LEGACY === "true";
 }
 
+export function isClientBookingManagementPath(pathname: string) {
+  return pathname === "/booking/manage" || pathname.startsWith("/booking/manage/");
+}
+
 const READ_ONLY = new Set(["GET", "HEAD", "OPTIONS"]);
 const PUBLIC_METHODS = new Set(["GET", "HEAD", "POST", "OPTIONS"]);
 

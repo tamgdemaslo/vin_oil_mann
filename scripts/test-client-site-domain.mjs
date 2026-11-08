@@ -32,6 +32,27 @@ try {
   assert.equal(domain.clientSiteRequestBasePath(new Headers({ host: "internal", "x-forwarded-host": "tamgdemaslo.ru, edge" })), "");
   assert.equal(domain.clientSiteRequestBasePath(new Headers({ host: "tamgdemaslo.ru", "x-forwarded-host": "crm" })), "", "Forwarded host cannot bypass public restrictions");
   assert.equal(domain.clientSiteRequestBasePath(new Headers({ host: "www.tamgdemaslocrm.ru" })), "/client-site");
+  const managementPage = proxy(request("/booking/manage/test-token"));
+  assert.equal(managementPage.headers.get("referrer-policy"), "no-referrer");
+  assert.equal(proxy(request("/booking")).headers.get("referrer-policy"), null);
+
+  const { trackClientGoal } = await jiti.import("../src/lib/client-site-analytics.ts");
+  const hits = [];
+  globalThis.window = { location: { hostname: "www.tamgdemaslocrm.ru" }, ym: (...args) => hits.push(args) };
+  try {
+    assert.equal(trackClientGoal("booking_start", { branch_id: "branch-test" }), false);
+    assert.equal(hits.length, 0);
+    window.location.hostname = "tamgdemaslo.ru";
+    assert.equal(trackClientGoal("booking_start", { branch_id: "branch-test" }), true);
+    assert.deepEqual(hits, [[113656120, "reachGoal", "booking_start", { branch_id: "branch-test" }]]);
+    window.ym = () => { throw new Error("counter blocked"); };
+    assert.equal(trackClientGoal("booking_start"), false);
+  } finally {
+    delete globalThis.window;
+  }
+  const services = renderToString(React.createElement(App, { initialPath: "/services", basePath: "" }));
+  assert.match(services, /<h1>Цены на замену масла<br\/>в Калининграде<span>/);
+
   for (const [path, internal] of [["/", "/client-site"], ["/shop?brand=Eurol", "/client-site/shop?brand=Eurol"], ["/product/test-oil", "/client-site/product/test-oil"]]) {
     assert.equal(proxy(request(path)).headers.get("x-middleware-rewrite"), `https://tamgdemaslo.ru${internal}`);
   }

@@ -3,6 +3,7 @@
 "use client";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useId } from "react";
 import { Phone, X } from "lucide-react";
+import { trackClientContactClick } from "@/lib/client-site-analytics";
 import type { ClientOil } from "@/lib/client-site-api";
 import TransmissionPriceTables from "./TransmissionPriceTables";
 
@@ -3233,7 +3234,7 @@ function ServicesPage() {
         <header className="services-page__hero">
           <div>
             <div className="t-eyebrow">Услуги</div>
-            <h1>Прайс без<br />мелкого шрифта<span>.</span></h1>
+            <h1>Цены на замену масла<br />в Калининграде<span>.</span></h1>
           </div>
           <p>Стоимость работы видна до записи. Масло, фильтры и расходники подбираем отдельно под автомобиль — по VIN и фактическому объёму.</p>
         </header>
@@ -3915,6 +3916,11 @@ function App({
   initialPath?: string; initialOils?: ClientOil[]; initialShopBrands?: string[]; basePath?: string;
 }) {
   const router = useClientRoute(initialPath, basePath);
+  useEffect(() => {
+    if (basePath) return;
+    document.addEventListener('click', trackClientContactClick, true);
+    return () => document.removeEventListener('click', trackClientContactClick, true);
+  }, [basePath]);
   const [OILS, setOils] = useState(initialOils);
   const oilsRef = useRef(initialOils);
   const [catalogVersion, setCatalogVersion] = useState(0);
