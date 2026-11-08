@@ -23,7 +23,7 @@ const publicLinks = await jiti.import("../src/lib/booking/public-link.ts");
 const publicServicePresentation = await jiti.import("../src/lib/booking/public-service-presentation.ts");
 const customerName = await jiti.import("../src/lib/booking/customer-name.ts");
 const bookingIdempotency = await jiti.import("../src/lib/booking/idempotency.ts");
-const { getBookingAvailability } = await jiti.import("../src/lib/booking/availability.ts");
+const { getBookingAvailability, getBookingMonthLoad } = await jiti.import("../src/lib/booking/availability.ts");
 const bookingAccess = await jiti.import("../src/lib/booking/access.ts");
 const journalContact = await jiti.import("../src/lib/booking/journal-contact.ts");
 
@@ -246,6 +246,10 @@ function availabilityDb(overrides = {}) {
         (!where.onlineBookingEnabled || service.onlineBookingEnabled)
       ),
     },
+    branchMembership: {
+      findMany: async ({ where }) => Object.values(masters).filter((master) =>
+        master.roleId === where.roleId && (!where.id || master.id === where.id)),
+    },
     bookingMasterService: {
       findMany: async ({ where }) => assignments
         .filter(([membershipId, serviceId]) => where.serviceId.in.includes(serviceId)
@@ -255,12 +259,13 @@ function availabilityDb(overrides = {}) {
     },
     branchBookingWorkingHour: {
       findUnique: async () => branchHours,
+      findMany: async () => branchHours ? [branchHours] : [],
     },
     bookingMasterWorkingHour: {
-      findMany: async ({ where }) => masterHours.filter((row) => where.membershipId.in.includes(row.membershipId) && row.weekday === where.weekday),
+      findMany: async ({ where }) => masterHours.filter((row) => where.membershipId.in.includes(row.membershipId) && (!where.weekday || row.weekday === where.weekday)),
     },
     bookingScheduleException: {
-      findMany: async ({ where }) => exceptions.filter((row) => where.membershipId.in.includes(row.membershipId) && row.localDate === where.localDate),
+      findMany: async ({ where }) => exceptions.filter((row) => where.membershipId.in.includes(row.membershipId) && (typeof where.localDate === "string" ? row.localDate === where.localDate : row.localDate >= where.localDate.gte && row.localDate <= where.localDate.lte)),
     },
     booking: { findMany: async () => busy },
   };
@@ -337,6 +342,30 @@ const defaultSundayClosed = await getBookingAvailability(
   availabilityDb({ branchHours: null, masterHours: [] }),
 );
 assert.equal(defaultSundayClosed.slots.length, 0);
+
+const monthDb = availabilityDb({
+  busy: [
+    { ...busyAtTen[0], startsAt: new Date("2026-08-17T06:30:00Z"), endsAt: new Date("2026-08-17T10:00:00Z") },
+    { ...busyAtTen[0], startsAt: new Date("2026-08-17T09:00:00Z"), endsAt: new Date("2026-08-17T11:00:00Z") },
+    { ...busyAtTen[0], startsAt: new Date("2026-08-17T12:30:00Z"), endsAt: new Date("2026-08-17T17:00:00Z") },
+  ],
+});
+const monthInput = { ...availabilityInput, onlineOnly: false };
+const withoutService = await getBookingMonthLoad({ ...monthInput, serviceIds: [] }, "2026-08", monthDb);
+assert.deepEqual(withoutService.find((day) => day.localDate === "2026-08-17"), {
+  localDate: "2026-08-17", occupiedPercent: 42, hasSlot: null,
+});
+const withTransmission = await getBookingMonthLoad({ ...monthInput, serviceIds: ["atf"] }, "2026-08", monthDb);
+assert.deepEqual(withTransmission.find((day) => day.localDate === "2026-08-17"), {
+  localDate: "2026-08-17", occupiedPercent: 42, hasSlot: false,
+}, "The branch has free time, but its only assigned transmission master has no uninterrupted two-hour slot");
+assert.deepEqual(withTransmission.find((day) => day.localDate === "2026-08-23"), {
+  localDate: "2026-08-23", occupiedPercent: null, hasSlot: false,
+});
+const oneMaster = await getBookingMonthLoad({ ...monthInput, masterMembershipId: "master-1" }, "2026-08", monthDb);
+assert.equal(oneMaster.find((day) => day.localDate === "2026-08-17").occupiedPercent, 83);
+assert.equal(oneMaster.find((day) => day.localDate === "2026-08-18").hasSlot, true);
+assert.deepEqual(await getBookingMonthLoad(monthInput, "2027-01", monthDb), []);
 
 await assert.rejects(
   () => getBookingAvailability({ ...availabilityInput, serviceIds: ["hidden"] }, availabilityDb()),
