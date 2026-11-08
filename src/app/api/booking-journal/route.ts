@@ -65,7 +65,13 @@ function legacyUnassignedId(branchId: string) {
 
 function idsFromPayload(payload: JsonObject) {
   return Array.isArray(payload.services)
-    ? payload.services.map((item) => number(object(item).id ?? item)).filter((id): id is number => Boolean(id && id > 0))
+    ? payload.services.flatMap((item): (string | number)[] => {
+      const service = object(item);
+      const bookingServiceId = text(service.booking_service_id);
+      if (bookingServiceId) return [bookingServiceId];
+      const legacyId = number(service.id ?? item);
+      return legacyId && legacyId > 0 ? [legacyId] : [];
+    })
     : [];
 }
 
@@ -234,11 +240,24 @@ async function bookingFromJournalId(branchId: string, rawId: unknown) {
   return booking;
 }
 
-async function resolveServiceIds(branchId: string, numericIds: number[]) {
-  const services = await prisma.bookingService.findMany({ where: { branchId, status: "ACTIVE" }, select: { id: true } });
-  const resolved = numericIds.map((numericId) => services.find((service) => journalId(service.id) === numericId)?.id).filter((id): id is string => Boolean(id));
-  if (resolved.length !== numericIds.length) throw new BookingError("Одна из услуг не найдена", "booking_service_not_found", 404);
-  return resolved;
+async function resolveServiceIds(branchId: string, ids: (string | number)[]) {
+  if (!ids.length) return [];
+  const canonicalIds = ids.filter((id): id is string => typeof id === "string");
+  const services = await prisma.bookingService.findMany({
+    where: {
+      branchId,
+      status: "ACTIVE",
+      ...(canonicalIds.length === ids.length ? { id: { in: canonicalIds } } : {}),
+    },
+    select: { id: true },
+  });
+  return ids.map((id) => {
+    const service = services.find((candidate) => typeof id === "string"
+      ? candidate.id === id
+      : journalId(candidate.id) === id);
+    if (!service) throw new BookingError("Одна из услуг не найдена", "booking_service_not_found", 404);
+    return service.id;
+  });
 }
 
 async function resolveMembershipId(branchId: string, numericId: unknown, includeArchived = false) {
@@ -455,9 +474,9 @@ export async function PUT(request: NextRequest) {
     const result = await runWithBranchApiContext(access.context, async () => {
       const branchId = access.context.branchId!;
       const booking = await bookingFromJournalId(branchId, body.record_id);
-      const numericServiceIds = idsFromPayload(payload);
-      const serviceIds = numericServiceIds.length
-        ? await resolveServiceIds(branchId, numericServiceIds)
+      const requestedServiceIds = idsFromPayload(payload);
+      const serviceIds = requestedServiceIds.length
+        ? await resolveServiceIds(branchId, requestedServiceIds)
         : booking.serviceItems.map((item) => item.serviceId).filter((id): id is string => Boolean(id));
       const membershipId = payload.staff_id ? await resolveMembershipId(branchId, payload.staff_id, true) : booking.masterMembershipId;
       if (!membershipId) throw new BookingError("Мастер не выбран", "booking_master_required");
