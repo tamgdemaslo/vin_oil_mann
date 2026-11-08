@@ -780,15 +780,30 @@ async function findNormalizedCatalogCandidateIds(tokens: CatalogSearchToken[], p
   const terms = normalizedCatalogLookupTerms(tokens, params);
   if (terms.length === 0) return [];
   const patterns = Prisma.sql`ARRAY[${Prisma.join(terms.map((term) => `%${term}%`))}]::text[]`;
+  const numericTerm = terms.length === 1 && /^\d+$/.test(terms[0]) ? terms[0] : null;
+  const orderedDigits = numericTerm ? `%${[...numericTerm].join("%")}%` : null;
+  function matches(column: Prisma.Sql) {
+    const normalizedMatch = Prisma.sql`
+      regexp_replace(replace(lower(COALESCE(${column}, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ANY (${patterns})
+    `;
+    if (!numericTerm) return normalizedMatch;
+
+    // Normalization cannot add or reorder digits. Check the raw value first
+    // and normalize only possible matches that have separators.
+    return Prisma.sql`
+      CASE
+        WHEN ${column} LIKE ${`%${numericTerm}%`} THEN TRUE
+        WHEN ${column} LIKE ${orderedDigits} THEN ${normalizedMatch}
+        ELSE FALSE
+      END
+    `;
+  }
   const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id
     FROM local_products
     WHERE branch_id = ${branchId}
       ${params.includeArchived ? Prisma.empty : Prisma.sql`AND NOT archived`}
-      AND (
-        regexp_replace(replace(lower(COALESCE(name, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ANY (${patterns})
-        OR regexp_replace(replace(lower(COALESCE(oem_parts, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ANY (${patterns})
-      )
+      AND (${matches(Prisma.sql`name`)} OR ${matches(Prisma.sql`oem_parts`)})
     LIMIT 1000
   `);
   return rows.map((row) => row.id);
