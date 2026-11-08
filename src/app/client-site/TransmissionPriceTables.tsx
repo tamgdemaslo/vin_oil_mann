@@ -1,3 +1,5 @@
+import React from "react";
+
 import { TRANSMISSION_PRICE_GROUPS, TRANSMISSION_PRICE_TERMS } from "@/lib/transmission-pricing";
 
 const money = (amount: number) => `${amount.toLocaleString("ru-RU")} ₽`;

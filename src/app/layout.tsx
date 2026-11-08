@@ -1,6 +1,6 @@
 import { getRouteTitle } from "@/lib/route-title";
 import { headers } from "next/headers";
-import { isClientSiteRoot } from "@/lib/client-site-domain";
+import { isClientBookingManagementPath, isClientSiteRoot } from "@/lib/client-site-domain";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
@@ -30,7 +30,8 @@ export default async function RootLayout({
   const requestHeaders = await headers();
   const clientSiteRoot = isClientSiteRoot(requestHeaders);
   const pagePath = requestHeaders.get("x-eco-page-path") ?? "";
-  const clientSiteAnalytics = clientSiteRoot || pagePath === "/client-site" || pagePath.startsWith("/client-site/");
+  const clientSiteAnalytics = !isClientBookingManagementPath(pagePath) &&
+    (clientSiteRoot || pagePath === "/client-site" || pagePath.startsWith("/client-site/"));
   return (
     <html lang="ru">
       <head>
