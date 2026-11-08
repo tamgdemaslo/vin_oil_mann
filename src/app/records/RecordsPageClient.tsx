@@ -2048,7 +2048,7 @@ export default function RecordsPageClient() {
       }
       const master = staff.find(item => String(item.id) === form.staffId);
       if (!master || (formMode === "create" && !canCreateJournalBooking(master))) {
-        setFormError("Выберите действующего мастера. Если список пуст, проверьте назначения услуг в настройках записи.");
+        reportFormError("Выберите действующего мастера. Если список пуст, проверьте назначения услуг в настройках записи.", "records-time");
         return;
       }
       if (!formTimeValidation.ok) {
