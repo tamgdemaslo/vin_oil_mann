@@ -28,6 +28,8 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Square,
+  SquareCheck,
   UserRound,
   Wrench,
   X,
@@ -499,7 +501,8 @@ function getServicePriceLabel(service?: Service | null) {
   if (min && max && min !== max) return `${formatRubles(min * 100)}–${formatRubles(max * 100)} ₽`;
   if (price) return `${formatRubles(price * 100)} ₽`;
   if (min) return `от ${formatRubles(min * 100)} ₽`;
-  return "Стоимость не указана";
+  if (max) return `до ${formatRubles(max * 100)} ₽`;
+  return null;
 }
 
 function formatRubles(sumCents: number): string {
@@ -887,7 +890,8 @@ export default function RecordsPageClient() {
   const [formMode, setFormMode] = useState<FormMode>("create");
   const [editingRecordId, setEditingRecordId] = useState<number | null>(null);
   const [form, setForm] = useState<RecordFormState>(emptyForm);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<{ message: string; section: string } | null>(null);
+  const reportFormError = useCallback((message: string, section = "form") => setFormError({ message, section }), []);
   const [formSaving, setFormSaving] = useState(false);
   const [serviceSearch, setServiceSearch] = useState("");
   const [formAvailability, setFormAvailability] = useState<FormAvailability>({
@@ -1380,6 +1384,8 @@ export default function RecordsPageClient() {
 
   useEffect(() => {
     if (!formOpen || !formError) return;
+    const vehicle = formDialogRef.current?.querySelector<HTMLDetailsElement>("#records-vehicle");
+    if (vehicle && formError.section === "records-vehicle") vehicle.open = true;
     formErrorRef.current?.scrollIntoView({ block: "center" });
     formErrorRef.current?.focus({ preventScroll: true });
   }, [formOpen, formError]);
@@ -1765,8 +1771,8 @@ export default function RecordsPageClient() {
   }, [editingRecordId, form.datetime, form.datetimeEnd, form.serviceIds, form.staffId, formMode, formOpen, records, serviceById, staff]);
 
   const formTimeValidation = useMemo(() => {
-    if (!form.staffId) return { ok: false, warning: false, message: "Выберите мастера" };
-    if (!form.datetime || !form.datetimeEnd) return { ok: false, warning: false, message: "Укажите дату и время записи" };
+    if (!form.datetime || !form.datetimeEnd) return { ok: false, warning: false, message: "Выберите свободное время визита" };
+    if (!form.staffId) return { ok: false, warning: false, message: "Для ручной записи выберите мастера" };
     if (!journalLocalDurationMinutes(form.datetime, form.datetimeEnd)) return { ok: false, warning: false, message: "Окончание записи должно быть позже начала" };
     if (formAvailability.state === "available") return { ok: true, warning: false, message: formAvailability.message };
     if (formAvailability.state === "unavailable" && form.overrideReason && form.overrideReason === formAvailability.reasonCode) {
@@ -1777,6 +1783,7 @@ export default function RecordsPageClient() {
 
   const setFormValue = useCallback(<K extends keyof RecordFormState>(key: K, value: RecordFormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setFormError(null);
   }, []);
 
   const formCurrentRef = useRef(form);
@@ -1980,6 +1987,7 @@ export default function RecordsPageClient() {
 
   const toggleService = useCallback(
     (id: string) => {
+      setFormError(null);
       setForm((prev) => {
         const serviceIds = prev.serviceIds.includes(id)
           ? prev.serviceIds.filter((item) => item !== id)
@@ -2014,11 +2022,13 @@ export default function RecordsPageClient() {
       vehicleVin: "",
       vehicleYear: "",
     }));
+    setFormError(null);
     setSelectedClientVehicles(option.vehicles);
     setClientDropdownOpen(false);
   }, [form.selectedVehicleId, form.vehicleMake, form.vehicleModel, form.vehiclePlate, form.vehicleVin, form.vehicleYear]);
 
   const selectVehicle = useCallback((vehicle: VehicleInfo | null) => {
+    setFormError(null);
     setForm((prev) => ({
       ...prev,
       selectedVehicleId: vehicle?.id ?? "",
@@ -2033,7 +2043,7 @@ export default function RecordsPageClient() {
   const handleSubmitRecord = useCallback(
     async (openShipmentAfterCreate = false) => {
       if (form.serviceIds.length === 0) {
-        setFormError("Выберите хотя бы одну услугу");
+        reportFormError("Выберите хотя бы одну услугу", "records-services");
         return;
       }
       const master = staff.find(item => String(item.id) === form.staffId);
@@ -2042,36 +2052,36 @@ export default function RecordsPageClient() {
         return;
       }
       if (!formTimeValidation.ok) {
-        setFormError(formTimeValidation.message);
+        reportFormError(formTimeValidation.message, "records-time");
         return;
       }
       if (!form.clientName.trim() || !form.clientPhone.trim()) {
-        setFormError("Для записи обязательны имя и телефон клиента");
+        reportFormError("Для записи обязательны имя и телефон клиента", "records-client");
         return;
       }
       const phone = normalizePhone(form.clientPhone);
       if (!phone) {
-        setFormError("Укажите телефон клиента цифрами");
+        reportFormError("Укажите телефон клиента цифрами", "records-client");
         return;
       }
       const contactLink = journalContactUrl(form.contactLink.trim());
       if (form.contactLink.trim() && !contactLink) {
-        setFormError("Укажите ссылку на переписку с http или https");
+        reportFormError("Укажите ссылку на переписку с http или https", "records-note");
         return;
       }
       const chosenServices = form.serviceIds.map((id) => serviceById.get(id)).filter((item): item is Service => Boolean(item));
       const requiredFields = new Set(chosenServices.flatMap((service) => Array.isArray(service.required_fields) ? service.required_fields : []));
       if (requiredFields.has("email") && !form.clientEmail.trim()) {
-        setFormError("Для выбранных работ нужен email клиента");
+        reportFormError("Для выбранных работ нужен email клиента", "records-client");
         return;
       }
       if (requiredFields.has("plate") && !form.vehiclePlate.trim()) {
-        setFormError("Для выбранных работ нужен госномер");
+        reportFormError("Для выбранных работ нужен госномер", "records-vehicle");
         return;
       }
       const manualSeanceLength = form.datetimeEnd ? calculateSeanceLengthSeconds(form.datetime, form.datetimeEnd) : null;
       if (form.datetimeEnd && manualSeanceLength == null) {
-        setFormError("Окончание записи должно быть позже начала");
+        reportFormError("Окончание записи должно быть позже начала", "records-time");
         return;
       }
       setFormSaving(true);
@@ -2118,13 +2128,13 @@ export default function RecordsPageClient() {
           });
           const data = await res.json();
           if (!res.ok) {
-            setFormError(getRecordSaveErrorMessage(data, "Ошибка сохранения записи"));
+            reportFormError(getRecordSaveErrorMessage(data, "Ошибка сохранения записи"));
             return;
           }
 
           const created = (data?.data ?? data) as RecordItem;
           if (!created?.booking_id || !created?.id) {
-            setFormError("Запись могла сохраниться, но сервер не вернул её идентификатор. Обновите журнал перед повторной попыткой.");
+            reportFormError("Запись могла сохраниться, но сервер не вернул её идентификатор. Обновите журнал перед повторной попыткой.");
             return;
           }
           setSelectedRecordId(created.id);
@@ -2190,7 +2200,7 @@ export default function RecordsPageClient() {
         }
 
         if (!editingRecordId) {
-          setFormError("Не выбрана запись для редактирования");
+          reportFormError("Не выбрана запись для редактирования");
           return;
         }
         const payload = {
@@ -2229,7 +2239,7 @@ export default function RecordsPageClient() {
         });
         const data = await res.json();
         if (!res.ok) {
-          setFormError(getRecordSaveErrorMessage(data, "Ошибка редактирования записи"));
+          reportFormError(getRecordSaveErrorMessage(data, "Ошибка редактирования записи"));
           return;
         }
 
@@ -2237,6 +2247,8 @@ export default function RecordsPageClient() {
         await loadRecords();
         setSelectedRecordId(editingRecordId);
         setToast("Запись обновлена");
+      } catch {
+        reportFormError("Не удалось получить ответ сервера. Проверьте журнал перед повторным сохранением.");
       } finally {
         setFormSaving(false);
       }
@@ -2251,6 +2263,7 @@ export default function RecordsPageClient() {
       loadCrmDeals,
       loadRecords,
       router,
+      reportFormError,
       selectedRecordItem,
       selectedServiceDurationSeconds,
       serviceById,
@@ -2663,6 +2676,21 @@ export default function RecordsPageClient() {
 
   const formDate = form.datetime ? form.datetime.slice(0, 10) : scheduleDate;
   const calendarToday = formatLocalDate(new Date(), branchTimeZone);
+  const nextWorkingDate = Array.from({ length: 7 }, (_, index) => addLocalDays(formDate < calendarToday ? calendarToday : formDate, index + 1))
+    .find(date => bookingWorkingWindow(bookingWorkingHours, date));
+  const chooseFormDate = (date: string) => {
+    setFormError(null);
+    setForm(prev => date === formDate ? prev : { ...prev, datetime: date, datetimeEnd: "", manualDuration: false, overrideReason: null });
+  };
+  const goToFormSection = (id: string) => {
+    const section = formDialogRef.current?.querySelector<HTMLElement>(`#${id}`);
+    section?.scrollIntoView({ block: "start" });
+    section?.focus({ preventScroll: true });
+  };
+  const errorFor = (section: string) => formError?.section === section
+    ? <div ref={formErrorRef} className="eco-records-form-error" role="alert" tabIndex={-1}>{formError.message}</div>
+    : null;
+
   const formStartTime = form.datetime ? form.datetime.slice(11, 16) : "";
   const formEndTime = form.datetimeEnd ? form.datetimeEnd.slice(11, 16) : "";
   const formDurationMinutes = form.datetime && form.datetimeEnd ? Math.round((calculateSeanceLengthSeconds(form.datetime, form.datetimeEnd) ?? 0) / 60) : 0;
@@ -3481,6 +3509,7 @@ export default function RecordsPageClient() {
             <div className="eco-records-drawer-head">
               <div>
                 <strong id="records-form-title">{formMode === "create" ? "Новая запись" : "Редактирование записи"}</strong>
+                <p className="eco-records-booking-branch">Быстрая запись по шагам · {companyTitle}</p>
               </div>
               <button type="button" onClick={closeForm} aria-label="Закрыть">
                 <X size={18} />
@@ -3488,22 +3517,12 @@ export default function RecordsPageClient() {
             </div>
 
             <nav className="eco-records-form-nav" aria-label="Разделы записи">
-              {[['records-client', 'Клиент'], ['records-services', 'Услуги'], ['records-time', 'Время'], ['records-note', 'Комментарий']].map(([id, label]) => <button key={id} type="button" onClick={() => document.getElementById(id)?.scrollIntoView({ block: "start" })}>{label}</button>)}
+              {[['records-client', 'Клиент'], ['records-services', 'Услуги'], ['records-time', 'Время'], ['records-note', 'Комментарий']].map(([id, label]) => <button key={id} type="button" onClick={() => goToFormSection(id)}>{label}</button>)}
             </nav>
             <div className="eco-records-form eco-records-booking-form">
-            <div className="eco-records-form-summary">
-              <span><small>Филиал</small><strong>{companyTitle}</strong></span>
-              <span><small>Дата и время</small><strong>{form.datetime ? `${formDate} · ${formStartTime || "—"}–${formEndTime || "—"}` : "Не выбрано"}</strong></span>
-              <span><small>Мастер</small><strong>{selectedFormMaster?.name ?? "Не выбран"}</strong></span>
-              <span><small>Длительность</small><strong>{formDurationMinutes ? durationLabel(formDurationMinutes) : "—"}</strong></span>
-              <span className={cx("is-check", formAvailability.state === "available" && "is-ok", ["unavailable", "error"].includes(formAvailability.state) && "is-bad")}>
-                <small>Доступность</small><strong>{formAvailability.message}</strong>
-              </span>
-            </div>
-
-              <div className="eco-records-booking-main">
-              <section id="records-client">
-                <SectionTitle icon={<UserRound size={15} />} title="Клиент" />
+              <section id="records-client" tabIndex={-1}>
+                {errorFor("records-client")}
+                <div className="eco-records-booking-client-strip">
                 <div className="eco-records-client-field" ref={clientPickerRef}>
                 <label>
                   <span>Поиск клиента</span>
@@ -3554,7 +3573,7 @@ export default function RecordsPageClient() {
                 </div>
                 ) : null}
                 </div>
-                <div className="eco-records-form-grid">
+                <div className="eco-records-form-grid eco-records-booking-client-contact">
                   <label>
                     <span>Имя</span>
                     <input value={form.clientName} onChange={(event) => setFormValue("clientName", event.target.value)} />
@@ -3564,6 +3583,8 @@ export default function RecordsPageClient() {
                     <input value={form.clientPhone} onChange={(event) => setFormValue("clientPhone", event.target.value)} placeholder="79990000000" />
                   </label>
                   {formRequiresEmail ? <label><span>Email *</span><input type="email" value={form.clientEmail} onChange={(event) => setFormValue("clientEmail", event.target.value)} /></label> : null}
+                </div>
+                <label className="eco-records-booking-quick-source"><span>Источник</span><select value={form.contactSource} onChange={event => setFormValue("contactSource", event.target.value)}><option value="">Не указан</option>{journalContactSources.map(source => <option key={source}>{source}</option>)}</select></label>
                 </div>
                 {selectedClientShipments.length > 0 ? (
                   <div className="eco-records-client-history">
@@ -3575,14 +3596,14 @@ export default function RecordsPageClient() {
                 ) : null}
               </section>
 
-              <section id="records-services">
-                <SectionTitle icon={<Wrench size={15} />} title="Услуги" />
-                {selectedFormServices.length ? <div className="eco-records-selected-services">
-                  {selectedFormServices.map((service) => <button key={service.id} type="button" onClick={() => toggleService(String(service.id))}><span>{service.title}</span><small>{durationLabel(Math.round(getServiceDurationSeconds(service) / 60))}</small><X size={13} /></button>)}
-                </div> : <p className="eco-records-muted">Выберите одну или несколько работ.</p>}
-                <details className="eco-records-booking-catalog" key={editingRecordId ?? "create"}>
-                  <summary>Выбрать услуги <small>{services.length} в каталоге</small></summary>
-                <label><span>Найти услугу</span><input value={serviceSearch} onChange={(event) => setServiceSearch(event.target.value)} placeholder="Например, замена масла" /></label>
+              <section id="records-services" tabIndex={-1}>
+                {errorFor("records-services")}
+                <h2 className="eco-records-booking-step"><span aria-hidden="true">1</span>Услуги <small>В каталоге: {services.length}</small></h2>
+                <div className="eco-records-booking-catalog">
+                  <label>
+                    <span className="sr-only">Найти услугу</span>
+                    <input type="search" value={serviceSearch} onChange={(event) => setServiceSearch(event.target.value)} placeholder="Найти услугу" />
+                  </label>
                 <div className="eco-records-service-picker">
                   {!visibleFormServices.length ? <p className="eco-records-muted">Услуги не найдены.</p> : null}
                   {visibleFormServices.map((service) => {
@@ -3600,48 +3621,47 @@ export default function RecordsPageClient() {
                           ? `Не назначена мастеру ${selectedFormMaster.name}`
                           : null;
                     const selectionBlocked = Boolean(unavailableReason) && !selected;
-                    return <button key={service.id} type="button" className={selected ? "is-selected" : undefined} onClick={() => { if (!selectionBlocked) toggleService(id); }} aria-pressed={selected} aria-disabled={selectionBlocked} title={unavailableReason ?? undefined}><strong>{service.title}</strong><span>{unavailableReason ?? `${durationLabel(Math.round(getServiceDurationSeconds(service) / 60))} · ${getServicePriceLabel(service)}`}</span></button>;
+                    const priceLabel = getServicePriceLabel(service);
+                    const minutes = Math.round(getServiceDurationSeconds(service) / 60);
+                    return <button key={service.id} type="button" className={selected ? "is-selected" : undefined} onClick={() => { if (!selectionBlocked) toggleService(id); }} aria-pressed={selected} aria-disabled={selectionBlocked} title={unavailableReason ?? undefined}>{selected ? <SquareCheck size={17} aria-hidden /> : <Square size={17} aria-hidden />}<strong>{service.title}</strong>{!unavailableReason ? <small>{durationLabel(minutes)}</small> : null}{unavailableReason || priceLabel ? <span>{unavailableReason ?? priceLabel}</span> : null}</button>;
                   })}
                 </div>
                 {visibleFormServices.length > 5 ? <small className="eco-records-muted">Прокрутите список или найдите услугу по названию.</small> : null}
                 {visibleFormServices.some((service) => service.duration_configured === false || (service.assigned_master_count ?? service.master_membership_ids?.length ?? 0) === 0) ? <p className="eco-records-service-note">Услуги без готовой настройки тоже показаны. Чтобы выбрать отмеченную услугу, задайте ей длительность и назначьте мастера в разделе «Управление → Запись».</p> : null}
-                </details>
-              </section>
-              <section id="records-vehicle">
-                <SectionTitle icon={<Car size={15} />} title="Автомобиль" />
-                <p className="eco-records-muted">Марка, модель, год и VIN необязательны</p>
-                {selectedClientVehicles.length ? <div className="eco-records-vehicle-options" role="group" aria-label="Автомобили клиента">
-                  {selectedClientVehicles.map((vehicle) => <button key={vehicle.id || vehicleLabel(vehicle)} type="button" className={form.selectedVehicleId === vehicle.id ? "is-selected" : undefined} onClick={() => selectVehicle(vehicle)}>
-                    <Car size={15} /><span><strong>{[vehicle.year, vehicle.model].filter(Boolean).join(" ")}</strong><small>{[vehicle.plate, vehicle.vin ? `VIN ${vehicle.vin}` : ""].filter(Boolean).join(" · ") || "Без номера"}</small></span>
-                  </button>)}
-                  <button type="button" className={!form.selectedVehicleId ? "is-selected" : undefined} onClick={() => selectVehicle(null)}><Plus size={15} /><span><strong>Другой автомобиль</strong><small>Сохранится в карточке клиента</small></span></button>
-                </div> : null}
-                {!form.selectedVehicleId ? <div className="eco-records-form-grid">
-                  <label><span>Марка</span><input value={form.vehicleMake} onChange={(event) => setFormValue("vehicleMake", event.target.value)} placeholder="Mitsubishi" /></label>
-                  <label><span>Модель</span><input value={form.vehicleModel} onChange={(event) => setFormValue("vehicleModel", event.target.value)} placeholder="ASX" /></label>
-                  <label><span>Год</span><input inputMode="numeric" value={form.vehicleYear} onChange={(event) => setFormValue("vehicleYear", event.target.value)} placeholder="2020" /></label>
-                  <label><span>Госномер{formRequiresPlate ? " *" : ""}</span><input value={form.vehiclePlate} onChange={(event) => setFormValue("vehiclePlate", event.target.value)} placeholder="А123ВС39" /></label>
-                  <label><span>VIN</span><input value={form.vehicleVin} onChange={(event) => setFormValue("vehicleVin", event.target.value)} placeholder="17 символов" /></label>
-                </div> : null}
-              </section>
-              <section id="records-note">
-                <SectionTitle icon={<MessageSquare size={15} />} title="Внутренний комментарий" />
-                <p className="eco-records-muted" id="records-note-hint">Виден сотрудникам в журнале записей</p>
-                <textarea aria-label="Внутренний комментарий" aria-describedby="records-note-hint" rows={4} value={form.internalComment} onChange={(event) => setFormValue("internalComment", event.target.value)} placeholder="Что согласовали с клиентом, какие есть нюансы" />
-                <fieldset className="eco-records-contact-source">
-                  <legend>Откуда обратился клиент</legend>
-                  <div>{[...journalContactSources, ""].map(source => <label key={source}><input type="radio" name="records-contact-source" checked={form.contactSource === source} onChange={() => setFormValue("contactSource", source)} /><span>{source || "Не указан"}</span></label>)}</div>
-                </fieldset>
-                <label><span>Ссылка на переписку <small>Необязательно</small></span><input type="url" value={form.contactLink} onChange={(event) => setFormValue("contactLink", event.target.value)} placeholder="https://…" /></label>
-              </section>
-              </div>
-
-              <section id="records-time">
-                <SectionTitle icon={<Clock3 size={15} />} title="Когда и у кого" />
-                <label><span>Мастер</span><select value={form.staffId} onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value, datetime: formDate, datetimeEnd: "", manualDuration: false, overrideReason: null }))}><option value="">Любой свободный мастер</option>{eligibleFormMasters.map((item) => <option key={item.id} value={item.id}>{item.name}{item.bookable === false ? " · текущий мастер" : ""}</option>)}</select>{form.serviceIds.length > 0 && eligibleFormMasters.length === 0 ? <small className="eco-records-warning">Для выбранных работ нет действующего мастера. Назначьте услуги в настройках записи.</small> : null}</label>
-                <div className="eco-records-booking-calendar">
-                  <BookingCalendar value={formDate} today={formDate < calendarToday ? formDate : calendarToday} max={addLocalDays(formDate > calendarToday ? formDate : calendarToday, 365)} onChange={(date) => setForm(prev => date === formDate ? prev : { ...prev, datetime: date, datetimeEnd: "", manualDuration: false, overrideReason: null })} />
                 </div>
+                <div className="eco-records-catalog-selection">
+                  <p aria-live="polite">{selectedFormServices.length ? `Выбрано: ${selectedFormServices.length} · ${durationLabel(Math.round(selectedServiceDurationSeconds / 60))}` : "Выберите одну или несколько услуг"}</p>
+                  {selectedFormServices.length ? <button type="button" className="eco-records-inline-action eco-records-go-time" onClick={() => goToFormSection("records-time")}>К времени <ChevronRight size={15} /></button> : null}
+                </div>
+              </section>
+
+              <section id="records-time" tabIndex={-1}>
+                {errorFor("records-time")}
+                <h2 className="eco-records-booking-step"><span aria-hidden="true">2</span>Время</h2>
+                <div className="eco-records-booking-calendar">
+                  <span className="eco-records-booking-date-label">Дата</span>
+                  <BookingCalendar initiallyExpanded={false} value={formDate} today={formDate < calendarToday ? formDate : calendarToday} max={addLocalDays(formDate > calendarToday ? formDate : calendarToday, 365)} onChange={chooseFormDate} />
+                </div>
+                <RecordsSlotPicker
+                  localDate={formDate}
+                  onNextWorkingDay={nextWorkingDate ? () => chooseFormDate(nextWorkingDate) : undefined}
+                  serviceIds={selectedFormServices.map(service => service.booking_service_id).filter((id): id is string => Boolean(id))}
+                  masterMembershipId={selectedFormMaster?.membership_id ?? undefined}
+                  durationMinutes={form.manualDuration ? formDurationMinutes || undefined : undefined}
+                  excludeBookingId={formMode === "edit" ? (records.find(record => record.id === editingRecordId)?.booking_id ?? records.find(record => record.id === editingRecordId)?.local_booking_id ?? null) : null}
+                  selectedLocalTime={formStartTime}
+                  onSelect={slot => {
+                    setFormError(null);
+                    const master = staff.find(item => item.membership_id === slot.master.membershipId);
+                    if (!master) return;
+                    const local = utcInstantToJournalLocal(slot.startsAt, branchTimeZone);
+                    setForm(prev => ({ ...prev, staffId: String(master.id), datetime: local, datetimeEnd: addSecondsToDateTimeLocal(local, slot.durationMinutes * 60), overrideReason: null }));
+                  }}
+                />
+                <label><span>Мастер</span><select value={form.staffId} onChange={(event) => {
+                  setFormError(null);
+                  setForm((prev) => ({ ...prev, staffId: event.target.value, datetime: formDate, datetimeEnd: "", manualDuration: false, overrideReason: null }));
+                }}><option value="">Любой свободный мастер</option>{eligibleFormMasters.map((item) => <option key={item.id} value={item.id}>{item.name}{item.bookable === false ? " · текущий мастер" : ""}</option>)}</select>{form.serviceIds.length > 0 && eligibleFormMasters.length === 0 ? <small className="eco-records-warning">Для выбранных работ нет действующего мастера. Назначьте услуги в настройках записи.</small> : null}</label>
                 <details className="eco-records-booking-manual">
                   <summary>Настроить время вручную</summary>
                   <div className="eco-records-form-grid">
@@ -3652,22 +3672,8 @@ export default function RecordsPageClient() {
                   <label><span>Окончание</span><input type="time" value={formEndTime} onChange={(event) => setForm((prev) => ({ ...prev, datetimeEnd: replaceTimePart(prev.datetimeEnd || prev.datetime, event.target.value, formDate), manualDuration: true }))} /></label>
                   </div>
                 </details>
-                <RecordsSlotPicker
-                  localDate={formDate}
-                  serviceIds={selectedFormServices.map(service => service.booking_service_id).filter((id): id is string => Boolean(id))}
-                  masterMembershipId={selectedFormMaster?.membership_id ?? undefined}
-                  durationMinutes={form.manualDuration ? formDurationMinutes || undefined : undefined}
-                  excludeBookingId={formMode === "edit" ? (records.find(record => record.id === editingRecordId)?.booking_id ?? records.find(record => record.id === editingRecordId)?.local_booking_id ?? null) : null}
-                  selectedLocalTime={formStartTime}
-                  onSelect={slot => {
-                    const master = staff.find(item => item.membership_id === slot.master.membershipId);
-                    if (!master) return;
-                    const local = utcInstantToJournalLocal(slot.startsAt, branchTimeZone);
-                    setForm(prev => ({ ...prev, staffId: String(master.id), datetime: local, datetimeEnd: addSecondsToDateTimeLocal(local, slot.durationMinutes * 60), overrideReason: null }));
-                  }}
-                />
                 {form.manualDuration ? <button type="button" className="eco-records-inline-action" onClick={() => setForm((prev) => ({ ...prev, manualDuration: false, datetimeEnd: prev.datetime ? addSecondsToDateTimeLocal(prev.datetime, selectedServiceDurationSeconds) : prev.datetimeEnd }))}>Пересчитать по услугам</button> : null}
-                <div className={cx("eco-records-availability-check", formAvailability.state !== "available" && "is-warning")} aria-live="polite">
+                <div hidden={formAvailability.state === "idle"} className={cx("eco-records-availability-check", ["unavailable", "error"].includes(formAvailability.state) && "is-warning")} aria-live="polite">
                   {formAvailability.state === "loading" ? <Loader2 size={16} className="eco-spin" /> : formAvailability.state === "available" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
                   <div><strong>{formAvailability.message}</strong><p>Доступность повторно проверим при сохранении.</p>
                     {canOverrideConflict && formAvailability.state === "unavailable" && (formAvailability.reasonCode === "slot_taken" || formAvailability.reasonCode === "outside_schedule" || formAvailability.reasonCode === "nonstandard_start") ? (
@@ -3690,6 +3696,38 @@ export default function RecordsPageClient() {
                 </div>
               </section>
 
+              <div className="eco-records-booking-note-column">
+              <section id="records-note" tabIndex={-1}>
+                {errorFor("records-note")}
+                <h2 className="eco-records-booking-step"><span aria-hidden="true">3</span>Комментарий</h2>
+                <label htmlFor="records-note-input">Внутренний комментарий</label>
+                <p className="eco-records-muted" id="records-note-hint">Виден сотрудникам в журнале записей</p>
+                <textarea id="records-note-input" aria-label="Внутренний комментарий" aria-describedby="records-note-hint" rows={4} value={form.internalComment} onChange={(event) => setFormValue("internalComment", event.target.value)} placeholder="Что согласовали с клиентом, какие есть нюансы" />
+                <div className="eco-records-booking-contact-fields">
+                  <label><span>Источник</span><select value={form.contactSource} onChange={event => setFormValue("contactSource", event.target.value)}><option value="">Не указан</option>{journalContactSources.map(source => <option key={source}>{source}</option>)}</select></label>
+                  <label><span>Ссылка на переписку <small>Необязательно</small></span><input type="url" value={form.contactLink} onChange={(event) => setFormValue("contactLink", event.target.value)} placeholder="https://…" /></label>
+                </div>
+              </section>
+              <details id="records-vehicle" className="eco-records-booking-vehicle">
+                <summary>{form.vehicleMake || form.vehicleModel ? [form.vehicleMake, form.vehicleModel].filter(Boolean).join(" ") : "Данные автомобиля (необязательно)"}{formRequiresPlate ? " · нужен госномер" : ""}</summary>
+                {errorFor("records-vehicle")}
+                <p className="eco-records-muted">Марка, модель, год и VIN необязательны</p>
+                {selectedClientVehicles.length ? <div className="eco-records-vehicle-options" role="group" aria-label="Автомобили клиента">
+                  {selectedClientVehicles.map((vehicle) => <button key={vehicle.id || vehicleLabel(vehicle)} type="button" className={form.selectedVehicleId === vehicle.id ? "is-selected" : undefined} onClick={() => selectVehicle(vehicle)}>
+                    <Car size={15} /><span><strong>{[vehicle.year, vehicle.model].filter(Boolean).join(" ")}</strong><small>{[vehicle.plate, vehicle.vin ? `VIN ${vehicle.vin}` : ""].filter(Boolean).join(" · ") || "Без номера"}</small></span>
+                  </button>)}
+                  <button type="button" className={!form.selectedVehicleId ? "is-selected" : undefined} onClick={() => selectVehicle(null)}><Plus size={15} /><span><strong>Другой автомобиль</strong><small>Сохранится в карточке клиента</small></span></button>
+                </div> : null}
+                {!form.selectedVehicleId ? <div className="eco-records-form-grid">
+                  <label><span>Марка</span><input value={form.vehicleMake} onChange={(event) => setFormValue("vehicleMake", event.target.value)} placeholder="Mitsubishi" /></label>
+                  <label><span>Модель</span><input value={form.vehicleModel} onChange={(event) => setFormValue("vehicleModel", event.target.value)} placeholder="ASX" /></label>
+                  <label><span>Год</span><input inputMode="numeric" value={form.vehicleYear} onChange={(event) => setFormValue("vehicleYear", event.target.value)} placeholder="2020" /></label>
+                  <label><span>Госномер{formRequiresPlate ? " *" : ""}</span><input value={form.vehiclePlate} onChange={(event) => setFormValue("vehiclePlate", event.target.value)} placeholder="А123ВС39" /></label>
+                  <label><span>VIN</span><input value={form.vehicleVin} onChange={(event) => setFormValue("vehicleVin", event.target.value)} placeholder="17 символов" /></label>
+                </div> : null}
+              </details>
+              </div>
+
               <details className="eco-records-additional eco-records-booking-wide">
                 <summary>Дополнительно</summary>
                 {!formRequiresEmail ? <label><span>Email</span><input type="email" value={form.clientEmail} onChange={(event) => setFormValue("clientEmail", event.target.value)} placeholder="Необязательно" /></label> : null}
@@ -3711,10 +3749,16 @@ export default function RecordsPageClient() {
               </details>
 
               {formMode === "create" ? <button type="button" className="eco-records-inline-action eco-records-create-order eco-records-booking-wide" onClick={() => void handleSubmitRecord(true)} disabled={formSaving}><PackagePlus size={15} /> Создать и открыть заказ-наряд</button> : null}
-              {formError ? <div ref={formErrorRef} className="eco-records-form-error eco-records-booking-wide" role="alert" tabIndex={-1}>{formError}</div> : null}
+              {formError?.section === "form" ? <div className="eco-records-booking-wide">{errorFor("form")}</div> : null}
             </div>
 
             <div className="eco-records-drawer-footer">
+              {formStartTime && formEndTime && selectedFormMaster ? (
+                <p className="eco-records-booking-visit" aria-live="polite">
+                  <strong>{formStartTime}–{formEndTime}</strong>
+                  <span>{selectedFormMaster.name} · {durationLabel(formDurationMinutes)}</span>
+                </p>
+              ) : null}
               <EcoButton type="button" variant="primary" onClick={() => void handleSubmitRecord(false)} disabled={formSaving}>
                 {formSaving ? <Loader2 size={15} className="eco-spin" /> : <CheckCircle2 size={15} />}
                 {formMode === "create" ? "Создать запись" : "Сохранить"}

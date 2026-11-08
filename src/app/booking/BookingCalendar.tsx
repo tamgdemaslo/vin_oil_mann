@@ -11,10 +11,10 @@ function monthDate(month: string, offset = 0) {
 }
 function iso(date: Date) { return date.toISOString().slice(0, 10); }
 
-export default function BookingCalendar({ value, today, max, onChange }: {
-  value: string; today: string; max: string; onChange: (date: string) => void;
+export default function BookingCalendar({ value, today, max, onChange, initiallyExpanded = true }: {
+  value: string; today: string; max: string; onChange: (date: string) => void; initiallyExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const calendarId = useId();
   const toggleRef = useRef<HTMLButtonElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
