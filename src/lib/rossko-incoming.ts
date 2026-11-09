@@ -22,18 +22,7 @@ const ROSSKO_SOURCE = "rossko";
 const MAX_TRACKED_ORDERS = 50;
 const MAX_ORDER_LINES = 240;
 
-export const ROSSKO_MANUAL_CLOSE_REASONS = [
-  "SUPPLIER_CANCELLED",
-  "UNAVAILABLE",
-  "DELIVERY_FAILED",
-  "CANCELLED_IN_ROSSKO",
-  "NO_LONGER_NEEDED",
-  "OTHER",
-] as const;
-
-export type RosskoManualCloseReason = (typeof ROSSKO_MANUAL_CLOSE_REASONS)[number];
-
-export const ROSSKO_MANUAL_CLOSE_REASON_LABELS: Record<RosskoManualCloseReason, string> = {
+const ROSSKO_MANUAL_CLOSE_REASON_LABELS = {
   SUPPLIER_CANCELLED: "Поставщик отменил поставку",
   UNAVAILABLE: "Товар недоступен",
   DELIVERY_FAILED: "Доставка сорвана",
@@ -116,10 +105,8 @@ export type RosskoIncomingLine = {
   article: string;
   orderedQty: number;
   postedReceivedQty: number;
-  manualClosedQty: number;
   providerClosedQty: number;
   activeIncomingQty: number;
-  closedQty: number;
   sourceStatus: number | null;
   sourceStatusLabel: string;
   state: RosskoOrderPartState;
@@ -128,9 +115,6 @@ export type RosskoIncomingLine = {
   previousExpectedDate: string | null;
   delayDays: number;
   canReceive: boolean;
-  canClose: boolean;
-  resolution: "ACTIVE" | "AUTO_CLOSED_BY_PROVIDER_STATUS" | "CLOSED_MANUALLY" | "RECEIVED";
-  resolutionLabel: string;
 };
 
 export type RosskoIncomingHistoryItem = {
@@ -156,14 +140,12 @@ export type RosskoIncomingOrder = {
   isDelayed: boolean;
   isClosed: boolean;
   hasProviderCancellation: boolean;
-  hasManualClosure: boolean;
   hasPartialReceipt: boolean;
   readyToReceive: boolean;
   summary: {
     orderedQty: number;
     postedReceivedQty: number;
     activeIncomingQty: number;
-    closedQty: number;
     receivableQty: number;
   };
   lines: RosskoIncomingLine[];
@@ -496,19 +478,6 @@ async function writeSnapshot(
           metadata: { sourceLineKey: line.sourceLineKey, before: before.sourceStatus, after: line.sourceStatus },
         });
       }
-      const currentStatus = normalizeRosskoOrderPartStatus(line.sourceStatus);
-      const previousStatus = normalizeRosskoOrderPartStatus(before?.sourceStatus);
-      if (currentStatus.providerClosed && (!before || !previousStatus.providerClosed)) {
-        auditRows.push({
-          businessGroupId: context.businessGroupId,
-          branchId,
-          userId: actor.login,
-          action: "ROSSKO_ORDER_LINE_AUTO_CLOSED",
-          entityType: "rossko_order",
-          entityId: orderId,
-          metadata: { sourceLineKey: line.sourceLineKey, sourceStatus: line.sourceStatus, label: currentStatus.label },
-        });
-      }
     }
     await tx.branchAuditLog.createMany({ data: auditRows });
   }, { maxWait: 10_000, timeout: 30_000 });
@@ -610,23 +579,6 @@ export async function syncRosskoIncomingOrders(input: {
   return { synced, errors };
 }
 
-function manualClosedByLine(events: Awaited<ReturnType<typeof trackedEvents>>) {
-  const result = new Map<string, number>();
-  for (const event of events) {
-    if (event.action !== "ROSSKO_ORDER_LINES_CLOSED_MANUALLY") continue;
-    const metadata = asRecord(event.metadata);
-    const lines = Array.isArray(metadata?.lines) ? metadata.lines : [];
-    for (const raw of lines) {
-      const line = asRecord(raw);
-      const sourceLineKey = asText(line?.sourceLineKey);
-      const quantity = Math.max(0, asNumber(line?.quantity));
-      if (!sourceLineKey || quantity <= 0) continue;
-      result.set(sourceLineKey, (result.get(sourceLineKey) ?? 0) + quantity);
-    }
-  }
-  return result;
-}
-
 function eventHistoryLabel(event: Awaited<ReturnType<typeof trackedEvents>>[number]) {
   const metadata = asRecord(event.metadata);
   if (event.action === "ROSSKO_ORDER_TRACKED") return { label: "Заказ добавлен в отслеживание", details: null };
@@ -638,11 +590,11 @@ function eventHistoryLabel(event: Awaited<ReturnType<typeof trackedEvents>>[numb
     const after = metadata?.after == null ? null : Math.floor(asNumber(metadata.after));
     return { label: "Статус позиции изменён", details: `${normalizeRosskoOrderPartStatus(before).label} → ${normalizeRosskoOrderPartStatus(after).label}` };
   }
-  if (event.action === "ROSSKO_ORDER_LINE_AUTO_CLOSED") return { label: "Позиция закрыта автоматически", details: asText(metadata?.label) || null };
+  if (event.action === "ROSSKO_ORDER_LINE_AUTO_CLOSED") return { label: "Статус позиции обновлён ROSSKO", details: asText(metadata?.label) || null };
   if (event.action === "ROSSKO_ORDER_LINES_CLOSED_MANUALLY") {
-    const reason = asText(metadata?.reason) as RosskoManualCloseReason;
+    const reason = asText(metadata?.reason) as keyof typeof ROSSKO_MANUAL_CLOSE_REASON_LABELS;
     const quantity = (Array.isArray(metadata?.lines) ? metadata.lines : []).reduce((sum, raw) => sum + Math.max(0, asNumber(asRecord(raw)?.quantity)), 0);
-    return { label: `Закрыто вручную: ${quantity} шт.`, details: ROSSKO_MANUAL_CLOSE_REASON_LABELS[reason] ?? (asText(metadata?.reason) || null) };
+    return { label: `Прежнее ручное закрытие: ${quantity} шт. (только история)`, details: ROSSKO_MANUAL_CLOSE_REASON_LABELS[reason] ?? (asText(metadata?.reason) || null) };
   }
   return { label: event.action, details: null };
 }
@@ -710,13 +662,11 @@ async function buildIncomingOrders(tx: IncomingDb, context: BranchContext, syncE
         postedByLine.set(position.externalCode, (postedByLine.get(position.externalCode) ?? 0) + position.quantity.toNumber());
       }
     }
-    const manualByLine = manualClosedByLine(orderEvents);
     const previousOrderDelivery = previousDifferentDeliveryDate(orderEvents, snapshot.deliveryDate);
     const lines = snapshot.lines.map<RosskoIncomingLine>((line) => {
       const quantities = calculateRosskoIncomingQuantities({
         orderedQty: line.orderedQty,
         postedReceivedQty: postedByLine.get(line.sourceLineKey) ?? 0,
-        manualClosedQty: manualByLine.get(line.sourceLineKey) ?? 0,
         sourceStatus: line.sourceStatus,
       });
       const expectedDate = line.deliveryDate ?? snapshot.deliveryDate;
@@ -730,22 +680,10 @@ async function buildIncomingOrders(tx: IncomingDb, context: BranchContext, syncE
       });
       let state: RosskoOrderPartState = quantities.status.state;
       let stateLabel = quantities.status.label;
-      let resolution: RosskoIncomingLine["resolution"] = "ACTIVE";
-      let resolutionLabel = "Учитывается как товар в пути";
       if (quantities.postedReceivedQty >= quantities.orderedQty) {
         state = "RECEIVED";
         stateLabel = "Принято";
-        resolution = "RECEIVED";
-        resolutionLabel = "Полностью принято на склад";
-      } else if (quantities.activeIncomingQty <= 0 && quantities.manualClosedQty > 0) {
-        state = "CLOSED_MANUALLY";
-        stateLabel = "Закрыто вручную";
-        resolution = "CLOSED_MANUALLY";
-        resolutionLabel = "Остаток локально исключён из товаров в пути";
-      } else if (quantities.providerClosedQty > 0) {
-        resolution = "AUTO_CLOSED_BY_PROVIDER_STATUS";
-        resolutionLabel = `Закрыто автоматически: ROSSKO — ${quantities.status.label.toLocaleLowerCase("ru-RU")}`;
-      } else if (quantities.postedReceivedQty > 0) {
+      } else if (!quantities.status.providerClosed && quantities.postedReceivedQty > 0) {
         state = "PARTIALLY_RECEIVED";
         stateLabel = "Принято частично";
       } else if (delivery.delayed) {
@@ -763,10 +701,8 @@ async function buildIncomingOrders(tx: IncomingDb, context: BranchContext, syncE
         article: line.article,
         orderedQty: quantities.orderedQty,
         postedReceivedQty: quantities.postedReceivedQty,
-        manualClosedQty: quantities.manualClosedQty,
         providerClosedQty: quantities.providerClosedQty,
         activeIncomingQty: quantities.activeIncomingQty,
-        closedQty: quantities.closedQty,
         sourceStatus: line.sourceStatus,
         sourceStatusLabel: quantities.status.label,
         state,
@@ -775,31 +711,24 @@ async function buildIncomingOrders(tx: IncomingDb, context: BranchContext, syncE
         previousExpectedDate,
         delayDays: delivery.delayDays,
         canReceive: quantities.status.receivable && quantities.activeIncomingQty > 0,
-        canClose: Boolean(line.partGuid) && quantities.activeIncomingQty > 0,
-        resolution,
-        resolutionLabel,
       };
     });
     const summary = {
       orderedQty: lines.reduce((sum, line) => sum + line.orderedQty, 0),
       postedReceivedQty: lines.reduce((sum, line) => sum + line.postedReceivedQty, 0),
       activeIncomingQty: lines.reduce((sum, line) => sum + line.activeIncomingQty, 0),
-      closedQty: lines.reduce((sum, line) => sum + line.closedQty, 0),
       receivableQty: lines.reduce((sum, line) => sum + (line.canReceive ? line.activeIncomingQty : 0), 0),
     };
     const hasPartialReceipt = summary.postedReceivedQty > 0 && summary.postedReceivedQty < summary.orderedQty;
     const hasProviderCancellation = lines.some((line) => line.providerClosedQty > 0);
-    const hasManualClosure = lines.some((line) => line.manualClosedQty > 0);
     const isDelayed = lines.some((line) => line.state === "DELAYED");
     const isClosed = summary.activeIncomingQty <= 0;
     const statusLabel = (() => {
       if (summary.postedReceivedQty >= summary.orderedQty && summary.orderedQty > 0) return "Принято";
-      if (hasPartialReceipt && isClosed && hasProviderCancellation) return "Принято частично · остаток отменён";
-      if (hasPartialReceipt && isClosed && hasManualClosure) return "Принято частично · остаток закрыт";
-      if (isDelayed) return "Доставка задерживается";
       if (hasPartialReceipt) return "Принято частично";
-      if (isClosed && hasProviderCancellation) return "Закрыто ROSSKO";
-      if (isClosed && hasManualClosure) return "Закрыто вручную";
+      if (isClosed && hasProviderCancellation) return "Отменено или недоступно у ROSSKO";
+      if (summary.receivableQty > 0) return "Доступно к приёмке";
+      if (isDelayed) return "Доставка задерживается";
       if (lines.some((line) => line.state === "AT_BRANCH")) return "На складе ROSSKO";
       return "В пути";
     })();
@@ -837,12 +766,11 @@ async function buildIncomingOrders(tx: IncomingDb, context: BranchContext, syncE
       stockAddress: snapshot.stockAddress,
       updatedAt: lastSync?.createdAt.toISOString() ?? null,
       syncError: syncErrors[orderId] ?? (lastFailure && (!lastSync || lastFailure.createdAt > lastSync.createdAt) ? asText(asRecord(lastFailure.metadata)?.message) : null) ?? null,
-      status: isClosed ? "closed" : isDelayed ? "delayed" : hasPartialReceipt ? "partially_received" : "active",
+      status: hasPartialReceipt ? "partially_received" : isClosed ? (hasProviderCancellation ? "cancelled" : "received") : isDelayed ? "delayed" : "active",
       statusLabel,
       isDelayed,
       isClosed,
       hasProviderCancellation,
-      hasManualClosure,
       hasPartialReceipt,
       readyToReceive: summary.receivableQty > 0,
       summary,
@@ -874,79 +802,4 @@ export async function listRosskoIncomingOrders(input: {
   const orders = await prisma.$transaction((tx) => buildIncomingOrders(tx, input.context, syncResult.errors));
   const updatedAt = orders.map((order) => order.updatedAt).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
   return { orders, updatedAt, synced: syncResult.synced, syncErrors: syncResult.errors };
-}
-
-export async function closeRosskoIncomingLines(input: {
-  context: BranchContext;
-  actor: User;
-  orderId: string;
-  reason: RosskoManualCloseReason;
-  comment?: string | null;
-  idempotencyKey: string;
-  lines: Array<{ sourceLineKey: string; quantity: number }>;
-}) {
-  const branchId = input.context.branchId;
-  if (!branchId) throw new RosskoIncomingError("Выберите активный филиал", 409, "CONCRETE_BRANCH_REQUIRED");
-  const orderId = assertOrderId(input.orderId);
-  if (!ROSSKO_MANUAL_CLOSE_REASONS.includes(input.reason)) throw new RosskoIncomingError("Выберите причину закрытия", 400, "CLOSE_REASON_REQUIRED");
-  const comment = asText(input.comment).slice(0, 1000);
-  if (input.reason === "OTHER" && !comment) throw new RosskoIncomingError("Для причины «Другое» добавьте комментарий", 400, "CLOSE_COMMENT_REQUIRED");
-  const idempotencyKey = asText(input.idempotencyKey).slice(0, 120);
-  if (!idempotencyKey) throw new RosskoIncomingError("Повторите закрытие: не создан ключ операции", 400, "IDEMPOTENCY_KEY_REQUIRED");
-  const requested = input.lines.map((line) => ({ sourceLineKey: asText(line.sourceLineKey), quantity: Math.floor(asNumber(line.quantity)) }));
-  if (!requested.length || requested.some((line) => !line.sourceLineKey || line.quantity <= 0)) {
-    throw new RosskoIncomingError("Укажите закрываемое количество хотя бы для одной позиции", 400, "CLOSE_LINES_REQUIRED");
-  }
-  await syncRosskoIncomingOrders({ context: input.context, actor: input.actor, orderIds: [orderId] });
-  await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw<Array<{ locked: string }>>(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${`rossko-incoming:${branchId}:${orderId}`}, 0))::text AS locked
-    `);
-    const events = await trackedEvents(tx, branchId, [orderId]);
-    const duplicate = events.find((event) => event.action === "ROSSKO_ORDER_LINES_CLOSED_MANUALLY" && asText(asRecord(event.metadata)?.idempotencyKey) === idempotencyKey);
-    if (duplicate) return;
-    const orders = await buildIncomingOrders(tx, input.context);
-    const order = orders.find((candidate) => candidate.externalOrderId === orderId);
-    if (!order) throw new RosskoIncomingError("Заказ ROSSKO не найден в активном филиале", 404, "ROSSKO_ORDER_NOT_TRACKED");
-    const linesByKey = new Map(order.lines.map((line) => [line.sourceLineKey, line]));
-    for (const line of requested) {
-      const current = linesByKey.get(line.sourceLineKey);
-      if (!current) throw new RosskoIncomingError("Позиция ROSSKO больше не найдена", 409, "ROSSKO_SOURCE_LINE_NOT_FOUND", { sourceLineKey: line.sourceLineKey });
-      if (!current.canClose) {
-        throw new RosskoIncomingError(
-          "Сначала обновите статус ROSSKO: поставщик ещё не вернул устойчивый идентификатор позиции.",
-          409,
-          "ROSSKO_SOURCE_LINE_IDENTITY_REQUIRED",
-          { sourceLineKey: line.sourceLineKey },
-        );
-      }
-      if (line.quantity > current.activeIncomingQty) {
-        throw new RosskoIncomingError(
-          `Можно закрыть не больше ${current.activeIncomingQty} шт. для «${current.name}».`,
-          409,
-          "ROSSKO_OVER_CLOSE",
-          { sourceLineKey: line.sourceLineKey, activeIncomingQty: current.activeIncomingQty, requestedQty: line.quantity },
-        );
-      }
-    }
-    await tx.branchAuditLog.create({
-      data: {
-        businessGroupId: input.context.businessGroupId,
-        branchId,
-        userId: input.actor.login,
-        action: "ROSSKO_ORDER_LINES_CLOSED_MANUALLY",
-        entityType: "rossko_order",
-        entityId: orderId,
-        metadata: {
-          idempotencyKey,
-          reason: input.reason,
-          reasonLabel: ROSSKO_MANUAL_CLOSE_REASON_LABELS[input.reason],
-          comment: comment || null,
-          lines: requested,
-          warning: "Локальное закрытие не отменяет заказ в ROSSKO и не меняет складские остатки.",
-        },
-      },
-    });
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 45_000 });
-  return listRosskoIncomingOrders({ context: input.context, actor: input.actor, sync: false });
 }

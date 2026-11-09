@@ -66,7 +66,6 @@ export type RosskoReceiptLineAction =
   | "WAITING_PROVIDER"
   | "FULLY_RECEIVED"
   | "PROVIDER_CLOSED"
-  | "CLOSED_MANUALLY"
   | "MANUAL_REVIEW"
   | "AMBIGUOUS_PRODUCT"
   | "AMBIGUOUS_SOURCE_LINE"
@@ -83,7 +82,6 @@ export type RosskoReceiptPreviewLine = {
   productDetails: RosskoReceiptProductDetails;
   orderedQty: number;
   alreadyReceivedQty: number;
-  manualClosedQty: number;
   providerClosedQty: number;
   remainingQty: number;
   receivableQty: number;
@@ -124,9 +122,7 @@ export type RosskoReceiptPreview = {
     ambiguousLines: number;
     orderedQty: number;
     alreadyReceivedQty: number;
-    manualClosedQty: number;
     providerClosedQty: number;
-    closedQty: number;
     remainingQty: number;
     receivableQty: number;
     waitingProviderQty: number;
@@ -560,39 +556,13 @@ export async function loadPostedRosskoOrderQuantities(branchId: string, order: N
   return [...parts].map(([key, part]) => ({ part, postedQty: quantities.get(key) ?? 0 }));
 }
 
-async function loadManualClosedQuantityByLine(tx: ReceiptDb, branchId: string, orderId: string) {
-  const events = await tx.branchAuditLog.findMany({
-    where: {
-      branchId,
-      entityType: "rossko_order",
-      entityId: orderId,
-      action: "ROSSKO_ORDER_LINES_CLOSED_MANUALLY",
-    },
-    select: { metadata: true },
-    orderBy: [{ createdAt: "asc" }],
-  });
-  const result = new Map<string, number>();
-  for (const event of events) {
-    const metadata = record(event.metadata);
-    const lines = Array.isArray(metadata?.lines) ? metadata.lines : [];
-    for (const rawLine of lines) {
-      const line = record(rawLine);
-      const sourceLineKey = text(line?.sourceLineKey);
-      const quantity = numeric(line?.quantity) ?? 0;
-      if (!sourceLineKey || quantity <= 0) continue;
-      result.set(sourceLineKey, (result.get(sourceLineKey) ?? 0) + quantity);
-    }
-  }
-  return result;
-}
-
 async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order: NormalizedRosskoOrder, selectedStoreId?: string) {
   const branchId = context.branchId!;
   const groups = groupRosskoOrderParts(order.parts);
   // Each provider array row remains a source line. Repeated nomenclature GUIDs
   // receive an occurrence suffix before any brand/article product matching.
   const sourceLineKeys = groups.map(({ part, sourceOccurrence }) => sourceLineKeyForPart(order.id, part, sourceOccurrence));
-  const [stores, supplier, products, history, manualClosedByLine] = await Promise.all([
+  const [stores, supplier, products, history] = await Promise.all([
     tx.localStore.findMany({
       where: { branchId, archived: false },
       select: { id: true, name: true, isMain: true },
@@ -605,7 +575,6 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
       take: 20_000,
     }),
     loadReceiptHistory(tx, branchId, order.id, sourceLineKeys),
-    loadManualClosedQuantityByLine(tx, branchId, order.id),
   ]);
   if (!stores.length) throw new RosskoReceiptError("В активном филиале нет доступного склада", 409, "LOCAL_STORE_REQUIRED");
   const store = selectedStoreId ? stores.find((candidate) => candidate.id === selectedStoreId) : stores[0];
@@ -623,10 +592,9 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
     const quantities = calculateRosskoReceiptQuantities({
       orderedQty: Number.isFinite(part.orderedQty) ? part.orderedQty : 0,
       postedReceivedQty: alreadyReceivedQty,
-      manualClosedQty: manualClosedByLine.get(sourceLineKey) ?? 0,
       sourceStatus: part.status,
     });
-    const { orderedQty, manualClosedQty, providerClosedQty, remainingQty, receiptEligibility } = quantities;
+    const { orderedQty, providerClosedQty, remainingQty, receiptEligibility } = quantities;
     const latestPrice = relevantHistory[0]?.priceCentsPerUnit == null ? null : relevantHistory[0].priceCentsPerUnit / 100;
     const priceDeviation = latestPrice != null && Number.isFinite(part.price) && Math.abs(latestPrice - part.price) > 0.00001
       ? { previousPrice: latestPrice, currentPrice: part.price }
@@ -637,7 +605,6 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
     const warnings: string[] = [];
     if (ambiguous) warnings.push("ROSSKO вернул разные строки с одинаковым GUID. Автоматическая приёмка отключена.");
     if (receiptEligibility === "PROVIDER_CANCELLED") warnings.push("Позиция отменена или недоступна у ROSSKO и не будет включена в приёмку.");
-    if (manualClosedQty > 0) warnings.push(`Локально закрыто ${manualClosedQty} шт. Оставшееся количество больше не учитывается как товар в пути.`);
     if (receiptEligibility === "WAITING_PROVIDER") warnings.push("Товар ещё ожидается у ROSSKO и пока не включён в приёмку.");
     if (receiptEligibility === "MANUAL_REVIEW") warnings.push(`Статус ROSSKO «${status.label}» не позволяет безопасно определить готовность к приёмке. Нужна ручная проверка.`);
     if (receiptEligibility === "ALREADY_RECEIVED") warnings.push("Уже принято полностью.");
@@ -648,7 +615,6 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
     else if (ambiguous) action = "AMBIGUOUS_SOURCE_LINE";
     else if (alreadyReceivedQty >= orderedQty) action = "FULLY_RECEIVED";
     else if (providerClosedQty > 0 && remainingQty <= 0) action = "PROVIDER_CLOSED";
-    else if (manualClosedQty > 0 && remainingQty <= 0) action = "CLOSED_MANUALLY";
     else if (receiptEligibility === "WAITING_PROVIDER") action = "WAITING_PROVIDER";
     else if (receiptEligibility === "MANUAL_REVIEW") action = "MANUAL_REVIEW";
     else if (match.ambiguous) action = "AMBIGUOUS_PRODUCT";
@@ -681,7 +647,6 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
       })(),
       orderedQty,
       alreadyReceivedQty,
-      manualClosedQty,
       providerClosedQty,
       remainingQty,
       receivableQty,
@@ -727,9 +692,7 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
       ambiguousLines: lines.filter((line) => line.action === "AMBIGUOUS_PRODUCT" || line.action === "AMBIGUOUS_SOURCE_LINE").length,
       orderedQty: lines.reduce((sum, line) => sum + line.orderedQty, 0),
       alreadyReceivedQty: lines.reduce((sum, line) => sum + line.alreadyReceivedQty, 0),
-      manualClosedQty: lines.reduce((sum, line) => sum + line.manualClosedQty, 0),
       providerClosedQty: lines.reduce((sum, line) => sum + line.providerClosedQty, 0),
-      closedQty: lines.reduce((sum, line) => sum + line.manualClosedQty + line.providerClosedQty, 0),
       remainingQty: lines.reduce((sum, line) => sum + line.remainingQty, 0),
       receivableQty: lines.reduce((sum, line) => sum + line.receivableQty, 0),
       waitingProviderQty: lines.reduce((sum, line) => sum + (line.receiptEligibility === "WAITING_PROVIDER" ? line.remainingQty : 0), 0),

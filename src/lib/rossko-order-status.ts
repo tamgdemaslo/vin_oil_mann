@@ -10,7 +10,6 @@ export type RosskoOrderPartState =
   | "EXPIRED"
   | "PARTIALLY_RECEIVED"
   | "RECEIVED"
-  | "CLOSED_MANUALLY"
   | "RETURN";
 
 export type RosskoReceiptEligibility =
@@ -44,7 +43,7 @@ export const ROSSKO_ORDER_PART_STATUS_TABLE: readonly RosskoStatusDefinition[] =
   { code: 2, rawStatus: "отгружено", state: "IN_TRANSIT", label: "Отгружено", activeIncoming: true, providerClosed: false, receivable: true, warning: false, receiptEligibility: "ELIGIBLE" },
   { code: 3, rawStatus: "готово к отгрузке", state: "READY", label: "Готово к отгрузке", activeIncoming: true, providerClosed: false, receivable: false, warning: false, receiptEligibility: "WAITING_PROVIDER" },
   { code: 5, rawStatus: "ожидаем поступление", state: "PENDING", label: "Ожидаем поступление", activeIncoming: true, providerClosed: false, receivable: false, warning: false, receiptEligibility: "WAITING_PROVIDER" },
-  { code: 6, rawStatus: "на складе филиала", state: "AT_BRANCH", label: "На складе ROSSKO", activeIncoming: true, providerClosed: false, receivable: true, warning: false, receiptEligibility: "ELIGIBLE" },
+  { code: 6, rawStatus: "на складе филиала", state: "AT_BRANCH", label: "На складе ROSSKO", activeIncoming: true, providerClosed: false, receivable: false, warning: false, receiptEligibility: "WAITING_PROVIDER" },
   { code: 7, rawStatus: "нет в наличии", state: "UNAVAILABLE", label: "Нет в наличии", activeIncoming: false, providerClosed: true, receivable: false, warning: true, receiptEligibility: "PROVIDER_CANCELLED" },
   { code: 8, rawStatus: "отменён клиентом", state: "CANCELLED", label: "Отменён клиентом", activeIncoming: false, providerClosed: true, receivable: false, warning: true, receiptEligibility: "PROVIDER_CANCELLED" },
   { code: 9, rawStatus: "просрочен", state: "EXPIRED", label: "Просрочено ROSSKO", activeIncoming: false, providerClosed: true, receivable: false, warning: true, receiptEligibility: "PROVIDER_CANCELLED" },
@@ -101,28 +100,19 @@ export function resolveRosskoReceiptEligibility(
 export function calculateRosskoIncomingQuantities(input: {
   orderedQty: number;
   postedReceivedQty: number;
-  manualClosedQty: number;
   sourceStatus: number | null | undefined;
 }) {
   const orderedQty = Math.max(0, Number(input.orderedQty) || 0);
   const postedReceivedQty = Math.min(orderedQty, Math.max(0, Number(input.postedReceivedQty) || 0));
   const unresolvedAfterReceipt = Math.max(orderedQty - postedReceivedQty, 0);
-  const manualClosedQty = Math.min(unresolvedAfterReceipt, Math.max(0, Number(input.manualClosedQty) || 0));
   const status = normalizeRosskoOrderPartStatus(input.sourceStatus);
-  const providerClosedQty = status.providerClosed
-    ? Math.max(unresolvedAfterReceipt - manualClosedQty, 0)
-    : 0;
-  const activeIncomingQty = Math.max(
-    orderedQty - postedReceivedQty - manualClosedQty - providerClosedQty,
-    0,
-  );
+  const providerClosedQty = status.providerClosed ? unresolvedAfterReceipt : 0;
+  const activeIncomingQty = unresolvedAfterReceipt - providerClosedQty;
   return {
     orderedQty,
     postedReceivedQty,
-    manualClosedQty,
     providerClosedQty,
     activeIncomingQty,
-    closedQty: manualClosedQty + providerClosedQty,
     status,
   };
 }
@@ -130,7 +120,6 @@ export function calculateRosskoIncomingQuantities(input: {
 export function calculateRosskoReceiptQuantities(input: {
   orderedQty: number;
   postedReceivedQty: number;
-  manualClosedQty: number;
   sourceStatus: number | null | undefined;
 }) {
   const incoming = calculateRosskoIncomingQuantities(input);

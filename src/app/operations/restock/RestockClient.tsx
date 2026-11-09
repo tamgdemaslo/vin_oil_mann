@@ -604,7 +604,7 @@ function supplierOrdersFromServer(orders: ServerIncomingOrder[]): SupplierOrder[
       supplier: "ROSSKO",
       supplierType: "ROSSKO",
       externalOrderId: order.externalOrderId,
-      status: order.status === "closed" ? "received" : lines.some((line) => line.receivedQty > 0) ? "partially_received" : "confirmed",
+      status: order.status === "received" || order.status === "cancelled" || order.status === "partially_received" ? order.status : "confirmed",
       createdAt: orderedAt,
       orderedAt,
       expectedAt: order.expectedDate ? new Date(order.expectedDate).getTime() : undefined,
