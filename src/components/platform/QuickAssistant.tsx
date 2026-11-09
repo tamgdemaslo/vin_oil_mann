@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Bot, Mic, Square, X } from "lucide-react";
 import { journalLocalToUtcIso } from "@/lib/booking/journal-time";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
-import { uniqueQuickOption, type QuickAnswer, type QuickBookingOptions, type QuickCommand, type QuickShipmentPreview } from "@/lib/quick-assistant";
+import { uniqueQuickBookingService, uniqueQuickOption, type QuickAnswer, type QuickBookingOptions, type QuickCommand, type QuickShipmentPreview } from "@/lib/quick-assistant";
 import styles from "./quick-assistant.module.css";
 
 type Preview = {
@@ -113,7 +113,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
         setShipment(result);
         return;
       }
-      const service = uniqueQuickOption(result.draft.service, result.options?.services ?? []);
+      const service = uniqueQuickBookingService(result.draft.service, result.options?.services ?? []);
       const masters = result.options?.masters.filter(master => service?.masterIds.includes(master.id)) ?? [];
       const master = result.draft.master ? uniqueQuickOption(result.draft.master, masters) : masters.length === 1 ? masters[0] : undefined;
       setServiceId(service?.id ?? "");

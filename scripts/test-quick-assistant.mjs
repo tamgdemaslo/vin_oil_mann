@@ -15,12 +15,18 @@ function load(path, modules = {}) {
   return exports;
 }
 
-const { uniqueQuickOption } = load("src/lib/quick-assistant.ts");
+const { uniqueQuickBookingService, uniqueQuickOption } = load("src/lib/quick-assistant.ts");
 const { journalId } = load("src/lib/booking/journal-id.ts");
 const masters = [{ name: "Семён", id: 1 }, { name: "Алексей", id: 2 }];
 assert.equal(uniqueQuickOption(" семен ", masters)?.id, 1);
 assert.equal(uniqueQuickOption("Алексей", [...masters, { name: "Алексей", id: 3 }]), undefined);
 assert.equal(uniqueQuickOption("", masters), undefined);
+const oilService = { id: "oil", name: "Замена моторного масла в двигателе и масляного фильтра", masterIds: [1] };
+const oilOnly = { id: "oil-only", name: "Замена моторного масла в двигателе", masterIds: [1] };
+const oilHint = "Замена моторного масла и масляного фильтра";
+assert.equal(uniqueQuickBookingService(oilHint, [oilOnly, oilService])?.id, "oil");
+assert.equal(uniqueQuickBookingService(oilHint, [oilOnly]), undefined);
+assert.equal(uniqueQuickBookingService(oilHint, [oilService, { ...oilService, id: "other" }]), undefined);
 
 const access = {
   branchId: "branch-a",
