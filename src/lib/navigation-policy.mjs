@@ -98,6 +98,7 @@ export function resolveNavigationForUser({
     if (canBookingView) workItems.push(item("/records", "Записи", isAllBranches ? "Сводный журнал всех филиалов." : "Рабочий журнал собственной системы записи.", { requiresCashShift: !isAllBranches }));
     workItems.push(branchOnly("/shipment", "Журнал отгрузок", "Поиск и контроль документов.", { requiresCashShift: true }));
     if (effectiveRole !== "mechanic") workItems.push(branchOnly("/shipment/new", "Новая отгрузка", "Создать рабочий документ.", { requiresCashShift: true }));
+    if (effectiveRole !== "mechanic") workItems.push(branchOnly("/maintenance-quote", "Расчёт ТО", "Масло, фильтры и работа для предложения клиенту."));
     sections.push({ id: "work", label: "Работа", href: workItems[0]?.href ?? "/shipment", items: workItems });
   }
 

@@ -36,6 +36,7 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/notifications", title: () => `Уведомления | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/messages", title: () => `Сообщения | Клиенты` },
 
+  { match: (pathname) => pathname === "/maintenance-quote", title: () => "Расчёт ТО | Работа" },
   { match: (pathname) => pathname === "/shipment/new", title: () => `Новая отгрузка | Работа` },
   {
     match: (pathname) => /^\/shipment\/[^/]+\/edit\/?$/.test(pathname),

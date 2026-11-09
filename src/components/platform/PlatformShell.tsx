@@ -221,6 +221,7 @@ function branchLabel(branch: ShellBranch) {
 
 function routeContext(pathname: string) {
   if (pathname === "/") return { label: "Текущий раздел:", value: "Главная" };
+  if (pathname === "/maintenance-quote") return { label: "Текущий раздел:", value: "Расчёт ТО" };
   if (pathname.startsWith("/shipment/new")) return { label: "Текущий раздел:", value: "Новая отгрузка" };
   if (pathname.startsWith("/shipment")) return { label: "Текущий раздел:", value: "Отгрузки" };
   if (pathname.startsWith("/inventory") || pathname.startsWith("/warehouse")) return { label: "Текущий раздел:", value: "Склад" };

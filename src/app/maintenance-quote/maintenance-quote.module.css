@@ -1,0 +1,28 @@
+.page { max-width: 1280px; padding-bottom: 48px; }
+.pageHeader { margin-bottom: 24px; }
+.kicker { color: var(--eco-muted); font-size: 13px; }
+.title { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.title svg { width: 30px; height: 30px; color: var(--eco-rust); }
+.title h1 { margin: 0; font-size: clamp(30px, 5vw, 42px); line-height: 1.1; font-weight: 700; letter-spacing: -.03em; }
+.pageHeader p { margin: 10px 0 0; color: var(--eco-muted); font-size: 15px; max-width: 60ch; }
+.setup { min-width: 0; padding: clamp(14px, 3vw, 22px); border: 1px solid var(--eco-line); border-radius: 12px; background: var(--eco-surface); }
+.setupHeader, .setupTitle { display: flex; align-items: center; gap: 12px; }
+.setupHeader { justify-content: space-between; flex-wrap: wrap; }
+.setupTitle > span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: var(--eco-rust); background: var(--eco-hover); font-size: 12px; font-weight: 700; }
+.setupTitle h2 { margin: 0; font-size: 19px; font-weight: 650; }
+.setupTitle p, .error { margin: 4px 0 0; font-size: 13px; color: var(--eco-muted); }
+.store, .manual { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+.store { min-width: min(220px, 100%); }
+.store span { display: flex; align-items: center; gap: 6px; }
+.manual { margin-top: 14px; max-width: 420px; grid-template-columns: 1fr auto; }
+.manual span { color: var(--eco-muted); font-weight: 400; }
+.manual input { grid-column: 1 / -1; }
+.store select, .manual input { min-width: 0; width: 100%; min-height: 40px; border: 1px solid var(--eco-line-strong); border-radius: 6px; padding: 8px 10px; color: var(--eco-ink); background: var(--eco-surface); font: inherit; font-weight: 400; }
+.lookup { margin-top: 14px; border-top: 1px solid var(--eco-line); }
+.lookup summary { cursor: pointer; padding: 12px 0 0; font-size: 14px; font-weight: 600; }
+.lookup[open] summary { margin-bottom: 12px; }
+@media (max-width: 540px) { .store { width: 100%; } }
+.catalogFields { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 12px; }
+.catalogFields label { display: grid; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; }
+.catalogFields select { min-width: 0; width: 100%; min-height: 40px; border: 1px solid var(--eco-line-strong); border-radius: 6px; padding: 8px 10px; color: var(--eco-ink); background: var(--eco-surface); font: inherit; font-weight: 400; }
+@media (max-width: 700px) { .catalogFields { grid-template-columns: 1fr; } }

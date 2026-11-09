@@ -10,12 +10,11 @@ import { QuoteSearchField } from "./QuoteSearchField";
 import styles from "./MaintenanceQuotePanel.module.css";
 
 export type MaintenanceQuoteVehicleContext = { key: string; vin: string | null; vehicleTitle: string; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null };
-type Props = { vehicleTitle: string; warehouseId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; requirements?: ReturnType<typeof quoteRequirementChoices>; filters?: QuoteFilterGroup[]; filtersLoading?: boolean; onChooseWarehouse?: () => void };
+type Props = { vehicleTitle: string; warehouseId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; requirements?: ReturnType<typeof quoteRequirementChoices>; filters?: QuoteFilterGroup[]; filtersLoading?: boolean };
 const number = (value: string) => Number(value.replace(",", "."));
 
-export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, research, requirements, filters: vehicleFilters = [], filtersLoading = false, onChooseWarehouse }: Props) {
+export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, research, requirements, filters: vehicleFilters = [], filtersLoading = false }: Props) {
   const choices = useMemo(() => profile || research ? quoteRequirementChoices(profile, research) : requirements ?? quoteRequirementChoices(null, null), [profile, research, requirements]);
-  const [open, setOpen] = useState(false);
   const [manualFilters, setManualFilters] = useState<QuoteFilterGroup[]>([]);
   const [manualArticle, setManualArticle] = useState("");
   const [manualFilterType, setManualFilterType] = useState("Масляный фильтр");
@@ -51,7 +50,6 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
   const [supplierResults, setSupplierResults] = useState<Record<string, { products: QuoteFilterGroup["products"]; error?: string }>>({});
   const filterArticlesKey = JSON.stringify([...new Set(filters.map(group => group.article))].sort());
   useEffect(() => {
-    if (!open) return;
     const controller = new AbortController();
     setSupplierResults({});
     const articles = JSON.parse(filterArticlesKey) as string[];
@@ -66,7 +64,7 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
       }
     }));
     return () => controller.abort();
-  }, [open, filterArticlesKey, supplierRefresh, warehouseId]);
+  }, [filterArticlesKey, supplierRefresh, warehouseId]);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
   const requirementsKey = `${specification}|${viscosity}`;
@@ -83,7 +81,7 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
     requestRef.current?.abort(); setProducts([]); setSelected([]); setSearched(false); setLoading(false); setError("");
   }, [requirementsKey]);
   useEffect(() => {
-    if (!open || !warehouseId || search.trim().length < 2) return;
+    if (!warehouseId || search.trim().length < 2) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setExtraLoading(true); setExtraError("");
@@ -98,7 +96,7 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
       } finally { if (!controller.signal.aborted) setExtraLoading(false); }
     }, 300);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [search, open, warehouseId]);
+  }, [search, warehouseId]);
 
   function invalidate() {
     requestRef.current?.abort(); setProducts([]); setSelected([]); setSearched(false); setLoading(false); setError("");
@@ -128,12 +126,11 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
   function updateExtra(id: string, update: Partial<QuoteExtra>) {
     setExtras(rows => rows.map(row => row.id === id ? { ...row, ...update } : row));
   }
-  return <section id="shipment-maintenance-quote" className={styles.panel} aria-label="Расчёт ТО">
-    <div className={styles.heading}><div><strong>Расчёт ТО</strong><p>Масло, фильтры, работа и аналоги Роско — один расчёт для клиента.</p></div><button type="button" className="eco-btn" aria-expanded={open} onClick={() => {
-      setOpen(!open);
-    }}>{open ? "Свернуть расчёт" : "Рассчитать ТО"}</button></div>
-    {open ? <div className={styles.body}>
-      {!warehouseId ? <div className={styles.warehousePrompt}><p role="status">Для подбора из наличия выберите склад. Параметры масла и артикулы MANN можно заполнить заранее.</p>{onChooseWarehouse ? <button type="button" className="eco-btn" onClick={onChooseWarehouse}>Выбрать склад</button> : null}</div> : null}
+  return <div className={styles.panel}>
+    <div className={styles.body}>
+      <section id="quote-oil" className={styles.step} aria-labelledby="quote-oil-title">
+      <header className={styles.stepHeader}><span aria-hidden="true">02</span><div><h2 id="quote-oil-title">Моторное масло</h2><p>Проверьте допуск, вязкость и объём замены.</p></div></header>
+      {!warehouseId && <p className={styles.warehousePrompt} role="status">Выберите склад в блоке «Автомобиль и склад», чтобы проверить наличие.</p>}
       <div className={styles.fields}>
         <QuoteSearchField label="Допуск / стандарт" value={specification} options={referenceSpecifications} groups={specificationGroups} onChange={value => { invalidate(); setSpecification(value); }} />
         <QuoteSearchField label="Вязкость" value={viscosity} options={[...choices.viscosities, ...referenceViscosities]} onChange={value => { invalidate(); setViscosity(value); }} />
@@ -151,7 +148,9 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
           {amount ? <p>Комплект: {amount.lines.map(line=>`${line.quantity} × ${line.product.litresPerUnit} л`).join(" + ")} — <b>{quoteRub(amount.cents)}</b>{!amount.enough ? " · Недостаточно на складе" : ""}</p> : <p>Уточните объём, фасовку и цену.</p>}
         </div><button type="button" className="eco-btn" disabled={!chosen && (!amount || !amount.enough)} aria-pressed={chosen} onClick={() => setSelected(rows => chosen ? rows.filter(item => !variant.products.some(product=>product.id===item.id)) : [...rows, ...variant.products.filter(item=>item.price>0 && item.litresPerUnit)])}>{chosen ? "Убрать вариант" : "Добавить вариант"}</button></div>;
       })}</div> : null}
-      <div className={styles.heading}><strong>Расходники и работа</strong><button type="button" className="eco-btn" onClick={() => setExtras(rows => [...rows, { id: crypto.randomUUID(), name: "", quantity: 1, price: 0 }])}>Добавить строку вручную</button></div>
+      </section>
+      <section className={styles.step} aria-labelledby="quote-parts-title">
+      <header className={styles.stepHeader}><span aria-hidden="true">03</span><div><h2 id="quote-parts-title">Фильтры и работы</h2><p>Добавьте позиции со склада, из Роско или вручную.</p></div></header>
       <div className={styles.filterPicker} aria-label="Фильтры из подбора MANN">
         <div className={styles.filterHeading}><strong>Фильтры MANN и аналоги Роско</strong>{filters.length ? <button type="button" className="eco-btn" onClick={() => setSupplierRefresh(value => value + 1)}>Обновить Роско</button> : null}</div>
         {filtersLoading ? <p role="status">Загружаем подбор MANN…</p> : !filters.length ? <p className={styles.note}>Выберите автомобиль для подбора фильтров или укажите известный артикул MANN ниже.</p> : null}
@@ -206,7 +205,14 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
       {extraError ? <p role="alert">{extraError}</p> : null}
       {extraProducts.map(product => <div key={product.id} className={styles.option}><span>{product.name} · {product.article} · {quoteRub(Math.round(product.price * 100))}</span><button type="button" className="eco-btn" onClick={() => { setExtras(rows => [...rows, { id: crypto.randomUUID(), name: product.name, brand: product.brand, quantity: 1, price: product.price, stockStoreId: warehouseId ?? undefined }]); setSearch(""); setExtraProducts([]); }}>Добавить</button></div>)}
       <p className={styles.note}>Применяемость фильтра проверьте по подбору автомобиля. Все строки ниже входят в каждый вариант.</p>
+      <button type="button" className="eco-btn" onClick={() => setExtras(rows => [...rows, { id: crypto.randomUUID(), name: "", quantity: 1, price: 0 }])}>Добавить строку вручную</button>
       {extras.map(row => <div key={row.id} className={styles.extra}><label>Наименование<input value={row.name} onChange={event => updateExtra(row.id, { name: event.target.value })} placeholder="Масляный фильтр / замена масла" /></label><label>Количество<input type="number" min="0.001" step="0.001" value={Number.isFinite(row.quantity) ? row.quantity : ""} onChange={event => updateExtra(row.id, { quantity: event.target.value ? Number(event.target.value) : NaN })} /></label><label>Цена, ₽<input type="number" min="0" step="0.01" value={Number.isFinite(row.price) ? row.price : ""} onChange={event => updateExtra(row.id, { price: event.target.value ? Number(event.target.value) : NaN })} /></label><button type="button" className="eco-btn" aria-label={`Удалить строку ${row.name || "без названия"}`} onClick={() => setExtras(rows => rows.filter(item => item.id !== row.id))}>Удалить</button></div>)}
+      </section>
+    </div>
+    <aside className={styles.summary} aria-labelledby="quote-summary-title">
+      <header className={styles.stepHeader}><span aria-hidden="true">04</span><div><h2 id="quote-summary-title">Предложение клиенту</h2><p>{vehicleTitle}</p></div></header>
+      {!selectedVariants.length && !extras.length && <p className={styles.empty}>Здесь появятся стоимость и готовый текст, когда вы добавите позиции.</p>}
+      {!!extras.length && !validExtras && <p className={styles.note}>Проверьте наименования, количество и цены добавленных позиций.</p>}
       {selectedVariants.length ? <div className={styles.totals}>{selectedVariants.map((variant, index) => {
         const amount = quoteVariantAmount(variant, litres);
         return <div key={variant.key} className={styles.variantTotal}><span>Вариант {index + 1}: {variant.name}</span>
@@ -215,14 +221,14 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
           {amount ? <small>Комплект: {amount.lines.map(line=>`${line.quantity} × ${line.product.litresPerUnit} л`).join(" + ")}{!amount.enough ? " · недостаточно на складе" : ""}</small> : null}
         </div>;
       })}</div> : null}
-      {ready && !selected.length ? <p className={styles.note}>Итого по расходникам и работе: <strong>{quoteRub(extraTotal)}</strong></p> : null}
+      {ready && !selected.length ? <div className={styles.singleTotal}><span>Итого</span><strong>{quoteRub(extraTotal)}</strong></div> : null}
       {text ? <label className={styles.preview}>Предложение клиенту<textarea readOnly rows={Math.min(18, text.split("\n").length)} value={text} /></label> : null}
       <button type="button" className="eco-btn eco-btn--primary" disabled={!ready} onClick={async () => {
         setCopyError(""); setCopied(false);
         try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopyError("Копирование недоступно. Выделите и скопируйте текст предложения выше."); }
       }}>Скопировать предложение</button>
       {copied ? <p role="status">Предложение скопировано.</p> : null}{copyError ? <p role="alert">{copyError}</p> : null}
-      <p className={styles.note}>Расчёт не резервирует и не списывает товары. Расчёт доступен, пока открыта отгрузка; при уходе со страницы его нужно скопировать.</p>
-    </div> : null}
-  </section>;
+      <p className={styles.note}>Расчёт доступен, пока открыта страница. Скопируйте предложение перед уходом.</p>
+    </aside>
+  </div>;
 }
