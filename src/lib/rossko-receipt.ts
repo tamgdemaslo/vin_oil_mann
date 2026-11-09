@@ -469,6 +469,7 @@ type ProductMatchRow = {
   id: string;
   name: string;
   article: string | null;
+  code: string | null;
   brand: string | null;
   rosskoPartNumber: string | null;
   rosskoBrand: string | null;
@@ -501,7 +502,13 @@ function productMatch(part: NormalizedRosskoOrderPart, products: ProductMatchRow
     if (unique.length > 1) return { product: null, ambiguous: true, matchType: stage.matchType };
     if (unique.length === 1) return { product: unique[0], ambiguous: false, matchType: stage.matchType };
   }
-  return { product: null, ambiguous: false, matchType: "none" };
+  const incompleteCandidate = products.some((product) => {
+    const article = normalizeRosskoArticle(product.article);
+    const brand = normalizeRosskoBrand(product.brand);
+    return (!brand && article === part.normalizedArticle) ||
+      (!article && brand === part.normalizedBrand && normalizeRosskoArticle(product.code) === part.normalizedArticle);
+  });
+  return { product: null, ambiguous: incompleteCandidate, matchType: incompleteCandidate ? "incomplete_catalog_identity" : "none" };
 }
 
 function validSourcePart(part: NormalizedRosskoOrderPart) {
@@ -571,7 +578,7 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
     findRosskoSupplierCounterparty(tx, branchId),
     tx.localProduct.findMany({
       where: { branchId, archived: false, entityType: "product" },
-      select: { id: true, name: true, article: true, brand: true, rosskoPartNumber: true, rosskoBrand: true, raw: true, groupPath: true, oemParts: true, barcodeEan13: true, barcodeEan8: true, barcodeCode128: true, salePriceCents: true },
+      select: { id: true, name: true, article: true, code: true, brand: true, rosskoPartNumber: true, rosskoBrand: true, raw: true, groupPath: true, oemParts: true, barcodeEan13: true, barcodeEan8: true, barcodeCode128: true, salePriceCents: true },
       take: 20_000,
     }),
     loadReceiptHistory(tx, branchId, order.id, sourceLineKeys),
@@ -603,6 +610,9 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
     const status = quantities.status;
     const receivableQty = validSourcePart(part) && !ambiguous ? quantities.receivableQty : 0;
     const warnings: string[] = [];
+    if (match.matchType === "incomplete_catalog_identity") {
+      warnings.push("В каталоге есть похожая карточка без артикула или бренда. Проверьте товар и выберите существующую карточку.");
+    }
     if (ambiguous) warnings.push("ROSSKO вернул разные строки с одинаковым GUID. Автоматическая приёмка отключена.");
     if (receiptEligibility === "PROVIDER_CANCELLED") warnings.push("Позиция отменена или недоступна у ROSSKO и не будет включена в приёмку.");
     if (receiptEligibility === "WAITING_PROVIDER") warnings.push("Товар ещё ожидается у ROSSKO и пока не включён в приёмку.");

@@ -226,6 +226,7 @@ type ProductFilters = {
   stock: StockFilter;
   markingProblems: boolean;
   priceMissing: boolean;
+  articleMissing: boolean;
   qualityIssue: QualityIssueFilter;
   oemParts: OemPartsFilter;
   publication: PublicationFilter;
@@ -701,6 +702,7 @@ const emptyFilters: ProductFilters = {
   stock: "all",
   markingProblems: false,
   priceMissing: false,
+  articleMissing: false,
   qualityIssue: "all",
   oemParts: "all",
   publication: "all",
@@ -1045,7 +1047,7 @@ function uniqueGroupsByLabel(groups: string[]) {
   return result;
 }
 
-type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems" | "priceMissing" | "qualityIssue" | "oemParts" | "publication">;
+type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems" | "priceMissing" | "articleMissing" | "qualityIssue" | "oemParts" | "publication">;
 type FacetKey = "group" | "brand" | "sae" | "supplier" | "apiSpec" | "acea" | "ilsac" | "engineOem" | "atf" | "oemAtf" | "packageVolume" | "entityType";
 type FacetOrderState = Record<FacetKey, Map<string, number>>;
 type FacetPreviewPinState = Record<FacetKey, Set<string>>;
@@ -1370,10 +1372,7 @@ function validateProductForm(values: ProductForm): ProductFormErrors {
   if (!values.groupPath.trim()) errors.groupPath = "Выберите группу товара";
   if (!values.salePrice.trim()) errors.salePrice = "Укажите цену продажи";
   if (!values.uomName.trim()) errors.uomName = "Укажите единицу учёта";
-  if (!values.article.trim() && !values.code.trim()) {
-    errors.article = "Укажите артикул или код";
-    errors.code = "Укажите артикул или код";
-  }
+  if (values.entityType !== "service" && !values.article.trim()) errors.article = "Укажите артикул товара";
   if (isMarkingEnabled(values) && formMarkingMode(values) === "BULK_OIL_FROM_MARKED_BARREL" && !isLiterSaleUnit(values.uomName)) {
     errors.uomName = "Для масла на разлив единица должна быть «л»";
     errors.markingMode = "Единица товара должна быть «л»";
@@ -1885,7 +1884,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
   const [meta, setMeta] = useState<ProductListMeta | null>(null);
   const [matchedOutsideFilters, setMatchedOutsideFilters] = useState(0);
   const [search, setSearch] = useState(initialSearch);
-  const [filters, setFilters] = useState<ProductFilters>({ ...emptyFilters, oemParts: initialOemParts });
+  const [filters, setFilters] = useState<ProductFilters>({ ...emptyFilters, oemParts: initialOemParts, articleMissing: searchParams.get("articleMissing") === "1" });
   const [storageStores, setStorageStores] = useState<ProductStoreOption[]>([]);
   const [storageStoreId, setStorageStoreId] = useState(initialStorageStoreId);
   const [storageCells, setStorageCells] = useState<ProductCellOption[]>([]);
@@ -2162,7 +2161,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       if (key === "oemParts") return count + (value !== "all" ? 1 : 0);
       if (key === "publication") return count + (value !== "all" ? 1 : 0);
       if (key === "qualityIssue") return count + (value !== "all" ? 1 : 0);
-      if (key === "markingProblems" || key === "priceMissing") return count + (value === true ? 1 : 0);
+      if (key === "markingProblems" || key === "priceMissing" || key === "articleMissing") return count + (value === true ? 1 : 0);
       return count + (Array.isArray(value) ? value.length : 0);
     }, storageCellFilter !== "all" ? 1 : 0),
     [filters, storageCellFilter]
@@ -2412,9 +2411,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       } else if (key === "qualityIssue") {
         const qualityIssueValue = value as QualityIssueFilter;
         if (qualityIssueValue !== "all") params.set(key, qualityIssueValue);
-      } else if (key === "markingProblems") {
-        if (value === true) params.set(key, "1");
-      } else if (key === "priceMissing") {
+      } else if (key === "markingProblems" || key === "priceMissing" || key === "articleMissing") {
         if (value === true) params.set(key, "1");
       } else if (Array.isArray(value)) {
         value.filter(Boolean).forEach((item) => params.append(key, item));
@@ -3143,6 +3140,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.delete("oemParts");
+      url.searchParams.delete("articleMissing");
       window.history.replaceState(null, "", url);
     }
   }
@@ -3158,6 +3156,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.delete("oemParts");
+      url.searchParams.delete("articleMissing");
       window.history.replaceState(null, "", url);
     }
   }
@@ -3178,7 +3177,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
         } else if (key === "qualityIssue") {
           const qualityIssueValue = value as QualityIssueFilter;
           if (qualityIssueValue !== "all") params.set(key, qualityIssueValue);
-        } else if (key === "markingProblems" || key === "priceMissing") {
+        } else if (key === "markingProblems" || key === "priceMissing" || key === "articleMissing") {
           if (value === true) params.set(key, "1");
         } else if (Array.isArray(value)) {
           value.filter(Boolean).forEach((item) => params.append(key, item));
@@ -3875,6 +3874,13 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
         key: "markingProblems",
         label: "Проблемы маркировки",
         onRemove: () => setFilters((prev) => ({ ...prev, markingProblems: false })),
+      });
+    }
+    if (filters.articleMissing) {
+      chips.push({
+        key: "articleMissing",
+        label: "Без артикула",
+        onRemove: () => setFilters((prev) => ({ ...prev, articleMissing: false })),
       });
     }
     if (filters.priceMissing) {
@@ -5828,15 +5834,15 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                       })}
                       <fieldset className="product-editor-identifier-group">
                         <legend>
-                          <strong>Артикул или код <b aria-hidden="true">*</b></strong>
-                          <span>Заполните хотя бы одно поле</span>
+                          <strong>Идентификаторы</strong>
+                          {form.entityType !== "service" && <span>Артикул обязателен</span>}
                         </legend>
                         <div className="product-editor-grid">
-                          {renderField("article", "Артикул", { placeholder: "Например: W 914/2", hideErrorMessage: true })}
+                          {renderField("article", form.entityType === "service" ? "Артикул" : "Артикул *", { placeholder: "Например: W 914/2", hideErrorMessage: true })}
                           {renderField("code", "Код / штрихкод", { placeholder: "Например: 30015649815", hideErrorMessage: true })}
                         </div>
-                        {formErrors.article || formErrors.code ? (
-                          <span className="product-editor-error">Заполните артикул или код</span>
+                        {formErrors.article ? (
+                          <span className="product-editor-error">{formErrors.article}</span>
                         ) : null}
                       </fieldset>
                       {renderEntityTypeField()}
@@ -6881,6 +6887,20 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                 {storageCells.map((cell) => <option key={cell.id} value={cell.id}>{cell.code}{cell.name ? ` · ${cell.name}` : ""}</option>)}
               </select>
               <Link href="/inventory/cells" className="mt-2 inline-flex text-xs font-semibold text-[var(--eco-rust)] hover:underline">Управление ячейками</Link>
+            </div>
+
+            <div className="eco-filter-group">
+              <div className="eco-filter-title">Карточки товаров</div>
+              <button type="button" className={`eco-filter-row ${filters.articleMissing ? "is-active" : ""}`}
+                aria-pressed={filters.articleMissing} onClick={() => {
+                  setFilters((prev) => ({ ...prev, articleMissing: !prev.articleMissing }));
+                  closeFilterDrawerOnMobile();
+                }}>
+                <span className="eco-filter-row-label">
+                  <span className={`eco-check ${filters.articleMissing ? "is-checked" : ""}`} />
+                  Без артикула
+                </span>
+              </button>
             </div>
 
             <div className="eco-filter-group">

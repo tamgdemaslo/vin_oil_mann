@@ -2917,6 +2917,7 @@ export async function createLocalAdminProduct(
   if (!name) return { ok: false as const, error: "Укажите название товара" };
   const entityType = body.entityType?.trim() || "product";
   const article = body.article?.trim() || null;
+  if (isStockTrackedType(entityType) && !article) return { ok: false as const, error: "Укажите артикул товара" };
   const code = body.code?.trim() || null;
   const externalCode = cleanText(body.externalCode);
   const groupPath = cleanText(body.groupPath);
@@ -3144,6 +3145,10 @@ export async function updateLocalAdminProduct(
   if (!name) return { ok: false as const, error: "Укажите название товара" };
   const entityType = body.entityType == null ? current.entityType : body.entityType.trim() || "product";
   const article = body.article == null ? current.article : body.article.trim() || null;
+  const archivingOnly = body.archived === true && Object.keys(body).length === 1;
+  if (!archivingOnly && isStockTrackedType(entityType) && !article?.trim()) {
+    return { ok: false as const, error: "Укажите артикул товара" };
+  }
   const code = body.code == null ? current.code : body.code.trim() || null;
   const externalCode = body.externalCode === undefined ? current.externalCode : cleanText(body.externalCode);
   const groupPath = body.groupPath === undefined ? current.groupPath : cleanText(body.groupPath);
