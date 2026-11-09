@@ -114,8 +114,13 @@ export async function POST(request: NextRequest) {
     const input: ResponseInput = [...history, { role: "user", content: text }];
     const sources: QuickSourceLink[] = [];
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(40_000)]);
-    const hasVinInContext = input.some(message => "content" in message && typeof message.content === "string" && /\b[A-HJ-NPR-Z0-9]{17}\b/i.test(message.content));
-    const reasoningEffort = hasVinInContext || text.split(/\r?\n/).filter(line => line.trim()).length >= 4 ? "low" : "minimal";
+    const findVins = (value: string) => [...new Set(value.toUpperCase().match(/\b[A-HJ-NPR-Z0-9]{17}\b/g) ?? [])];
+    const currentVins = findVins(text);
+    const userHistoryVins = findVins(history.flatMap(message =>
+      "role" in message && message.role === "user" && "content" in message && typeof message.content === "string" ? [message.content] : [],
+    ).join("\n"));
+    const vinCandidates = currentVins.length ? currentVins : userHistoryVins;
+    const reasoningEffort = vinCandidates.length > 0 || text.split(/\r?\n/).filter(line => line.trim()).length >= 4 ? "low" : "minimal";
     let parsed: Record<string, unknown> | undefined;
     for (let step = 0; step <= maxToolSteps; step++) {
       const response = await client.responses.create({
@@ -151,8 +156,10 @@ export async function POST(request: NextRequest) {
         const args = JSON.parse(call.arguments) as Record<string, unknown>;
         if (call.name === "calculate_maintenance_quote") {
           const list = (value: unknown) => Array.isArray(value) ? value.slice(0, 8).map(item => clean(item, 30)).filter(Boolean) : [];
+          const proposedVin = clean(args.vin, 30).toUpperCase();
+          const vin = vinCandidates.length === 1 ? vinCandidates[0] : vinCandidates.includes(proposedVin) ? proposedVin : "";
           const answer = await runWithAIAssistantBranchContext(access, () => quickMaintenanceQuote(access, {
-            vin: clean(args.vin, 30).toUpperCase(), viscosities: list(args.viscosities),
+            vin, viscosities: list(args.viscosities),
             filterTypes: list(args.filterTypes), warehouse: clean(args.warehouse),
           }));
           return NextResponse.json({ answer });

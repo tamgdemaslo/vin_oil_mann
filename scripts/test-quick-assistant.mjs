@@ -266,8 +266,15 @@ const stockAnswer = (await (await POST(stockRequest)).json()).answer;
 assert.match(stockAnswer.text, /8 л/);
 assert.equal(stockAnswer.sources[0].href, "/inventory/products?product=oil-a");
 
-modelResult = { kind: "maintenance", vin: "JTDBR32E720012345", viscosities: ["5W-30", "5W-40"], filterTypes: ["oil", "air", "cabin"], warehouse: "" };
-assert.match((await (await POST(request())).json()).answer.text, /5W-30 и 5W-40 с работой/);
+modelResult = { kind: "maintenance", vin: "", viscosities: ["5W-30", "5W-40"], filterTypes: ["oil", "air", "cabin"], warehouse: "" };
+const quoteRequest = new NextRequest("http://localhost/api/ai-assistant/quick-command", {
+  method: "POST", headers: { "Content-Type": "application/json", "x-eco-assistant-branch": "branch-a" },
+  body: JSON.stringify({ text: "Сравни 5W-30 и 5W-40.", history: [
+    { role: "user", content: "Рассчитай ТО по VIN JTDBR32E720012345." },
+    { role: "assistant", content: "VIN/Frame: неизвестен" },
+  ] }),
+});
+assert.match((await (await POST(quoteRequest)).json()).answer.text, /5W-30 и 5W-40 с работой/);
 
 modelResult = { kind: "shipment", reference: "0042" };
 orderMatches = [order, { ...order, id: "another-order" }];
