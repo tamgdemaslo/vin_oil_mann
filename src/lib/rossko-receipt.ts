@@ -26,7 +26,7 @@ import {
   type RosskoReceiptEligibility,
 } from "@/lib/rossko-order-status";
 
-import { normalizeReceiptProductDetails, receiptProductChanges, type RosskoReceiptProductDetails } from "@/lib/rossko-receipt-product";
+import { normalizeReceiptProductDetails, receiptProductChanges, type RosskoReceiptProductDetails, type RosskoReceiptProductInput } from "@/lib/rossko-receipt-product";
 
 const MAX_RECEIPT_LINES = 240;
 const ROSSKO_SOURCE = "rossko";
@@ -97,6 +97,7 @@ export type RosskoReceiptPreviewLine = {
     name: string;
     article: string;
     matchType: string;
+    barcodes: Pick<RosskoReceiptProductDetails, "barcodeEan13" | "barcodeEan8" | "barcodeCode128">;
   } | null;
   action: RosskoReceiptLineAction;
   warnings: string[];
@@ -141,7 +142,7 @@ export type RosskoReceiptDraftDecision = {
   selectedProductId?: string | null;
   createProduct?: boolean;
   newProductName?: string;
-  productDetails?: RosskoReceiptProductDetails;
+  productDetails?: RosskoReceiptProductInput;
 };
 
 export class RosskoReceiptError extends Error {
@@ -655,6 +656,7 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
     else action = "MATCHED_EXISTING";
 
     const defaultReceiveQty = ["MATCHED_EXISTING", "CREATE_PRODUCT"].includes(action) ? receivableQty : 0;
+    const catalogProduct = products.find((candidate) => candidate.id === match.product?.id);
     return {
       sourceLineKey,
       partGuid: part.guid,
@@ -663,7 +665,7 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
       name: part.name,
       suggestedProductName: buildRosskoProductName({ brand: part.brand, article: part.article, sourceName: part.name }),
       productDetails: (() => {
-        const product = products.find((candidate) => candidate.id === match.product?.id);
+        const product = catalogProduct;
         const source = record(part.raw) ?? {};
         return {
           name: product?.name || buildRosskoProductName({ brand: part.brand, article: part.article, sourceName: part.name }),
@@ -693,6 +695,11 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
         name: match.product.name,
         article: match.product.article ?? part.article,
         matchType: match.matchType,
+        barcodes: {
+          barcodeEan13: catalogProduct?.barcodeEan13 ?? "",
+          barcodeEan8: catalogProduct?.barcodeEan8 ?? "",
+          barcodeCode128: catalogProduct?.barcodeCode128 ?? "",
+        },
       } : null,
       action,
       warnings,
@@ -869,7 +876,7 @@ function receiptSourceStatusChanges(before: NormalizedRosskoOrder, after: Normal
 }
 
 function receiptDetails(value: unknown) {
-  try { return normalizeReceiptProductDetails(value); }
+  try { return normalizeReceiptProductDetails(value, true); }
   catch (error) { throw new RosskoReceiptError(error instanceof Error ? error.message : "Проверьте карточку товара", 422, "INVALID_PRODUCT_DETAILS"); }
 }
 

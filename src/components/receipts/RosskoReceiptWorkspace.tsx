@@ -19,7 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput } from "@/components/platform/EcoUI";
-import { normalizeReceiptProductDetails, type RosskoReceiptProductDetails } from "@/lib/rossko-receipt-product";
+import { prepareReceiptProductDetails, ReceiptBarcodeValidationError, receiptBarcodeFields, validateReceiptBarcodes, type ReceiptBarcodeField, type RosskoReceiptProductDetails, type RosskoReceiptProductInput } from "@/lib/rossko-receipt-product";
+import { normalizeBindableBarcode, productBarcodePatch } from "@/lib/product-barcode-input";
 import { mergeProductCrossReferences } from "@/lib/product-cross-references";
 import { formatServiceDateTime } from "@/lib/date-time";
 
@@ -55,7 +56,7 @@ type RosskoReceiptPreviewLine = {
   purchasePrice: number;
   rosskoStatusLabel: string;
   receiptEligibility: RosskoReceiptEligibility;
-  product: { id: string; name: string; article: string; matchType: string } | null;
+  product: { id: string; name: string; article: string; matchType: string; barcodes: ReceiptBarcodes } | null;
   action: RosskoReceiptAction;
   warnings: string[];
 };
@@ -91,7 +92,16 @@ type RosskoReceiptDraftResult = {
   idempotent: boolean;
 };
 
-type ProductOption = { id: string; name: string; article: string; brand?: string; entityType: string };
+type ReceiptBarcodes = Pick<RosskoReceiptProductDetails, "barcodeEan13" | "barcodeEan8" | "barcodeCode128">;
+type ProductOption = { id: string; name: string; article: string; brand?: string; entityType: string } & ReceiptBarcodes;
+
+function receiptBarcodes(value?: Partial<ReceiptBarcodes>) {
+  return receiptBarcodeFields.map((field) => value?.[field]?.trim()).filter(Boolean);
+}
+
+function receiptBarcodeInputId(lineKey: string, field: ReceiptBarcodeField) {
+  return `rossko-receipt-${lineKey}-${field}`;
+}
 
 type IncomingOrderLine = {
   sourceLineKey: string;
@@ -662,10 +672,11 @@ async function receiptOemLookup(body: { brand: string; article: string }, signal
   }
 }
 
-function ReceiptProductFields({ line, details, disabled, onChange, onBusy }: {
+function ReceiptProductFields({ line, details, disabled, invalidBarcode, onChange, onBusy }: {
   line: RosskoReceiptPreviewLine;
   details: RosskoReceiptProductDetails;
   disabled: boolean;
+  invalidBarcode?: ReceiptBarcodeField;
   onChange: (changes: Partial<RosskoReceiptProductDetails>, oemMode?: "ifEmpty" | "merge") => void;
   onBusy: (busy: boolean) => void;
 }) {
@@ -700,14 +711,17 @@ function ReceiptProductFields({ line, details, disabled, onChange, onBusy }: {
   }, [brand, article, initiallyEmpty, attempt, disabled]);
   const fields = [
     ["brand", "Бренд", 100], ["article", "Артикул", 120], ["category", "Категория", 300],
-    ["barcodeEan13", "Штрихкод EAN-13", 13], ["barcodeEan8", "Штрихкод EAN-8", 8],
-    ["barcodeCode128", "Внутренний штрихкод Code 128", 120],
+    ["barcodeEan13", "Штрихкод EAN-13", 120], ["barcodeEan8", "Штрихкод EAN-8", 120],
+    ["barcodeCode128", "Штрихкод Code 128", 120],
   ] as const;
   return <fieldset className="eco-receipt-product-fields" disabled={disabled}>
     <legend>{line.product ? "Данные карточки товара" : "Данные нового товара"}</legend>
     <div className="eco-receipt-product-grid">
       {fields.map(([key, label, maxLength]) => <label key={key}><span>{label}</span>
-        <EcoInput value={details[key]} maxLength={maxLength} aria-label={`${label}: ${line.brand} ${line.article}`} onChange={(event) => onChange({ [key]: event.target.value })} />
+        <EcoInput value={details[key]} maxLength={maxLength} aria-label={`${label}: ${line.brand} ${line.article}`}
+          id={key === "barcodeEan13" || key === "barcodeEan8" || key === "barcodeCode128" ? receiptBarcodeInputId(line.sourceLineKey, key) : undefined}
+          aria-invalid={invalidBarcode === key || undefined}
+          onChange={(event) => onChange({ [key]: event.target.value })} />
         {key === "barcodeCode128" && <EcoButton type="button" size="sm" onClick={() => onChange({ barcodeCode128: `ECO-${crypto.randomUUID().replaceAll("-", "").slice(0, 20).toUpperCase()}` })}>Присвоить штрихкод</EcoButton>}
       </label>)}
       <label><span>Розничная цена, ₽</span><EcoInput type="number" min={0} step="0.01" value={details.salePrice} onChange={(event) => onChange({ salePrice: event.target.value === "" ? 0 : Number(event.target.value) })} /></label>
@@ -736,7 +750,7 @@ function RosskoReceiptEditor({
   const [storeId, setStoreId] = useState("");
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [selectedProducts, setSelectedProducts] = useState<Record<string, string>>({});
+  const [selectedProducts, setSelectedProducts] = useState<Record<string, ProductOption>>({});
   const [oemBusy, setOemBusy] = useState<Record<string, boolean>>({});
   const [productDetails, setProductDetails] = useState<Record<string, RosskoReceiptProductDetails>>({});
   const [newProductNames, setNewProductNames] = useState<Record<string, string>>({});
@@ -745,6 +759,12 @@ function RosskoReceiptEditor({
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [productsBusy, setProductsBusy] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [invalidBarcode, setInvalidBarcode] = useState<{ key: string; field: ReceiptBarcodeField }>();
+  const [barcodeStep, setBarcodeStep] = useState(false);
+  const [confirmedBarcodeIds, setConfirmedBarcodeIds] = useState<Set<string>>(() => new Set());
+  const [scanBusy, setScanBusy] = useState(false);
+  const scanPending = useRef(false);
+  const barcodeStepRef = useRef<HTMLDivElement>(null);
   const [created, setCreated] = useState<RosskoReceiptDraftResult | null>(null);
 
   const fetchPreview = useCallback(async (noticeAfterRefresh = "") => {
@@ -758,6 +778,9 @@ function RosskoReceiptEditor({
       setEnabled(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.receiveQty > 0])));
       setQuantities(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.receiveQty])));
       setSelectedProducts({});
+      setBarcodeStep(false);
+      setConfirmedBarcodeIds(new Set());
+      setInvalidBarcode(undefined);
       setProductDetails(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.productDetails])));
       setNewProductNames(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.suggestedProductName])));
       setNotice(noticeAfterRefresh);
@@ -801,7 +824,13 @@ function RosskoReceiptEditor({
   }
 
   async function createDraft() {
-    if (!preview || saving || Object.values(oemBusy).some(Boolean)) return;
+    if (!preview || saving || scanPending.current || Object.values(oemBusy).some(Boolean)) return;
+    if (missingBarcodes.length) {
+      setError("");
+      setBarcodeStep(true);
+      barcodeStepRef.current?.querySelector("input")?.focus();
+      return;
+    }
     const missingName = preview.lines.find((line) =>
       line.action === "CREATE_PRODUCT" &&
       enabled[line.sourceLineKey] &&
@@ -812,21 +841,30 @@ function RosskoReceiptEditor({
       setError(`Укажите название нового товара для позиции ${missingName.brand} ${missingName.article}.`);
       return;
     }
-    try {
-      for (const line of preview.lines.filter((item) => enabled[item.sourceLineKey] && Number(quantities[item.sourceLineKey]) > 0 && !selectedProducts[item.sourceLineKey])) {
-        normalizeReceiptProductDetails(productDetails[line.sourceLineKey]);
+    const detailsByLine: Record<string, RosskoReceiptProductInput> = {};
+    setInvalidBarcode(undefined);
+    for (const line of selectedLines) {
+      const key = line.sourceLineKey;
+      if (selectedProducts[key] || !productDetails[key]) continue;
+      const details = productDetails[key];
+      try {
+        detailsByLine[key] = prepareReceiptProductDetails(details, line.product?.barcodes);
+      } catch (cause) {
+        setBarcodeStep(false);
+        if (cause instanceof ReceiptBarcodeValidationError) setInvalidBarcode({ key, field: cause.field });
+        const message = cause instanceof Error ? cause.message : "Проверьте данные товара";
+        setError(`${line.brand} ${line.article} — ${details.name || line.name}: ${message}.`);
+        return;
       }
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Проверьте данные товара"); return; }
-    const lines = preview.lines
-      .filter((line) => enabled[line.sourceLineKey] && Number(quantities[line.sourceLineKey]) > 0)
-      .map((line) => ({
-        sourceLineKey: line.sourceLineKey,
-        receiveQty: Number(quantities[line.sourceLineKey]),
-        selectedProductId: selectedProducts[line.sourceLineKey] || null,
-        createProduct: !line.product && line.action !== "AMBIGUOUS_PRODUCT",
-        productDetails: selectedProducts[line.sourceLineKey] ? undefined : productDetails[line.sourceLineKey],
-        newProductName: line.action === "CREATE_PRODUCT" ? newProductNames[line.sourceLineKey]?.trim() : undefined,
-      }));
+    }
+    const lines = selectedLines.map((line) => ({
+      sourceLineKey: line.sourceLineKey,
+      receiveQty: Number(quantities[line.sourceLineKey]),
+      selectedProductId: selectedProducts[line.sourceLineKey]?.id || null,
+      createProduct: !line.product && line.action !== "AMBIGUOUS_PRODUCT",
+      productDetails: detailsByLine[line.sourceLineKey],
+      newProductName: line.action === "CREATE_PRODUCT" ? newProductNames[line.sourceLineKey]?.trim() : undefined,
+    }));
     if (!lines.length) {
       setError("Выберите хотя бы одну позицию и укажите фактически принятое количество.");
       return;
@@ -859,6 +897,90 @@ function RosskoReceiptEditor({
     () => preview?.lines.filter((line) => enabled[line.sourceLineKey] && Number(quantities[line.sourceLineKey]) > 0) ?? [],
     [enabled, preview, quantities],
   );
+  const missingBarcodes = selectedLines.filter((line) => {
+    const key = line.sourceLineKey;
+    if (!["CREATE_PRODUCT", "MATCHED_EXISTING"].includes(line.action) && !selectedProducts[key]) return false;
+    const productId = selectedProducts[key]?.id ?? line.product?.id;
+    return !(productId && confirmedBarcodeIds.has(productId))
+      && !receiptBarcodes(selectedProducts[key] ?? productDetails[key]).length;
+  });
+  const firstMissingKey = missingBarcodes[0]?.sourceLineKey;
+  useEffect(() => {
+    if (!barcodeStep || scanBusy) return;
+    if (firstMissingKey) barcodeStepRef.current?.querySelector("input")?.focus();
+    else barcodeStepRef.current?.focus();
+  }, [barcodeStep, firstMissingKey, missingBarcodes.length, scanBusy]);
+
+  useEffect(() => {
+    if (invalidBarcode && !barcodeStep) {
+      document.getElementById(receiptBarcodeInputId(invalidBarcode.key, invalidBarcode.field))?.focus();
+    }
+  }, [invalidBarcode, barcodeStep]);
+
+  async function saveScannedBarcode(line: RosskoReceiptPreviewLine, rawBarcode: string) {
+    if (!preview || scanPending.current || saving) return;
+    const key = line.sourceLineKey;
+    const productId = selectedProducts[key]?.id ?? line.product?.id;
+    scanPending.current = true;
+    setScanBusy(true);
+    setError("");
+    try {
+      const barcode = normalizeBindableBarcode(rawBarcode);
+      const fieldsFromScan = productBarcodePatch({}, barcode);
+      validateReceiptBarcodes(fieldsFromScan);
+      const duplicate = selectedLines.find((item) => {
+        const otherKey = item.sourceLineKey;
+        const otherId = selectedProducts[otherKey]?.id ?? item.product?.id;
+        return otherKey !== key && !(productId && otherId === productId)
+          && receiptBarcodes(selectedProducts[otherKey] ?? productDetails[otherKey]).includes(barcode);
+      });
+      if (duplicate) throw new Error(`Этот штрихкод уже указан для позиции «${duplicate.name}».`);
+      if (productId) {
+        const response = await fetch("/api/local-inventory/products/barcode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productId, barcode }),
+        });
+        const data = await response.json() as { product?: ProductOption; error?: string; alreadyLinked?: boolean };
+        if (!response.ok || !data.product) throw new Error(data.error || "Не удалось сохранить штрихкод.");
+        const { barcodeEan13, barcodeEan8, barcodeCode128 } = data.product;
+        const fields = { barcodeEan13, barcodeEan8, barcodeCode128 };
+        if (!receiptBarcodes(fields).length) {
+          if (!data.alreadyLinked) throw new Error("Не удалось сохранить штрихкод.");
+          setConfirmedBarcodeIds((current) => new Set(current).add(productId));
+          return;
+        }
+        setPreview((current) => current && ({
+          ...current,
+          lines: current.lines.map((item) => item.product?.id === productId
+            ? { ...item, product: { ...item.product, barcodes: fields } }
+            : item),
+        }));
+        setSelectedProducts((current) => Object.fromEntries(Object.entries(current).map(([key, product]) =>
+          [key, product.id === productId ? { ...product, ...fields } : product])));
+        setProductDetails((current) => {
+          const next = { ...current };
+          for (const item of preview.lines) {
+            if (item.product?.id === productId) next[item.sourceLineKey] = { ...next[item.sourceLineKey], ...fields };
+          }
+          return next;
+        });
+      } else {
+        const details = { ...productDetails[key], ...fieldsFromScan };
+        const response = await fetch(`/api/local-inventory/products/barcode?${new URLSearchParams({ barcode })}`, { cache: "no-store" });
+        const data = await response.json() as { status?: string; product?: ProductOption; error?: string };
+        if (!response.ok) throw new Error(data.error || "Не удалось проверить штрихкод.");
+        if (data.status !== "NOT_FOUND") throw new Error(data.product ? `Этот штрихкод уже привязан к товару «${data.product.name}».` : "Этот штрихкод уже есть в каталоге.");
+        setProductDetails((current) => ({ ...current, [key]: details }));
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось сохранить штрихкод.");
+    } finally {
+      scanPending.current = false;
+      setScanBusy(false);
+    }
+  }
+
   const selectedQty = selectedLines.reduce((sum, line) => sum + Number(quantities[line.sourceLineKey] || 0), 0);
   const selectedSum = selectedLines.reduce((sum, line) => sum + Number(quantities[line.sourceLineKey] || 0) * line.purchasePrice, 0);
   const nothingReceivable = Boolean(preview?.lines.length && preview.summary.receivableQty <= 0);
@@ -871,7 +993,7 @@ function RosskoReceiptEditor({
 
   return (
     <div className="eco-restock-cart-shell is-workspace" role="presentation">
-      <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть заказ ROSSKO" onClick={onClose} />
+      <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть заказ ROSSKO" onClick={onClose} disabled={scanBusy} />
       <section className="eco-restock-cart-drawer eco-restock-receipt-drawer is-workspace" role="dialog" aria-modal="true" aria-labelledby="rossko-receipt-title">
         <header className="eco-restock-cart-head">
           <div>
@@ -879,7 +1001,7 @@ function RosskoReceiptEditor({
             <h2 id="rossko-receipt-title">Заказ ROSSKO №{orderId}</h2>
             {preview?.order.createdAt && <p>Создан {formatServiceDateTime(preview.order.createdAt)}</p>}
           </div>
-          <button type="button" className="eco-icon-btn" onClick={onClose} aria-label="Назад к заказам"><X size={18} /></button>
+          <button type="button" className="eco-icon-btn" onClick={onClose} disabled={scanBusy} aria-label="Назад к заказам"><X size={18} /></button>
         </header>
 
         {created ? (
@@ -919,7 +1041,33 @@ function RosskoReceiptEditor({
 
             <div className="eco-restock-cart-body eco-restock-receipt-body">
               {nothingReceivable && <div className="eco-restock-receipt-zero"><PackageCheck size={17} /><span><strong>Сейчас нечего принимать.</strong> Все строки ниже ещё ожидаются, закрыты или уже приняты.</span></div>}
-              <div className="eco-restock-receipt-table-wrap">
+              {barcodeStep && (
+                <div className="eco-rossko-barcode-step" ref={barcodeStepRef} tabIndex={-1}>
+                  <h3>Товары без штрихкодов</h3>
+                  {missingBarcodes.length ? <>
+                    <p>Осталось: {missingBarcodes.length}. Отсканируйте код с упаковки или введите его и нажмите Enter.</p>
+                    <ul>
+                      {missingBarcodes.map((line) => {
+                        const key = line.sourceLineKey;
+                        const name = selectedProducts[key]?.name || productDetails[key]?.name || line.name;
+                        return <li key={key}>
+                          <form onSubmit={(event) => {
+                            event.preventDefault();
+                            void saveScannedBarcode(line, String(new FormData(event.currentTarget).get("barcode") ?? ""));
+                          }}>
+                            <label><strong>{name}</strong><small>{line.brand} · {line.article} · {formatNumber(quantities[key])} шт.</small>
+                              <EcoInput name="barcode" placeholder="Отсканируйте штрихкод" autoComplete="off" spellCheck={false} required maxLength={120} disabled={scanBusy} />
+                            </label>
+                            <EcoButton type="submit" size="sm" disabled={scanBusy}>Подтвердить</EcoButton>
+                            <EcoButton type="button" size="sm" disabled={scanBusy} onClick={() => void saveScannedBarcode(line, `ECO-${crypto.randomUUID().replaceAll("-", "").slice(0, 20).toUpperCase()}`)}>Создать внутренний код</EcoButton>
+                          </form>
+                        </li>;
+                      })}
+                    </ul>
+                  </> : <p role="status">Штрихкоды заполнены. Можно создать приёмку.</p>}
+                </div>
+              )}
+              <div className="eco-restock-receipt-table-wrap" hidden={barcodeStep}>
                   <table className="eco-restock-receipt-table">
                     <thead><tr><th aria-label="Выбрать" /><th>Товар / название карточки</th><th>Артикул</th><th>Статус ROSSKO</th><th className="l-number">Заказано</th><th className="l-number">Принято</th><th className="l-number">Осталось</th><th className="l-number">Доступно</th><th className="l-number">Закрыто</th><th className="l-number">Принимаем</th><th>Каталог</th><th className="l-number">Закупка</th></tr></thead>
                     <tbody>
@@ -971,13 +1119,20 @@ function RosskoReceiptEditor({
                             {["CREATE_PRODUCT", "MATCHED_EXISTING"].includes(line.action) && productDetails[line.sourceLineKey] && (
                               <tr className="eco-restock-receipt-detail-row"><td /><td colSpan={11}>
                                 <ReceiptProductFields line={line} details={productDetails[line.sourceLineKey]} disabled={blocked || saving || !enabled[line.sourceLineKey]}
+                                  invalidBarcode={invalidBarcode?.key === line.sourceLineKey ? invalidBarcode.field : undefined}
                                   onBusy={(busy) => setOemBusy((current) => ({ ...current, [line.sourceLineKey]: busy }))}
-                                  onChange={(changes, oemMode) => setProductDetails((current) => {
-                                    const details = current[line.sourceLineKey];
-                                    if (oemMode === "ifEmpty" && details.oemParts.trim()) return current;
-                                    if (oemMode === "merge") changes = { ...changes, oemParts: mergeProductCrossReferences(details.oemParts, [changes.oemParts]) || "" };
-                                    return { ...current, [line.sourceLineKey]: { ...details, ...changes } };
-                                  })} />
+                                  onChange={(changes, oemMode) => {
+                                    if (invalidBarcode?.key === line.sourceLineKey && changes[invalidBarcode.field] !== undefined) {
+                                      setInvalidBarcode(undefined);
+                                      setError("");
+                                    }
+                                    setProductDetails((current) => {
+                                      const details = current[line.sourceLineKey];
+                                      if (oemMode === "ifEmpty" && details.oemParts.trim()) return current;
+                                      if (oemMode === "merge") changes = { ...changes, oemParts: mergeProductCrossReferences(details.oemParts, [changes.oemParts]) || "" };
+                                      return { ...current, [line.sourceLineKey]: { ...details, ...changes } };
+                                    });
+                                  }} />
                               </td></tr>
                             )}
                             {(line.warnings.length > 0 || pickerOpen) && (
@@ -986,7 +1141,16 @@ function RosskoReceiptEditor({
                                 {pickerOpen && <div className="eco-restock-receipt-picker">
                                   <EcoInput value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Название, артикул или бренд" />
                                   <EcoButton type="button" size="sm" onClick={() => void searchProducts(line)} disabled={productsBusy}>{productsBusy ? <Loader2 size={14} className="eco-spin" /> : <Search size={14} />} Найти</EcoButton>
-                                  <select value={selectedProducts[line.sourceLineKey] ?? ""} onChange={(event) => { const productId = event.target.value; setSelectedProducts((current) => ({ ...current, [line.sourceLineKey]: productId })); if (productId) toggleLine(line, true); }}>
+                                  <select value={selectedProducts[line.sourceLineKey]?.id ?? ""} onChange={(event) => {
+                                    const product = productOptions.find((option) => option.id === event.target.value);
+                                    setSelectedProducts((current) => {
+                                      const next = { ...current };
+                                      if (product) next[line.sourceLineKey] = product;
+                                      else delete next[line.sourceLineKey];
+                                      return next;
+                                    });
+                                    toggleLine(line, Boolean(product));
+                                  }}>
                                     <option value="">Выберите товар из каталога</option>
                                     {productOptions.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.brand || "без бренда"} · {product.article || "без артикула"}</option>)}
                                   </select>
@@ -1009,7 +1173,13 @@ function RosskoReceiptEditor({
           {created ? (
             <><EcoButton type="button" onClick={onClose}>К заказам</EcoButton><Link className="eco-btn eco-btn--primary" href={`/inventory/receipts?document=${encodeURIComponent(created.documentId)}&open=edit`}>Открыть приёмку</Link></>
           ) : (
-            <><div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div><EcoButton type="button" onClick={onClose}>Назад</EcoButton>{error && <EcoButton type="button" onClick={() => void fetchPreview()}><RefreshCw size={15} />{preview ? "Обновить данные" : "Повторить"}</EcoButton>}<EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || nothingReceivable || !selectedLines.length || hasInvalidNewProductName || Object.values(oemBusy).some(Boolean) || saving}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать приёмку на {formatNumber(selectedQty)} шт.</EcoButton></>
+            <>
+              <div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div>
+              <EcoButton type="button" disabled={scanBusy || saving} onClick={barcodeStep ? () => { setBarcodeStep(false); setError(""); } : onClose}>{barcodeStep ? "К позициям заказа" : "Назад"}</EcoButton>
+              {error && !barcodeStep && !invalidBarcode && <EcoButton type="button" onClick={() => void fetchPreview()}><RefreshCw size={15} />{preview ? "Обновить данные" : "Повторить"}</EcoButton>}
+              {!barcodeStep && missingBarcodes.length > 0 && <EcoButton type="button" onClick={() => { setError(""); setBarcodeStep(true); }} disabled={saving || Object.values(oemBusy).some(Boolean)}>Без штрихкодов: {missingBarcodes.length}</EcoButton>}
+              <EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || nothingReceivable || !selectedLines.length || hasInvalidNewProductName || Object.values(oemBusy).some(Boolean) || saving || scanBusy || (barcodeStep && missingBarcodes.length > 0)}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать приёмку на {formatNumber(selectedQty)} шт.</EcoButton>
+            </>
           )}
         </footer>
       </section>

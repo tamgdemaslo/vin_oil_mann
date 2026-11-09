@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createJiti } from 'jiti';
 const jiti = createJiti(import.meta.url, { alias: { '@': resolve('src') } });
-const { normalizeReceiptProductDetails, receiptProductChanges } = await jiti.import('../src/lib/rossko-receipt-product.ts');
+const { normalizeReceiptProductDetails, receiptProductChanges, prepareReceiptProductDetails, ReceiptBarcodeValidationError } = await jiti.import('../src/lib/rossko-receipt-product.ts');
 const details = {
   name: 'Фильтр воздушный Filtron AP 139/2', brand: 'Filtron', article: 'AP 139/2',
   category: 'Фильтры воздушные', oemParts: '12345\n67890', barcodeEan13: '4006381333931',
@@ -22,6 +22,15 @@ for (const invalid of [
   { salePrice: -1 }, { salePrice: NaN }, { salePrice: '1900' },
 ]) assert.throws(() => normalizeReceiptProductDetails({ ...details, ...invalid }), JSON.stringify(invalid));
 assert.equal(normalizeReceiptProductDetails({ ...details, barcodeEan13: '', barcodeEan8: '' }).barcodeCode128, 'ECO-TEST123');
+const legacyCard = { ...normalizeReceiptProductDetails(details), barcodeEan13: '04601234567890' };
+const withPriceEdit = prepareReceiptProductDetails({ ...legacyCard, salePrice: 2000 }, legacyCard);
+assert.deepEqual(receiptProductChanges(withPriceEdit, legacyCard, legacyCard), { salePrice: 2000 }, 'omitting a legacy barcode preserves it while saving the receipt');
+const corrected = prepareReceiptProductDetails({ ...legacyCard, barcodeEan13: '4006381333931' }, legacyCard);
+assert.deepEqual(receiptProductChanges(corrected, legacyCard, legacyCard), { barcodeEan13: '4006381333931' }, 'a corrected code is still saved');
+const cleared = prepareReceiptProductDetails({ ...legacyCard, barcodeEan13: '' }, legacyCard);
+assert.deepEqual(receiptProductChanges(cleared, legacyCard, legacyCard), { barcodeEan13: '' }, 'explicit clearing is separate from omission');
+assert.throws(() => prepareReceiptProductDetails(legacyCard), (error) =>
+  error instanceof ReceiptBarcodeValidationError && error.field === 'barcodeEan13' && /ровно 13 цифр/.test(error.message));
 const dir = await mkdtemp(join(tmpdir(), 'receipt-product-test-'));
 try {
   const stub = join(dir, 'admin.cjs');
