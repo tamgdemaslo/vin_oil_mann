@@ -6,9 +6,9 @@ import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { assistantMemo } from "./execution";
 import type { QuoteAndTechCardInput, VerifiedTechnicalFact } from "./quote-and-tech-card";
 
-export function mannContext(organizationId: string, vehicle: NormalizedVehicleIdentity) {
-  return assistantMemo("mann-context", { organizationId, branchId: getScopedBranchId(), vehicle }, async () => {
-    const resolution = await resolveMannVehicle({ organizationId, vehicle });
+export function mannContext(organizationId: string, vehicle: NormalizedVehicleIdentity, warehouseId?: string) {
+  return assistantMemo("mann-context", { organizationId, branchId: getScopedBranchId(), vehicle, warehouseId }, async () => {
+    const resolution = await resolveMannVehicle({ organizationId, vehicle, warehouseId });
     const keys = resolution.status === "resolved" ? resolution.selectedApplication?.variantIds ?? [] : [];
     const profile = await getMannUnifiedTechnicalProfile(keys, undefined, {
       make: vehicle.makeRaw ?? vehicle.makeCanonical ?? undefined,

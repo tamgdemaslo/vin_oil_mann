@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
-import { matchesQuoteOil, quoteLitresPerUnit } from "@/lib/maintenance-quote";
+import { loadMaintenanceQuoteStock } from "@/lib/maintenance-quote-stock";
 
 export async function GET(request: NextRequest) {
   if (!await getSession()) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
@@ -20,16 +20,7 @@ export async function GET(request: NextRequest) {
   const extras = params.get("kind") === "extra";
   if (extras && search.length < 2) return NextResponse.json({ products: [] });
   try {
-    const rows = await prisma.localProduct.findMany({
-      where: { branchId, archived: false, ...(extras ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { article: { contains: search, mode: "insensitive" } }] } : { stockBalances: { some: { branchId, storeId, available: { gt: 0 } } } }) },
-      select: { id: true, name: true, article: true, entityType: true, groupPath: true, sae: true, oem: true, acea: true, apiSpec: true, ilsac: true, uomName: true, packageVolume: true, salePriceCents: true, stockBalances: { where: { branchId, storeId }, select: { available: true } } },
-      orderBy: { name: "asc" }, ...(extras ? { take: 30 } : {}),
-    });
-    const products = rows.filter(row => extras ? row.entityType === "service" || row.stockBalances.some(stock => Number(stock.available) > 0) : matchesQuoteOil(row, specification, viscosity)).map(row => ({
-      id: row.id, name: row.name, article: row.article ?? "", price: row.salePriceCents / 100,
-      available: row.stockBalances.reduce((sum, stock) => sum + Number(stock.available), 0),
-      unit: row.uomName ?? "шт.", litresPerUnit: quoteLitresPerUnit(row), sae: row.sae ?? "", oem: row.oem ?? "",
-    }));
+    const products = await loadMaintenanceQuoteStock({ branchId, storeId, specification, viscosity, search, extras });
     return NextResponse.json({ products });
   } catch {
     return NextResponse.json({ error: "Не удалось загрузить наличие. Повторите поиск." }, { status: 500 });

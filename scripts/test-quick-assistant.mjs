@@ -109,6 +109,13 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
   "@/lib/ai-assistant/access": auth,
   "@/lib/ai-assistant/quick-shipment": shipmentModule,
   "@/lib/ai-assistant/quick-crm": crmModule,
+  "@/lib/ai-assistant/quick-maintenance-quote": { quickMaintenanceQuote: async (current, input) => {
+    assert.equal(current, access);
+    assert.deepEqual(input, { vin: "JTDBR32E720012345", viscosities: ["5W-30", "5W-40"], filterTypes: ["oil", "air", "cabin"], warehouse: "" });
+    return { text: "Расчёт ТО: 5W-30 и 5W-40 с работой", sources: [] };
+  } },
+  "@/lib/ai-assistant/tariff-context": { assistantTariffContext: async () => ({ locationId: "test" }) },
+  "@/lib/ai-assistant/labor-pricing": { resolveLaborPrice: async () => ({ laborPriceCents: 0, requiresHumanConfirmation: false }) },
   "@/lib/ai-assistant/quick-catalog": { searchQuickCatalog: async input => {
     assert.deepEqual(input, { query: "", approval: "C2", viscosity: "", liters: 6 });
     return { total: 1, products: [{ id: "oil-a", name: "Тестовое масло C2", neededUnits: 2, purchasedLiters: 8 }] };
@@ -164,7 +171,7 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
         assert.match(request.input.at(-1).content, /6 литров/);
         assert.match(request.input[0].content, /C2/);
       }
-      const name = { vehicle: "read_vehicle", crm: "read_crm", stock: "search_stock" }[modelResult.kind] ?? "prepare_draft";
+      const name = { vehicle: "read_vehicle", crm: "read_crm", stock: "search_stock", maintenance: "calculate_maintenance_quote" }[modelResult.kind] ?? "prepare_draft";
       const args = modelResult.kind === "vehicle" ? { ...modelResult, question: "Тестовая команда" } : modelResult;
       return { output: [{ type: "function_call", name, arguments: JSON.stringify(args), call_id: "call_test" }] };
     } },
@@ -252,6 +259,9 @@ const stockRequest = new NextRequest("http://localhost/api/ai-assistant/quick-co
 const stockAnswer = (await (await POST(stockRequest)).json()).answer;
 assert.match(stockAnswer.text, /8 л/);
 assert.equal(stockAnswer.sources[0].href, "/inventory/products?product=oil-a");
+
+modelResult = { kind: "maintenance", vin: "JTDBR32E720012345", viscosities: ["5W-30", "5W-40"], filterTypes: ["oil", "air", "cabin"], warehouse: "" };
+assert.match((await (await POST(request())).json()).answer.text, /5W-30 и 5W-40 с работой/);
 
 modelResult = { kind: "shipment", reference: "0042" };
 orderMatches = [order, { ...order, id: "another-order" }];
