@@ -109,6 +109,10 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
   "@/lib/ai-assistant/access": auth,
   "@/lib/ai-assistant/quick-shipment": shipmentModule,
   "@/lib/ai-assistant/quick-crm": crmModule,
+  "@/lib/ai-assistant/quick-catalog": { searchQuickCatalog: async input => {
+    assert.deepEqual(input, { query: "", approval: "C2", viscosity: "", liters: 6 });
+    return { total: 1, products: [{ id: "oil-a", name: "Тестовое масло C2", neededUnits: 2, purchasedLiters: 8 }] };
+  } },
   "@/lib/ai-assistant/quick-vehicle": { answerQuickVehicle: async (current, question, system) => {
     assert.equal(current, access);
     assert.equal(question, "Тестовая команда");
@@ -139,19 +143,30 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
       modelCalls++;
       assert.equal(request.model, "gpt-5-nano");
       assert.equal(request.store, false);
-      assert.equal(request.tools, undefined);
-      if (!request.text) {
-        const { question, facts } = JSON.parse(request.input);
-        assert.equal(question, "Тестовая команда");
-        assert.equal(facts.matchingCases, 1);
-        assert.equal(facts.cases[0].nextAction, "Уточнить наличие");
-        assert.equal(facts.cases[0].linkedShipment.status, "Проведена");
-        assert.equal(facts.upcomingBookings[0].confirmation, "CONFIRMED");
-        return { status: "completed", output_text: "В CRM есть дело по подбору фильтра." };
-      }
+      assert.ok(request.tools.some(tool => tool.name === "search_stock"));
       assert.match(request.instructions, /2026-11-09T11:00/);
-      assert.equal(request.input, "Тестовая команда");
-      return { status: "completed", output_text: JSON.stringify(modelResult) };
+      const output = request.input.findLast(item => item.type === "function_call_output");
+      if (output) {
+        const facts = JSON.parse(output.output);
+        if (modelResult.kind === "vehicle") assert.equal(facts, "Проверенный допуск");
+        if (modelResult.kind === "stock") assert.equal(facts.products[0].purchasedLiters, 8);
+        if (modelResult.kind === "crm") {
+          assert.equal(facts.matchingCases, 1);
+          assert.equal(facts.cases[0].nextAction, "Уточнить наличие");
+          assert.equal(facts.cases[0].linkedShipment.status, "Проведена");
+          assert.equal(facts.upcomingBookings[0].confirmation, "CONFIRMED");
+        }
+        const answers = { vehicle: "Проверенный допуск", stock: "Есть масло C2. Две упаковки дадут 8 л.", crm: "В CRM есть дело по подбору фильтра." };
+        return { output: [], output_text: answers[modelResult.kind] };
+      }
+      if (modelResult.kind === "unsupported") return { output: [], output_text: "Уточните, пожалуйста, что проверить." };
+      if (modelResult.kind === "stock") {
+        assert.match(request.input.at(-1).content, /6 литров/);
+        assert.match(request.input[0].content, /C2/);
+      }
+      const name = { vehicle: "read_vehicle", crm: "read_crm", stock: "search_stock" }[modelResult.kind] ?? "prepare_draft";
+      const args = modelResult.kind === "vehicle" ? { ...modelResult, question: "Тестовая команда" } : modelResult;
+      return { output: [{ type: "function_call", name, arguments: JSON.stringify(args), call_id: "call_test" }] };
     } },
     audio: { transcriptions: { create: async ({ file, language }) => {
       assert.ok(["command.webm", "command.mp4"].includes(file.name));
@@ -206,7 +221,7 @@ assert.equal(task.branch.login, "owner");
 assert.equal(task.options, undefined);
 
 modelResult = { kind: "unsupported" };
-assert.equal((await POST(request())).status, 422);
+assert.match((await (await POST(request())).json()).answer.text, /Уточните/);
 assert.equal(queries, 1);
 
 modelResult = { kind: "booking", customerName: "Тестовый Клиент", datetime: "2026-11-10T15:00", service: "Диагностика" };
@@ -228,6 +243,15 @@ assert.match(crm.answer.text, /подбору фильтра/);
 assert.deepEqual(crm.answer.sources.map(source => source.href), [
   "/crm?dealId=case-a", `/records?recordId=${journalId("booking-a")}`, "/shipment/order-a/edit",
 ]);
+
+modelResult = { kind: "stock", query: "", approval: "C2", viscosity: "", liters: 6 };
+const stockRequest = new NextRequest("http://localhost/api/ai-assistant/quick-command", {
+  method: "POST", headers: { "Content-Type": "application/json", "x-eco-assistant-branch": "branch-a" },
+  body: JSON.stringify({ text: "Мне нужно 6 литров", history: [{ role: "user", content: "Какие масла C2 есть?" }] }),
+});
+const stockAnswer = (await (await POST(stockRequest)).json()).answer;
+assert.match(stockAnswer.text, /8 л/);
+assert.equal(stockAnswer.sources[0].href, "/inventory/products?product=oil-a");
 
 modelResult = { kind: "shipment", reference: "0042" };
 orderMatches = [order, { ...order, id: "another-order" }];

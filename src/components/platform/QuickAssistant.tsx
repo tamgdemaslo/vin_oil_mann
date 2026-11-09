@@ -19,29 +19,30 @@ type CommandResult = Preview | { answer: QuickAnswer } | ShipmentResult;
 
 const rubles = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB" });
 
+type ChatMessage = { role: "user" | "assistant"; content: string; sources?: QuickAnswer["sources"] };
+
 type Recording = { recorder: MediaRecorder; timer: number };
 
 export default function QuickAssistant({ branchId }: { branchId: string }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [preview, setPreview] = useState<Preview>();
-  const [answer, setAnswer] = useState<QuickAnswer>();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [shipment, setShipment] = useState<ShipmentResult>();
-  const [savedShipment, setSavedShipment] = useState<{ id: string; name: string }>();
   const [serviceId, setServiceId] = useState("");
   const [masterId, setMasterId] = useState<number>();
   const [busy, setBusy] = useState("");
   const [recording, setRecording] = useState(false);
   const [retryAudio, setRetryAudio] = useState<Blob>();
-  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [saveUncertain, setSaveUncertain] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const capture = useRef<Recording | null>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const commandInput = useRef<HTMLTextAreaElement>(null);
+  const chatLog = useRef<HTMLDivElement>(null);
   const previewHeading = useRef<HTMLElement>(null);
-  const previewKind = preview?.draft.kind ?? (shipment ? "shipment" : answer ? "answer" : undefined);
+  const previewKind = preview?.draft.kind ?? (shipment ? "shipment" : undefined);
   const hasBranch = Boolean(branchId && branchId !== "all");
 
   useEffect(() => () => {
@@ -58,8 +59,16 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
   useEffect(() => {
     if (!open) return;
     if (previewKind) previewHeading.current?.focus();
-    else commandInput.current?.focus();
-  }, [open, previewKind]);
+    else if (!busy && !recording) commandInput.current?.focus();
+  }, [open, previewKind, busy, recording]);
+
+  useEffect(() => {
+    if (chatLog.current) chatLog.current.scrollTop = chatLog.current.scrollHeight;
+  }, [open, messages]);
+
+  function appendAnswer(content: string, sources?: QuickAnswer["sources"]) {
+    setMessages(current => [...current, { role: "assistant", content, sources }]);
+  }
 
   async function parseCommand(body: string | Blob, signal: AbortSignal) {
     let response: Response;
@@ -90,13 +99,14 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
     operation.current = controller;
     setBusy("Разбираю команду…");
     setError("");
-    setNotice("");
-    setAnswer(undefined);
-    setSavedShipment(undefined);
+    const command = text.trim();
+    setMessages(current => [...current, { role: "user", content: command }]);
+    setText("");
     try {
-      const result: CommandResult = await parseCommand(JSON.stringify({ text }), controller.signal);
+      const history = messages.slice(-8).map(({ role, content }) => ({ role, content }));
+      const result: CommandResult = await parseCommand(JSON.stringify({ text: command, history }), controller.signal);
       if ("answer" in result) {
-        setAnswer(result.answer);
+        appendAnswer(result.answer.text, result.answer.sources);
         return;
       }
       if ("shipment" in result) {
@@ -111,7 +121,11 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
       setSaveUncertain(false);
       setPreview(result);
     } catch (cause) {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Не удалось подготовить черновик.");
+      if (!controller.signal.aborted) {
+        setMessages(current => current.slice(0, -1));
+        setText(command);
+        setError(cause instanceof Error ? cause.message : "Не удалось подготовить ответ.");
+      }
     } finally {
       operation.current = null;
       setBusy("");
@@ -162,7 +176,6 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
     setRetryAudio(undefined);
     setBusy("Запрашиваю микрофон…");
     setError("");
-    setNotice("");
     let stream: MediaStream | undefined;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -279,7 +292,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
       if (!(booking ? data.data?.booking_id : data.id)) throw new Error();
       setPreview(undefined);
       setText("");
-      setNotice(booking ? "Запись создана в журнале." : "Дело клиента создано в CRM.");
+      appendAnswer(booking ? "Запись создана в журнале." : "Дело клиента создано в CRM.");
     } catch {
       setSaveUncertain(true);
       setError(booking
@@ -310,7 +323,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
         return;
       }
       if (!data.id || !data.name) throw new Error();
-      setSavedShipment({ id: data.id, name: data.name });
+      appendAnswer("Черновик отгрузки создан.", [{ label: `Открыть отгрузку № ${data.name}`, href: `/shipment/${encodeURIComponent(data.id)}/edit` }]);
       setShipment(undefined);
       setText("");
     } catch {
@@ -339,9 +352,21 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
       </button>
       {open && <section id="quick-assistant-panel" className={styles.panel} aria-label="Быстрый помощник">
         <header className={styles.heading}>
-          <div><span className={styles.eyebrow}>ЭКОПЛАТФОРМА</span><h2>Быстрый помощник</h2></div>
+          <h2>Быстрый помощник</h2>
           <button type="button" className={styles.icon} onClick={close} disabled={Boolean(busy || recording)} aria-label="Закрыть"><X size={18} /></button>
         </header>
+        {hasBranch && <div ref={chatLog} className={styles.chatLog} role="log" aria-label="История разговора" tabIndex={0}>
+          {messages.length === 0 && <p className={styles.intro}>Спросите про остатки, клиента или автомобиль. Можно продолжить вопрос в следующем сообщении.</p>}
+          {messages.map((message, index) => (
+            <div key={index} className={message.role === "user" ? styles.userMessage : styles.assistantMessage}>
+              <span className={styles.messageAuthor}>{message.role === "user" ? "Вы" : "Помощник"}</span>
+              <p>{message.content}</p>
+              {!!message.sources?.length && <ul className={styles.sourceList}>
+                {message.sources.map(source => <li key={source.href}><a href={source.href}>{source.label}</a></li>)}
+              </ul>}
+            </div>
+          ))}
+        </div>}
         {!hasBranch ? <p>Выберите один филиал в меню платформы, чтобы начать.</p> : shipment ?
           <div className={styles.form}>
             <div className={styles.previewTitle}>
@@ -367,16 +392,21 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
             <small>Сохранится отдельный черновик без проведения и списания остатков.</small>
             <div className={styles.actions}>
               <button type="button" className={styles.secondary} disabled={Boolean(busy)}
-                onClick={() => { setShipment(undefined); setError(""); }}>К команде</button>
+                onClick={() => { setShipment(undefined); setError(""); }}>Продолжить чат</button>
               <button type="button" className={styles.primary} disabled={Boolean(busy)}
                 onClick={() => void confirmShipment()}>Подтвердить и создать</button>
             </div>
           </div> : !draft ?
           <form className={styles.form} onSubmit={prepare}>
-            <label>Что нужно сделать?
-              <textarea ref={commandInput} className="eco-input" rows={3} maxLength={2000} required
-                placeholder="Например, что с заказом Петрова? Или подготовь отгрузку из заказ-наряда № 0042"
-                value={text} disabled={Boolean(busy || recording)} onChange={event => setText(event.target.value)} />
+            <label>Сообщение
+              <textarea ref={commandInput} className={styles.composer} rows={2} maxLength={2000} required
+                placeholder="Напишите или продиктуйте сообщение"
+                value={text} disabled={Boolean(busy || recording)} onChange={event => setText(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }} />
             </label>
             <div className={styles.actions}>
               <button type="button" className={styles.secondary} onClick={() => void toggleRecording()} disabled={Boolean(busy)}>
@@ -388,17 +418,6 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
               onClick={resendRecording}>Повторить отправку</button>}
             <small>Текст и голос обрабатывает OpenAI.</small>
             {recording && <p role="status">Идёт запись, до 30 секунд.</p>}
-            {notice && <p role="status" className={styles.notice}>{notice}</p>}
-            {savedShipment && <p role="status" className={styles.notice}>
-              Черновик создан. <a href={`/shipment/${encodeURIComponent(savedShipment.id)}/edit`}>Открыть отгрузку № {savedShipment.name}</a>
-            </p>}
-            {answer && <div className={styles.answer}>
-              <strong ref={previewHeading} tabIndex={-1}>Результат</strong>
-              <p>{answer.text}</p>
-              {answer.sources.length > 0 && <ul className={styles.sourceList}>
-                {answer.sources.map(source => <li key={source.href}><a href={source.href}>{source.label}</a></li>)}
-              </ul>}
-            </div>}
           </form> :
           <form className={styles.form} onSubmit={confirm}>
             <div className={styles.previewTitle}>
@@ -433,7 +452,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
             </fieldset>
             <div className={styles.actions}>
               <button type="button" className={styles.secondary} disabled={Boolean(busy)} onClick={() => { setPreview(undefined); setError(""); if (saveUncertain) setText(""); }}>
-                {saveUncertain ? "Закрыть черновик" : "К команде"}
+                {saveUncertain ? "Закрыть черновик" : "Продолжить чат"}
               </button>
               <button className={styles.primary} disabled={Boolean(busy || saveUncertain)}>Подтвердить и сохранить</button>
             </div>
