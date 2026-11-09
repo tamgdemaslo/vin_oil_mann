@@ -27679,6 +27679,39 @@ select.eco-input::-ms-expand,
   padding: 0;
 }
 
+.eco-rossko-barcode-step {
+  max-width: 52rem;
+  margin-inline: auto;
+  padding: 16px;
+}
+
+.eco-rossko-barcode-step p,
+.eco-rossko-barcode-step small {
+  color: var(--eco-muted);
+}
+
+.eco-rossko-barcode-step ul {
+  padding: 0;
+  margin: 12px 0 0;
+  list-style: none;
+}
+
+.eco-rossko-barcode-step form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  padding-block: 12px;
+  border-top: 1px solid var(--eco-line);
+}
+
+.eco-rossko-barcode-step label {
+  display: grid;
+  flex: 1 1 15rem;
+  min-width: 0;
+  gap: 4px;
+}
+
 .eco-restock-receipt-table-wrap {
   min-height: 100%;
   overflow: auto;
@@ -27797,7 +27830,8 @@ select.eco-input::-ms-expand,
   text-align: left;
 }
 
-.eco-restock-receipt-new-name .eco-input[aria-invalid="true"] {
+.eco-restock-receipt-new-name .eco-input[aria-invalid="true"],
+.eco-receipt-product-fields .eco-input[aria-invalid="true"] {
   border-color: var(--eco-danger);
 }
 
