@@ -77,7 +77,8 @@ export async function quickMaintenanceQuote(access: AIAssistantAccess, input: {
     const stock = sortQuoteFilterOffers(resolution.localMatches
       .filter(match => match.mannArticle === article)
       .flatMap(match => match.compatibleProducts)
-      .filter(product => product.available >= 1 && product.price > 0), "price")[0];
+      .filter(product => product.available >= 1 && product.price > 0)
+      .map(product => ({ ...product, brand: product.brand ?? undefined })), "price")[0];
     return { kind, articles, offer: stock ?? await fallback(article) };
   }));
 
@@ -152,7 +153,7 @@ export async function quickMaintenanceQuote(access: AIAssistantAccess, input: {
       continue;
     }
     if (!best) {
-      lines.push(`${label}: подходящего объёма на складе нет.`);
+      lines.push(`${label}: ${litres ? "подходящего объёма на складе нет" : "позиций с этим допуском на складе нет"}.`);
       continue;
     }
     const { variant, amount } = best;
