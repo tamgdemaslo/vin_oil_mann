@@ -1,3 +1,4 @@
+import { journalId } from "@/lib/booking/journal-id";
 import { journalContactSources, journalContactUrl, readJournalContact, writeJournalContact } from "@/lib/booking/journal-contact";
 import { snapshotVehicleDto } from "@/lib/booking/dto";
 import type { PrismaClient } from "@prisma/client";
@@ -48,15 +49,6 @@ function journalDateTime(value: string | null, timeZone: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) throw new BookingError("Некорректное время", "booking_datetime_invalid");
   return parsed;
-}
-
-function journalId(value: string) {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 1) || 1;
 }
 
 function legacyUnassignedId(branchId: string) {
@@ -412,6 +404,9 @@ export async function POST(request: NextRequest) {
   try {
     requireBookingCapability(canManageBookings(access.context), "Нет права создавать записи");
     const body = object(await request.json().catch(() => null));
+    if (body.expectedBranchId !== undefined && body.expectedBranchId !== access.context.branchId) {
+      throw new BookingError("Филиал изменился. Подготовьте новый черновик.", "booking_branch_changed", 409);
+    }
     if (body.action !== "create-record") throw new BookingError("Неизвестная операция журнала", "booking_action_invalid");
     const payload = object(body.payload);
     const client = object(payload.client);
