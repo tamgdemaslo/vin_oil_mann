@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => null);
-    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    const text = clean(body?.text, 2001);
     if (!text || text.length > 2000) return failure("Введите команду до 2000 символов.", 400);
     const timezone = access.context.branch?.timezone;
     if (!timezone) return failure("Часовой пояс филиала не настроен.", 409);
