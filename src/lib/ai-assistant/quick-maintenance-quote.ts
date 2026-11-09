@@ -42,7 +42,14 @@ export async function quickMaintenanceQuote(access: AIAssistantAccess, input: {
   }
   const vehicle = decoded.vehicle;
   const { resolution, profile } = await mannContext(access.organizationId, vehicle, store.id);
-  if (resolution.status !== "resolved" || !resolution.selectedApplication) return answer(mannResolutionDiagnostic(resolution).message);
+  if (resolution.status !== "resolved" || !resolution.selectedApplication) {
+    const diagnostic = mannResolutionDiagnostic(resolution);
+    if (diagnostic.code === "MANN_CONFIRMATION_REQUIRED") {
+      const vehicleLabel = [vehicle.makeRaw, vehicle.modelRaw, vehicle.year, vehicle.engineCode].filter(Boolean).join(" ");
+      return answer(`${vehicleLabel || input.vin}: VIN распознан, но модификация в MANN ещё не подтверждена. Подтвердите соответствие в каталоге MANN, чтобы подобрать расходники и рассчитать цену.`);
+    }
+    return answer(diagnostic.message);
+  }
   const variantKeys = resolution.selectedApplication.variantIds;
   const profileInput = { organizationId: access.organizationId, variantKeys, profile };
   let currentProfile = await addMannResearchCatalogToProfile(profileInput);

@@ -22,6 +22,18 @@ export function uniqueQuickOption<T extends { name: string }>(hint: string, opti
   if (matches.length === 1) return matches[0];
 }
 
+export function uniqueQuickBookingService(hint: string, services: QuickBookingOptions["services"]) {
+  const exact = uniqueQuickOption(hint, services);
+  if (exact) return exact;
+  const normalize = (value: string) => value.toLocaleLowerCase("ru").replaceAll("ё", "е")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+    .replace(/(^| )в двигателе(?= |$)/gu, "$1").replace(/ +/g, " ").trim();
+  const name = normalize(hint);
+  if (!name) return;
+  const matches = services.filter(service => normalize(service.name) === name);
+  if (matches.length === 1) return matches[0];
+}
+
 export type QuickSourceLink = { label: string; href: string };
 export type QuickAnswer = { text: string; sources: QuickSourceLink[] };
 
