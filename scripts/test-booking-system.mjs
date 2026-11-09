@@ -455,7 +455,7 @@ const bookingJournal = source("src/app/api/booking-journal/route.ts");
 const readServiceIds = extractBookingFunction(bookingJournal, "idsFromPayload", Object.fromEntries(
   ["object", "text", "number"].map((name) => [name, extractBookingFunction(bookingJournal, name)]),
 ));
-const journalId = extractBookingFunction(bookingJournal, "journalId");
+const { journalId } = await jiti.import("../src/lib/booking/journal-id.ts");
 const catalogId = "catalog-service:air-filter";
 const legacyId = journalId(catalogId);
 let serviceFilter;

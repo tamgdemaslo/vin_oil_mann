@@ -1,5 +1,6 @@
 "use client";
 
+import QuickAssistant from "./QuickAssistant";
 import {
   Bell,
   Volume2,
@@ -622,6 +623,9 @@ export default function PlatformShell() {
 
   return (
     <div ref={shellRef} className="platform-shell">
+      {(user?.role === "owner" || user?.role === "admin") && (
+        <QuickAssistant key={`${user.login}:${selectedBranchId}`} branchId={selectedBranchId} />
+      )}
       {user?.role === "owner" && selectedBranchId && pathname !== "/" && <SalesPlanBanner ownerLogin={user.login} branchId={selectedBranchId} pathname={pathname} />}
       <header className="platform-shell__main">
         <div className="platform-shell__brand-row">

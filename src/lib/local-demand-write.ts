@@ -1758,7 +1758,7 @@ export async function linkLocalDemandToAppointment(
 
 export async function createLocalDemand(
   body: CreateDemandBody,
-  options: { ecoUserName?: string; actor?: ShipmentActor | null; branchId?: string; organizationId?: string } = {}
+  options: { ecoUserName?: string; actor?: ShipmentActor | null; demandId?: string; branchId?: string; organizationId?: string } = {}
 ): Promise<{ ok: true; id: string; name: string; href: string } | { ok: false; error: string }> {
   let scope: { branchId: string; organizationId: string };
   try {
@@ -1825,6 +1825,7 @@ export async function createLocalDemand(
       };
       const created = await tx.localDemand.create({
         data: {
+          ...(options.demandId ? { id: options.demandId } : {}),
           branchId: scope.branchId,
           name,
           momentAt,

@@ -332,6 +332,9 @@ export async function POST(request: NextRequest) {
   return runWithBranchApiContext(branchAccess.context, async () => {
     try {
     const body = await request.json().catch(() => ({}));
+    if (body.expectedBranchId !== undefined && body.expectedBranchId !== branchAccess.context.branchId) {
+      return NextResponse.json({ error: "Филиал изменился. Подготовьте новый черновик." }, { status: 409 });
+    }
     const title = parseOptionalString(body.title);
     const customerName = parseOptionalString(body.customerName);
     const phoneNormalized = normalizePhoneKey(parseOptionalString(body.phone));
@@ -375,7 +378,10 @@ export async function POST(request: NextRequest) {
     const caseStatus = body.quickRequest === true ? "calculation_needed" : parseCaseStatus(body.caseStatus, stage?.name);
     const parsedNextActionAt = parseDate(body.nextActionAt);
     const parsedNextContactAt = parseDate(body.nextContactAt);
-    const nextActionAt = caseStatus === "calculation_sent" ? null : caseStatus === "calculation_needed" ? caseDayDeadline() : parsedNextActionAt ?? parsedNextContactAt;
+    const useCaseDayDeadline = caseStatus === "calculation_needed" &&
+      (body.quickRequest === true || body.useExplicitDeadline !== true);
+    const nextActionAt = caseStatus === "calculation_sent" ? null
+      : useCaseDayDeadline ? caseDayDeadline() : parsedNextActionAt ?? parsedNextContactAt;
     const nextContactAt = nextActionAt;
     const parsedSuppliesExpectedAt = parseDate(body.suppliesExpectedAt);
     const suppliesExpectedAt = parsedSuppliesExpectedAt;
