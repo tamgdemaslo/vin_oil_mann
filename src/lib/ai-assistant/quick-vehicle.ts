@@ -33,15 +33,28 @@ export async function answerQuickVehicle(access: AIAssistantAccess, question: st
       /маслян/iu.test(question) && "oil", /воздуш/iu.test(question) && "air",
       /топлив/iu.test(question) && "fuel", /салон/iu.test(question) && "cabin",
     ].filter(Boolean);
-    const articles = [...new Set(resolution.filters
-      .filter(filter => !requestedTypes.length || requestedTypes.includes(filter.filterType))
-      .map(filter => {
-        const conditions = [filter.filterNote?.trim(), filter.condition?.trim()].filter(Boolean).join("; ");
-        return `${types[filter.filterType] ?? filter.filterType}: ${filter.mannArticle}${conditions ? ` (${conditions})` : ""}`;
-      }))].slice(0, 20);
+    const filters = resolution.filters
+      .filter(filter => !requestedTypes.length || requestedTypes.includes(filter.filterType));
+    const articles = [...new Set(filters.map(filter => {
+      const conditions = [filter.filterNote?.trim(), filter.condition?.trim()].filter(Boolean).join("; ");
+      return `${types[filter.filterType] ?? filter.filterType}: ${filter.mannArticle}${conditions ? ` (${conditions})` : ""}`;
+    }))].slice(0, 20);
     lines.push(articles.length
       ? `Фильтры по каталогу MANN:\n${articles.join("\n")}`
       : "В MANN нет подтверждённых фильтров для этой модификации.");
+    const selectedArticles = new Set(filters.map(filter => filter.mannArticle));
+    const products = [...new Map((resolution.localMatches ?? [])
+      .filter(match => selectedArticles.has(match.mannArticle))
+      .flatMap(match => match.compatibleProducts)
+      .filter(product => product.available > 0)
+      .map(product => [product.id, product])).values()].slice(0, 8);
+    if (products.length) {
+      lines.push("Подтверждённые варианты фильтров в наличии:", ...products.map(product =>
+        `${product.name} · ${product.article || "артикул не указан"} · доступно ${product.available} шт.${product.price > 0 ? ` · ${product.price} ₽` : ""}`));
+      sources.push(...products.map(product => ({
+        label: product.name, href: `/inventory/products?product=${encodeURIComponent(product.id)}`,
+      })));
+    }
   }
   if (wantsFacts) {
     const system = typeof requestedSystem === "string" && Object.hasOwn(technicalSystems, requestedSystem) ? requestedSystem : null;
