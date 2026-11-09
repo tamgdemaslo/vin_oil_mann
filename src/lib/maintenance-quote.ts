@@ -5,9 +5,9 @@ import { isLiterSaleUnit } from "@/lib/product-marking";
 
 export type QuoteStockProduct = {
   id: string; name: string; article: string; price: number; available: number;
-  unit: string; litresPerUnit: number | null; sae: string; oem: string;
+  brand?: string | null; unit: string; litresPerUnit: number | null; sae: string; oem: string;
 };
-export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string };
+export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string; filterLabel?: string; brand?: string | null };
 export function matchesQuoteOil(product: { groupPath?: string | null; entityType?: string; sae?: string | null; oem?: string | null; acea?: string | null; apiSpec?: string | null; ilsac?: string | null }, specification: string, viscosity: string) {
   if (resolveProductFluidAttributeProfile(product) !== "ENGINE_OIL") return false;
   const required = buildRequirementsNorm({ oem: specification, acea: specification, api: specification, ilsac: specification, sae: viscosity });
@@ -92,17 +92,31 @@ export function quoteVariantAmount(variant: QuoteOilVariant, litres: number) {
   return {quantity:lines.reduce((sum,line)=>sum+line.quantity,0),suppliedLitres:solution.suppliedLitres,cents:solution.state.cents,enough:Boolean(inStock),lines};
 }
 export function quoteClientText(vehicle: string, specification: string, litres: number, oils: QuoteStockProduct[], extras: QuoteExtra[]) {
-  if (!oils.length) return [`Расчёт ТО: ${vehicle}`, ...extras.map(row => `${row.name}: ${row.quantity} × ${quoteRub(Math.round(row.price * 100))} = ${quoteRub(Math.round(row.quantity * Math.round(row.price * 100)))}`), `Итого: ${quoteRub(quoteExtraCents(extras))}`, "", "Предварительный расчёт. Наличие и цены уточняются при записи."].join("\n");
+  const extraLines = extras.map(row => {
+    const filterName = row.name.trim().match(/^(?:масляный|воздушный|салонный|топливный)\s+фильтр(?=$|[^\p{L}\p{N}])/iu)?.[0];
+    const filterLabel = row.filterLabel ?? filterName;
+    const unitCents = Math.round(row.price * 100);
+    if (filterLabel) {
+      // Free-text names can contain a brand before the article or a parenthesized code.
+      const brandFromName = filterName && row.name.trim().slice(filterName.length).trim().split(/\s*\(|(?:^|\s+)\S*\d/)[0].trim();
+      const brand = row.brand?.trim() || brandFromName;
+      const label = brand ? `${filterLabel} ${brand}` : filterLabel;
+      return row.quantity === 1 ? `${label}: ${quoteRub(unitCents)}` : `${label}: ${row.quantity} × ${quoteRub(unitCents)} = ${quoteRub(Math.round(row.quantity * unitCents))}`;
+    }
+    const label = row.name;
+    return `${label}: ${row.quantity} × ${quoteRub(unitCents)} = ${quoteRub(Math.round(row.quantity * unitCents))}`;
+  });
+  if (!oils.length) return [`Расчёт ТО: ${vehicle}`, ...extraLines, `Итого: ${quoteRub(quoteExtraCents(extras))}`, "", "Предварительный расчёт. Наличие и цены уточняются при записи."].join("\n");
   return [`Расчёт ТО: ${vehicle}`, `Моторное масло: ${specification}; объём замены ${litres} л.`, ...groupQuoteOils(oils).flatMap((variant, index) => {
     const amount = quoteVariantAmount(variant, litres);
     if (!amount) return [];
-    return ["", `Вариант ${index + 1} — ${variant.name}`, ...amount.lines.map(line=>`Масло${isLiterSaleUnit(line.product.unit) ? "" : ` (фасовка ${line.product.litresPerUnit} л)`}: ${line.quantity} ${line.product.unit || "шт."} × ${quoteRub(Math.round(line.product.price * 100))} = ${quoteRub(line.cents)}`), ...(amount.suppliedLitres > litres + 0.001 ? [`В упаковках: ${amount.suppliedLitres} л.`] : []), ...extras.map(row => `${row.name}: ${row.quantity} × ${quoteRub(Math.round(row.price * 100))} = ${quoteRub(Math.round(row.quantity * Math.round(row.price * 100)))}`), `Итого: ${quoteRub(amount.cents + quoteExtraCents(extras))}`, amount.enough ? "Масло в наличии." : "Масло — под заказ, требуется уточнить срок."];
+    return ["", `Вариант ${index + 1} — ${variant.name}`, ...amount.lines.map(line=>`Масло${isLiterSaleUnit(line.product.unit) ? "" : ` (фасовка ${line.product.litresPerUnit} л)`}: ${line.quantity} ${line.product.unit || "шт."} × ${quoteRub(Math.round(line.product.price * 100))} = ${quoteRub(line.cents)}`), ...(amount.suppliedLitres > litres + 0.001 ? [`В упаковках: ${amount.suppliedLitres} л.`] : []), ...extraLines, `Итого: ${quoteRub(amount.cents + quoteExtraCents(extras))}`, amount.enough ? "Масло в наличии." : "Масло — под заказ, требуется уточнить срок."];
   }), "", "Предварительный расчёт. Наличие и цены уточняются при записи."].join("\n");
 }
 
 export type QuoteFilterGroup = {
   key: string; label: string; article: string; condition?: string | null;
-  products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean; source?: "rossko"; deliveryLabel?: string; brand?: string; relation?: "mann" | "analogue"; referenceArticle?: string; deliveryAt?: string | null; deliveryDays?: number | null }[];
+  products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean; source?: "rossko"; deliveryLabel?: string; brand?: string | null; relation?: "mann" | "analogue"; referenceArticle?: string; deliveryAt?: string | null; deliveryDays?: number | null }[];
 };
 
 export function quoteRequirementChoices(profile: import("@/lib/mann-unified-technical-profile").MannUnifiedTechnicalProfile | null, research: import("@/lib/mann-fluid-research").MannFluidResearchResult | null) {
