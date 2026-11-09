@@ -154,7 +154,8 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
       return { status: "completed", output_text: JSON.stringify(modelResult) };
     } },
     audio: { transcriptions: { create: async ({ file, language }) => {
-      assert.equal(file.name, "command.webm");
+      assert.ok(["command.webm", "command.mp4"].includes(file.name));
+      assert.equal(await file.text(), "fake recording");
       assert.equal(language, "ru");
       return { text: " Тестовая команда " };
     } } },
@@ -183,6 +184,19 @@ assert.equal(queries, 0);
 const audio = new FormData();
 audio.set("audio", new Blob(["fake recording"], { type: "audio/webm" }), "command");
 assert.deepEqual(await (await POST(request("branch-a", audio))).json(), { text: "Тестовая команда" });
+
+function rawRecording(body, mime) {
+  return new NextRequest("http://localhost/api/ai-assistant/quick-command", {
+    method: "POST",
+    headers: { "Content-Type": mime, "x-eco-assistant-branch": "branch-a" },
+    body,
+  });
+}
+const safariAudio = new TextEncoder().encode("fake recording").buffer;
+assert.deepEqual(await (await POST(rawRecording(safariAudio, "audio/mp4; codecs=mp4a.40.2"))).json(), { text: "Тестовая команда" });
+assert.equal((await POST(rawRecording(new ArrayBuffer(0), "audio/mp4"))).status, 400);
+assert.equal((await POST(rawRecording(new ArrayBuffer(4 * 1024 * 1024 + 1), "audio/mp4"))).status, 413);
+assert.equal((await POST(rawRecording(safariAudio, "audio/flac"))).status, 400);
 assert.equal(queries, 0);
 
 const task = await (await POST(request())).json();

@@ -32,6 +32,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
   const [masterId, setMasterId] = useState<number>();
   const [busy, setBusy] = useState("");
   const [recording, setRecording] = useState(false);
+  const [retryAudio, setRetryAudio] = useState<Blob>();
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [saveUncertain, setSaveUncertain] = useState(false);
@@ -60,12 +61,25 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
     else commandInput.current?.focus();
   }, [open, previewKind]);
 
-  async function parseCommand(body: FormData | string, signal: AbortSignal) {
-    const headers: Record<string, string> = { "x-eco-assistant-branch": branchId };
-    if (typeof body === "string") headers["Content-Type"] = "application/json";
-    const response = await fetch("/api/ai-assistant/quick-command", { method: "POST", headers, body, signal });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Помощник недоступен.");
+  async function parseCommand(body: string | Blob, signal: AbortSignal) {
+    let response: Response;
+    try {
+      response = await fetch("/api/ai-assistant/quick-command", {
+        method: "POST",
+        headers: {
+          "x-eco-assistant-branch": branchId,
+          "Content-Type": typeof body === "string" ? "application/json" : body.type,
+        },
+        body: typeof body === "string" ? body : await body.arrayBuffer(),
+        signal,
+      });
+    } catch {
+      throw new Error(typeof body === "string"
+        ? "Не удалось связаться с помощником. Проверьте соединение и отправьте команду ещё раз."
+        : "Не удалось отправить аудио. Проверьте соединение и нажмите «Повторить отправку».");
+    }
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data) throw new Error(data?.error || "Помощник недоступен. Попробуйте ещё раз.");
     return data;
   }
 
@@ -104,6 +118,35 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
     }
   }
 
+  async function transcribe(audio: Blob, controller: AbortController) {
+    setBusy("Распознаю голос…");
+    setError("");
+    try {
+      const result = await parseCommand(audio, controller.signal);
+      setRetryAudio(undefined);
+      if (!result.text) {
+        setError("Речь не распознана. Запишите команду ещё раз.");
+        return;
+      }
+      setText(result.text);
+    } catch (cause) {
+      if (!controller.signal.aborted) {
+        setRetryAudio(audio);
+        setError(cause instanceof Error ? cause.message : "Не удалось распознать голос.");
+      }
+    } finally {
+      operation.current = null;
+      setBusy("");
+    }
+  }
+
+  function resendRecording() {
+    if (!retryAudio || operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    void transcribe(retryAudio, controller);
+  }
+
   async function toggleRecording() {
     if (capture.current) {
       if (capture.current.recorder.state === "recording") capture.current.recorder.stop();
@@ -116,6 +159,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
     }
     const controller = new AbortController();
     operation.current = controller;
+    setRetryAudio(undefined);
     setBusy("Запрашиваю микрофон…");
     setError("");
     setNotice("");
@@ -137,22 +181,14 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
         window.clearTimeout(capture.current.timer);
         capture.current = null;
         setRecording(false);
-        setBusy("Распознаю голос…");
-        try {
-          const audio = new Blob(chunks, { type: mimeType });
-          if (!audio.size) throw new Error("Запись пустая. Попробуйте ещё раз.");
-          const body = new FormData();
-          body.set("audio", audio, "command");
-          const result = await parseCommand(body, controller.signal);
-          if (!result.text) throw new Error("Речь не распознана. Попробуйте ещё раз.");
-          setText(result.text);
-          commandInput.current?.focus();
-        } catch (cause) {
-          if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Не удалось распознать голос.");
-        } finally {
+        const contentType = (chunks[0]?.type || recorder.mimeType || mimeType).split(";")[0];
+        const audio = new Blob(chunks, { type: contentType });
+        if (!audio.size) {
           operation.current = null;
-          setBusy("");
+          setError("Запись пустая. Попробуйте ещё раз.");
+          return;
         }
+        await transcribe(audio, controller);
       };
       recorder.start();
       const timer = window.setTimeout(() => { if (recorder.state === "recording") recorder.stop(); }, 30_000);
@@ -348,6 +384,8 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
               </button>
               <button className={styles.primary} disabled={!text.trim() || Boolean(busy || recording)}>Отправить</button>
             </div>
+            {retryAudio && <button type="button" className={styles.secondary} disabled={Boolean(busy || recording)}
+              onClick={resendRecording}>Повторить отправку</button>}
             <small>Текст и голос обрабатывает OpenAI.</small>
             {recording && <p role="status">Идёт запись, до 30 секунд.</p>}
             {notice && <p role="status" className={styles.notice}>{notice}</p>}
