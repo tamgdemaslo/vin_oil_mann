@@ -19,7 +19,7 @@ export function shipmentQuoteFilters(items: {name: string; article?: string; loo
     const key = `${item.lookupKind}:${article.replace(/[^a-z0-9]/gi, "").toUpperCase()}`;
     const group = groups.get(key) ?? {key, label: labels[item.lookupKind], article, products: []};
     if (storeName && item.store === storeName && item.productId && item.price > 0 && !group.products.some(product => product.id === item.productId)) {
-      group.products.push({id: item.productId, name: item.name, article, price: item.price, available: item.quantity, orderable: item.quantity > 0});
+      group.products.push({id: item.productId, name: item.name, brand: "MANN", article, price: item.price, available: item.quantity, orderable: item.quantity > 0});
     }
     groups.set(key, group);
   }

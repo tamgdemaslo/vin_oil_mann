@@ -99,6 +99,21 @@ const shipmentFilters=shipmentQuoteFilters([filterItem,{...filterItem,productId:
 assert.equal(shipmentFilters.length,1);
 assert.deepEqual(shipmentFilters[0].products.map(product=>product.id),['filter-local']);
 assert.equal(shipmentQuoteFilters([filterItem])[0].products.length,0);
-const filterOnlyText=quoteClientText('Car','',0,[],[{id:'supplier-filter',name:'Comline EKF139 (аналог Роско для MANN CU3172/1; доставка: завтра)',quantity:1,price:1704},{id:'work',name:'Замена фильтра',quantity:1,price:300}]);
-assert.match(filterOnlyText,/Comline EKF139/);assert.match(filterOnlyText,/Итого: 2\s*004/);assert.doesNotMatch(filterOnlyText,/Моторное масло|Вариант/);
+const filterExtras = [
+  {id:'air',name:'LYNXauto LA-1030 (аналог Роско для MANN C22018; доставка: завтра)',filterLabel:'Воздушный фильтр',brand:'LYNXauto',quantity:1,price:1715.30},
+  {id:'cabin',name:'MECAFILTER JKR7305 (Роско: завтра)',filterLabel:'Салонный фильтр',brand:'MECAFILTER',quantity:1,price:1819},
+  {id:'oil',name:'Масляный фильтр BMW 11428570590 (HU6015ZKIT)',quantity:1,price:2490},
+  {id:'work',name:'Замена фильтра',quantity:1,price:300},
+];
+const filterOnlyText = quoteClientText('Car','',0,[],filterExtras);
+const oilAndFiltersText = quoteClientText('Car','VW 504.00',4.5,[bulk, packed],filterExtras);
+for (const [quote, variants] of [[filterOnlyText, 1], [oilAndFiltersText, 2]]) {
+  for (const label of ['Воздушный фильтр LYNXauto', 'Салонный фильтр MECAFILTER', 'Масляный фильтр BMW', 'Замена фильтра']) {
+    assert.equal(quote.split(label + ':').length - 1, variants);
+  }
+  assert.doesNotMatch(quote,/Роско|доставка|LA-1030|MANN|JKR7305|11428570590|HU6015ZKIT|завтра/i);
+}
+assert.match(filterOnlyText,/Воздушный фильтр LYNXauto: 1\s*715,30\s*₽/);
+assert.match(filterOnlyText,/Итого: 6\s*324,30/);
+assert.doesNotMatch(filterOnlyText,/Моторное масло|Вариант/);
 console.log('Shipment quote suggestions, MANN reference safety, warehouse isolation and filter-only quote: ok');
