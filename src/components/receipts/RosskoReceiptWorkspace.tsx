@@ -30,7 +30,6 @@ type RosskoReceiptAction =
   | "WAITING_PROVIDER"
   | "FULLY_RECEIVED"
   | "PROVIDER_CLOSED"
-  | "CLOSED_MANUALLY"
   | "MANUAL_REVIEW"
   | "AMBIGUOUS_PRODUCT"
   | "AMBIGUOUS_SOURCE_LINE"
@@ -48,9 +47,6 @@ type RosskoReceiptPreviewLine = {
   productDetails: RosskoReceiptProductDetails;
   orderedQty: number;
   alreadyReceivedQty: number;
-  manualClosedQty: number;
-  providerClosedQty: number;
-  remainingQty: number;
   receivableQty: number;
   receiveQty: number;
   purchasePrice: number;
@@ -70,11 +66,7 @@ type RosskoReceiptPreview = {
     sourceLines: number;
     orderedQty: number;
     alreadyReceivedQty: number;
-    manualClosedQty: number;
-    providerClosedQty: number;
-    closedQty: number;
-    remainingQty: number;
-    receivableQty: number;
+      receivableQty: number;
     waitingProviderQty: number;
     cancelledQty: number;
     manualReviewQty: number;
@@ -113,10 +105,7 @@ type IncomingOrderLine = {
   article: string;
   orderedQty: number;
   postedReceivedQty: number;
-  manualClosedQty: number;
-  providerClosedQty: number;
   activeIncomingQty: number;
-  closedQty: number;
   sourceStatus: number | null;
   sourceStatusLabel: string;
   state: string;
@@ -125,9 +114,6 @@ type IncomingOrderLine = {
   previousExpectedDate: string | null;
   delayDays: number;
   canReceive: boolean;
-  canClose: boolean;
-  resolution: string;
-  resolutionLabel: string;
 };
 
 type IncomingOrder = {
@@ -144,14 +130,12 @@ type IncomingOrder = {
   isDelayed: boolean;
   isClosed: boolean;
   hasProviderCancellation: boolean;
-  hasManualClosure: boolean;
   hasPartialReceipt: boolean;
   readyToReceive: boolean;
   summary: {
     orderedQty: number;
     postedReceivedQty: number;
     activeIncomingQty: number;
-    closedQty: number;
     receivableQty: number;
   };
   lines: IncomingOrderLine[];
@@ -166,18 +150,7 @@ type IncomingOrdersResponse = {
   error?: string;
 };
 
-type IncomingFilter = "active" | "all" | "delayed" | "ready" | "partial" | "cancelled" | "closed";
-
-type ManualCloseReason = "SUPPLIER_CANCELLED" | "UNAVAILABLE" | "DELIVERY_FAILED" | "CANCELLED_IN_ROSSKO" | "NO_LONGER_NEEDED" | "OTHER";
-
-const CLOSE_REASON_OPTIONS: Array<{ value: ManualCloseReason; label: string }> = [
-  { value: "SUPPLIER_CANCELLED", label: "Поставщик отменил поставку" },
-  { value: "UNAVAILABLE", label: "Товар недоступен" },
-  { value: "DELIVERY_FAILED", label: "Доставка сорвана" },
-  { value: "CANCELLED_IN_ROSSKO", label: "Заказ отменён вручную в ROSSKO" },
-  { value: "NO_LONGER_NEEDED", label: "Заказ больше не нужен" },
-  { value: "OTHER", label: "Другое" },
-];
+type IncomingFilter = "active" | "all" | "delayed" | "ready" | "partial" | "cancelled" | "received";
 
 const INCOMING_FILTERS: Array<{ value: IncomingFilter; label: string }> = [
   { value: "active", label: "Активные" },
@@ -186,7 +159,7 @@ const INCOMING_FILTERS: Array<{ value: IncomingFilter; label: string }> = [
   { value: "ready", label: "Готовы к приёмке" },
   { value: "partial", label: "Частично приняты" },
   { value: "cancelled", label: "Отменённые" },
-  { value: "closed", label: "Закрытые" },
+  { value: "received", label: "Принятые" },
 ];
 
 const STORAGE_KEY = "vin-oil-restock-rossko-orders";
@@ -269,7 +242,6 @@ function lineTone(line: IncomingOrderLine): "neutral" | "success" | "warning" | 
   if (["UNAVAILABLE", "CANCELLED", "EXPIRED"].includes(line.state)) return "danger";
   if (["DELAYED", "RETURN"].includes(line.state)) return "warning";
   if (["RECEIVED", "PARTIALLY_RECEIVED", "AT_BRANCH"].includes(line.state)) return "success";
-  if (line.state === "CLOSED_MANUALLY") return "neutral";
   return "info";
 }
 
@@ -291,8 +263,7 @@ function actionLabel(action: RosskoReceiptAction) {
   if (action === "WAITING_PROVIDER") return "Ожидается у ROSSKO";
   if (action === "AMBIGUOUS_PRODUCT") return "Нужно выбрать товар";
   if (action === "FULLY_RECEIVED") return "Уже принято полностью";
-  if (action === "PROVIDER_CLOSED") return "Закрыто ROSSKO";
-  if (action === "CLOSED_MANUALLY") return "Закрыто вручную";
+  if (action === "PROVIDER_CLOSED") return "Недоступно к приёмке";
   if (action === "MANUAL_REVIEW") return "Нужна проверка";
   if (action === "AMBIGUOUS_SOURCE_LINE") return "Неоднозначная строка ROSSKO";
   if (action === "SOURCE_STATUS_WARNING") return "Подтвердите получение";
@@ -302,7 +273,6 @@ function actionLabel(action: RosskoReceiptAction) {
 function actionTone(action: RosskoReceiptAction): "neutral" | "success" | "warning" | "danger" | "info" {
   if (action === "MATCHED_EXISTING" || action === "FULLY_RECEIVED") return "success";
   if (action === "PROVIDER_CLOSED") return "danger";
-  if (action === "CLOSED_MANUALLY") return "neutral";
   if (action === "WAITING_PROVIDER") return "info";
   if (action === "CREATE_PRODUCT") return "info";
   if (action === "INVALID_LINE" || action === "AMBIGUOUS_SOURCE_LINE") return "danger";
@@ -328,13 +298,6 @@ export default function RosskoReceiptWorkspace({
   const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(new Set());
   const [historyOrderIds, setHistoryOrderIds] = useState<Set<string>>(new Set());
   const [actionOrderId, setActionOrderId] = useState<string | null>(null);
-  const [closeOrder, setCloseOrder] = useState<IncomingOrder | null>(null);
-  const [closeQuantities, setCloseQuantities] = useState<Record<string, number>>({});
-  const [closeReason, setCloseReason] = useState<ManualCloseReason>("SUPPLIER_CANCELLED");
-  const [closeComment, setCloseComment] = useState("");
-  const [closing, setClosing] = useState(false);
-  const [closeError, setCloseError] = useState("");
-  const [closeIdempotencyKey, setCloseIdempotencyKey] = useState("");
   const legacyImportedRef = useRef(false);
 
   const applyOrdersResponse = useCallback((data: IncomingOrdersResponse) => {
@@ -370,7 +333,7 @@ export default function RosskoReceiptWorkspace({
   }, [loadOrders]);
 
   async function addOrder() {
-    if (busy || loadingOrders || closing) return;
+    if (busy || loadingOrders) return;
     const id = orderId.trim().replace(/^0+/, "");
     if (!/^\d+$/.test(id)) {
       setError("Укажите корректный номер заказа ROSSKO");
@@ -391,7 +354,7 @@ export default function RosskoReceiptWorkspace({
       const order = data.orders?.find((item) => item.externalOrderId === id);
       if (!order) throw new Error(`Заказ ROSSKO №${id} не найден`);
       applyOrdersResponse(data);
-      setFilter(order.isClosed ? "closed" : "active");
+      setFilter(order.isClosed ? (order.hasProviderCancellation ? "cancelled" : "received") : "active");
       setFocusedOrderId(id);
       setExpandedOrderIds((current) => new Set(current).add(id));
       setActionOrderId(null);
@@ -418,44 +381,6 @@ export default function RosskoReceiptWorkspace({
     }
   }
 
-  function openCloseDialog(order: IncomingOrder, reason: ManualCloseReason = "SUPPLIER_CANCELLED") {
-    setActionOrderId(null);
-    setCloseOrder(order);
-    setCloseReason(reason);
-    setCloseComment("");
-    setCloseError("");
-    setCloseIdempotencyKey(typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${order.externalOrderId}-${Date.now()}`);
-    setCloseQuantities(Object.fromEntries(order.lines.filter((line) => line.canClose).map((line) => [line.sourceLineKey, line.activeIncomingQty])));
-  }
-
-  async function submitManualClose() {
-    if (!closeOrder || closing) return;
-    const lines = closeOrder.lines
-      .map((line) => ({ sourceLineKey: line.sourceLineKey, quantity: Math.max(0, Math.floor(Number(closeQuantities[line.sourceLineKey] ?? 0))) }))
-      .filter((line) => line.quantity > 0);
-    if (!lines.length) {
-      setCloseError("Укажите закрываемое количество хотя бы для одной позиции.");
-      return;
-    }
-    setClosing(true);
-    setCloseError("");
-    try {
-      const response = await fetch(`/api/rossko/incoming-orders/${encodeURIComponent(closeOrder.externalOrderId)}/close`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ reason: closeReason, comment: closeComment, idempotencyKey: closeIdempotencyKey, lines }),
-      });
-      const data = await response.json() as IncomingOrdersResponse;
-      if (!response.ok || data.error) throw new Error(data.error || "Не удалось закрыть позиции");
-      applyOrdersResponse(data);
-      setCloseOrder(null);
-    } catch (cause) {
-      setCloseError(cause instanceof Error ? cause.message : "Не удалось закрыть позиции");
-    } finally {
-      setClosing(false);
-    }
-  }
-
   const filteredOrders = useMemo(() => orders.filter((order) => {
     if (filter === "all") return true;
     if (filter === "active") return !order.isClosed;
@@ -463,7 +388,7 @@ export default function RosskoReceiptWorkspace({
     if (filter === "ready") return order.readyToReceive;
     if (filter === "partial") return order.hasPartialReceipt;
     if (filter === "cancelled") return order.hasProviderCancellation;
-    return order.isClosed;
+    return order.status === "received";
   }).sort((left, right) =>
     Number(right.externalOrderId === focusedOrderId) - Number(left.externalOrderId === focusedOrderId)
   ), [filter, focusedOrderId, orders]);
@@ -475,7 +400,7 @@ export default function RosskoReceiptWorkspace({
     if (value === "ready") return order.readyToReceive;
     if (value === "partial") return order.hasPartialReceipt;
     if (value === "cancelled") return order.hasProviderCancellation;
-    return order.isClosed;
+    return order.status === "received";
   }).length, [orders]);
 
   if (activeOrderId) {
@@ -502,11 +427,11 @@ export default function RosskoReceiptWorkspace({
           <div>
             <span>Склад · Поставки</span>
             <h2 id="rossko-workspace-title">Заказы ROSSKO</h2>
-            <p>Статусы поставок, локальное закрытие ожидаемых позиций и переход к приёмке.</p>
+            <p>Принимайте отгруженные позиции. Когда ROSSKO отгрузит следующую партию, обновите статус этого же заказа.</p>
           </div>
           <div className="eco-restock-incoming-head-actions">
             <span>{relativeUpdatedAt(updatedAt)}</span>
-            <EcoButton type="button" size="sm" onClick={() => void loadOrders(true, true)} disabled={busy || loadingOrders || closing}>
+            <EcoButton type="button" size="sm" onClick={() => void loadOrders(true, true)} disabled={busy || loadingOrders}>
               {loadingOrders ? <Loader2 size={14} className="eco-spin" /> : <RefreshCw size={14} />}
               Обновить статусы
             </EcoButton>
@@ -532,7 +457,7 @@ export default function RosskoReceiptWorkspace({
                 placeholder="Например, 182269117"
               />
             </label>
-            <EcoButton type="button" variant="primary" onClick={() => void addOrder()} disabled={busy || loadingOrders || closing || !orderId.trim()}>
+            <EcoButton type="button" variant="primary" onClick={() => void addOrder()} disabled={busy || loadingOrders || !orderId.trim()}>
               {busy ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />}
               Добавить
             </EcoButton>
@@ -577,15 +502,13 @@ export default function RosskoReceiptWorkspace({
                     <div><dt>Заказано</dt><dd>{formatNumber(order.summary.orderedQty)}</dd></div>
                     <div><dt>Принято</dt><dd>{formatNumber(order.summary.postedReceivedQty)}</dd></div>
                     <div><dt>В пути</dt><dd>{formatNumber(order.summary.activeIncomingQty)}</dd></div>
-                    <div><dt>Закрыто</dt><dd>{formatNumber(order.summary.closedQty)}</dd></div>
+                    <div><dt>Доступно к приёмке</dt><dd>{formatNumber(order.summary.receivableQty)}</dd></div>
                   </dl>
 
                   {actionsOpen && <div className="eco-rossko-incoming-actions" aria-label={`Действия заказа ${order.externalOrderId}`}>
-                    <button type="button" onClick={() => void refreshTrackedOrder(order.externalOrderId)} disabled={busy || loadingOrders || closing}><RefreshCw size={14} />Обновить статус ROSSKO</button>
+                    <button type="button" onClick={() => void refreshTrackedOrder(order.externalOrderId)} disabled={busy || loadingOrders}><RefreshCw size={14} />Обновить статус ROSSKO</button>
                     <button type="button" onClick={() => { setExpandedOrderIds((current) => new Set(current).add(order.externalOrderId)); setActionOrderId(null); }}><ChevronDown size={14} />Открыть детали</button>
                     {order.readyToReceive && <button type="button" onClick={() => setActiveOrderId(order.externalOrderId)}><PackageCheck size={14} />Принять на склад</button>}
-                    {order.lines.some((line) => line.canClose) && <button type="button" onClick={() => openCloseDialog(order)}><PackageX size={14} />Закрыть оставшиеся позиции</button>}
-                    {order.lines.some((line) => line.canClose) && <button type="button" onClick={() => openCloseDialog(order, "NO_LONGER_NEEDED")}><X size={14} />Пометить заказ неактуальным</button>}
                     <button type="button" onClick={() => { setExpandedOrderIds((current) => new Set(current).add(order.externalOrderId)); setHistoryOrderIds((current) => new Set(current).add(order.externalOrderId)); setActionOrderId(null); }}><History size={14} />Показать историю</button>
                   </div>}
 
@@ -603,10 +526,9 @@ export default function RosskoReceiptWorkspace({
                           <div><dt>Заказано</dt><dd>{formatNumber(line.orderedQty)}</dd></div>
                           <div><dt>Принято</dt><dd>{formatNumber(line.postedReceivedQty)}</dd></div>
                           <div><dt>В пути</dt><dd>{formatNumber(line.activeIncomingQty)}</dd></div>
-                          <div><dt>Закрыто</dt><dd>{formatNumber(line.closedQty)}</dd></div>
+                          <div><dt>Доступно к приёмке</dt><dd>{formatNumber(line.canReceive ? line.activeIncomingQty : 0)}</dd></div>
                         </dl>
-                        <div className="eco-rossko-incoming-line-detail__status"><span>ROSSKO: <strong>{line.sourceStatusLabel}</strong></span><small>{line.resolutionLabel}</small>{line.expectedDate && <small>Ожидается: {formatDate(line.expectedDate)}{line.delayDays ? ` · задержка ${line.delayDays} дн.` : ""}</small>}</div>
-                        {line.canClose && <EcoButton type="button" size="sm" onClick={() => { openCloseDialog(order); setCloseQuantities(Object.fromEntries(order.lines.map((candidate) => [candidate.sourceLineKey, candidate.sourceLineKey === line.sourceLineKey ? candidate.activeIncomingQty : 0]))); }}>Закрыть количество</EcoButton>}
+                        <div className="eco-rossko-incoming-line-detail__status"><span>ROSSKO: <strong>{line.sourceStatusLabel}</strong></span>{line.expectedDate && <small>Ожидается: {formatDate(line.expectedDate)}{line.delayDays ? ` · задержка ${line.delayDays} дн.` : ""}</small>}</div>
                       </div>)}
                     </div>
                     {!!order.receiptDocuments.length && <div className="eco-rossko-incoming-documents"><strong>Документы приёмки</strong>{order.receiptDocuments.map((document) => <Link key={document.id} href={`/inventory/receipts?document=${encodeURIComponent(document.id)}&open=view`}>{document.number} · {formatNumber(document.quantity)} шт. · {document.status}</Link>)}</div>}
@@ -615,9 +537,11 @@ export default function RosskoReceiptWorkspace({
                   </div>}
 
                   <div className="eco-rossko-incoming-order__footer">
-                    <span>{order.summary.activeIncomingQty > 0 ? `${formatNumber(order.summary.activeIncomingQty)} шт. реально ожидается` : "Активных позиций в пути нет"}</span>
+                    <span>{order.readyToReceive
+                      ? `Можно принять ${formatNumber(order.summary.receivableQty)} шт.`
+                      : order.isClosed ? order.statusLabel : "Ожидаем отгрузку ROSSKO"}</span>
+                    {order.status !== "received" && <EcoButton type="button" size="sm" onClick={() => void refreshTrackedOrder(order.externalOrderId)} disabled={busy || loadingOrders}><RefreshCw size={14} />Обновить статус</EcoButton>}
                     {order.readyToReceive && <EcoButton type="button" size="sm" variant="primary" onClick={() => setActiveOrderId(order.externalOrderId)}><PackageCheck size={14} />Принять на склад</EcoButton>}
-                    {order.lines.some((line) => line.canClose) && <EcoButton type="button" size="sm" onClick={() => openCloseDialog(order)}>Закрыть остаток</EcoButton>}
                   </div>
                 </article>
               );
@@ -637,20 +561,6 @@ export default function RosskoReceiptWorkspace({
         </footer>
       </section>
 
-      {closeOrder && <>
-        <button type="button" className="eco-rossko-close-backdrop" aria-label="Закрыть диалог" onClick={() => !closing && setCloseOrder(null)} />
-        <section className="eco-rossko-close-dialog" role="dialog" aria-modal="true" aria-labelledby="rossko-close-title">
-          <header><div><span>Локальное закрытие</span><h2 id="rossko-close-title">Заказ ROSSKO №{closeOrder.externalOrderId}</h2><p>Закройте всё оставшееся количество или только ту часть, которая больше не приедет.</p></div><button type="button" className="eco-icon-btn" onClick={() => setCloseOrder(null)} disabled={closing} aria-label="Закрыть"><X size={18} /></button></header>
-          <div className="eco-rossko-close-body">
-            <div className="eco-rossko-close-lines">{closeOrder.lines.filter((line) => line.canClose).map((line) => <label key={line.sourceLineKey}><span><strong>{line.brand} {line.article}</strong><small>{line.name} · в пути {formatNumber(line.activeIncomingQty)} шт.</small></span><EcoInput type="number" min={0} max={line.activeIncomingQty} step={1} value={closeQuantities[line.sourceLineKey] ?? 0} onChange={(event) => setCloseQuantities((current) => ({ ...current, [line.sourceLineKey]: Math.max(0, Math.min(line.activeIncomingQty, parseInt(event.target.value, 10) || 0)) }))} aria-label={`Закрыть количество: ${line.name}`} /></label>)}</div>
-            <label className="eco-rossko-close-field"><span>Причина</span><select value={closeReason} onChange={(event) => setCloseReason(event.target.value as ManualCloseReason)}>{CLOSE_REASON_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <label className="eco-rossko-close-field"><span>Комментарий {closeReason === "OTHER" ? "· обязательно" : "· необязательно"}</span><textarea value={closeComment} onChange={(event) => setCloseComment(event.target.value)} rows={3} placeholder="Что произошло с поставкой" /></label>
-            <p className="eco-rossko-close-warning"><AlertTriangle size={15} /><span><strong>Заказ в ROSSKO не отменяется.</strong> Действие только перестаёт учитывать выбранное количество как товар в пути и не меняет складские остатки. Для отмены используйте личный кабинет ROSSKO, затем обновите статус.</span></p>
-            {closeError && <p className="eco-rossko-close-error" role="alert"><AlertTriangle size={15} />{closeError}</p>}
-          </div>
-          <footer><span>Будет закрыто {formatNumber(Object.values(closeQuantities).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0))} шт.</span><EcoButton type="button" onClick={() => setCloseOrder(null)} disabled={closing}>Отмена</EcoButton><EcoButton type="button" variant="primary" onClick={() => void submitManualClose()} disabled={closing || !Object.values(closeQuantities).some((value) => Number(value) > 0) || (closeReason === "OTHER" && !closeComment.trim())}>{closing ? <Loader2 size={15} className="eco-spin" /> : <PackageX size={15} />}Закрыть позиции</EcoButton></footer>
-        </section>
-      </>}
     </div>
   );
 }
@@ -1040,12 +950,12 @@ function RosskoReceiptEditor({
             </dl>
 
             <div className="eco-restock-cart-body eco-restock-receipt-body">
-              {nothingReceivable && <div className="eco-restock-receipt-zero"><PackageCheck size={17} /><span><strong>Сейчас нечего принимать.</strong> Все строки ниже ещё ожидаются, закрыты или уже приняты.</span></div>}
+              {nothingReceivable && <div className="eco-restock-receipt-zero"><PackageCheck size={17} /><span><strong>Сейчас нечего принимать.</strong> Позиции ещё не отгружены, недоступны у ROSSKO или уже приняты.</span></div>}
               {barcodeStep && (
                 <div className="eco-rossko-barcode-step" ref={barcodeStepRef} tabIndex={-1}>
                   <h3>Товары без штрихкодов</h3>
                   {missingBarcodes.length ? <>
-                    <p>Осталось: {missingBarcodes.length}. Отсканируйте код с упаковки или введите его и нажмите Enter.</p>
+                    <p>Осталось: {missingBarcodes.length}. Отсканируйте код с упаковки или введите его и нажмите Enter. Если кода на упаковке нет, создайте внутренний.</p>
                     <ul>
                       {missingBarcodes.map((line) => {
                         const key = line.sourceLineKey;
@@ -1069,10 +979,10 @@ function RosskoReceiptEditor({
               )}
               <div className="eco-restock-receipt-table-wrap" hidden={barcodeStep}>
                   <table className="eco-restock-receipt-table">
-                    <thead><tr><th aria-label="Выбрать" /><th>Товар / название карточки</th><th>Артикул</th><th>Статус ROSSKO</th><th className="l-number">Заказано</th><th className="l-number">Принято</th><th className="l-number">Осталось</th><th className="l-number">Доступно</th><th className="l-number">Закрыто</th><th className="l-number">Принимаем</th><th>Каталог</th><th className="l-number">Закупка</th></tr></thead>
+                    <thead><tr><th aria-label="Выбрать" /><th>Товар / название карточки</th><th>Артикул</th><th>Статус ROSSKO</th><th className="l-number">Заказано</th><th className="l-number">Принято</th><th className="l-number">Доступно</th><th className="l-number">Принимаем</th><th>Каталог</th><th className="l-number">Закупка</th></tr></thead>
                     <tbody>
                       {preview.lines.map((line) => {
-                        const blocked = line.receiptEligibility !== "ELIGIBLE" || ["FULLY_RECEIVED", "PROVIDER_CLOSED", "CLOSED_MANUALLY", "SOURCE_STATUS_WARNING", "MANUAL_REVIEW", "INVALID_LINE", "AMBIGUOUS_SOURCE_LINE"].includes(line.action);
+                        const blocked = line.receiptEligibility !== "ELIGIBLE" || ["FULLY_RECEIVED", "PROVIDER_CLOSED", "SOURCE_STATUS_WARNING", "MANUAL_REVIEW", "INVALID_LINE", "AMBIGUOUS_SOURCE_LINE"].includes(line.action);
                         const needsProduct = line.action === "AMBIGUOUS_PRODUCT" && !selectedProducts[line.sourceLineKey];
                         const pickerOpen = pickerLineKey === line.sourceLineKey;
                         const invalidNewProductName = line.action === "CREATE_PRODUCT" &&
@@ -1104,9 +1014,7 @@ function RosskoReceiptEditor({
                               <td>{line.rosskoStatusLabel}</td>
                               <td className="l-number">{formatNumber(line.orderedQty)}</td>
                               <td className="l-number">{formatNumber(line.alreadyReceivedQty)}</td>
-                              <td className="l-number"><strong>{formatNumber(line.remainingQty)}</strong></td>
                               <td className="l-number"><strong>{formatNumber(line.receivableQty)}</strong></td>
-                              <td className="l-number">{formatNumber(line.manualClosedQty + line.providerClosedQty)}</td>
                               <td className="l-number"><EcoInput type="number" min={0} max={line.receivableQty} step={1} value={quantities[line.sourceLineKey] ?? 0} disabled={!enabled[line.sourceLineKey] || blocked} onChange={(event) => setQuantities((current) => ({ ...current, [line.sourceLineKey]: Math.max(0, Math.min(line.receivableQty, parseInt(event.target.value, 10) || 0)) }))} aria-label={`Фактически принято: ${line.name}`} /></td>
                               <td className="eco-restock-receipt-match">
                                 <EcoBadge tone={actionTone(line.action)}>{actionLabel(line.action)}</EcoBadge>
@@ -1117,7 +1025,7 @@ function RosskoReceiptEditor({
                               <td className="l-number">{formatMoney(line.purchasePrice)} ₽</td>
                             </tr>
                             {["CREATE_PRODUCT", "MATCHED_EXISTING"].includes(line.action) && productDetails[line.sourceLineKey] && (
-                              <tr className="eco-restock-receipt-detail-row"><td /><td colSpan={11}>
+                              <tr className="eco-restock-receipt-detail-row"><td /><td colSpan={9}>
                                 <ReceiptProductFields line={line} details={productDetails[line.sourceLineKey]} disabled={blocked || saving || !enabled[line.sourceLineKey]}
                                   invalidBarcode={invalidBarcode?.key === line.sourceLineKey ? invalidBarcode.field : undefined}
                                   onBusy={(busy) => setOemBusy((current) => ({ ...current, [line.sourceLineKey]: busy }))}
@@ -1136,7 +1044,7 @@ function RosskoReceiptEditor({
                               </td></tr>
                             )}
                             {(line.warnings.length > 0 || pickerOpen) && (
-                              <tr className={`eco-restock-receipt-detail-row is-${line.receiptEligibility.toLocaleLowerCase("ru-RU")}`}><td /><td colSpan={11}>
+                              <tr className={`eco-restock-receipt-detail-row is-${line.receiptEligibility.toLocaleLowerCase("ru-RU")}`}><td /><td colSpan={9}>
                                 {line.warnings.map((warning) => <p key={warning}>{line.receiptEligibility === "WAITING_PROVIDER" ? <CalendarClock size={14} /> : line.receiptEligibility === "PROVIDER_CANCELLED" ? <PackageX size={14} /> : <AlertTriangle size={14} />}{warning}</p>)}
                                 {pickerOpen && <div className="eco-restock-receipt-picker">
                                   <EcoInput value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Название, артикул или бренд" />

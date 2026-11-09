@@ -69,7 +69,7 @@ assert.deepEqual(
     { code: 2, rawStatus: "отгружено", label: "Отгружено", receiptEligibility: "ELIGIBLE" },
     { code: 3, rawStatus: "готово к отгрузке", label: "Готово к отгрузке", receiptEligibility: "WAITING_PROVIDER" },
     { code: 5, rawStatus: "ожидаем поступление", label: "Ожидаем поступление", receiptEligibility: "WAITING_PROVIDER" },
-    { code: 6, rawStatus: "на складе филиала", label: "На складе ROSSKO", receiptEligibility: "ELIGIBLE" },
+    { code: 6, rawStatus: "на складе филиала", label: "На складе ROSSKO", receiptEligibility: "WAITING_PROVIDER" },
     { code: 7, rawStatus: "нет в наличии", label: "Нет в наличии", receiptEligibility: "PROVIDER_CANCELLED" },
     { code: 8, rawStatus: "отменён клиентом", label: "Отменён клиентом", receiptEligibility: "PROVIDER_CANCELLED" },
     { code: 9, rawStatus: "просрочен", label: "Просрочено ROSSKO", receiptEligibility: "PROVIDER_CANCELLED" },
@@ -82,19 +82,19 @@ assert.deepEqual(
   ],
   "receipt status table follows the documented GetOrders v2.1 codes",
 );
-for (const status of [0, 1, 3, 5, 31]) assert.equal(resolveRosskoReceiptEligibility(status, 3), "WAITING_PROVIDER");
-for (const status of [2, 6]) assert.equal(resolveRosskoReceiptEligibility(status, 3), "ELIGIBLE");
+for (const status of [0, 1, 3, 5, 6, 31]) assert.equal(resolveRosskoReceiptEligibility(status, 3), "WAITING_PROVIDER");
+assert.equal(resolveRosskoReceiptEligibility(2, 3), "ELIGIBLE");
 for (const status of [7, 8, 9]) assert.equal(resolveRosskoReceiptEligibility(status, 0), "PROVIDER_CANCELLED");
 for (const status of [32, 36, 999, null]) assert.equal(resolveRosskoReceiptEligibility(status, 3), "MANUAL_REVIEW");
 assert.equal(resolveRosskoReceiptEligibility(2, 0), "ALREADY_RECEIVED");
-const shippedReceiptQty = calculateRosskoReceiptQuantities({ orderedQty: 5, postedReceivedQty: 0, manualClosedQty: 0, sourceStatus: 2 });
-const waitingReceiptQty = calculateRosskoReceiptQuantities({ orderedQty: 3, postedReceivedQty: 0, manualClosedQty: 0, sourceStatus: 31 });
+const shippedReceiptQty = calculateRosskoReceiptQuantities({ orderedQty: 5, postedReceivedQty: 0, sourceStatus: 2 });
+const waitingReceiptQty = calculateRosskoReceiptQuantities({ orderedQty: 3, postedReceivedQty: 0, sourceStatus: 31 });
 assert.equal(shippedReceiptQty.remainingQty, 5);
 assert.equal(shippedReceiptQty.receivableQty, 5);
 assert.equal(waitingReceiptQty.remainingQty, 3);
 assert.equal(waitingReceiptQty.receivableQty, 0);
 assert.equal(shippedReceiptQty.receivableQty + waitingReceiptQty.receivableQty, 5, "5 shipped + 3 waiting exposes only 5 units to receipt");
-const partiallyReceived = calculateRosskoReceiptQuantities({ orderedQty: 5, postedReceivedQty: 2, manualClosedQty: 0, sourceStatus: 2 });
+const partiallyReceived = calculateRosskoReceiptQuantities({ orderedQty: 5, postedReceivedQty: 2, sourceStatus: 2 });
 assert.equal(partiallyReceived.alreadyReceivedQty, 2);
 assert.equal(partiallyReceived.remainingQty, 3);
 assert.equal(partiallyReceived.receivableQty, 3);
