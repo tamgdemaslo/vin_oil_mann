@@ -64,6 +64,7 @@ export type CatalogSearchParams = {
   stock?: string;
   markingProblems?: boolean;
   priceMissing?: boolean;
+  articleMissing?: boolean;
   qualityIssue?: CatalogQualityIssueFilter;
   publication?: CatalogPublicationFilter;
   oemParts?: CatalogOemPartsFilter;
@@ -296,6 +297,7 @@ export type CatalogSearchResult = {
       stock: StockFilter;
       markingProblems: boolean;
       priceMissing: boolean;
+      articleMissing: boolean;
       qualityIssue: CatalogQualityIssueFilter;
       publication: CatalogPublicationFilter;
       oemParts: CatalogOemPartsFilter;
@@ -1076,6 +1078,7 @@ function matchesFixedFilters(item: CatalogSearchItem, filters: CatalogFilters, s
     return false;
   }
   if (filters.priceMissing && !item.priceNeedsSetup) return false;
+  if (filters.articleMissing && (item.entityType === "service" || item.article.trim())) return false;
   if (!catalogItemMatchesQualityIssue(item, filters.qualityIssue, storeId)) return false;
   if (filters.publication === "published" && item.storefrontPublicationState !== "PUBLISHED") return false;
   if (filters.publication === "hidden" && item.storefrontPublicationState !== "HIDDEN") return false;
@@ -1381,6 +1384,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     stock: params.inStock ? "inStock" : normalizeStockFilter(params.stock),
     markingProblems: params.markingProblems === true,
     priceMissing: params.priceMissing === true,
+    articleMissing: params.articleMissing === true,
     qualityIssue: normalizeCatalogQualityIssue(params.qualityIssue),
     publication: params.publication === "published" || params.publication === "hidden" || params.publication === "needs_attention"
       ? params.publication
@@ -1644,6 +1648,7 @@ export function normalizeCatalogProductSelectionSnapshot(value: unknown): Catalo
     stock,
     markingProblems: input.markingProblems === true,
     priceMissing: input.priceMissing === true,
+    articleMissing: input.articleMissing === true,
     qualityIssue,
     publication,
     oemParts,

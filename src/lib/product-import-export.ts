@@ -372,6 +372,7 @@ async function loadProductsForExport(params: URLSearchParams) {
     stock: params.get("stock") ?? "all",
   };
   return products.filter((product) => {
+    if (params.get("articleMissing") === "1" && (product.entityType === "service" || product.article?.trim())) return false;
     const snapshot = productSnapshot(product);
     const text = normalizeText([
       snapshot.name,
@@ -719,6 +720,7 @@ function validateAfter(after: Record<string, unknown>, parsed: ParsedImportRow, 
   const warnings: string[] = [];
   const name = String(after.name ?? "").trim();
   if (!name) errors.push("Укажите название товара");
+  if (after.entityType === "product" && !String(after.article ?? "").trim()) errors.push("Укажите артикул товара");
   if (!["product", "service"].includes(String(after.entityType ?? ""))) errors.push("Некорректный тип товара");
   for (const key of ["salePrice", "buyPrice", "minPrice", "minimumBalance", "weight", "volume"]) {
     const value = after[key];
@@ -1026,6 +1028,7 @@ export async function executeProductImport(jobId: string, options?: ProductImpor
   const executeRow = async (tx: Prisma.TransactionClient, row: ImportPreviewRow) => {
     if (!row.after) return;
     const data = productDataFromAfter(row.after);
+    if (data.entityType === "product" && !data.article?.trim()) throw new Error("Укажите артикул товара");
     if (row.action === "create") {
       const created = await tx.localProduct.create({
         data: { ...data, origin: "IMPORT" },

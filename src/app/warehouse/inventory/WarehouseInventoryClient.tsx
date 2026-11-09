@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import {
   AlertTriangle,
   ArrowLeft,
@@ -514,7 +516,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     period: "month",
     search: "",
   });
-  const [lineFilters, setLineFilters] = useState({ search: "", status: "ALL", cell: "" });
+  const [lineFilters, setLineFilters] = useState({ search: "", status: "ALL", cell: "", articleMissing: false });
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
   const [wizard, setWizard] = useState<WizardState>(() => defaultWizard());
@@ -592,6 +594,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
     if (lineFilters.search) params.set("search", lineFilters.search);
     if (lineFilters.status && lineFilters.status !== "ALL") params.set("status", lineFilters.status);
     if (lineFilters.cell) params.set("cell", lineFilters.cell);
+    if (lineFilters.articleMissing) params.set("articleMissing", "1");
     if (countedOnly) params.set("countedOnly", "1");
     params.set("limit", "250");
     const data = await requestJson<LinesResponse>(`/api/inventory/sessions/${sessionId}/lines?${params.toString()}`);
@@ -1905,8 +1908,8 @@ function InventoryWizard({
 function CountingWorkspace(props: {
   current: InventorySession;
   lines: InventoryLine[];
-  lineFilters: { search: string; status: string; cell: string };
-  setLineFilters: (updater: { search: string; status: string; cell: string } | ((prev: { search: string; status: string; cell: string }) => { search: string; status: string; cell: string })) => void;
+  lineFilters: { search: string; status: string; cell: string; articleMissing: boolean };
+  setLineFilters: (updater: { search: string; status: string; cell: string; articleMissing: boolean } | ((prev: { search: string; status: string; cell: string; articleMissing: boolean }) => { search: string; status: string; cell: string; articleMissing: boolean })) => void;
   lineCells: string[];
   inputValues: Record<string, string>;
   setInputValues: (updater: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => void;
@@ -2213,11 +2216,16 @@ function CountingWorkspace(props: {
               </EcoSelect>
             </label>
           </div>
+          <label className="mt-3 inline-flex items-center gap-2 text-sm text-zinc-700">
+            <input type="checkbox" checked={lineFilters.articleMissing}
+              onChange={(event) => setLineFilters((prev) => ({ ...prev, articleMissing: event.target.checked }))} />
+            Без артикула
+          </label>
           {!isScanMode && (
             <div className="mt-3 flex flex-wrap gap-2">
-              <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "NOT_COUNTED", cell: "" })}>Не посчитано</EcoButton>
-              <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "RECOUNT_REQUIRED", cell: "" })}>Требует пересчёта</EcoButton>
-              <EcoButton size="sm" onClick={() => setLineFilters({ search: "", status: "PROBLEM", cell: "" })}>Проблемы</EcoButton>
+              <EcoButton size="sm" onClick={() => setLineFilters((prev) => ({ ...prev, search: "", status: "NOT_COUNTED", cell: "" }))}>Не посчитано</EcoButton>
+              <EcoButton size="sm" onClick={() => setLineFilters((prev) => ({ ...prev, search: "", status: "RECOUNT_REQUIRED", cell: "" }))}>Требует пересчёта</EcoButton>
+              <EcoButton size="sm" onClick={() => setLineFilters((prev) => ({ ...prev, search: "", status: "PROBLEM", cell: "" }))}>Проблемы</EcoButton>
             </div>
           )}
         </div>
@@ -2409,7 +2417,9 @@ const InventoryCountRow = memo(function InventoryCountRow({
         )}
       </td>
       <td className="text-xs">
-        <div>{line.article || "—"}</div>
+        <div>{line.article.trim() || (line.productId
+          ? <Link className="font-medium text-[var(--eco-rust)] hover:underline" href={`/inventory/products?product=${encodeURIComponent(line.productId)}`}>Указать артикул</Link>
+          : "—")}</div>
         <div>{line.code || line.ean || "—"}</div>
         <div className="mt-1 text-zinc-500">{line.category || "без категории"}</div>
       </td>

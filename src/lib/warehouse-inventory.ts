@@ -893,7 +893,7 @@ export async function setInventoryCountingPaused(sessionId: string, paused: bool
   return { ok: true as const, data: { session: mapSession(updated) } };
 }
 
-export async function listInventoryLines(sessionId: string, params: { search?: string; status?: string; cell?: string; countedOnly?: boolean; limit?: number; offset?: number } = {}) {
+export async function listInventoryLines(sessionId: string, params: { search?: string; status?: string; cell?: string; countedOnly?: boolean; articleMissing?: boolean; limit?: number; offset?: number } = {}) {
   const search = cleanText(params.search)?.toLowerCase();
   const where: Prisma.InventoryLineWhereInput = { inventorySessionId: sessionId };
   if (params.status && params.status !== "ALL") where.status = params.status;
@@ -911,6 +911,13 @@ export async function listInventoryLines(sessionId: string, params: { search?: s
         { oem: { contains: search, mode: "insensitive" } },
       ],
     };
+  }
+  if (params.articleMissing) {
+    const candidates = await prisma.inventoryLine.findMany({
+      where,
+      select: { id: true, product: { select: { article: true } } },
+    });
+    where.id = { in: candidates.filter((line) => !line.product?.article?.trim()).map((line) => line.id) };
   }
   const limit = Math.min(Math.max(params.limit ?? 100, 1), 300);
   const offset = Math.max(params.offset ?? 0, 0);
@@ -2169,7 +2176,7 @@ export async function removeInventoryLine(sessionId: string, lineId: string, use
 
 export async function addInventoryProduct(
   sessionId: string,
-  body: { productId?: string; ean?: string; name?: string; category?: string; code?: string; quantity?: unknown; cellId?: string },
+  body: { productId?: string; ean?: string; name?: string; article?: string; category?: string; code?: string; quantity?: unknown; cellId?: string },
   user: User
 ) {
   const result = await prisma.$transaction(async (tx) => {
@@ -2189,15 +2196,18 @@ export async function addInventoryProduct(
     if (!product) {
       const name = cleanText(body.name);
       if (!name) return { ok: false as const, error: "Товар не найден. Укажите название для черновика товара" };
+      const article = cleanText(body.article);
+      if (!article) return { ok: false as const, error: "Укажите артикул товара" };
       product = await tx.localProduct.create({
         data: {
           name,
+          article,
           entityType: "product",
           groupPath: cleanText(body.category),
           code: cleanText(body.code) ?? ean,
           barcodeEan13: ean,
           uomName: "шт",
-          searchText: [name, body.category, body.code, ean].filter(Boolean).join(" "),
+          searchText: [name, article, body.category, body.code, ean].filter(Boolean).join(" "),
           raw: toJson({ createdFromInventorySessionId: session.id }),
         },
       });

@@ -670,6 +670,9 @@ export async function executeProductCopy(context: BranchContext, input: {
         action = options.duplicateStrategy === "update_empty" ? "UPDATE_EMPTY" : "UPDATE_SELECTED";
         updated += 1;
       } else {
+        if (createData.entityType !== "service" && !createData.article?.trim()) {
+          throw new Error("Укажите артикул в исходной карточке товара");
+        }
         const createdProduct = await prisma.localProduct.create({ data: createData, select: { id: true } });
         targetProductId = createdProduct.id;
         action = duplicate ? "FORCE_CREATE" : "CREATE";
