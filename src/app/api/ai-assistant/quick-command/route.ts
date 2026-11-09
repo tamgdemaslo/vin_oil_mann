@@ -33,18 +33,26 @@ export async function POST(request: NextRequest) {
   const client = createOpenAIClient(apiKey, { timeout: 25_000, maxRetries: 0 });
 
   try {
-    if (request.headers.get("content-type")?.startsWith("multipart/form-data")) {
-      if (Number(request.headers.get("content-length")) > maxAudioBytes + 4096) {
+    const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+    if (contentType?.startsWith("audio/") || contentType === "multipart/form-data") {
+      const legacy = contentType === "multipart/form-data";
+      if (Number(request.headers.get("content-length")) > maxAudioBytes + (legacy ? 4096 : 0)) {
         return failure("Голосовая команда слишком длинная.", 413);
       }
-      const audio = (await request.formData().catch(() => null))?.get("audio");
-      const extension = audio instanceof File ? audioExtensions[audio.type.split(";")[0]] : null;
-      if (!(audio instanceof File) || !extension || !audio.size || audio.size > maxAudioBytes) {
-        return failure("Запишите короткую голосовую команду ещё раз.", 400);
+      const recording = legacy
+        ? (await request.formData().catch(() => null))?.get("audio")
+        : await request.arrayBuffer().catch(() => null);
+      const audioType = legacy && recording instanceof File ? recording.type.split(";")[0] : contentType;
+      const extension = Object.hasOwn(audioExtensions, audioType) ? audioExtensions[audioType] : null;
+      if (!extension || !(recording instanceof ArrayBuffer || recording instanceof File)) {
+        return failure("Формат записи не поддерживается. Попробуйте ещё раз или введите команду текстом.", 400);
       }
+      const size = recording instanceof File ? recording.size : recording.byteLength;
+      if (size > maxAudioBytes) return failure("Голосовая команда слишком длинная.", 413);
+      if (!size) return failure("Запись пустая. Попробуйте ещё раз.", 400);
       const result = await client.audio.transcriptions.create({
         model: "gpt-4o-mini-transcribe",
-        file: new File([audio], `command.${extension}`, { type: audio.type }),
+        file: new File([recording], `command.${extension}`, { type: audioType }),
         language: "ru",
       });
       return NextResponse.json({ text: result.text.trim().slice(0, 2000) });
