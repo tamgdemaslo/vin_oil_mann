@@ -8,8 +8,6 @@ import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import QuantityInput from "@/components/QuantityInput";
 import MoneyInput from "@/components/MoneyInput";
-import { MaintenanceQuotePanel } from "@/components/shipment/MaintenanceQuotePanel";
-import { shipmentQuoteFilters, shipmentQuoteRequirements } from "@/lib/maintenance-quote-shipment";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 import { clientSessionUnavailableMessage, readClientSessionResponse } from "@/lib/client-session-response";
@@ -557,9 +555,6 @@ export default function ShipmentDetailPage() {
   const [vin, setVin] = useState("");
   const [vinLookupLoading, setVinLookupLoading] = useState(false);
   const [vinLookupResult, setVinLookupResult] = useState<VinLookupResult | null>(null);
-  const currentQuoteLookup = vinLookupResult?.vin.replace(/\s/g, "").toUpperCase() === vin.replace(/\s/g, "").toUpperCase() ? vinLookupResult : null;
-  const quoteRequirements = useMemo(() => shipmentQuoteRequirements(currentQuoteLookup?.oilInfo), [currentQuoteLookup]);
-  const quoteFilters = useMemo(() => shipmentQuoteFilters(currentQuoteLookup?.legacyItems ?? [], data?.header.storeName), [currentQuoteLookup, data?.header.storeName]);
   const [showAllOilGroups, setShowAllOilGroups] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState<"positions" | "vin" | "diagnostic" | "history" | "precheck">("positions");
   const [vehicleEditing, setVehicleEditing] = useState(false);
@@ -1717,18 +1712,6 @@ export default function ShipmentDetailPage() {
 	              )}
             </div>
           </section>
-
-          <MaintenanceQuotePanel
-            key={`${id}:${documentVin}`}
-            vehicleTitle={clientVehicleSummary}
-            warehouseId={data.header.storeId}
-            profile={null}
-            research={null}
-            requirements={quoteRequirements}
-            filters={quoteFilters}
-            filtersLoading={vinLookupLoading}
-            onChooseWarehouse={() => router.push(`/shipment/${id}/edit#shipment-maintenance-quote`)}
-          />
 
           <section className="eco-shipment-detail-tabs">
             <button
