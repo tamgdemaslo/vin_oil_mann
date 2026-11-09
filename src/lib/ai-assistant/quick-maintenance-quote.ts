@@ -1,3 +1,4 @@
+import { normalizeVehicleMake } from "@/lib/vehicle-normalization";
 import { prisma } from "@/lib/db";
 import { lookupVehicle } from "@/lib/vehicle-identity";
 import { addMannResearchCatalogToProfile } from "@/lib/mann-research-catalog";
@@ -18,7 +19,7 @@ const filterLabels = { oil: "Масляный", air: "Воздушный", cabin
 type FilterKind = keyof typeof filterLabels;
 
 export async function quickMaintenanceQuote(access: AIAssistantAccess, input: {
-  vin: string; viscosities: string[]; filterTypes: string[]; warehouse: string;
+  vin: string; expectedMake: string; viscosities: string[]; filterTypes: string[]; warehouse: string;
 }): Promise<QuickAnswer> {
   const sources: QuickAnswer["sources"] = [];
   const answer = (text: string): QuickAnswer => ({ text, sources });
@@ -41,6 +42,12 @@ export async function quickMaintenanceQuote(access: AIAssistantAccess, input: {
     return answer("По VIN не удалось однозначно определить автомобиль. Проверьте модификацию перед расчётом ТО.");
   }
   const vehicle = decoded.vehicle;
+  const expectedMake = normalizeVehicleMake(input.expectedMake);
+  const decodedMake = normalizeVehicleMake(vehicle.makeCanonical || vehicle.makeRaw);
+  if (expectedMake && decodedMake && expectedMake !== decodedMake) {
+    const decodedLabel = [vehicle.makeRaw || decodedMake, vehicle.modelRaw].filter(Boolean).join(" ");
+    return answer(`В запросе указана марка ${input.expectedMake}, а по VIN найден ${decodedLabel}. Проверьте VIN или выберите автомобиль в каталоге для расчёта ТО.`);
+  }
   const { resolution, profile } = await mannContext(access.organizationId, vehicle, store.id);
   if (resolution.status !== "resolved" || !resolution.selectedApplication) {
     const diagnostic = mannResolutionDiagnostic(resolution);

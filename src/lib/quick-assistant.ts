@@ -27,6 +27,7 @@ export function uniqueQuickBookingService(hint: string, services: QuickBookingOp
   if (exact) return exact;
   const normalize = (value: string) => value.toLocaleLowerCase("ru").replaceAll("ё", "е")
     .replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+    .replace(/^диагностика автомобиля$/u, "диагностика")
     .replace(/(^| )в двигателе(?= |$)/gu, "$1").replace(/ +/g, " ").trim();
   const name = normalize(hint);
   if (!name) return;
