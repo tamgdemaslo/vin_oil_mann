@@ -31,7 +31,6 @@ import { EcoBadge, EcoButton, type EcoBadgeTone } from "@/components/platform/Ec
 import QuantityInput from "@/components/QuantityInput";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
-import { MaintenanceQuotePanel, type MaintenanceQuoteVehicleContext } from "@/components/shipment/MaintenanceQuotePanel";
 import { VehicleLookupPanel } from "@/components/shipment/VehicleLookupPanel";
 import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 import { clientSessionUnavailableMessage, readClientSessionResponse } from "@/lib/client-session-response";
@@ -1337,7 +1336,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [vehicleProfileLoading, setVehicleProfileLoading] = useState(false);
   const [vehicleProfileError, setVehicleProfileError] = useState("");
   const [identifiedVehicle, setIdentifiedVehicle] = useState<NormalizedVehicleIdentity | null>(null);
-  const [quoteVehicleContext, setQuoteVehicleContext] = useState<MaintenanceQuoteVehicleContext | null>(null);
   const [positionAddMode, setPositionAddMode] = useState<PositionAddMode>("mann");
 
   const [showCreateAgentForm, setShowCreateAgentForm] = useState(false);
@@ -4579,7 +4577,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       document.querySelector(".eco-shipment-mann-kit, .eco-shipment-mann-filter-list")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 80);
   };
-  const activeQuoteVehicleContext = quoteVehicleContext?.vin && quoteVehicleContext.vin.replace(/\s/g, "").toUpperCase() !== documentVin.replace(/\s/g, "").toUpperCase() ? null : quoteVehicleContext;
 
   const mannSortedFilters = mannFilters
     .slice()
@@ -5447,24 +5444,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           </div>
           <p>Найдите позиции, затем проверьте количество, скидку и доступный остаток.</p>
         </header>
-      <MaintenanceQuotePanel
-          key={`${demandId ?? "new"}:${activeQuoteVehicleContext?.key ?? documentVin ?? "manual"}`}
-          vehicleTitle={activeQuoteVehicleContext?.vehicleTitle || vehicleTitle || documentVin || "Автомобиль не указан"}
-          warehouseId={selectedStore?.id}
-          profile={activeQuoteVehicleContext?.profile ?? null}
-          research={activeQuoteVehicleContext?.research ?? null}
-          filtersLoading={!!mannLoading}
-          onChooseWarehouse={() => setDocumentParamsOpen(true)}
-          filters={mannSortedFilters.filter(filter => ["oil", "air", "cabin"].includes(filter.filterType)).map(filter => ({
-                key: `${filter.filterType}:${filter.mannArticleNormalized}`,
-                label: getMannFilterTypeLabel(filter.filterType),
-                article: filter.mannArticle,
-                condition: filter.condition,
-                products: (mannMatches[filter.mannArticleNormalized]?.compatibleProducts ?? mannMatches[filter.mannArticleNormalized]?.localMatches ?? []).map(product => ({
-                  id: product.id, name: product.name, article: product.article, price: product.price, available: product.available, orderable: product.orderable,
-                })),
-              }))}
-      />
       <section id="shipment-positions-add" className="eco-shipment-new-add" aria-label="Поиск и подбор позиций">
         <h3 className="sr-only">Поиск и подбор позиций</h3>
         {(positionAddMode === "catalog" || positionAddMode === "mann") && (
@@ -6073,7 +6052,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               organizationId={selectedOrg?.id}
               warehouseId={selectedStore?.id}
               initialVin={vin}
-              onQuoteContextChange={setQuoteVehicleContext}
               onUseVehicle={applyIdentifiedVehicle}
               onConfirmMannCandidate={confirmMannCandidate}
               onConfirmTransmission={confirmVehicleTransmission}
