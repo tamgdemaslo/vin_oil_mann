@@ -47,6 +47,7 @@ const PUBLIC_METHODS = new Set(["GET", "HEAD", "POST", "OPTIONS"]);
 
 export function isClientSitePublicPath(pathname: string, method: string) {
   if (READ_ONLY.has(method)) {
+    if (pathname === "/yandex_adf5655e35c2c86b.html") return true;
     if (["/robots.txt", "/sitemap.xml", "/favicon.ico", "/api/health/live", "/api/health/ready", "/api/stats", "/api/services", "/api/cases", "/api/account/demo", "/api/oils", "/api/oils/filters", "/api/appointments/slots"].includes(pathname)) return true;
     if (/^\/api\/(?:oils|cases)\/[^/]+$/.test(pathname)) return true;
     if (pathname === "/booking" || pathname === "/booking/transmission-quote" || /^\/booking\/manage\/[^/]+$/.test(pathname)) return true;
