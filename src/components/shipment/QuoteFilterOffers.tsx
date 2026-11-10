@@ -4,30 +4,56 @@ import { useMemo, useState } from "react";
 import { quoteRub, sortQuoteFilterOffers, type QuoteFilterGroup } from "@/lib/maintenance-quote";
 import styles from "./MaintenanceQuotePanel.module.css";
 
-type Props = { products: QuoteFilterGroup["products"]; selectedId: string; label: string; onSelect: (id: string) => void; disabled?: boolean };
+type Props = {
+  products: QuoteFilterGroup["products"];
+  selectedId: string;
+  label: string;
+  onSelect: (id: string) => void;
+  disabled?: boolean;
+  initiallyExpanded?: boolean;
+};
 
-export function QuoteFilterOffers({products, selectedId, label, onSelect, disabled}: Props) {
+export function QuoteFilterOffers({ products, selectedId, label, onSelect, disabled, initiallyExpanded = false }: Props) {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const [priority, setPriority] = useState<"price" | "delivery">("delivery");
-  const hasMann = products.some(item => item.relation !== "analogue");
-  const hasAnalogues = products.some(item => item.relation === "analogue");
-  const [expanded, setExpanded] = useState(!hasMann);
-  const minimumPrice = Math.min(...products.map(item => item.price));
-  const sorted = useMemo(() => sortQuoteFilterOffers(products, priority), [products, priority]);
-  return <details className={styles.supplierComparison} open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
-    <summary>Сравнить предложения Роско · {products.length} · от {quoteRub(Math.round(minimumPrice * 100))}</summary>
-    <div className={styles.supplierToolbar}>
-      <span>{hasMann ? hasAnalogues ? "MANN и аналоги Роско" : "Предложения MANN" : "MANN недоступен — доступны аналоги Роско"}</span>
-      <div className={styles.supplierSort} role="group" aria-label={`Сортировка Роско: ${label}`}>
-        <button type="button" aria-pressed={priority === "price"} onClick={() => setPriority("price")}>Дешевле</button>
-        <button type="button" aria-pressed={priority === "delivery"} onClick={() => setPriority("delivery")}>Быстрее</button>
+  const warehouse = products.filter(item => item.source !== "rossko");
+  const supplier = useMemo(() => sortQuoteFilterOffers(products.filter(item => item.source === "rossko"), priority), [products, priority]);
+
+  function renderOffer(item: Props["products"][number]) {
+    const selected = selectedId === item.id;
+    const price = quoteRub(Math.round(item.price * 100));
+    const availability = item.source === "rossko"
+      ? `${item.relation === "analogue" ? "Аналог · " : ""}${item.available} шт. · ${item.deliveryLabel}`
+      : item.available > 0 ? `${item.available} шт. в наличии` : item.orderable ? "Под заказ" : "Нет в наличии";
+    return <div key={item.id} className={styles.supplierOffer} data-selected={selected}>
+      <div><strong>{item.name}</strong><small>{[item.article, availability].filter(Boolean).join(" · ")}</small></div>
+      <div className={styles.supplierOfferAction}>
+        <strong>{price}</strong>
+        <button type="button" className="eco-btn"
+          aria-label={`Выбрать ${item.name}, ${price}, ${item.source === "rossko" ? "Роско" : "наш склад"}`}
+          aria-pressed={selected} disabled={disabled || selected || (item.available < 1 && !item.orderable)}
+          onClick={() => onSelect(item.id)}>{selected ? "Выбран" : "Выбрать"}</button>
       </div>
+    </div>;
+  }
+
+  return <details className={styles.supplierComparison} open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
+    <summary>Предложения · {products.length}</summary>
+    <div className={styles.supplierOfferList} aria-label={`Предложения для ${label}`}>
+      <section aria-label="Наш склад">
+        <div className={styles.supplierToolbar}><strong>Наш склад</strong></div>
+        {warehouse.length ? warehouse.map(renderOffer) : <p className={styles.offerEmpty}>Совпадений на выбранном складе нет.</p>}
+      </section>
+      <section aria-label="Роско">
+        <div className={styles.supplierToolbar}>
+          <strong>Роско</strong>
+          {supplier.length > 1 && <div className={styles.supplierSort} role="group" aria-label={`Сортировка Роско: ${label}`}>
+            <button type="button" aria-pressed={priority === "price"} onClick={() => setPriority("price")}>Дешевле</button>
+            <button type="button" aria-pressed={priority === "delivery"} onClick={() => setPriority("delivery")}>Быстрее</button>
+          </div>}
+        </div>
+        {supplier.length ? supplier.map(renderOffer) : <p className={styles.offerEmpty}>Подходящих предложений пока нет.</p>}
+      </section>
     </div>
-    <div className={styles.supplierOfferList} role="group" aria-label={`Предложения Роско: ${label}`}>
-      {sorted.map(item => <div key={item.id} className={styles.supplierOffer} data-selected={selectedId === item.id}>
-        <div><strong>{item.name}</strong><small>{item.relation === "analogue" ? `Аналог Роско для MANN ${item.referenceArticle}` : "Исходный артикул MANN"}</small><p>{item.available} шт. у поставщика · {item.deliveryLabel}</p></div>
-        <div className={styles.supplierOfferAction}><strong>{quoteRub(Math.round(item.price * 100))}</strong><button type="button" className="eco-btn" aria-label={`Выбрать ${item.name}, ${quoteRub(Math.round(item.price * 100))}, ${item.deliveryLabel}`} aria-pressed={selectedId === item.id} disabled={disabled || selectedId === item.id} onClick={() => onSelect(item.id)}>{selectedId === item.id ? "Выбран" : "Выбрать"}</button></div>
-      </div>)}
-    </div>
-    <p className={styles.note}>Аналоги связаны с артикулом MANN в Роско. Перед заказом сверьте применяемость и условия подбора автомобиля.</p>
   </details>;
 }

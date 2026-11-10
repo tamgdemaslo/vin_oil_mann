@@ -101,3 +101,26 @@
 
 .singleTotal { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-top: 1px solid var(--eco-line); padding-top: 12px; }
 .singleTotal strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+
+.step { padding: 12px 0; border: 0; border-radius: 0; background: transparent; }
+.step + .step { border-top: 1px solid var(--eco-line); }
+.summary { border-radius: 6px; }
+.oilTable { margin-top: 14px; border: 1px solid var(--eco-line); border-radius: 6px; background: var(--eco-surface); }
+.oilColumns { display: grid; grid-template-columns: minmax(0, 1fr) 100px auto; align-items: center; gap: 10px; padding: 10px; }
+.oilColumns:first-child { color: var(--eco-muted); background: var(--eco-hover); font-size: 12px; }
+.oilColumns + .oilColumns { border-top: 1px solid var(--eco-line); }
+.oilColumns[data-selected="true"] { background: var(--eco-hover); }
+.oilColumns p { margin: 4px 0 0; color: var(--eco-muted); font-size: 12px; }
+.oilPrice { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.supplierOfferList section + section { border-top: 1px solid var(--eco-line); }
+.supplierToolbar { padding-top: 10px; }
+.offerEmpty { padding: 0 10px 10px; margin: 0; color: var(--eco-muted); }
+.breakdown { margin: 12px 0; }
+.breakdown div { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.breakdown dd { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.preview summary { cursor: pointer; font-weight: 650; margin-bottom: 6px; }
+@media (max-width: 620px) {
+  .oilColumns { grid-template-columns: minmax(0, 1fr) auto; }
+  .oilColumns:first-child { display: none; }
+  .oilColumns > button { grid-column: 1 / -1; justify-self: start; }
+}

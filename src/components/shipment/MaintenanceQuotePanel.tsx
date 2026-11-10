@@ -129,7 +129,7 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
   return <div className={styles.panel}>
     <div className={styles.body}>
       <section id="quote-oil" className={styles.step} aria-labelledby="quote-oil-title">
-      <header className={styles.stepHeader}><span aria-hidden="true">02</span><div><h2 id="quote-oil-title">Моторное масло</h2><p>Проверьте допуск, вязкость и объём замены.</p></div></header>
+      <header className={styles.stepHeader}><div><h2 id="quote-oil-title">Моторное масло</h2><p>Проверьте допуск, вязкость и объём замены.</p></div></header>
       {!warehouseId && <p className={styles.warehousePrompt} role="status">Выберите склад в блоке «Автомобиль и склад», чтобы проверить наличие.</p>}
       <div className={styles.fields}>
         <QuoteSearchField label="Допуск / стандарт" value={specification} options={referenceSpecifications} groups={specificationGroups} onChange={value => { invalidate(); setSpecification(value); }} />
@@ -140,17 +140,17 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
       <button type="button" className="eco-btn eco-btn--primary" disabled={!warehouseId || !specification.trim() || loading} onClick={() => void findOils()}>{loading ? "Проверяем наличие…" : "Подобрать масла из наличия"}</button>
       {error ? <p role="alert">{error}</p> : null}
       {searched && !products.length ? <p role="status">Совпадений по указанному допуску и вязкости нет. Проверьте требования и технические характеристики товаров на складе.</p> : null}
-      {products.length ? <div className={styles.options} aria-label="Варианты масла">{oilVariants.map(variant => {
+      {products.length ? <div className={styles.oilTable} aria-label="Варианты масла"><div className={styles.oilColumns} aria-hidden="true"><span>Масло и фасовка</span><span>Стоимость</span><span>Вариант</span></div>{oilVariants.map(variant => {
         const amount = quoteVariantAmount(variant, litres);
         const chosen = selectedVariants.some(item => item.key === variant.key);
-        return <div key={variant.key} className={styles.option}><div><strong>{variant.name}</strong>
+        return <div key={variant.key} className={styles.oilColumns} data-selected={chosen}><div><strong>{variant.name}</strong>
           {variant.products.map(oil => <p key={oil.id}>Фасовка {oil.litresPerUnit ?? "?"} л · остаток {oil.available} {oil.unit} · {quoteRub(Math.round(oil.price * 100))} / {oil.unit}</p>)}
-          {amount ? <p>Комплект: {amount.lines.map(line=>`${line.quantity} × ${line.product.litresPerUnit} л`).join(" + ")} — <b>{quoteRub(amount.cents)}</b>{!amount.enough ? " · Недостаточно на складе" : ""}</p> : <p>Уточните объём, фасовку и цену.</p>}
-        </div><button type="button" className="eco-btn" disabled={!chosen && (!amount || !amount.enough)} aria-pressed={chosen} onClick={() => setSelected(rows => chosen ? rows.filter(item => !variant.products.some(product=>product.id===item.id)) : [...rows, ...variant.products.filter(item=>item.price>0 && item.litresPerUnit)])}>{chosen ? "Убрать вариант" : "Добавить вариант"}</button></div>;
+          {amount ? <p>Комплект: {amount.lines.map(line=>`${line.quantity} × ${line.product.litresPerUnit} л`).join(" + ")}{!amount.enough ? " · Недостаточно на складе" : ""}</p> : <p>Уточните объём, фасовку и цену.</p>}
+        </div><strong className={styles.oilPrice}>{amount ? quoteRub(amount.cents) : "—"}</strong><button type="button" className="eco-btn" disabled={!chosen && (!amount || !amount.enough)} aria-pressed={chosen} onClick={() => setSelected(rows => chosen ? rows.filter(item => !variant.products.some(product=>product.id===item.id)) : [...rows, ...variant.products.filter(item=>item.price>0 && item.litresPerUnit)])}>{chosen ? "Убрать вариант" : "Добавить вариант"}</button></div>;
       })}</div> : null}
       </section>
       <section className={styles.step} aria-labelledby="quote-parts-title">
-      <header className={styles.stepHeader}><span aria-hidden="true">03</span><div><h2 id="quote-parts-title">Фильтры и работы</h2><p>Добавьте позиции со склада, из Роско или вручную.</p></div></header>
+      <header className={styles.stepHeader}><div><h2 id="quote-parts-title">Фильтры и работы</h2><p>Добавьте позиции со склада, из Роско или вручную.</p></div></header>
       <div className={styles.filterPicker} aria-label="Фильтры из подбора MANN">
         <div className={styles.filterHeading}><strong>Фильтры MANN и аналоги Роско</strong>{filters.length ? <button type="button" className="eco-btn" onClick={() => setSupplierRefresh(value => value + 1)}>Обновить Роско</button> : null}</div>
         {filtersLoading ? <p role="status">Загружаем подбор MANN…</p> : !filters.length ? <p className={styles.note}>Выберите автомобиль для подбора фильтров или укажите известный артикул MANN ниже.</p> : null}
@@ -166,14 +166,13 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
             setSupplierRefresh(value => value + 1);
           }}>Проверить MANN и аналоги</button>
         </div>
-        {filters.map(group => {
+        {filters.map((group, index) => {
           const supplier = supplierResults[group.article];
           const localProducts = warehouseId ? group.products : [];
-          const filterProducts = [
-            ...localProducts.filter(item => item.available > 0).sort((a, b) => a.price - b.price),
-            ...sortQuoteFilterOffers(supplier?.products ?? [], "delivery"),
-            ...localProducts.filter(item => item.available <= 0).sort((a, b) => a.price - b.price),
-          ];
+          const warehouseProducts = [...localProducts].sort((a, b) =>
+            Number(b.available > 0) - Number(a.available > 0) || a.price - b.price);
+          const supplierProducts = sortQuoteFilterOffers(supplier?.products ?? [], "delivery");
+          const filterProducts = [...warehouseProducts, ...supplierProducts];
           const rowId = `mann:${group.key}`;
           const existingRow = extras.find(row => row.id === rowId);
           const selectedId = filterSelection[group.key] ?? existingRow?.supplierProductId ?? (existingRow && !existingRow.stockStoreId ? "reference" : "");
@@ -190,11 +189,20 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
             <label>{group.label} · MANN {group.article}<select aria-label={`Товар для ${group.label} MANN ${group.article}`} value={selectedId} disabled={filtersLoading} onChange={event => chooseFilter(event.target.value)}>
               <option value="">Выберите подходящий товар</option>
               {existingRow?.supplierProductId === selectedId && !filterProducts.some(item => item.id === selectedId) ? <option value={selectedId} disabled>{existingRow.name} — выбран ранее</option> : null}
-              {filterProducts.map(item => <option key={item.id} value={item.id} disabled={item.available < 1 && !item.orderable}>{item.name} · {quoteRub(Math.round(item.price * 100))} · {item.source === "rossko" ? `${item.relation === "analogue" ? "Аналог Роско" : "MANN · Роско"} · ${item.available} шт. · ${item.deliveryLabel}` : item.available >= 1 ? `наш склад: ${item.available} шт.` : item.orderable ? "под заказ" : "нет в наличии"}</option>)}
+              {warehouseProducts.length > 0 && <optgroup label="Наш склад">
+                {warehouseProducts.map(item => <option key={item.id} value={item.id} disabled={item.available < 1 && !item.orderable}>
+                  {item.name} · {quoteRub(Math.round(item.price * 100))} · {item.available >= 1 ? `${item.available} шт. в наличии` : item.orderable ? "под заказ" : "нет в наличии"}
+                </option>)}
+              </optgroup>}
+              {supplierProducts.length > 0 && <optgroup label="Роско">
+                {supplierProducts.map(item => <option key={item.id} value={item.id} disabled={item.available < 1 && !item.orderable}>
+                  {item.name} · {quoteRub(Math.round(item.price * 100))} · {item.relation === "analogue" ? "аналог · " : ""}{item.deliveryLabel}
+                </option>)}
+              </optgroup>}
               <option value="reference">MANN {group.article} — указать цену</option>
             </select></label>
-            {supplier?.products.length ? <QuoteFilterOffers products={supplier.products} selectedId={selectedId} label={`${group.label} MANN ${group.article}`} disabled={filtersLoading} onSelect={chooseFilter} /> : null}
-            {existingRow ? <><label className={styles.filterPrice}>Цена фильтра, ₽<input aria-label={`Цена ${group.label} MANN ${group.article}, ₽`} type="number" min="0" step="0.01" placeholder="Укажите цену" value={Number.isFinite(existingRow.price) ? existingRow.price : ""} onChange={event=>updateExtra(rowId,{price:event.target.value ? Number(event.target.value) : NaN})} /></label><button type="button" className="eco-btn" onClick={()=>{setExtras(rows=>rows.filter(row=>row.id!==rowId));setFilterSelection(values=>({...values,[group.key]:""}));}}>Убрать фильтр</button><small className={styles.filterAdded}>Добавлен в расчёт{!Number.isFinite(existingRow.price) ? " — укажите цену рядом" : ""}</small></> : null}
+            {filterProducts.length > 0 && <QuoteFilterOffers products={filterProducts} selectedId={selectedId} initiallyExpanded={index === 0} label={`${group.label} MANN ${group.article}`} disabled={filtersLoading} onSelect={chooseFilter} />}
+            {existingRow ? <><label className={styles.filterPrice}>Цена фильтра, ₽<input aria-label={`Цена ${group.label} MANN ${group.article}, ₽`} type="number" min="0" step="0.01" placeholder="Укажите цену" value={Number.isFinite(existingRow.price) ? existingRow.price : ""} onChange={event=>updateExtra(rowId,{price:event.target.value ? Number(event.target.value) : NaN})} /></label><button type="button" className="eco-btn" onClick={()=>{setExtras(rows=>rows.filter(row=>row.id!==rowId));setFilterSelection(values=>({...values,[group.key]:""}));}}>Убрать фильтр</button><small className={styles.filterAdded}>Добавлен в расчёт{existingRow.supplierProductId ? " · Роско" : existingRow.stockStoreId ? " · Наш склад" : ""}{!Number.isFinite(existingRow.price) ? " — укажите цену рядом" : ""}</small></> : null}
             {!supplier ? <p className={styles.note} role="status">Проверяем цену и доставку в Роско…</p> : supplier.error ? <p className={styles.note} role="status">Роско: {supplier.error}</p> : !supplier.products.length ? <p className={styles.note}>В Роско нет доступных предложений MANN {group.article} и его аналогов.</p> : null}
             {group.condition ? <p className={styles.note}>Условие MANN: {group.condition}</p> : null}
           </div>;
@@ -210,7 +218,7 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
       </section>
     </div>
     <aside className={styles.summary} aria-labelledby="quote-summary-title">
-      <header className={styles.stepHeader}><span aria-hidden="true">04</span><div><h2 id="quote-summary-title">Предложение клиенту</h2><p>{vehicleTitle}</p></div></header>
+      <header className={styles.stepHeader}><div><h2 id="quote-summary-title">Предложение клиенту</h2><p>{vehicleTitle}</p></div></header>
       {!selectedVariants.length && !extras.length && <p className={styles.empty}>Здесь появятся стоимость и готовый текст, когда вы добавите позиции.</p>}
       {!!extras.length && !validExtras && <p className={styles.note}>Проверьте наименования, количество и цены добавленных позиций.</p>}
       {selectedVariants.length ? <div className={styles.totals}>{selectedVariants.map((variant, index) => {
@@ -221,8 +229,12 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
           {amount ? <small>Комплект: {amount.lines.map(line=>`${line.quantity} × ${line.product.litresPerUnit} л`).join(" + ")}{!amount.enough ? " · недостаточно на складе" : ""}</small> : null}
         </div>;
       })}</div> : null}
+      {ready && extras.length > 0 && <dl className={styles.breakdown}>
+        <div><dt>Фильтры из подбора</dt><dd>{quoteRub(quoteExtraCents(extras.filter(row => row.filterLabel)))}</dd></div>
+        <div><dt>Работы и прочие позиции</dt><dd>{quoteRub(quoteExtraCents(extras.filter(row => !row.filterLabel)))}</dd></div>
+      </dl>}
       {ready && !selected.length ? <div className={styles.singleTotal}><span>Итого</span><strong>{quoteRub(extraTotal)}</strong></div> : null}
-      {text ? <label className={styles.preview}>Предложение клиенту<textarea readOnly rows={Math.min(18, text.split("\n").length)} value={text} /></label> : null}
+      {text ? <details className={styles.preview} open={copyError ? true : undefined}><summary>Предпросмотр предложения</summary><label>Текст для клиента<textarea readOnly rows={Math.min(18, text.split("\n").length)} value={text} /></label></details> : null}
       <button type="button" className="eco-btn eco-btn--primary" disabled={!ready} onClick={async () => {
         setCopyError(""); setCopied(false);
         try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopyError("Копирование недоступно. Выделите и скопируйте текст предложения выше."); }
