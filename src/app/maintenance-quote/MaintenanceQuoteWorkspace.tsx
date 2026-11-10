@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Calculator, Warehouse } from "lucide-react";
+import { Warehouse } from "lucide-react";
 import { MaintenanceQuotePanel, type MaintenanceQuoteVehicleContext } from "@/components/shipment/MaintenanceQuotePanel";
 import { VehicleLookupPanel } from "@/components/shipment/VehicleLookupPanel";
 import type { MannCatalogFilter } from "@/lib/mann-catalog";
@@ -90,13 +90,13 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
   return <div className={`eco-page ${styles.page}`}>
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Работа / Расчёт ТО</span>
-      <div className={styles.title}><Calculator aria-hidden="true" /><h1>Расчёт ТО</h1></div>
+      <div className={styles.title}><h1>Расчёт ТО</h1></div>
       <p>Подберите масло, фильтры и работы. Соберите предложение, которое можно отправить клиенту.</p>
     </header>
     {!branchName ? <p role="status" className={styles.setup}>Выберите рабочий филиал в верхнем меню.</p> : <>
       <section className={styles.setup} aria-labelledby="quote-setup-title">
         <header className={styles.setupHeader}>
-          <div className={styles.setupTitle}><span aria-hidden="true">01</span><div><h2 id="quote-setup-title">Автомобиль и склад</h2><p>{branchName}</p></div></div>
+          <div className={styles.setupTitle}><div><h2 id="quote-setup-title">Автомобиль и склад</h2><p>{branchName}</p></div></div>
           <label className={styles.store}><span><Warehouse size={16} aria-hidden="true" /> Склад</span>
             <select value={storeId} onChange={(event) => { setFilters([]); setStoreId(event.target.value); }} disabled={!stores.length}>
               {!stores.length && <option value="">Нет доступных складов</option>}
@@ -104,8 +104,7 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
             </select>
           </label>
         </header>
-        <details className={styles.lookup}>
-          <summary>{vehicle?.vehicleTitle || "Подобрать автомобиль по VIN или госномеру"}</summary>
+        <div className={styles.lookup}>
           <VehicleLookupPanel organizationId={storeOrganizationId} warehouseId={storeId}
             onQuoteContextChange={setVehicle}
             onUseVehicle={(identity, resolution) => setSelection(resolution?.selectedApplication ? { ...resolution.selectedApplication, year: identity.year } : null)}
@@ -113,9 +112,9 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
             onLookupStart={() => { setSelection(null); setManualCatalogOpen(false); }}
             onManualMode={() => { setSelection(null); setManualCatalogOpen(true); }}
           />
-        </details>
+        </div>
         {!vehicle && <details className={styles.lookup} open={manualCatalogOpen} onToggle={(event) => setManualCatalogOpen(event.currentTarget.open)}>
-          <summary>Выбрать автомобиль из каталога MANN</summary>
+          <summary>Выбрать вручную в каталоге MANN</summary>
           <ManualVehiclePicker active={manualCatalogOpen} onSelect={setSelection} />
         </details>}
         {!vehicle && <label className={styles.manual}>Автомобиль вручную <span>Необязательно</span>
