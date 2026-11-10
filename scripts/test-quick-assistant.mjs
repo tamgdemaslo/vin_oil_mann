@@ -110,6 +110,30 @@ const crmModule = load("src/lib/ai-assistant/quick-crm.ts", {
   "@/lib/booking/constants": { BOOKING_STATUS: { CANCELLED: "CANCELLED" } },
   "@/lib/client-case-shared": load("src/lib/client-case-shared.ts"),
 });
+const { quickMaintenanceQuote } = load("src/lib/ai-assistant/quick-maintenance-quote.ts", {
+  "@/lib/vehicle-normalization": load("src/lib/vehicle-normalization.ts"),
+  "@/lib/db": { prisma: { localStore: { findMany: async () => [{ id: "test-store", name: "Склад", isMain: true }] } } },
+  "@/lib/vehicle-identity": { lookupVehicle: async () => ({
+    status: "found", candidates: [{}], vehicle: { makeRaw: "Chevrolet", modelRaw: "Lacetti" },
+  }) },
+  "@/lib/mann-research-catalog": {},
+  "@/lib/mann-fluid-research": {},
+  "@/lib/maintenance-quote-stock": {},
+  "@/lib/maintenance-quote": {},
+  "@/lib/oil-normalizer": {},
+  "@/lib/ai-agent/settings": {},
+  "@/lib/rossko": {},
+  "@/lib/maintenance-quote-rossko": {},
+  "./labor-pricing": {},
+  "./tariff-context": {},
+  "./technical-context": { mannContext: () => assert.fail("Conflicting vehicle must not reach the parts catalogue") },
+});
+const conflictingQuote = await quickMaintenanceQuote(access, {
+  vin: "X4XNA78435B675505", expectedMake: "БМВ", viscosities: ["5W-30"], filterTypes: ["oil"], warehouse: "",
+});
+assert.match(conflictingQuote.text, /БМВ.*Chevrolet Lacetti/);
+assert.deepEqual(conflictingQuote.sources, []);
+
 const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
   "next/server": { NextResponse },
   "@/lib/ai-assistant/access": auth,
@@ -117,14 +141,14 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
   "@/lib/ai-assistant/quick-crm": crmModule,
   "@/lib/ai-assistant/quick-maintenance-quote": { quickMaintenanceQuote: async (current, input) => {
     assert.equal(current, access);
-    assert.deepEqual(input, { vin: "JTDBR32E720012345", viscosities: ["5W-30", "5W-40"], filterTypes: ["oil", "air", "cabin"], warehouse: "" });
+    assert.deepEqual(input, { vin: "JTDBR32E720012345", expectedMake: "Toyota", viscosities: ["5W-30", "5W-40"], filterTypes: ["oil", "air", "cabin"], warehouse: "" });
     return { text: "Расчёт ТО: 5W-30 и 5W-40 с работой", sources: [] };
   } },
   "@/lib/ai-assistant/tariff-context": { assistantTariffContext: async () => ({ locationId: "test" }) },
   "@/lib/ai-assistant/labor-pricing": { resolveLaborPrice: async () => ({ laborPriceCents: 0, requiresHumanConfirmation: false }) },
   "@/lib/ai-assistant/quick-catalog": { searchQuickCatalog: async input => {
     assert.deepEqual(input, { query: "", approval: "C2", viscosity: "", liters: 6 });
-    return { total: 1, products: [{ id: "oil-a", name: "Тестовое масло C2", neededUnits: 2, purchasedLiters: 8 }] };
+    return { total: 1, products: [{ id: "oil-a", name: "Тестовое масло C2", neededUnits: 2, purchasedLiters: 8, unit: "шт.", warehouses: [{ name: "Основной", enough: true }] }] };
   } },
   "@/lib/ai-assistant/quick-vehicle": { answerQuickVehicle: async (current, question, system) => {
     assert.equal(current, access);
@@ -177,7 +201,7 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
         assert.match(request.input.at(-1).content, /6 литров/);
         assert.match(request.input[0].content, /C2/);
       }
-      const name = { vehicle: "read_vehicle", crm: "read_crm", stock: "search_stock", maintenance: "calculate_maintenance_quote" }[modelResult.kind] ?? "prepare_draft";
+      const name = { vehicle: "read_vehicle", crm: "read_crm", stock: "search_stock", maintenance: "calculate_maintenance_quote" }[modelResult.kind] ?? `prepare_${modelResult.kind}`;
       const args = modelResult.kind === "vehicle" ? { ...modelResult, question: "Тестовая команда" } : modelResult;
       return { output: [{ type: "function_call", name, arguments: JSON.stringify(args), call_id: "call_test" }] };
     } },
@@ -263,14 +287,14 @@ const stockRequest = new NextRequest("http://localhost/api/ai-assistant/quick-co
   body: JSON.stringify({ text: "Мне нужно 6 литров", history: [{ role: "user", content: "Какие масла C2 есть?" }] }),
 });
 const stockAnswer = (await (await POST(stockRequest)).json()).answer;
-assert.match(stockAnswer.text, /8 л/);
+assert.match(stockAnswer.text, /^Да.*2 шт\. \(8 л\)/);
 assert.equal(stockAnswer.sources[0].href, "/inventory/products?product=oil-a");
 
-modelResult = { kind: "maintenance", vin: "", viscosities: ["5W-30", "5W-40"], filterTypes: ["oil", "air", "cabin"], warehouse: "" };
+modelResult = { kind: "maintenance", vin: "", expectedMake: "Toyota", viscosities: ["5W-30", "5W-40"], filterTypes: ["oil", "air", "cabin"], warehouse: "" };
 const quoteRequest = new NextRequest("http://localhost/api/ai-assistant/quick-command", {
   method: "POST", headers: { "Content-Type": "application/json", "x-eco-assistant-branch": "branch-a" },
   body: JSON.stringify({ text: "Сравни 5W-30 и 5W-40.", history: [
-    { role: "user", content: "Рассчитай ТО по VIN JTDBR32E720012345." },
+    { role: "user", content: "Рассчитай ТО для Toyota по VIN JTDBR32E720012345." },
     { role: "assistant", content: "VIN/Frame: неизвестен" },
   ] }),
 });
@@ -294,8 +318,43 @@ let catalog = { status: "resolved", filters: [
   { filterType: "oil", mannArticle: "W 68/3", condition: "до 2020" },
   { filterType: "air", mannArticle: "C 30 005" },
 ] };
+const partsVin = "JTDBR32E720012345";
+const partsCar = { vin: partsVin, catalogId: "fixture", carId: "car", make: "Toyota", model: "Corolla" };
+let partsCars = [partsCar];
+let partsRequests = 0;
+const { getFiltersFromPartsCatalogs } = load("src/lib/parts-catalogs-filters.ts", {
+  "./parts-catalogs": { partsCatalogsRequest: async (path, params) => {
+    partsRequests++;
+    if (path === "/car/info") {
+      assert.equal(params.q, partsVin);
+      return { status: 200, data: partsCars };
+    }
+    if (path.endsWith("/groups2/")) return { status: 200, data: params.groupId
+      ? [{ id: "oil", name: "Oil filter", hasParts: true }]
+      : [{ id: "filters", name: "Filters", hasSubgroups: true }] };
+    return { status: 200, data: { partGroups: [{ parts: [
+      { name: "Oil filter", number: "90915-YZZF2" },
+      { name: "Oil filter" },
+    ] }] } };
+  } },
+});
+assert.equal((await getFiltersFromPartsCatalogs(partsVin, { strictVin: true })).oilFilterOem, "90915YZZF2");
+partsCars = [partsCar, { ...partsCar, carId: "other" }];
+partsRequests = 0;
+assert.deepEqual(await getFiltersFromPartsCatalogs(partsVin, { strictVin: true }), {});
+assert.equal(partsRequests, 1);
+partsCars = [{ ...partsCar, vin: "JTDBR32E720012346" }];
+assert.deepEqual(await getFiltersFromPartsCatalogs(partsVin, { strictVin: true }), {});
+
 let lookups = 0;
+let oemFilters = {};
 const { answerQuickVehicle } = load("src/lib/ai-assistant/quick-vehicle.ts", {
+  "@/lib/parts-catalogs-filters": { getFiltersFromPartsCatalogs: async (vin, options) => {
+    assert.equal(vin, "JTDBR32E720012345");
+    assert.equal(options.strictVin, true);
+    return oemFilters;
+  } },
+  "@/lib/vehicle-normalization": load("src/lib/vehicle-normalization.ts"),
   "./technical-answer": { buildTechnicalCustomerAnswer: (_, facts) => ({ text: String(facts[0].value), verifiedFacts: facts }) },
   "./technical-context": {
     mannContext: async () => ({ resolution: catalog }),
@@ -322,6 +381,20 @@ assert.match(vehicleAnswer.text, /W 68\/3.*до 2020/s);
 assert.doesNotMatch(vehicleAnswer.text, /C 30 005/);
 assert.match(vehicleAnswer.text, /API SP/);
 assert.equal(vehicleAnswer.sources[0].href, "https://example.com/spec");
+const priorPartsKey = process.env.PARTS_CATALOGS_API_KEY;
+try {
+  process.env.PARTS_CATALOGS_API_KEY = "synthetic";
+  oemFilters = { make: "Toyota", model: "Corolla", oilFilterOem: "90915YZZF2", airFilterOem: "178010D060" };
+  const original = await answerQuickVehicle(access, "JTDBR32E720012345 оригинальный номер масляного фильтра", "", "Toyota");
+  assert.match(original.text, /90915YZZF2.*Parts Catalogs/s);
+  assert.doesNotMatch(original.text, /178010D060|W 68/);
+  const conflict = await answerQuickVehicle(access, "JTDBR32E720012345 оригинальный номер масляного фильтра", "", "BMW");
+  assert.match(conflict.text, /BMW.*Toyota/);
+  assert.doesNotMatch(conflict.text, /90915YZZF2/);
+} finally {
+  if (priorPartsKey === undefined) delete process.env.PARTS_CATALOGS_API_KEY;
+  else process.env.PARTS_CATALOGS_API_KEY = priorPartsKey;
+}
 catalog = { status: "candidates", filters: [] };
 assert.match((await answerQuickVehicle(access, "JTDBR32E720012345 подбери фильтр", "")).text, /Подбор неоднозначен/);
 decode = { ...decode, candidates: [{ vehicle }, { vehicle }] };

@@ -27,7 +27,8 @@ function getProxyAgent(): ProxyAgent | undefined {
 
 export async function partsCatalogsRequest(
   path: string,
-  params: Record<string, string> = {}
+  params: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<{ status: number; data: unknown }> {
   const key = process.env.PARTS_CATALOGS_API_KEY?.trim();
   if (!key) return { status: 401, data: { error: "PARTS_CATALOGS_API_KEY не задан" } };
@@ -41,7 +42,7 @@ export async function partsCatalogsRequest(
 
   try {
     const requestInit: FetchWithDispatcherInit = {
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       dispatcher: getProxyAgent(),
       headers: { Accept: "application/json", Authorization: key },
     };
