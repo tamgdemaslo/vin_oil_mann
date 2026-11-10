@@ -26,6 +26,9 @@ const oilOnly = { id: "oil-only", name: "Замена моторного мас�
 const oilHint = "Замена моторного масла и масляного фильтра";
 assert.equal(uniqueQuickBookingService(oilHint, [oilOnly, oilService])?.id, "oil");
 assert.equal(uniqueQuickBookingService(oilHint, [oilOnly]), undefined);
+assert.equal(uniqueQuickBookingService(oilOnly.name, [oilService])?.id, "oil");
+assert.equal(uniqueQuickBookingService(oilOnly.name, [oilService, oilOnly])?.id, "oil-only");
+assert.equal(uniqueQuickBookingService(oilOnly.name, [oilService, { ...oilService, id: "other" }]), undefined);
 assert.equal(uniqueQuickBookingService(oilHint, [oilService, { ...oilService, id: "other" }]), undefined);
 
 const access = {
@@ -39,6 +42,9 @@ const access = {
 let signedIn = true;
 let canBook = true;
 let modelCalls = 0;
+let matchingVisits = [];
+let lookupMaterial = false;
+let catalogFixtureFound = false;
 let queries = 0;
 let modelResult = { kind: "task", customerName: "Тестовый Клиент", title: "Уточнить наличие фильтра" };
 const auth = {
@@ -135,6 +141,8 @@ assert.match(conflictingQuote.text, /БМВ.*Chevrolet Lacetti/);
 assert.deepEqual(conflictingQuote.sources, []);
 
 const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
+  "@/lib/quick-assistant": load("src/lib/quick-assistant.ts"),
+  "@/lib/booking/timezone": { addLocalDays: () => "2026-11-10" },
   "next/server": { NextResponse },
   "@/lib/ai-assistant/access": auth,
   "@/lib/ai-assistant/quick-shipment": shipmentModule,
@@ -146,7 +154,12 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
   } },
   "@/lib/ai-assistant/tariff-context": { assistantTariffContext: async () => ({ locationId: "test" }) },
   "@/lib/ai-assistant/labor-pricing": { resolveLaborPrice: async () => ({ laborPriceCents: 0, requiresHumanConfirmation: false }) },
-  "@/lib/ai-assistant/quick-catalog": { searchQuickCatalog: async input => {
+  "@/lib/ai-assistant/quick-catalog": {
+    findQuickCatalogProducts: async queries => {
+      assert.deepEqual(queries, ["Eurol Ultrance VCC 0W-20", "Eurol Ultrance"]);
+      return catalogFixtureFound ? [{ id: "oil-vcc", name: "Eurol Ultrance VCC 0W-20", article: "E100017", viscosity: "0W-20" }] : [];
+    },
+    searchQuickCatalog: async input => {
     assert.deepEqual(input, { query: "", approval: "C2", viscosity: "", liters: 6 });
     return { total: 1, products: [{ id: "oil-a", name: "Тестовое масло C2", neededUnits: 2, purchasedLiters: 8, unit: "шт.", warehouses: [{ name: "Основной", enough: true }] }] };
   } },
@@ -157,10 +170,17 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
     return { text: "Проверенный допуск", sources: [] };
   } },
   "@/lib/booking/access": { canManageBookings: () => canBook },
-  "@/lib/booking/constants": { BOOKING_MASTER_ROLE_ID: "master" },
+  "@/lib/booking/constants": { BOOKING_MASTER_ROLE_ID: "master", BOOKING_STATUS: { ACTIVE: "ACTIVE" } },
   "@/lib/booking/journal-id": { journalId },
-  "@/lib/booking/journal-time": { utcInstantToJournalLocal: () => "2026-11-09T11:00" },
+  "@/lib/booking/journal-time": { utcInstantToJournalLocal: () => "2026-11-09T11:00", journalLocalToUtcIso: value => value + ":00.000Z" },
   "@/lib/db": { prisma: {
+    booking: { findMany: async ({ where }) => {
+      assert.equal(where.branchId, "branch-a");
+      assert.equal(where.status, "ACTIVE");
+      assert.deepEqual(where.OR.map(row => row.customerName.contains), ["Аслан", "Сослан"]);
+      assert.equal(where.startsAt.gte.toISOString(), "2026-11-09T00:00:00.000Z");
+      return matchingVisits;
+    } },
     localCounterparty: { findMany: async ({ where }) => {
       queries++;
       assert.equal(where.branchId, "branch-a");
@@ -178,11 +198,25 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
   "@/lib/openai-client": { createOpenAIClient: () => ({
     responses: { create: async request => {
       modelCalls++;
-      assert.equal(request.model, "gpt-5-nano");
+      assert.equal(request.model, process.env.OPENAI_QUICK_ASSISTANT_MODEL?.trim() || "gpt-6-luna");
       assert.equal(request.store, false);
+      if (request.tools.some(tool => tool.name === "choose_service")) {
+        assert.deepEqual(JSON.parse(request.input).catalog.map(row => row.name), ["Диагностика"]);
+        return { output: [{ type: "function_call", name: "choose_service", arguments: '{"assessments":[{"option":"1","match":"exact"}]}' }] };
+      }
       assert.ok(request.tools.some(tool => tool.name === "search_stock"));
       assert.match(request.instructions, /2026-11-09T11:00/);
       const output = request.input.findLast(item => item.type === "function_call_output");
+      if (modelResult.kind === "reschedule" && lookupMaterial && output) {
+        const facts = JSON.parse(output.output);
+        if (facts.action === "find_catalog_product") {
+          assert.equal(request.tool_choice?.name, "find_catalog_product");
+          return { output: [{ type: "function_call", name: "find_catalog_product", call_id: "catalog-call",
+            arguments: JSON.stringify({ queries: ["Eurol Ultrance VCC 0W-20", "Eurol Ultrance"] }) }] };
+        }
+        return { output: [{ type: "function_call", name: "prepare_reschedule", call_id: "move-call",
+          arguments: JSON.stringify({ ...modelResult, shopProductId: facts[0]?.id ?? "" }) }] };
+      }
       if (output) {
         const facts = JSON.parse(output.output);
         if (modelResult.kind === "vehicle") assert.equal(facts, "Проверенный допуск");
@@ -268,6 +302,26 @@ assert.equal(queries, 1);
 canBook = true;
 const booking = await (await POST(request())).json();
 assert.equal(booking.draft.datetime, "2026-11-10T15:00");
+assert.equal(booking.selectedServiceId, "service-1");
+const bookingModelResult = modelResult;
+modelResult = { kind: "reschedule", names: ["Аслан", "Сослан"], sourceDay: "2026-11-09", datetime: "2026-11-10T13:00", customerMaterials: "масляный фильтр", shopMaterials: "масло Eurol" };
+matchingVisits = [{ id: "visit-a", customerName: "Сослан", startsAt: new Date("2026-11-09T11:00Z"), updatedAt: new Date("2026-11-09T09:00Z") }];
+lookupMaterial = true;
+const moved = (await (await POST(request())).json()).reschedule;
+assert.equal(moved.recordId, "visit-a");
+assert.equal(moved.datetime, "2026-11-10T13:00");
+assert.match(moved.notes, /Клиент привезёт: масляный фильтр.*Материалы сервиса: масло Eurol/s);
+assert.match(moved.notes, /не сверено с каталогом/);
+catalogFixtureFound = true;
+const matchedProduct = (await (await POST(request())).json()).reschedule;
+assert.match(matchedProduct.notes, /Eurol Ultrance VCC 0W-20/);
+assert.doesNotMatch(matchedProduct.notes, /не сверено/);
+lookupMaterial = false;
+matchingVisits = [...matchingVisits, { ...matchingVisits[0], id: "visit-b", customerName: "Аслан" }];
+const ambiguous = await (await POST(request())).json();
+assert.equal(ambiguous.reschedule, undefined);
+assert.equal(ambiguous.answer.sources.length, 2);
+modelResult = bookingModelResult;
 assert.deepEqual(booking.options.services[0].masterIds, [booking.options.masters[0].id]);
 assert.equal(booking.branch.id, "branch-a");
 

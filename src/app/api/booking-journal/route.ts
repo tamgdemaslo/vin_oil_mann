@@ -2,7 +2,7 @@ import { journalId } from "@/lib/booking/journal-id";
 import { journalContactSources, journalContactUrl, readJournalContact, writeJournalContact } from "@/lib/booking/journal-contact";
 import { snapshotVehicleDto } from "@/lib/booking/dto";
 import type { PrismaClient } from "@prisma/client";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { bookingViewIsSelfOnly, canConfirmBookings, canManageBookings, canOverrideBookingConflict, canViewBookings, requireBookingCapability } from "@/lib/booking/access";
 import { syncCatalogBookingServices } from "@/lib/booking/catalog-services";
 import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
@@ -432,6 +432,7 @@ export async function POST(request: NextRequest) {
         comment: text(payload.client_comment) ?? parsed.comment,
         internalComment: journalContactInput(payload, parsed.internalComment),
         source: "ADMIN",
+        idempotencyKey: text(body.idempotencyKey),
         overrideConflict: payload.save_if_busy === true,
         overrideReason: overrideReason(payload.override_reason_code),
         durationOverrideMinutes: number(payload.seance_length) ? Math.max(5, Math.round(number(payload.seance_length)! / 60)) : null,
@@ -443,8 +444,16 @@ export async function POST(request: NextRequest) {
         allowIncompleteVehicle: true,
       });
     });
-    const url = managementUrl(request, result.booking);
-    await runWithBranchApiContext(access.context, () => notifyBookingCreated(result.booking, url)).catch((error) => console.warn("[booking-journal/create-notification]", error));
+    if (!result.reused) {
+      after(async () => {
+        try {
+          const url = managementUrl(request, result.booking);
+          await runWithBranchApiContext(access.context, () => notifyBookingCreated(result.booking, url));
+        } catch (error) {
+          console.warn("[booking-journal/create-notification]", error);
+        }
+      });
+    }
     return NextResponse.json({ success: true, data: recordDto(result.booking) }, { status: 201 });
   } catch (error) {
     const failure = bookingErrorPayload(error);
@@ -458,6 +467,32 @@ export async function PUT(request: NextRequest) {
   try {
     requireBookingCapability(canManageBookings(access.context), "Нет права изменять записи");
     const body = object(await request.json().catch(() => null));
+    if (body.action === "reschedule-record") {
+      if (body.expectedBranchId !== access.context.branchId) {
+        throw new BookingError("Филиал изменился. Подготовьте новый черновик.", "booking_branch_changed", 409);
+      }
+      const expectedUpdatedAt = text(body.expectedUpdatedAt);
+      const datetime = text(body.datetime);
+      if (!expectedUpdatedAt || !datetime) throw new BookingError("Подготовьте перенос заново.", "booking_preview_invalid");
+      const result = await runWithBranchApiContext(access.context, async () => {
+        const booking = await bookingFromJournalId(access.context.branchId!, body.record_id);
+        const contact = readJournalContact(booking.internalComment);
+        const notes = text(body.notes);
+        return updateBooking(booking.id, {
+          startsAt: journalDateTime(datetime, booking.branch.timezone),
+          expectedUpdatedAt,
+          ...(notes ? { internalComment: writeJournalContact({ ...contact, comment: [contact.comment, notes].filter(Boolean).join("\n") }) } : {}),
+        }, { kind: "USER", userId: access.context.userId, respectLeadTime: false, allowIncompleteVehicle: true });
+      });
+      if (result.scheduleChanged) after(async () => {
+        try {
+          await notifyBookingRescheduled(result.booking, managementUrl(request, result.booking));
+        } catch (error) {
+          console.warn("[booking-journal/reschedule-notification]", error);
+        }
+      });
+      return NextResponse.json({ success: true, data: recordDto(result.booking) });
+    }
     if (body.action !== "update-record") throw new BookingError("Неизвестная операция журнала", "booking_action_invalid");
     const payload = object(body.payload);
     const client = object(payload.client);

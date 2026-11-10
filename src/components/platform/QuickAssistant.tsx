@@ -5,29 +5,38 @@ import { createPortal } from "react-dom";
 import { Bot, Mic, Square, X } from "lucide-react";
 import { journalLocalToUtcIso } from "@/lib/booking/journal-time";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
-import { uniqueQuickBookingService, uniqueQuickOption, type QuickAnswer, type QuickBookingOptions, type QuickCommand, type QuickShipmentPreview } from "@/lib/quick-assistant";
+import { QUICK_COMMAND_MAX_LENGTH, uniqueQuickBookingService, uniqueQuickOption, type QuickAnswer, type QuickBookingOptions, type QuickCommand, type QuickReschedulePreview, type QuickShipmentPreview } from "@/lib/quick-assistant";
 import styles from "./quick-assistant.module.css";
 
 type Preview = {
   draft: QuickCommand;
   branch: { id: string; name: string; timezone: string; login: string };
   options?: QuickBookingOptions;
+  selectedServiceId?: string | null;
 };
 
 type ShipmentResult = { shipment: QuickShipmentPreview; branchName: string };
-type CommandResult = Preview | { answer: QuickAnswer } | ShipmentResult;
+type CommandResult = Preview | { answer: QuickAnswer } | ShipmentResult | { reschedule: QuickReschedulePreview };
 
 const rubles = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB" });
 
 type ChatMessage = { role: "user" | "assistant"; content: string; sources?: QuickAnswer["sources"] };
 
-type Recording = { recorder: MediaRecorder; timer: number };
+type Chat = { id: string; messages: ChatMessage[] };
+const emptyMessages: ChatMessage[] = [];
+const maxSavedChats = 20;
 
-export default function QuickAssistant({ branchId }: { branchId: string }) {
+export default function QuickAssistant({ branchId, login }: { branchId: string; login: string }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [preview, setPreview] = useState<Preview>();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [chatId, setChatId] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const historyKey = `eco:quick-chats:${login}:${branchId}`;
+  const messages = chats.find(chat => chat.id === chatId)?.messages ?? emptyMessages;
+  const [reschedule, setReschedule] = useState<QuickReschedulePreview>();
   const [shipment, setShipment] = useState<ShipmentResult>();
   const [serviceId, setServiceId] = useState("");
   const [masterId, setMasterId] = useState<number>();
@@ -37,20 +46,20 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
   const [error, setError] = useState("");
   const [saveUncertain, setSaveUncertain] = useState(false);
   const operation = useRef<AbortController | null>(null);
-  const capture = useRef<Recording | null>(null);
+  const capture = useRef<MediaRecorder | null>(null);
+  const bookingSaveKey = useRef<string | null>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const commandInput = useRef<HTMLTextAreaElement>(null);
   const chatLog = useRef<HTMLDivElement>(null);
   const previewHeading = useRef<HTMLElement>(null);
-  const previewKind = preview?.draft.kind ?? (shipment ? "shipment" : undefined);
+  const previewKind = preview?.draft.kind ?? (reschedule ? "reschedule" : shipment ? "shipment" : undefined);
   const hasBranch = Boolean(branchId && branchId !== "all");
 
   useEffect(() => () => {
     operation.current?.abort();
     if (capture.current) {
-      const { recorder, timer } = capture.current;
+      const recorder = capture.current;
       capture.current = null;
-      window.clearTimeout(timer);
       recorder.stream.getTracks().forEach(track => track.stop());
       if (recorder.state !== "inactive") recorder.stop();
     }
@@ -66,8 +75,47 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
     if (chatLog.current) chatLog.current.scrollTop = chatLog.current.scrollHeight;
   }, [open, messages]);
 
-  function appendAnswer(content: string, sources?: QuickAnswer["sources"]) {
-    setMessages(current => [...current, { role: "assistant", content, sources }]);
+  useEffect(() => {
+    try {
+      const stored: unknown = JSON.parse(sessionStorage.getItem(historyKey) ?? "[]");
+      if (Array.isArray(stored)) {
+        const saved = (stored as Chat[]).filter(chat => chat && typeof chat.id === "string" && Array.isArray(chat.messages)).slice(0, maxSavedChats);
+        setChats(saved);
+        setChatId(saved[0]?.id ?? "");
+      }
+    } catch {
+      // The chat remains usable if browser storage is unavailable.
+    }
+    setHistoryLoaded(true);
+  }, [historyKey]);
+
+  useEffect(() => {
+    if (!historyLoaded) return;
+    try {
+      sessionStorage.setItem(historyKey, JSON.stringify(chats));
+    } catch {
+      // The chat remains usable if the browser storage quota is exhausted.
+    }
+  }, [chats, historyKey, historyLoaded]);
+
+  function updateMessages(id: string, update: (messages: ChatMessage[]) => ChatMessage[]) {
+    setChats(current => {
+      const next = update(current.find(chat => chat.id === id)?.messages ?? emptyMessages).slice(-80);
+      const others = current.filter(chat => chat.id !== id);
+      return (next.length ? [{ id, messages: next }, ...others] : others).slice(0, maxSavedChats);
+    });
+  }
+
+  function switchChat(id: string) {
+    setChatId(id);
+    setHistoryOpen(false);
+    setText("");
+    setRetryAudio(undefined);
+    setError("");
+  }
+
+  function appendAnswer(content: string, sources?: QuickAnswer["sources"], id = chatId) {
+    updateMessages(id, current => [...current, { role: "assistant", content, sources }]);
   }
 
   async function parseCommand(body: string | Blob, signal: AbortSignal) {
@@ -100,29 +148,49 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
     setBusy("Разбираю команду…");
     setError("");
     const command = text.trim();
-    setMessages(current => [...current, { role: "user", content: command }]);
+    if (command.length > QUICK_COMMAND_MAX_LENGTH) {
+      operation.current = null;
+      setBusy("");
+      setError(`Сократите сообщение до ${QUICK_COMMAND_MAX_LENGTH} символов.`);
+      return;
+    }
+    const id = chatId || crypto.randomUUID();
+    setChatId(id);
+    updateMessages(id, current => [...current, { role: "user", content: command }]);
     setText("");
     try {
       const history = messages.slice(-8).map(({ role, content }) => ({ role, content }));
       const result: CommandResult = await parseCommand(JSON.stringify({ text: command, history }), controller.signal);
       if ("answer" in result) {
-        appendAnswer(result.answer.text, result.answer.sources);
+        appendAnswer(result.answer.text, result.answer.sources, id);
+        return;
+      }
+      if ("reschedule" in result) {
+        setSaveUncertain(false);
+        setReschedule(result.reschedule);
+        appendAnswer("Нашёл запись и подготовил перенос.", undefined, id);
         return;
       }
       if ("shipment" in result) {
         setShipment(result);
+        appendAnswer(`Подготовлен черновик отгрузки из заказа № ${result.shipment.sourceName}.`, undefined, id);
         return;
       }
-      const service = uniqueQuickBookingService(result.draft.service, result.options?.services ?? []);
+      const services = result.options?.services ?? [];
+      const service = result.selectedServiceId === undefined
+        ? uniqueQuickBookingService(result.draft.service, services)
+        : services.find(option => option.id === result.selectedServiceId);
       const masters = result.options?.masters.filter(master => service?.masterIds.includes(master.id)) ?? [];
       const master = result.draft.master ? uniqueQuickOption(result.draft.master, masters) : masters.length === 1 ? masters[0] : undefined;
       setServiceId(service?.id ?? "");
       setMasterId(master?.id);
       setSaveUncertain(false);
+      bookingSaveKey.current = null;
       setPreview(result);
+      appendAnswer(result.draft.kind === "booking" ? "Подготовлен черновик записи." : "Подготовлен черновик дела.", undefined, id);
     } catch (cause) {
       if (!controller.signal.aborted) {
-        setMessages(current => current.slice(0, -1));
+        updateMessages(id, current => current.slice(0, -1));
         setText(command);
         setError(cause instanceof Error ? cause.message : "Не удалось подготовить ответ.");
       }
@@ -142,7 +210,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
         setError("Речь не распознана. Запишите команду ещё раз.");
         return;
       }
-      setText(result.text);
+      setText(current => [current.trimEnd(), result.text.trim()].filter(Boolean).join(" "));
     } catch (cause) {
       if (!controller.signal.aborted) {
         setRetryAudio(audio);
@@ -163,7 +231,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
 
   async function toggleRecording() {
     if (capture.current) {
-      if (capture.current.recorder.state === "recording") capture.current.recorder.stop();
+      if (capture.current.state === "recording") capture.current.stop();
       return;
     }
     if (operation.current || !hasBranch) return;
@@ -185,13 +253,12 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
       }
       const mimeType = ["audio/webm", "audio/mp4", "audio/ogg"].find(type => MediaRecorder.isTypeSupported(type));
       if (!mimeType) throw new Error("Формат записи не поддерживается.");
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const recorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 32_000 });
       const chunks: Blob[] = [];
       recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
       recorder.onstop = async () => {
         recorder.stream.getTracks().forEach(track => track.stop());
-        if (capture.current?.recorder !== recorder) return;
-        window.clearTimeout(capture.current.timer);
+        if (capture.current !== recorder) return;
         capture.current = null;
         setRecording(false);
         const contentType = (chunks[0]?.type || recorder.mimeType || mimeType).split(";")[0];
@@ -204,8 +271,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
         await transcribe(audio, controller);
       };
       recorder.start();
-      const timer = window.setTimeout(() => { if (recorder.state === "recording") recorder.stop(); }, 30_000);
-      capture.current = { recorder, timer };
+      capture.current = recorder;
       setRecording(true);
       setBusy("");
     } catch {
@@ -224,7 +290,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
 
   async function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!preview || operation.current || saveUncertain) return;
+    if (!preview || operation.current || (saveUncertain && preview.draft.kind !== "booking")) return;
     const { branch, draft } = preview;
     if (branch.id !== branchId) return;
     const phone = normalizePhoneKey(draft.phone);
@@ -254,8 +320,10 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
     setBusy("Сохраняю…");
     setError("");
     const expectedBranchId = branch.id;
+    if (booking) bookingSaveKey.current ??= crypto.randomUUID();
     const payload = booking ? {
       expectedBranchId,
+      idempotencyKey: bookingSaveKey.current,
       action: "create-record",
       payload: {
         client: { name: draft.customerName, phone },
@@ -284,20 +352,58 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
         body: JSON.stringify(payload),
       });
       const data = await response.json();
-      if (response.status >= 500) throw new Error();
+      if (response.status >= 500) throw new Error(data.error || "");
       if (!response.ok) {
+        setSaveUncertain(false);
         setError(data.error || "Не удалось сохранить. Проверьте черновик.");
         return;
       }
       if (!(booking ? data.data?.booking_id : data.id)) throw new Error();
       setPreview(undefined);
+      setSaveUncertain(false);
       setText("");
       appendAnswer(booking ? "Запись создана в журнале." : "Дело клиента создано в CRM.");
+    } catch (cause) {
+      setSaveUncertain(true);
+      const detail = cause instanceof Error && cause.message !== "Failed to fetch" ? cause.message : "";
+      setError(booking
+        ? [detail, "Не удалось подтвердить результат. Нажмите «Проверить и повторить», чтобы завершить ту же операцию без дубля."].filter(Boolean).join(" ")
+        : "Результат сохранения неизвестен. Проверьте CRM перед повтором.");
+    } finally {
+      operation.current = null;
+      setBusy("");
+    }
+  }
+
+  async function confirmReschedule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!reschedule || operation.current || saveUncertain) return;
+    operation.current = new AbortController();
+    setBusy("Переношу запись…");
+    setError("");
+    try {
+      const response = await fetch("/api/booking-journal", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reschedule-record", expectedBranchId: reschedule.branchId, record_id: reschedule.recordId,
+          expectedUpdatedAt: reschedule.updatedAt, datetime: reschedule.datetime, notes: reschedule.notes,
+        }),
+      });
+      const data = await response.json();
+      if (response.status >= 500) throw new Error();
+      if (!response.ok) {
+        setError(data.error || "Не удалось перенести запись.");
+        return;
+      }
+      if (data.data?.booking_id !== reschedule.recordId) throw new Error();
+      appendAnswer(`Запись перенесена на ${reschedule.datetime.replace("T", " ")}.`, [
+        { label: "Открыть запись в журнале", href: `/records?recordId=${reschedule.journalRecordId}` },
+      ]);
+      setReschedule(undefined);
     } catch {
       setSaveUncertain(true);
-      setError(booking
-        ? "Результат сохранения неизвестен. Проверьте журнал перед повтором."
-        : "Результат сохранения неизвестен. Проверьте CRM перед повтором.");
+      setError("Не удалось подтвердить перенос. Проверьте время записи в журнале.");
     } finally {
       operation.current = null;
       setBusy("");
@@ -355,6 +461,21 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
           <h2>Быстрый помощник</h2>
           <button type="button" className={styles.icon} onClick={close} disabled={Boolean(busy || recording)} aria-label="Закрыть"><X size={18} /></button>
         </header>
+        {hasBranch && <div className={styles.historyToolbar}>
+          <button type="button" className={styles.secondary} aria-expanded={historyOpen}
+            disabled={Boolean(busy || recording || preview || shipment || reschedule)} onClick={() => setHistoryOpen(value => !value)}>История чатов</button>
+          <button type="button" className={styles.secondary}
+            disabled={Boolean(busy || recording || preview || shipment || reschedule)} onClick={() => switchChat("")}>Новый чат</button>
+        </div>}
+        {hasBranch && historyOpen && <ul className={styles.historyList} aria-label="Прошлые чаты">
+          {chats.length === 0 && <li>Пока нет сохранённых чатов.</li>}
+          {chats.map(chat => <li key={chat.id}>
+            <button type="button" className={styles.secondary} aria-current={chat.id === chatId ? "true" : undefined}
+              disabled={Boolean(busy || recording || preview || shipment || reschedule)} onClick={() => switchChat(chat.id)}>
+              {chat.messages.find(message => message.role === "user")?.content.slice(0, 100) || "Чат"}
+            </button>
+          </li>)}
+        </ul>}
         {hasBranch && <div ref={chatLog} className={styles.chatLog} role="log" aria-label="История разговора" tabIndex={0}>
           {messages.length === 0 && <p className={styles.intro}>Спросите про остатки, клиента или автомобиль. Можно продолжить вопрос в следующем сообщении.</p>}
           {messages.map((message, index) => (
@@ -367,7 +488,30 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
             </div>
           ))}
         </div>}
-        {!hasBranch ? <p>Выберите один филиал в меню платформы, чтобы начать.</p> : shipment ?
+        {!hasBranch ? <p>Выберите один филиал в меню платформы, чтобы начать.</p> : reschedule ?
+          <form className={styles.form} onSubmit={confirmReschedule}>
+            <div className={styles.previewTitle}>
+              <strong ref={previewHeading} tabIndex={-1}>Перенос записи</strong>
+              <span>{reschedule.customerName} · {reschedule.branchName}</span>
+              <span>Было {reschedule.previousDatetime.replace("T", " ")}</span>
+              <a href={`/records?recordId=${reschedule.journalRecordId}`}>Открыть запись в журнале</a>
+            </div>
+            <fieldset disabled={Boolean(busy || saveUncertain)} className={styles.fields}>
+              <label>Новое время
+                <input className="eco-input" type="datetime-local" required value={reschedule.datetime}
+                  onChange={event => setReschedule({ ...reschedule, datetime: event.target.value })} />
+              </label>
+              <label>Дополнить заметку
+                <textarea className="eco-input" value={reschedule.notes} maxLength={1000}
+                  onChange={event => setReschedule({ ...reschedule, notes: event.target.value })} />
+              </label>
+            </fieldset>
+            <div className={styles.actions}>
+              <button type="button" className={styles.secondary} disabled={Boolean(busy)}
+                onClick={() => { setReschedule(undefined); setSaveUncertain(false); setError(""); }}>Продолжить чат</button>
+              <button className={styles.primary} disabled={Boolean(busy || saveUncertain)}>Подтвердить перенос</button>
+            </div>
+          </form> : shipment ?
           <div className={styles.form}>
             <div className={styles.previewTitle}>
               <strong ref={previewHeading} tabIndex={-1}>Черновик отгрузки</strong>
@@ -399,7 +543,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
           </div> : !draft ?
           <form className={styles.form} onSubmit={prepare}>
             <label>Сообщение
-              <textarea ref={commandInput} className={styles.composer} rows={2} maxLength={2000} required
+              <textarea ref={commandInput} className={styles.composer} rows={2} required
                 placeholder="Напишите или продиктуйте сообщение"
                 value={text} disabled={Boolean(busy || recording)} onChange={event => setText(event.target.value)}
                 onKeyDown={event => {
@@ -417,7 +561,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
             {retryAudio && <button type="button" className={styles.secondary} disabled={Boolean(busy || recording)}
               onClick={resendRecording}>Повторить отправку</button>}
             <small>Текст и голос обрабатывает OpenAI.</small>
-            {recording && <p role="status">Идёт запись, до 30 секунд.</p>}
+            {recording && <p role="status">Идёт запись. Нажмите «Остановить», когда закончите.</p>}
           </form> :
           <form className={styles.form} onSubmit={confirm}>
             <div className={styles.previewTitle}>
@@ -454,7 +598,7 @@ export default function QuickAssistant({ branchId }: { branchId: string }) {
               <button type="button" className={styles.secondary} disabled={Boolean(busy)} onClick={() => { setPreview(undefined); setError(""); if (saveUncertain) setText(""); }}>
                 {saveUncertain ? "Закрыть черновик" : "Продолжить чат"}
               </button>
-              <button className={styles.primary} disabled={Boolean(busy || saveUncertain)}>Подтвердить и сохранить</button>
+              <button className={styles.primary} disabled={Boolean(busy || (saveUncertain && draft.kind !== "booking"))}>{saveUncertain && draft.kind === "booking" ? "Проверить и повторить" : "Подтвердить и сохранить"}</button>
             </div>
           </form>}
         {busy && <p role="status">{busy}</p>}

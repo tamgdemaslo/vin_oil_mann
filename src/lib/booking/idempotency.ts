@@ -8,3 +8,10 @@ export function publicBookingIdempotencyAuditId(branchId: string, value: string 
   }
   return `booking_public_idem_${createHash("sha256").update(`${branchId}:${key}`).digest("hex")}`;
 }
+
+export function journalBookingIdempotencyAuditId(branchId: string, userId: string, key: string) {
+  if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(key)) {
+    throw new BookingError("Некорректный ключ операции", "booking_idempotency_key_invalid");
+  }
+  return `booking_journal_idem_${createHash("sha256").update(JSON.stringify([branchId, userId, key])).digest("hex")}`;
+}

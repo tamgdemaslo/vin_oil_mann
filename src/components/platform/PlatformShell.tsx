@@ -625,7 +625,7 @@ export default function PlatformShell() {
   return (
     <div ref={shellRef} className="platform-shell">
       {(user?.role === "owner" || user?.role === "admin") && (
-        <QuickAssistant key={`${user.login}:${selectedBranchId}`} branchId={selectedBranchId} />
+        <QuickAssistant key={`${user.login}:${selectedBranchId}`} branchId={selectedBranchId} login={user.login} />
       )}
       {user?.role === "owner" && selectedBranchId && pathname !== "/" && <SalesPlanBanner ownerLogin={user.login} branchId={selectedBranchId} pathname={pathname} />}
       <header className="platform-shell__main">
