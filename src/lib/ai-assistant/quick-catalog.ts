@@ -43,3 +43,13 @@ export async function searchQuickCatalog(input: { query: string; approval: strin
   products.sort((a, b) => Number(b.warehouses.some(row => row.enough)) - Number(a.warehouses.some(row => row.enough)));
   return { total: result.total, products };
 }
+
+export async function findQuickCatalogProducts(queries: string[]) {
+  const results = await Promise.all(queries.map(q => searchCatalog({ q, type: "product", limit: 8 })));
+  return [...new Map(results.flatMap(result => result.items.map(product => [product.id, {
+    id: product.id,
+    name: product.name,
+    article: product.article,
+    viscosity: product.sae,
+  }] as const))).values()].slice(0, 16);
+}

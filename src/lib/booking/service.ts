@@ -14,7 +14,7 @@ import { BookingError } from "./errors";
 import { getBookingAvailability } from "./availability";
 import { retainsBookingAssignment } from "./existing-assignment";
 import { isValidBookingCustomerName } from "./customer-name";
-import { publicBookingIdempotencyAuditId } from "./idempotency";
+import { journalBookingIdempotencyAuditId, publicBookingIdempotencyAuditId } from "./idempotency";
 import { createManagementHandle, createManagementToken, verifyManagementToken } from "./management-token";
 import { formatLocalDate, formatLocalTime, localTimeToMinutes } from "./timezone";
 
@@ -83,6 +83,7 @@ export type UpdateBookingDetailsInput = {
 };
 
 export type UpdateBookingInput = UpdateBookingDetailsInput & {
+  expectedUpdatedAt?: string;
   startsAt?: string | Date | null;
   masterMembershipId?: string | null;
   serviceIds?: string[] | null;
@@ -169,7 +170,7 @@ function normalizeVehicleInput(input: BookingVehicleInput | null | undefined, al
   };
 }
 
-async function findPublicIdempotentBooking(branchId: string, auditId: string) {
+async function findIdempotentBooking(branchId: string, auditId: string) {
   const audit = await prisma.branchAuditLog.findFirst({
     where: { id: auditId, branchId },
     select: { branchId: true, action: true, entityType: true, entityId: true },
@@ -186,7 +187,7 @@ async function findPublicIdempotentBooking(branchId: string, auditId: string) {
 export async function getPublicBookingByIdempotency(branchId: string, idempotencyKey: string) {
   if (!branchId) throw new BookingError("Филиал не указан", "booking_branch_required");
   const auditId = publicBookingIdempotencyAuditId(branchId, idempotencyKey);
-  const booking = await findPublicIdempotentBooking(branchId, auditId);
+  const booking = await findIdempotentBooking(branchId, auditId);
   if (!booking) {
     throw new BookingError("Результат операции пока не найден", "booking_idempotency_result_not_found", 404);
   }
@@ -436,11 +437,13 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
   if (!normalizedPhone) throw new BookingError("Укажите корректный телефон", "booking_phone_invalid");
   if (!input.branchId) throw new BookingError("Филиал не указан", "booking_branch_required");
   if (!input.masterMembershipId) throw new BookingError("Мастер не выбран", "booking_master_required");
-  const publicAuditId = actor.kind === "PUBLIC"
+  const auditId = actor.kind === "PUBLIC"
     ? publicBookingIdempotencyAuditId(input.branchId, input.idempotencyKey)
-    : null;
-  if (publicAuditId) {
-    const existing = await findPublicIdempotentBooking(input.branchId, publicAuditId);
+    : actor.kind === "USER" && actor.userId && input.idempotencyKey
+      ? journalBookingIdempotencyAuditId(input.branchId, actor.userId, input.idempotencyKey)
+      : null;
+  if (auditId) {
+    const existing = await findIdempotentBooking(input.branchId, auditId);
     if (existing) {
       return {
         booking: existing,
@@ -579,7 +582,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
     if (!booking) throw new BookingError("Не удалось сохранить запись", "booking_create_failed", 500);
     await inBookingCreatePhase("audit", () => tx.branchAuditLog.create({
       data: {
-        ...(publicAuditId ? { id: publicAuditId } : {}),
+        ...(auditId ? { id: auditId } : {}),
         businessGroupId: branch.businessGroupId,
         branchId: branch.id,
         userId: actor.userId ?? null,
@@ -603,8 +606,8 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
   } catch (error) {
     // If the response or the concurrent transaction was lost after commit,
     // resolve the original operation instead of creating a second booking.
-    if (publicAuditId) {
-      const existing = await findPublicIdempotentBooking(input.branchId, publicAuditId);
+    if (auditId) {
+      const existing = await findIdempotentBooking(input.branchId, auditId);
       if (existing) {
         return {
           booking: existing,
@@ -861,6 +864,9 @@ export async function updateBooking(bookingId: string, input: UpdateBookingInput
     await lockKeys(tx, [`booking:${bookingId}`]);
     const current = await tx.booking.findFirst({ where: { id: bookingId }, include: BOOKING_INCLUDE });
     if (!current) throw new BookingError("Запись не найдена", "booking_not_found", 404);
+    if (input.expectedUpdatedAt && current.updatedAt.toISOString() !== input.expectedUpdatedAt) {
+      throw new BookingError("Запись изменилась. Откройте журнал и подготовьте перенос заново.", "booking_preview_stale", 409);
+    }
     if (current.status !== BOOKING_STATUS.ACTIVE) throw new BookingError("Отменённую запись нельзя изменить", "booking_cancelled", 409);
 
     const startsAt = input.startsAt ? dateValue(input.startsAt, "startsAt") : current.startsAt;

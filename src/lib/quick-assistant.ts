@@ -33,7 +33,13 @@ export function uniqueQuickBookingService(hint: string, services: QuickBookingOp
   if (!name) return;
   const matches = services.filter(service => normalize(service.name) === name);
   if (matches.length === 1) return matches[0];
+  if (matches.length === 0 && name === "замена моторного масла") {
+    const bundled = services.filter(service => normalize(service.name) === "замена моторного масла и масляного фильтра");
+    if (bundled.length === 1) return bundled[0];
+  }
 }
+
+export const QUICK_COMMAND_MAX_LENGTH = 8000;
 
 export type QuickSourceLink = { label: string; href: string };
 export type QuickAnswer = { text: string; sources: QuickSourceLink[] };
@@ -58,4 +64,16 @@ export type QuickShipmentPreview = {
   }[];
   fingerprint: string;
   nonce: string;
+};
+
+export type QuickReschedulePreview = {
+  branchId: string;
+  branchName: string;
+  recordId: string;
+  journalRecordId: number;
+  customerName: string;
+  previousDatetime: string;
+  datetime: string;
+  updatedAt: string;
+  notes: string;
 };
