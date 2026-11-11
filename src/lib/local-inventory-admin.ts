@@ -4724,6 +4724,9 @@ export async function updateLocalSupplierInvoiceStatus(invoiceId: string, status
   return { ok: true as const, invoice: mapSupplierInvoice(updated) };
 }
 
+// Posting writes stock, cell assignments and ledger entries for each receipt line.
+const RECEIPT_POSTING_TRANSACTION_OPTIONS = { timeout: 30_000 };
+
 type CostedStockDocumentPosition = {
   raw?: unknown;
   product: { id: string; name: string };
@@ -5165,7 +5168,10 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     };
     created = options?.transaction
       ? await createDocument(options.transaction)
-      : await prisma.$transaction(createDocument);
+      : await prisma.$transaction(
+          createDocument,
+          type === "receipt" && applicable ? RECEIPT_POSTING_TRANSACTION_OPTIONS : undefined,
+        );
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось провести складской документ" };
   }
@@ -5690,7 +5696,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
     });
 
       return document;
-    });
+    }, type === "receipt" && applicable ? RECEIPT_POSTING_TRANSACTION_OPTIONS : undefined);
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось провести складской документ" };
   }
@@ -6207,7 +6213,7 @@ export async function postLocalReceipt(documentId: string, user?: ActingUser) {
         user,
       });
       return next;
-    });
+    }, RECEIPT_POSTING_TRANSACTION_OPTIONS);
     invalidateWarehouseReadCaches();
     return { ok: true as const, message: "Приёмка проведена. Остатки обновлены.", document: stockDocumentSnapshot(updated) };
   } catch (error) {
