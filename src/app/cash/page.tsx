@@ -26,6 +26,10 @@ import { formatServiceDate, formatServiceDateTime, formatServiceTime, toServiceD
 type User = { login: string; name: string; role?: "owner" | "admin" | "master" } | null;
 
 type CashShiftStatus = "open" | "closed";
+type RestockSummary = {
+  count: number;
+  items: { productId: string; name: string | null; code: string | null; shortage: number }[];
+};
 
 type CashShift = {
   id: string;
@@ -274,6 +278,11 @@ export default function CashPage() {
   const [operations, setOperations] = useState<CashOperation[]>([]);
   const [historyShifts, setHistoryShifts] = useState<CashShift[]>([]);
   const [activeTab, setActiveTab] = useState<CashTab>("opening");
+  const [restockPrompt, setRestockPrompt] = useState<{
+    shiftId: string;
+    summary?: RestockSummary | null;
+  } | null>(null);
+  const restockShiftId = restockPrompt?.shiftId;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -873,6 +882,30 @@ export default function CashPage() {
     await mutateExpenseOrder(id, "cancelExpense", "Отменено из кассы");
   }
 
+  useEffect(() => {
+    if (!restockShiftId) return;
+    const controller = new AbortController();
+
+    async function loadRestockSummary() {
+      let summary: RestockSummary | null = null;
+      try {
+        const response = await fetch("/api/local-inventory/restock?mode=below_min&summary=1", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (response.ok) summary = await safeJson<RestockSummary>(response);
+      } catch {
+        // The cash shift is already closed. Keep the link available if the summary fails.
+      }
+      if (!controller.signal.aborted) {
+        setRestockPrompt((current) => current && current.shiftId === restockShiftId ? { ...current, summary } : current);
+      }
+    }
+
+    void loadRestockSummary();
+    return () => controller.abort();
+  }, [restockShiftId]);
+
   async function handleCloseShift() {
     if (!shift) return;
     setError(null);
@@ -921,6 +954,7 @@ export default function CashPage() {
         setHistoryShifts((prev) => [data.shift, ...prev.filter((item) => item.id !== data.shift.id)]);
       }
       setActiveTab("closed");
+      if (data.shift?.status === "closed") setRestockPrompt({ shiftId: data.shift.id });
       notifyShiftChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка сети при закрытии смены");
@@ -2036,6 +2070,34 @@ export default function CashPage() {
             Повторить
           </button>
         </div>
+      )}
+
+      {restockPrompt && shift?.id === restockPrompt.shiftId && restockPrompt.summary?.count !== 0 && (
+        <section className="eco-card eco-card--padded" aria-label="Пополнение после закрытия смены">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div role="status">
+              <strong>Смена закрыта</strong>
+              {restockPrompt.summary ? (
+                <p>Позиций ниже минимума — {restockPrompt.summary.count}. Проверьте, что нужно заказать.</p>
+              ) : (
+                <p>{restockPrompt.summary === undefined ? "Проверяем остатки…" : "Проверьте остатки и подготовьте заказ в «Пополнении»."}</p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/operations/restock" className="eco-btn eco-btn--primary">Перейти к пополнению</Link>
+              <EcoButton type="button" variant="ghost" onClick={() => setRestockPrompt(null)}>Позже</EcoButton>
+            </div>
+          </div>
+          {restockPrompt.summary && (
+            <ul className="mt-3 list-disc space-y-1 pl-5">
+              {restockPrompt.summary.items.map((item) => (
+                <li key={item.productId}>
+                  {item.name || item.code || "Товар"} · дефицит {item.shortage.toLocaleString("ru-RU")}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
       <div className="eco-grid eco-grid--kpi eco-cash-kpis">
