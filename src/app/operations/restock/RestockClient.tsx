@@ -943,15 +943,17 @@ export default function RestockClient() {
   );
 
   const categoryItems = useMemo(() => {
-    const shortages = items.filter((item) => Number(item.minimumBalance) > 0 && Number(item.minimumBalance) > item.stock);
-    if (procurementCategory === "all") return shortages;
-    return shortages.filter((item) => {
+    const eligibleItems = mode === "below_min"
+      ? items.filter((item) => Number(item.minimumBalance) > 0 && Number(item.minimumBalance) > item.stock)
+      : items;
+    if (procurementCategory === "all") return eligibleItems;
+    return eligibleItems.filter((item) => {
       const route = routeByProduct.get(item.productId);
       if (!route) return false;
       if (procurementCategory === "setup") return route.category === "setup" || filterNotFoundInRossko(item);
       return route.category === procurementCategory;
     });
-  }, [filterNotFoundInRossko, items, procurementCategory, routeByProduct]);
+  }, [filterNotFoundInRossko, items, mode, procurementCategory, routeByProduct]);
 
   const channelStats = useMemo(() => {
     const rowsFor = (predicate: (item: RestockItem) => boolean) => categoryItems.filter(predicate);
