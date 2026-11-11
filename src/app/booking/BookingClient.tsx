@@ -222,7 +222,13 @@ export default function BookingClient() {
           setLastSubmissionFingerprint(draft.lastSubmissionFingerprint || ""); setSubmissionUnknown(Boolean(draft.submissionUnknown));
         } else sessionStorage.removeItem(DRAFT_KEY);
       }
-    } catch { sessionStorage.removeItem(DRAFT_KEY); } finally { setDraftReady(true); }
+    } catch { sessionStorage.removeItem(DRAFT_KEY); } finally {
+      const requestedService = new URLSearchParams(window.location.search).get("service");
+      if (requestedService && requestedService.length <= 160) {
+        setComment(current => current.includes(requestedService) ? current : [current, `Интересует услуга — ${requestedService}`].filter(Boolean).join("\n"));
+      }
+      setDraftReady(true);
+    }
   }, []);
 
   useEffect(() => {

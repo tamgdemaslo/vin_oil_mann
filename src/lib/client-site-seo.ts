@@ -1,3 +1,4 @@
+import servicePages from "./client-service-pages.json";
 import type { Metadata } from "next";
 import { clientSiteCanonicalBasePath } from "@/lib/client-site-domain";
 import type { PublicOilCard } from "@/lib/public-oil";
@@ -6,6 +7,7 @@ import { buildClientProductContent } from "@/lib/client-product-content";
 export const CLIENT_SITE_ORIGIN = (process.env.PUBLIC_CLIENT_SITE_ORIGIN || "https://www.tamgdemaslocrm.ru").replace(/\/+$/, "");
 export const clientSiteUrl = (path = "") => `${CLIENT_SITE_ORIGIN}${clientSiteCanonicalBasePath()}${path || (clientSiteCanonicalBasePath() ? "" : "/")}`;
 export const SITE_PAGES: Record<string, { title: string; description: string }> = {
+  ...Object.fromEntries(servicePages.map(service => [`services/${service.slug}`, { title: `${service.title} — цены | Там где масло`, description: service.description }])),
   "": { title: "Замена масла в Калининграде — Там где масло", description: "Замена моторного и трансмиссионного масла в Калининграде. Каталог масел, цены, примеры работ и запись. Дачная, 6В и Юрия Гагарина, 116." },
   shop: { title: "Моторные масла в Калининграде — каталог и цены | Там где масло", description: "Каталог моторных масел: выбор по бренду, вязкости и OEM-спецификациям. Характеристики, фасовки, цены и наличие по филиалам в Калининграде." },
   services: { title: "Замена масла и технических жидкостей — цены в Калининграде", description: "Услуги сервиса «Там где масло»: замена моторного масла и жидкостей трансмиссии. Стоимость работ и запись в филиалы Калининграда." },

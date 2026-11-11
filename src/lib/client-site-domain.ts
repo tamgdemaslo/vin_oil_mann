@@ -1,3 +1,5 @@
+import servicePages from "./client-service-pages.json";
+
 // Domain routing is opt-in. The current CRM deployment keeps its routes until
 // the public host is configured or a dedicated client application is enabled.
 export function clientSiteOnly() {
@@ -64,6 +66,7 @@ export function isClientSitePublicPath(pathname: string, method: string) {
 
 export function clientSitePagePath(pathname: string) {
   if (pathname === "/") return "/client-site";
+  if (servicePages.some(service => pathname === `/services/${service.slug}` || pathname === `/services/${service.slug}/`)) return `/client-site${pathname}`;
   if (/^\/(?:shop|services|contacts|cases|team|privacy|offer|vin|account)\/?$/.test(pathname) || /^\/(?:product|case)\/[^/]+\/?$/.test(pathname)) return `/client-site${pathname}`;
   return null;
 }

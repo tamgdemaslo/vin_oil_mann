@@ -80,6 +80,27 @@ try {
   const { clientSiteUrl, pageMetadata } = await jiti.import("../src/lib/client-site-seo.ts");
   assert.equal(clientSiteUrl(), "https://tamgdemaslo.ru/");
   assert.equal(pageMetadata("/shop", "Catalog", "Oils").alternates.canonical, "https://tamgdemaslo.ru/shop");
+  const { default: servicePages } = await jiti.import("../src/lib/client-service-pages.json");
+  const { SITE_PAGES } = await jiti.import("../src/lib/client-site-seo.ts");
+  assert.equal(servicePages.length, 8);
+  for (const service of servicePages) {
+    const path = `/services/${service.slug}`;
+    assert.equal(domain.clientSitePagePath(path), `/client-site${path}`);
+    assert.equal(proxy(request(path)).headers.get("x-middleware-rewrite"), `https://tamgdemaslo.ru/client-site${path}`);
+    const metadata = SITE_PAGES[path.slice(1)];
+    assert.ok(metadata, `Metadata registered for ${path}`);
+    assert.equal(pageMetadata(path, metadata.title, metadata.description).alternates.canonical, `https://tamgdemaslo.ru${path}`);
+    for (const basePath of ["", "/client-site"]) {
+      const html = renderToString(React.createElement(App, { initialPath: path, basePath }));
+      assert.ok(html.includes(service.title), `Service content rendered for ${path}`);
+      assert.ok(html.includes(`href="${basePath}/services"`));
+      assert.ok(html.includes(`/booking?service=${encodeURIComponent(service.title)}`));
+      for (const id of service.cases) assert.ok(html.includes(`href="${basePath}/case/${id}"`));
+    }
+  }
+  assert.equal(domain.clientSitePagePath("/services/unknown-service"), null);
+  assert.equal(domain.clientSitePagePath("/services/zamena-masla-akpp/private"), null);
+
   const oil = { id: "test-oil", name: "Test oil", brand: "Test", line: "Test", visc: "5W-30", spec: "API SP", type: "Бензин", volume: "4 л", oem: [], note: "", price: 1200, stock: 3, color: "#333", offers: [] };
   const rootHtml = renderToString(React.createElement(App, { initialPath: "/shop", initialOils: [oil], basePath: "" }));
   assert.ok(rootHtml.includes('href="/product/test-oil"'));

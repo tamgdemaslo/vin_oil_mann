@@ -30,7 +30,8 @@ async function resolvePage(segments: string[]) {
     if (!item) notFound();
     return { title: `${item.title} | Там где масло`, description: item.summary || item.title };
   }
-  if (segments.length === 1 && SITE_PAGES[section]) return SITE_PAGES[section];
+  const pageKey = segments.join("/");
+  if (SITE_PAGES[pageKey]) return SITE_PAGES[pageKey];
   if (segments.length === 1 && ["privacy", "offer", "vin", "account"].includes(section)) return { title: "Там где масло", description: "Информация сервиса «Там где масло»", noindex: true };
   notFound();
 }
