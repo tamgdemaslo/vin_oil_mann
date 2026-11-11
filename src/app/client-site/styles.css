@@ -692,6 +692,9 @@ button:disabled {
 .services-price-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: baseline; padding: 15px 0; border-bottom: 1px dashed var(--line); }
 .services-price-row:first-child { padding-top: 0; }
 .services-price-row span { font-size: 16px; line-height: 1.45; }
+.services-price-row--link span { text-decoration: underline; text-underline-offset: 4px; }
+.services-price-row--link:hover span { text-decoration-thickness: 2px; }
+.services-price-row--link:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
 .services-price-row strong { color: var(--paper); font: 700 21px/1 var(--f-display); white-space: nowrap; }
 .transmission-prices { min-width: 0; margin-bottom: 24px; }
 .transmission-prices__method + .transmission-prices__method { margin-top: 32px; }
@@ -1325,6 +1328,7 @@ button:disabled {
 
   .services-page__hero,
   .contacts-branches__hero { gap: 24px; padding-bottom: 30px; }
+  .services-page__hero h1 { font-size: clamp(26px, 8.2vw, 48px); line-height: 1; }
 
   .services-price-groups,
   .contacts-branches { margin-top: 32px; }
@@ -1750,18 +1754,17 @@ button:disabled {
 .service-detail li { padding: 8px 0 8px 8px; max-width: 72ch; }
 .service-detail details { border-bottom: var(--hair); padding: 16px 0; }
 .service-detail summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
-.service-detail__case-links, .service-detail__directory { display: grid; gap: 16px; }
-.service-detail__case-links a, .service-detail__directory a, .service-detail__home-link { display: block; text-decoration: underline; text-underline-offset: 4px; padding: 8px 0; }
-.service-detail__directory { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 0 48px; font-size: 16px; }
+.service-detail__case-links { display: grid; gap: 16px; }
+.service-detail__case-links a, .service-detail__home-link { display: block; text-decoration: underline; text-underline-offset: 4px; padding: 8px 0; }
 .service-detail__home-link { margin-top: 16px; font-size: 16px; }
 .service-detail .btn { white-space: normal; text-align: center; min-height: 48px; }
 @media (hover: hover) {
-  .service-detail a:hover, .service-detail__directory a:hover, .service-detail__home-link:hover { text-decoration: underline; text-decoration-thickness: 2px; }
+  .service-detail a:hover, .service-detail__home-link:hover { text-decoration: underline; text-decoration-thickness: 2px; }
 }
 @media (max-width: 767px) {
   .service-detail { --service-section: 32px; padding-top: 24px; }
   .service-detail__hero { padding: 40px 0 32px; }
-  .service-detail__columns, .service-detail__directory { grid-template-columns: minmax(0, 1fr); }
+  .service-detail__columns { grid-template-columns: minmax(0, 1fr); }
   .service-detail th, .service-detail td { padding: 12px 8px; }
   .service-detail .btn { width: 100%; }
 }

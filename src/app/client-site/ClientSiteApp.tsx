@@ -475,8 +475,8 @@ const SERVICE_PRICE_GROUPS = [
   {
     title: 'Двигатель и фильтры',
     items: [
-      ['Замена моторного масла при покупке масла у нас', 'Бесплатно'],
-      ['Замена моторного масла с маслом клиента', '1 490 ₽'],
+      ['Замена моторного масла при покупке масла у нас', 'Бесплатно', 'zamena-motornogo-masla'],
+      ['Замена моторного масла с маслом клиента', '1 490 ₽', 'zamena-motornogo-masla'],
       ['Замена воздушного фильтра', 'от 190 ₽'],
       ['Замена салонного фильтра', 'от 190 ₽'],
       ['Замена топливного фильтра', 'от 1 490 ₽'],
@@ -485,11 +485,15 @@ const SERVICE_PRICE_GROUPS = [
   {
     title: 'Трансмиссия',
     items: [
-      ['Замена масла в МКПП', 'от 1 090 ₽'],
-      ['Замена масла в редукторе', 'от 1 490 ₽'],
-      ['Замена масла в раздаточной коробке', 'от 1 490 ₽'],
-      ['Замена масла в муфте Haldex', 'от 1 690 ₽'],
-      ['Выставление уровня масла в АКПП как отдельная услуга', '2 490 ₽'],
+      ['Частичная замена масла в АКПП', 'от 2 990 ₽', 'zamena-masla-akpp'],
+      ['Полная аппаратная замена масла в АКПП', 'от 4 990 ₽', 'zamena-masla-akpp'],
+      ['Замена масла в вариаторе', 'По запросу', 'zamena-masla-variator'],
+      ['Замена масла в DSG', 'По запросу', 'zamena-masla-dsg'],
+      ['Замена масла в МКПП', 'от 1 090 ₽', 'zamena-masla-mkpp'],
+      ['Замена масла в редукторе', 'от 1 490 ₽', 'zamena-masla-reduktor'],
+      ['Замена масла в раздаточной коробке', 'от 1 490 ₽', 'zamena-masla-razdatka'],
+      ['Замена масла в муфте Haldex', 'от 1 690 ₽', 'zamena-masla-haldex'],
+      ['Выставление уровня масла в АКПП', 'от 1 990 ₽'],
     ],
   },
   {
@@ -3259,7 +3263,6 @@ function ServicesPage() {
           <p>Стоимость работы видна до записи. Масло, фильтры и расходники подбираем отдельно под автомобиль — по VIN и фактическому объёму.</p>
         </header>
 
-        <nav className="service-detail__directory" aria-label="Услуги сервиса">{servicePages.map(item => <Link key={item.slug} to={`/services/${item.slug}`}>{item.title} →</Link>)}</nav>
         <div className="services-price-groups">
           {SERVICE_PRICE_GROUPS.map((group, groupIndex) => (
             <section key={group.title} className="services-price-group">
@@ -3268,13 +3271,16 @@ function ServicesPage() {
                 <h2>{group.title}</h2>
               </div>
               <div className="services-price-list">
-                {group.title === 'Трансмиссия' && <TransmissionPriceTables />}
-                {group.items.map(([name, price]) => (
-                  <div key={name} className="services-price-row">
-                    <span>{name}</span>
-                    <strong>{price}</strong>
-                  </div>
-                ))}
+                {group.items.map(([name, price, slug]) => {
+                  const details = <><span>{name}</span><strong>{price}</strong></>;
+                  return slug ? (
+                    <Link key={name} className="services-price-row services-price-row--link" to={`/services/${slug}`}>
+                      {details}
+                    </Link>
+                  ) : (
+                    <div key={name} className="services-price-row">{details}</div>
+                  );
+                })}
               </div>
             </section>
           ))}
