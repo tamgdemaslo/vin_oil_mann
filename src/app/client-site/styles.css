@@ -1722,3 +1722,46 @@ button:disabled {
   .garage-invitation__copy h2 { font-size: clamp(46px, 10vw, 60px); }
   .garage-invitation__actions .btn { flex: 1 1 auto; }
 }
+
+/* Service landing pages share the existing brand tokens. */
+.service-detail {
+  --service-space: 24px;
+  --service-section: 48px;
+  --service-muted: #bcb8b2;
+  padding: 32px 0 80px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 16px;
+  line-height: 1.65;
+}
+.service-detail__breadcrumbs { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--service-muted); }
+.service-detail__hero { max-width: 960px; padding: 64px 0 48px; }
+.service-detail h1 { font-family: var(--f-display); font-size: clamp(36px, 6vw, 72px); line-height: 1.12; margin: 16px 0 24px; }
+.service-detail h2 { font-family: var(--f-display); font-size: clamp(24px, 3vw, 36px); line-height: 1.2; margin: 0 0 24px; }
+.service-detail p { max-width: 72ch; margin: 16px 0 24px; }
+.service-detail__branches { color: var(--service-muted); }
+.service-detail__section { padding: var(--service-section) 0; border-top: var(--hair); }
+.service-detail__columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--service-space); }
+.service-detail__table-scroll { overflow-x: auto; }
+.service-detail table { width: 100%; border-collapse: collapse; text-align: left; }
+.service-detail th, .service-detail td { padding: 16px; border-bottom: var(--hair); vertical-align: top; }
+.service-detail td { white-space: nowrap; }
+.service-detail thead th { color: var(--service-muted); font-weight: 500; }
+.service-detail li { padding: 8px 0 8px 8px; max-width: 72ch; }
+.service-detail details { border-bottom: var(--hair); padding: 16px 0; }
+.service-detail summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.service-detail__case-links, .service-detail__directory { display: grid; gap: 16px; }
+.service-detail__case-links a, .service-detail__directory a, .service-detail__home-link { display: block; text-decoration: underline; text-underline-offset: 4px; padding: 8px 0; }
+.service-detail__directory { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 0 48px; font-size: 16px; }
+.service-detail__home-link { margin-top: 16px; font-size: 16px; }
+.service-detail .btn { white-space: normal; text-align: center; min-height: 48px; }
+@media (hover: hover) {
+  .service-detail a:hover, .service-detail__directory a:hover, .service-detail__home-link:hover { text-decoration: underline; text-decoration-thickness: 2px; }
+}
+@media (max-width: 767px) {
+  .service-detail { --service-section: 32px; padding-top: 24px; }
+  .service-detail__hero { padding: 40px 0 32px; }
+  .service-detail__columns, .service-detail__directory { grid-template-columns: minmax(0, 1fr); }
+  .service-detail th, .service-detail td { padding: 12px 8px; }
+  .service-detail .btn { width: 100%; }
+}

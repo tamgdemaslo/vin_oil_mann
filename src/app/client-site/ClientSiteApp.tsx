@@ -2,6 +2,7 @@
 // @ts-nocheck
 "use client";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useId } from "react";
+import servicePages from "@/lib/client-service-pages.json";
 import { Phone, X } from "lucide-react";
 import { trackClientContactClick } from "@/lib/client-site-analytics";
 import type { ClientOil } from "@/lib/client-site-api";
@@ -1477,6 +1478,7 @@ function ServicesGrid() {
               </div>
               <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, lineHeight: 1.05, color: '#F5F2ED', textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 14}}>{s.title}</div>
               <div style={{fontSize: 13.5, color: '#9A9A9A', lineHeight: 1.55, maxWidth: 320}}>{s.t}</div>
+              {['01', '02'].includes(s.k) && <Link className="service-detail__home-link" to={`/services/${s.k === '01' ? 'zamena-motornogo-masla' : 'zamena-masla-akpp'}`}>Подробнее об услуге →</Link>}
               {s.k === '01' && (
                 <div style={{position: 'absolute', top: 24, right: 28}}>
                   <FreeChangeBadge size="sm" />
@@ -3078,6 +3080,9 @@ function CasePage() {
 
           {/* Sidebar — spec sheet */}
           <aside className="case-spec" style={{position: 'sticky', top: 130}}>
+          {/* Связанные услуги для реального кейса */}
+          <nav className="service-detail__case-links" aria-label="Услуги по этому кейсу">{servicePages.filter(item => item.cases.includes(c.id)).map(item => <Link key={item.slug} to={`/services/${item.slug}`}>{item.title} →</Link>)}</nav>
+
             <div style={{padding: '22px 22px', border: '1px solid var(--line)', background: '#0e0e0e'}}>
               <div className="t-eyebrow" style={{marginBottom: 12}}>Наряд-заказ № {1100 + idx * 17}</div>
               <table className="spec">
@@ -3227,6 +3232,21 @@ function MasterCard({ m, idx }) {
 //  pages/services.jsx — услуги и публичный прайс
 // ====================================================================
 
+function ServiceDetailPage({ service }) {
+  const relatedCases = CASES.filter(item => service.cases.includes(item.id));
+  return <main className="service-detail"><div className="container">
+    <nav className="service-detail__breadcrumbs" aria-label="Хлебные крошки"><Link to="/">Главная</Link><span aria-hidden="true">/</span><Link to="/services">Услуги</Link><span aria-hidden="true">/</span><span>{service.label}</span></nav>
+    <header className="service-detail__hero"><div className="t-eyebrow">Там где масло · Калининград</div><h1>{service.title}</h1><p>{service.intro}</p><a href={`/booking?service=${encodeURIComponent(service.title)}`} className="btn rust lg">Уточнить стоимость и записаться</a><p className="service-detail__branches">{service.branches}</p></header>
+    <section className="service-detail__section"><h2>Стоимость работы</h2>{service.prices.length ? <div className="service-detail__table-scroll" tabIndex={0} role="region" aria-label="Цены на обслуживание"><table><thead><tr><th scope="col">Работа</th><th scope="col">Материалы сервиса</th><th scope="col">Материалы клиента</th></tr></thead><tbody>{service.prices.map(row => <tr key={row[0]}>{row.map((cell, i) => i === 0 ? <th scope="row" key={i}>{cell}</th> : <td key={i}>{cell || '—'}</td>)}</tr>)}</tbody></table></div> : <p>Стоимость рассчитываем под ваш автомобиль. Отдельно укажем работу, жидкость, фильтры и необходимые расходники.</p>}<p>Масло, фильтры и расходные материалы оплачиваются отдельно. Итог согласуем до начала работ.{service.label === 'АКПП' ? ' Выставление уровня входит в стоимость замены.' : ''}</p></section>
+    <div className="service-detail__columns">{service.sections.map(section => <section className="service-detail__section" key={section.title}><h2>{section.title}</h2><p>{section.text}</p></section>)}</div>
+    <section className="service-detail__section"><h2>Как проходит обслуживание</h2><ol>{service.steps.map(step => <li key={step}>{step}</li>)}</ol></section>
+    {relatedCases.length > 0 && <section className="service-detail__section"><h2>Примеры наших работ</h2><div className="service-detail__case-links">{relatedCases.map(item => <Link key={item.id} to={`/case/${item.id}`}>{item.title} →</Link>)}</div></section>}
+    <section className="service-detail__section"><h2>Частые вопросы</h2>{service.faq.map(item => <details key={item.question}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</section>
+    <section className="service-detail__section"><h2>Записаться на обслуживание</h2><p>Сообщите марку, модель, год выпуска, двигатель и пробег. VIN поможет уточнить комплектацию. Если агрегат меняли, предупредите об этом.</p><a href={`/booking?service=${encodeURIComponent(service.title)}`} className="btn rust lg">Выбрать филиал и записаться</a></section>
+    <nav className="service-detail__section" aria-label="Другие услуги"><h2>Другие услуги</h2><div className="service-detail__case-links">{servicePages.filter(item => item.slug !== service.slug).map(item => <Link key={item.slug} to={`/services/${item.slug}`}>{item.title} →</Link>)}</div></nav>
+  </div></main>;
+}
+
 function ServicesPage() {
   return (
     <main className="services-page">
@@ -3239,6 +3259,7 @@ function ServicesPage() {
           <p>Стоимость работы видна до записи. Масло, фильтры и расходники подбираем отдельно под автомобиль — по VIN и фактическому объёму.</p>
         </header>
 
+        <nav className="service-detail__directory" aria-label="Услуги сервиса">{servicePages.map(item => <Link key={item.slug} to={`/services/${item.slug}`}>{item.title} →</Link>)}</nav>
         <div className="services-price-groups">
           {SERVICE_PRICE_GROUPS.map((group, groupIndex) => (
             <section key={group.title} className="services-price-group">
@@ -4049,6 +4070,10 @@ function App({
   else if (seg[0] === 'cases') page = <CasesPage />;
   else if (seg[0] === 'case') page = <CasePage />;
   else if (seg[0] === 'team') page = <TeamPage />;
+  else if (seg[0] === 'services' && seg[1]) {
+    const service = servicePages.find(item => item.slug === seg[1]);
+    page = service ? <ServiceDetailPage service={service} /> : <ServicesPage />;
+  }
   else if (seg[0] === 'services') page = <ServicesPage />;
   else if (seg[0] === 'contacts') page = <ContactsPage />;
   else if (seg[0] === 'vin') page = <VinDevelopmentPage />;
