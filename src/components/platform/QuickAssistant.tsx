@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { Bot, Mic, Square, X } from "lucide-react";
+import { Bot, ExternalLink, Mic, Send, Square, X } from "lucide-react";
 import { journalLocalToUtcIso } from "@/lib/booking/journal-time";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { QUICK_COMMAND_MAX_LENGTH, uniqueQuickBookingService, uniqueQuickOption, type QuickAnswer, type QuickBookingOptions, type QuickCommand, type QuickReschedulePreview, type QuickShipmentPreview } from "@/lib/quick-assistant";
@@ -26,8 +26,29 @@ type Chat = { id: string; messages: ChatMessage[] };
 const emptyMessages: ChatMessage[] = [];
 const maxSavedChats = 20;
 
-export default function QuickAssistant({ branchId, login }: { branchId: string; login: string }) {
-  const [open, setOpen] = useState(false);
+type Workspace = {
+  chats: Chat[];
+  chatId: string;
+  text: string;
+  preview?: Preview;
+  reschedule?: QuickReschedulePreview;
+  shipment?: ShipmentResult;
+  serviceId: string;
+  masterId?: number;
+  saveUncertain: boolean;
+  bookingSaveKey: string | null;
+  error: string;
+};
+
+export default function QuickAssistant({ branchId, login, fullPage = false }: {
+  branchId: string;
+  login: string;
+  fullPage?: boolean;
+}) {
+  const [open, setOpen] = useState(fullPage);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const [text, setText] = useState("");
   const [preview, setPreview] = useState<Preview>();
   const [chats, setChats] = useState<Chat[]>([]);
@@ -35,6 +56,7 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const historyKey = `eco:quick-chats:${login}:${branchId}`;
+  const workspaceKey = `${historyKey}:workspace`;
   const messages = chats.find(chat => chat.id === chatId)?.messages ?? emptyMessages;
   const [reschedule, setReschedule] = useState<QuickReschedulePreview>();
   const [shipment, setShipment] = useState<ShipmentResult>();
@@ -67,9 +89,9 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
 
   useEffect(() => {
     if (!open) return;
-    if (previewKind) previewHeading.current?.focus();
+    if (previewKind && (fullPage || draftOpen)) previewHeading.current?.focus();
     else if (!busy && !recording) commandInput.current?.focus();
-  }, [open, previewKind, busy, recording]);
+  }, [open, previewKind, busy, recording, fullPage, draftOpen]);
 
   useEffect(() => {
     if (chatLog.current) chatLog.current.scrollTop = chatLog.current.scrollHeight;
@@ -77,26 +99,78 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
 
   useEffect(() => {
     try {
-      const stored: unknown = JSON.parse(sessionStorage.getItem(historyKey) ?? "[]");
+      const saved: Workspace | null = JSON.parse(sessionStorage.getItem(workspaceKey) ?? "null");
+      const stored: unknown = saved?.chats ?? JSON.parse(sessionStorage.getItem(historyKey) ?? "[]");
       if (Array.isArray(stored)) {
-        const saved = (stored as Chat[]).filter(chat => chat && typeof chat.id === "string" && Array.isArray(chat.messages)).slice(0, maxSavedChats);
-        setChats(saved);
-        setChatId(saved[0]?.id ?? "");
+        const history = (stored as Chat[]).filter(chat => chat && typeof chat.id === "string" && Array.isArray(chat.messages)).slice(0, maxSavedChats);
+        setChats(history);
+        setChatId(saved?.chatId ?? history[0]?.id ?? "");
+      }
+      if (saved) {
+        setText(saved.text);
+        setPreview(saved.preview);
+        setReschedule(saved.reschedule);
+        setShipment(saved.shipment);
+        setServiceId(saved.serviceId);
+        setMasterId(saved.masterId);
+        setSaveUncertain(saved.saveUncertain);
+        setError(saved.error || (saved.saveUncertain
+          ? "Сохранение прервалось. Проверьте результат перед повтором."
+          : ""));
+        bookingSaveKey.current = saved.bookingSaveKey;
       }
     } catch {
       // The chat remains usable if browser storage is unavailable.
     }
     setHistoryLoaded(true);
-  }, [historyKey]);
+  }, [historyKey, workspaceKey]);
+
+  const workspace: Workspace = {
+    chats, chatId, text, preview, reschedule, shipment, serviceId, masterId,
+    saveUncertain, bookingSaveKey: bookingSaveKey.current, error,
+  };
 
   useEffect(() => {
     if (!historyLoaded) return;
     try {
-      sessionStorage.setItem(historyKey, JSON.stringify(chats));
+      sessionStorage.setItem(workspaceKey, JSON.stringify(workspace));
     } catch {
-      // The chat remains usable if the browser storage quota is exhausted.
+      // The chat remains usable if browser storage is unavailable.
     }
-  }, [chats, historyKey, historyLoaded]);
+  });
+
+  function openFullPage() {
+    if (!historyLoaded || operation.current || capture.current) return;
+    try {
+      sessionStorage.setItem(workspaceKey, JSON.stringify(workspace));
+      // A same-origin tab with an opener starts with a copy of this tab's session storage.
+      const tab = window.open("about:blank", "_blank");
+      if (!tab) {
+        setError("Разрешите открытие новой вкладки для этого сайта.");
+        return;
+      }
+      tab.opener = null;
+      tab.location.replace("/ai-assistant");
+      // Leave confirmation of the transferred draft in the destination tab only.
+      sessionStorage.setItem(workspaceKey, JSON.stringify({
+        chats, chatId, text: "", serviceId: "", saveUncertain: false, bookingSaveKey: null, error: "",
+      } satisfies Workspace));
+      setPreview(undefined);
+      setReschedule(undefined);
+      setShipment(undefined);
+      setSaveUncertain(false);
+      setDraftOpen(false);
+      setServiceId("");
+      setMasterId(undefined);
+      bookingSaveKey.current = null;
+      setText("");
+      setRetryAudio(undefined);
+      setError("");
+      close();
+    } catch {
+      setError("Не удалось перенести чат. Проверьте настройки хранения данных браузера.");
+    }
+  }
 
   function updateMessages(id: string, update: (messages: ChatMessage[]) => ChatMessage[]) {
     setChats(current => {
@@ -107,6 +181,7 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
   }
 
   function switchChat(id: string) {
+    setDraftOpen(false);
     setChatId(id);
     setHistoryOpen(false);
     setText("");
@@ -142,7 +217,7 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
 
   async function prepare(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!hasBranch || !text.trim() || operation.current || capture.current) return;
+    if (!hasBranch || !text.trim() || previewKind || operation.current || capture.current) return;
     const controller = new AbortController();
     operation.current = controller;
     setBusy("Разбираю команду…");
@@ -290,7 +365,7 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
 
   async function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!preview || operation.current || (saveUncertain && preview.draft.kind !== "booking")) return;
+    if (!preview || capture.current || operation.current || (saveUncertain && preview.draft.kind !== "booking")) return;
     const { branch, draft } = preview;
     if (branch.id !== branchId) return;
     const phone = normalizePhoneKey(draft.phone);
@@ -318,6 +393,7 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
     const controller = new AbortController();
     operation.current = controller;
     setBusy("Сохраняю…");
+    setSaveUncertain(true);
     setError("");
     const expectedBranchId = branch.id;
     if (booking) bookingSaveKey.current ??= crypto.randomUUID();
@@ -361,7 +437,6 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
       if (!(booking ? data.data?.booking_id : data.id)) throw new Error();
       setPreview(undefined);
       setSaveUncertain(false);
-      setText("");
       appendAnswer(booking ? "Запись создана в журнале." : "Дело клиента создано в CRM.");
     } catch (cause) {
       setSaveUncertain(true);
@@ -377,9 +452,10 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
 
   async function confirmReschedule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!reschedule || operation.current || saveUncertain) return;
+    if (!reschedule || capture.current || operation.current || saveUncertain) return;
     operation.current = new AbortController();
     setBusy("Переношу запись…");
+    setSaveUncertain(true);
     setError("");
     try {
       const response = await fetch("/api/booking-journal", {
@@ -393,6 +469,7 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
       const data = await response.json();
       if (response.status >= 500) throw new Error();
       if (!response.ok) {
+        setSaveUncertain(false);
         setError(data.error || "Не удалось перенести запись.");
         return;
       }
@@ -401,6 +478,7 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
         { label: "Открыть запись в журнале", href: `/records?recordId=${reschedule.journalRecordId}` },
       ]);
       setReschedule(undefined);
+      setSaveUncertain(false);
     } catch {
       setSaveUncertain(true);
       setError("Не удалось подтвердить перенос. Проверьте время записи в журнале.");
@@ -411,7 +489,7 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
   }
 
   async function confirmShipment() {
-    if (!shipment || operation.current) return;
+    if (!shipment || capture.current || operation.current) return;
     operation.current = new AbortController();
     setBusy("Сохраняю черновик…");
     setError("");
@@ -431,7 +509,6 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
       if (!data.id || !data.name) throw new Error();
       appendAnswer("Черновик отгрузки создан.", [{ label: `Открыть отгрузку № ${data.name}`, href: `/shipment/${encodeURIComponent(data.id)}/edit` }]);
       setShipment(undefined);
-      setText("");
     } catch {
       setError("Результат неизвестен. Повторите подтверждение этого черновика, чтобы проверить сохранение.");
     } finally {
@@ -450,24 +527,126 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
   const service = preview?.options?.services.find(option => option.id === serviceId);
   const masters = preview?.options?.masters.filter(master => service?.masterIds.includes(master.id)) ?? [];
 
-  return createPortal(
-    <div className={styles.widget} onKeyDown={event => { if (event.key === "Escape" && open) close(); }}>
-      <button ref={launcher} type="button" className={styles.launcher} onClick={() => open ? close() : setOpen(true)}
-        aria-label="Быстрый помощник" aria-expanded={open} aria-controls={open ? "quick-assistant-panel" : undefined}>
+  const draftPanel = previewKind && (
+    <aside className={styles.draftPanel} aria-label="Черновик">
+    {reschedule ?
+    <form className={styles.form} onSubmit={confirmReschedule}>
+      <div className={styles.previewTitle}>
+        <strong ref={previewHeading} tabIndex={-1}>Перенос записи</strong>
+        <span>{reschedule.customerName} · {reschedule.branchName}</span>
+        <span>Было {reschedule.previousDatetime.replace("T", " ")}</span>
+        <a href={`/records?recordId=${reschedule.journalRecordId}`}>Открыть запись в журнале</a>
+      </div>
+      <fieldset disabled={Boolean(recording || busy || saveUncertain)} className={styles.fields}>
+        <label>Новое время
+          <input className="eco-input" type="datetime-local" required value={reschedule.datetime}
+            onChange={event => setReschedule({ ...reschedule, datetime: event.target.value })} />
+        </label>
+        <label>Дополнить заметку
+          <textarea className="eco-input" value={reschedule.notes} maxLength={1000}
+            onChange={event => setReschedule({ ...reschedule, notes: event.target.value })} />
+        </label>
+      </fieldset>
+      <div className={styles.actions}>
+        <button type="button" className={styles.secondary} disabled={Boolean(recording || busy)}
+          onClick={() => { setReschedule(undefined); setSaveUncertain(false); setError(""); }}>Закрыть черновик</button>
+        <button className={styles.primary} disabled={Boolean(recording || busy || saveUncertain)}>Подтвердить перенос</button>
+      </div>
+    </form> : shipment ?
+    <div className={styles.form}>
+      <div className={styles.previewTitle}>
+        <strong ref={previewHeading} tabIndex={-1}>Черновик отгрузки</strong>
+        <span>{shipment.branchName} · {shipment.shipment.organization}</span>
+        <a href={`/shipment/${encodeURIComponent(shipment.shipment.sourceId)}/edit`}>Исходный заказ-наряд № {shipment.shipment.sourceName}</a>
+        <span>Клиент: {shipment.shipment.customer} · Склад: {shipment.shipment.warehouse}</span>
+        <span>Комментарий: {shipment.shipment.description}</span>
+      </div>
+      <ul className={styles.sourceList}>
+        {shipment.shipment.positions.map((line, index) => (
+          <li key={index}>
+            <strong>{line.name}</strong>
+            <span>{line.quantity} × {rubles.format(line.priceCents / 100)}{line.discount ? ` · скидка ${line.discount}%` : ""}{line.vat !== null ? ` · НДС ${line.vat}%` : ""}</span>
+            {line.comment && <small>{line.comment}</small>}
+            {line.available !== null && <small className={line.shortage ? styles.error : undefined}>
+              Доступно: {line.available}{line.shortage ? " · не хватает на весь заказ" : ""}
+            </small>}
+          </li>
+        ))}
+      </ul>
+      <strong>Итого {rubles.format(shipment.shipment.totalCents / 100)}</strong>
+      <small>Сохранится отдельный черновик без проведения и списания остатков.</small>
+      <div className={styles.actions}>
+        <button type="button" className={styles.secondary} disabled={Boolean(recording || busy)}
+          onClick={() => { setShipment(undefined); setError(""); }}>Закрыть черновик</button>
+        <button type="button" className={styles.primary} disabled={Boolean(recording || busy)}
+          onClick={() => void confirmShipment()}>Подтвердить и создать</button>
+      </div>
+    </div> : draft ?
+    <form className={styles.form} onSubmit={confirm}>
+      <div className={styles.previewTitle}>
+        <strong ref={previewHeading} tabIndex={-1}>{draft.kind === "booking" ? "Черновик записи" : "Черновик дела клиента"}</strong>
+        <span>{preview.branch.name} · {preview.branch.timezone}</span>
+        {draft.kind === "task" && <span>Ответственный: {preview.branch.login}</span>}
+      </div>
+      <fieldset disabled={Boolean(recording || busy || saveUncertain)} className={styles.fields}>
+        <label>Клиент<input className="eco-input" required maxLength={180} value={draft.customerName} onChange={event => edit("customerName", event.target.value)} /></label>
+        <label>Телефон<input className="eco-input" type="tel" required maxLength={32} value={draft.phone} onChange={event => edit("phone", event.target.value)} /></label>
+        {draft.kind === "booking" ? <>
+          <label>Услуга
+            {!serviceId && draft.service && <small>В команде: {draft.service}</small>}
+            <select className="eco-input" value={serviceId} required onChange={event => { setServiceId(event.target.value); setMasterId(undefined); }}>
+              <option value="">Выберите услугу</option>
+              {preview.options?.services.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+            </select>
+          </label>
+          <label>Мастер
+            {!masterId && draft.master && <small>В команде: {draft.master}</small>}
+            <select className="eco-input" value={masterId ?? ""} required onChange={event => setMasterId(Number(event.target.value) || undefined)}>
+              <option value="">Выберите мастера</option>
+              {masters.map(master => <option key={master.id} value={master.id}>{master.name}</option>)}
+            </select>
+          </label>
+        </> : <label>Что сделать<input className="eco-input" required maxLength={180} value={draft.title} onChange={event => edit("title", event.target.value)} /></label>}
+        <label>{draft.kind === "booking" ? "Дата и время визита" : "Срок · необязательно"}
+          <input className="eco-input" type="datetime-local" required={draft.kind === "booking"} value={draft.datetime}
+            onChange={event => edit("datetime", event.target.value)} />
+        </label>
+        <label>Заметка<textarea className="eco-input" rows={2} maxLength={1000} value={draft.notes} onChange={event => edit("notes", event.target.value)} /></label>
+      </fieldset>
+      <div className={styles.actions}>
+        <button type="button" className={styles.secondary} disabled={Boolean(recording || busy)} onClick={() => { setPreview(undefined); setError(""); setSaveUncertain(false); }}>
+          Закрыть черновик
+        </button>
+        <button className={styles.primary} disabled={Boolean(recording || busy || (saveUncertain && draft.kind !== "booking"))}>{saveUncertain && draft.kind === "booking" ? "Проверить и повторить" : "Подтвердить и сохранить"}</button>
+      </div>
+    </form> : null}
+    </aside>
+  );
+
+  const content = (
+    <div className={fullPage ? styles.workspace : styles.widget} onKeyDown={event => { if (!fullPage && event.key === "Escape" && open) close(); }}>
+      {!fullPage && <button ref={launcher} type="button" className={styles.launcher} onClick={() => open ? close() : setOpen(true)}
+        aria-label="ИИ-помощник" aria-expanded={open} aria-controls={open ? "quick-assistant-panel" : undefined}>
         <Bot size={23} aria-hidden />
-      </button>
-      {open && <section id="quick-assistant-panel" className={styles.panel} aria-label="Быстрый помощник">
+      </button>}
+      {open && <section id="quick-assistant-panel" className={styles.panel} aria-label="ИИ-помощник">
         <header className={styles.heading}>
-          <h2>Быстрый помощник</h2>
-          <button type="button" className={styles.icon} onClick={close} disabled={Boolean(busy || recording)} aria-label="Закрыть"><X size={18} /></button>
+          {fullPage ? <h1>ИИ-помощник</h1> : <h2><Bot size={19} aria-hidden /> ИИ-помощник</h2>}
+          {fullPage ? <a href="/ai-assistant?mode=research">Технические расчёты</a> : <div className={styles.actions}>
+            <button type="button" className={styles.secondary} onClick={openFullPage}
+              disabled={!historyLoaded || Boolean(busy || recording)}>Открыть в новой вкладке <ExternalLink size={15} aria-hidden /></button>
+            <button type="button" className={styles.icon} onClick={close} disabled={Boolean(busy || recording)} aria-label="Закрыть"><X size={18} /></button>
+          </div>}
         </header>
-        {hasBranch && <div className={styles.historyToolbar}>
-          <button type="button" className={styles.secondary} aria-expanded={historyOpen}
-            disabled={Boolean(busy || recording || preview || shipment || reschedule)} onClick={() => setHistoryOpen(value => !value)}>История чатов</button>
+        <div className={styles.layout}>
+        {hasBranch && <aside className={styles.history} aria-label="Чаты">
+        <div className={styles.historyToolbar}>
+          {!fullPage && <button type="button" className={styles.secondary} aria-expanded={historyOpen}
+            disabled={Boolean(busy || recording || preview || shipment || reschedule)} onClick={() => setHistoryOpen(value => !value)}>История чатов</button>}
           <button type="button" className={styles.secondary}
             disabled={Boolean(busy || recording || preview || shipment || reschedule)} onClick={() => switchChat("")}>Новый чат</button>
-        </div>}
-        {hasBranch && historyOpen && <ul className={styles.historyList} aria-label="Прошлые чаты">
+        </div>
+        {(fullPage || historyOpen) && <ul className={styles.historyList} aria-label="Прошлые чаты">
           {chats.length === 0 && <li>Пока нет сохранённых чатов.</li>}
           {chats.map(chat => <li key={chat.id}>
             <button type="button" className={styles.secondary} aria-current={chat.id === chatId ? "true" : undefined}
@@ -476,6 +655,8 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
             </button>
           </li>)}
         </ul>}
+        </aside>}
+        <div className={styles.thread}>
         {hasBranch && <div ref={chatLog} className={styles.chatLog} role="log" aria-label="История разговора" tabIndex={0}>
           {messages.length === 0 && <p className={styles.intro}>Спросите про остатки, клиента или автомобиль. Можно продолжить вопрос в следующем сообщении.</p>}
           {messages.map((message, index) => (
@@ -488,60 +669,14 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
             </div>
           ))}
         </div>}
-        {!hasBranch ? <p>Выберите один филиал в меню платформы, чтобы начать.</p> : reschedule ?
-          <form className={styles.form} onSubmit={confirmReschedule}>
-            <div className={styles.previewTitle}>
-              <strong ref={previewHeading} tabIndex={-1}>Перенос записи</strong>
-              <span>{reschedule.customerName} · {reschedule.branchName}</span>
-              <span>Было {reschedule.previousDatetime.replace("T", " ")}</span>
-              <a href={`/records?recordId=${reschedule.journalRecordId}`}>Открыть запись в журнале</a>
-            </div>
-            <fieldset disabled={Boolean(busy || saveUncertain)} className={styles.fields}>
-              <label>Новое время
-                <input className="eco-input" type="datetime-local" required value={reschedule.datetime}
-                  onChange={event => setReschedule({ ...reschedule, datetime: event.target.value })} />
-              </label>
-              <label>Дополнить заметку
-                <textarea className="eco-input" value={reschedule.notes} maxLength={1000}
-                  onChange={event => setReschedule({ ...reschedule, notes: event.target.value })} />
-              </label>
-            </fieldset>
-            <div className={styles.actions}>
-              <button type="button" className={styles.secondary} disabled={Boolean(busy)}
-                onClick={() => { setReschedule(undefined); setSaveUncertain(false); setError(""); }}>Продолжить чат</button>
-              <button className={styles.primary} disabled={Boolean(busy || saveUncertain)}>Подтвердить перенос</button>
-            </div>
-          </form> : shipment ?
-          <div className={styles.form}>
-            <div className={styles.previewTitle}>
-              <strong ref={previewHeading} tabIndex={-1}>Черновик отгрузки</strong>
-              <span>{shipment.branchName} · {shipment.shipment.organization}</span>
-              <a href={`/shipment/${encodeURIComponent(shipment.shipment.sourceId)}/edit`}>Исходный заказ-наряд № {shipment.shipment.sourceName}</a>
-              <span>Клиент: {shipment.shipment.customer} · Склад: {shipment.shipment.warehouse}</span>
-              <span>Комментарий: {shipment.shipment.description}</span>
-            </div>
-            <ul className={styles.sourceList}>
-              {shipment.shipment.positions.map((line, index) => (
-                <li key={index}>
-                  <strong>{line.name}</strong>
-                  <span>{line.quantity} × {rubles.format(line.priceCents / 100)}{line.discount ? ` · скидка ${line.discount}%` : ""}{line.vat !== null ? ` · НДС ${line.vat}%` : ""}</span>
-                  {line.comment && <small>{line.comment}</small>}
-                  {line.available !== null && <small className={line.shortage ? styles.error : undefined}>
-                    Доступно: {line.available}{line.shortage ? " · не хватает на весь заказ" : ""}
-                  </small>}
-                </li>
-              ))}
-            </ul>
-            <strong>Итого {rubles.format(shipment.shipment.totalCents / 100)}</strong>
-            <small>Сохранится отдельный черновик без проведения и списания остатков.</small>
-            <div className={styles.actions}>
-              <button type="button" className={styles.secondary} disabled={Boolean(busy)}
-                onClick={() => { setShipment(undefined); setError(""); }}>Продолжить чат</button>
-              <button type="button" className={styles.primary} disabled={Boolean(busy)}
-                onClick={() => void confirmShipment()}>Подтвердить и создать</button>
-            </div>
-          </div> : !draft ?
-          <form className={styles.form} onSubmit={prepare}>
+        {!hasBranch && <p>Выберите один филиал в меню платформы, чтобы начать.</p>}
+        {!fullPage && previewKind && <button type="button" className={styles.draftToggle} aria-expanded={draftOpen}
+          onClick={() => setDraftOpen(value => !value)}>
+          {draftOpen ? "Свернуть черновик" : "Проверить черновик"}
+          {!draftOpen && draft?.customerName && <span>{draft.customerName} · {draft.datetime.replace("T", " ")}</span>}
+        </button>}
+        {!fullPage && previewKind && draftOpen && <div className={styles.inlineDraft}>{draftPanel}</div>}
+        {hasBranch && (<form className={styles.composerForm} onSubmit={prepare}>
             <label>Сообщение
               <textarea ref={commandInput} className={styles.composer} rows={2} required
                 placeholder="Напишите или продиктуйте сообщение"
@@ -556,55 +691,23 @@ export default function QuickAssistant({ branchId, login }: { branchId: string; 
               <button type="button" className={styles.secondary} onClick={() => void toggleRecording()} disabled={Boolean(busy)}>
                 {recording ? <Square size={16} /> : <Mic size={16} />}{recording ? "Остановить" : "Продиктовать"}
               </button>
-              <button className={styles.primary} disabled={!text.trim() || Boolean(busy || recording)}>Отправить</button>
+              <button className={styles.primary} disabled={!text.trim() || Boolean(busy || recording || previewKind)}><Send size={16} aria-hidden /> Отправить</button>
             </div>
             {retryAudio && <button type="button" className={styles.secondary} disabled={Boolean(busy || recording)}
               onClick={resendRecording}>Повторить отправку</button>}
+            {previewKind && text.trim() && <small>Подтвердите или закройте черновик, чтобы отправить сообщение.</small>}
             <small>Текст и голос обрабатывает OpenAI.</small>
             {recording && <p role="status">Идёт запись. Нажмите «Остановить», когда закончите.</p>}
-          </form> :
-          <form className={styles.form} onSubmit={confirm}>
-            <div className={styles.previewTitle}>
-              <strong ref={previewHeading} tabIndex={-1}>{draft.kind === "booking" ? "Новая запись" : "Новое дело клиента"}</strong>
-              <span>{preview.branch.name} · {preview.branch.timezone}</span>
-              {draft.kind === "task" && <span>Ответственный: {preview.branch.login}</span>}
-            </div>
-            <fieldset disabled={Boolean(busy || saveUncertain)} className={styles.fields}>
-              <label>Клиент<input className="eco-input" required maxLength={180} value={draft.customerName} onChange={event => edit("customerName", event.target.value)} /></label>
-              <label>Телефон<input className="eco-input" type="tel" required maxLength={32} value={draft.phone} onChange={event => edit("phone", event.target.value)} /></label>
-              {draft.kind === "booking" ? <>
-                <label>Услуга
-                  {!serviceId && draft.service && <small>В команде: {draft.service}</small>}
-                  <select className="eco-input" value={serviceId} required onChange={event => { setServiceId(event.target.value); setMasterId(undefined); }}>
-                    <option value="">Выберите услугу</option>
-                    {preview.options?.services.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
-                  </select>
-                </label>
-                <label>Мастер
-                  {!masterId && draft.master && <small>В команде: {draft.master}</small>}
-                  <select className="eco-input" value={masterId ?? ""} required onChange={event => setMasterId(Number(event.target.value) || undefined)}>
-                    <option value="">Выберите мастера</option>
-                    {masters.map(master => <option key={master.id} value={master.id}>{master.name}</option>)}
-                  </select>
-                </label>
-              </> : <label>Что сделать<input className="eco-input" required maxLength={180} value={draft.title} onChange={event => edit("title", event.target.value)} /></label>}
-              <label>{draft.kind === "booking" ? "Дата и время визита" : "Срок · необязательно"}
-                <input className="eco-input" type="datetime-local" required={draft.kind === "booking"} value={draft.datetime}
-                  onChange={event => edit("datetime", event.target.value)} />
-              </label>
-              <label>Заметка<textarea className="eco-input" rows={2} maxLength={1000} value={draft.notes} onChange={event => edit("notes", event.target.value)} /></label>
-            </fieldset>
-            <div className={styles.actions}>
-              <button type="button" className={styles.secondary} disabled={Boolean(busy)} onClick={() => { setPreview(undefined); setError(""); if (saveUncertain) setText(""); }}>
-                {saveUncertain ? "Закрыть черновик" : "Продолжить чат"}
-              </button>
-              <button className={styles.primary} disabled={Boolean(busy || (saveUncertain && draft.kind !== "booking"))}>{saveUncertain && draft.kind === "booking" ? "Проверить и повторить" : "Подтвердить и сохранить"}</button>
-            </div>
-          </form>}
+          </form>)}
         {busy && <p role="status">{busy}</p>}
         {error && <p role="alert" className={styles.error}>{error}</p>}
+        </div>
+        {fullPage && draftPanel}
+        </div>
       </section>}
-    </div>,
-    document.body,
+    </div>
   );
+
+  if (fullPage) return content;
+  return mounted ? createPortal(content, document.body) : null;
 }
