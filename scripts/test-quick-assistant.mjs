@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import * as crypto from "node:crypto";
+import { createJiti } from "jiti";
+import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { NextRequest, NextResponse } from "next/server.js";
@@ -15,7 +17,9 @@ function load(path, modules = {}) {
   return exports;
 }
 
-const { uniqueQuickBookingService, uniqueQuickOption } = load("src/lib/quick-assistant.ts");
+const { quickAssistantPlainText, uniqueQuickBookingService, uniqueQuickOption } = load("src/lib/quick-assistant.ts");
+assert.equal(quickAssistantPlainText("**Ответ клиенту:**\n\nДопуск **VW 507 00**. [Руководство](https://example.test/manual)"), "Ответ клиенту:\n\nДопуск VW 507 00. Руководство");
+assert.equal(quickAssistantPlainText("## Масло\n5W-30\nhttps://example.test/source"), "Масло\n5W-30");
 const { journalId } = load("src/lib/booking/journal-id.ts");
 const masters = [{ name: "Семён", id: 1 }, { name: "Алексей", id: 2 }];
 assert.equal(uniqueQuickOption(" семен ", masters)?.id, 1);
@@ -116,7 +120,11 @@ const crmModule = load("src/lib/ai-assistant/quick-crm.ts", {
   "@/lib/booking/constants": { BOOKING_STATUS: { CANCELLED: "CANCELLED" } },
   "@/lib/client-case-shared": load("src/lib/client-case-shared.ts"),
 });
-const { quickMaintenanceQuote } = load("src/lib/ai-assistant/quick-maintenance-quote.ts", {
+const quoteJiti = createJiti(import.meta.url, { alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) } });
+const quoteCalculations = await quoteJiti.import("../src/lib/maintenance-quote.ts");
+const quoteNormalizer = await quoteJiti.import("../src/lib/oil-normalizer.ts");
+const oilPack = { id: "pack-4", name: "Тестовое масло 5W-30, 4 л", article: "", price: 3000, available: 1, unit: "шт.", litresPerUnit: 4, sae: "5W-30", oem: "VW 507 00" };
+const { quickMaintenanceQuote, quickOilQuote } = load("src/lib/ai-assistant/quick-maintenance-quote.ts", {
   "@/lib/vehicle-normalization": load("src/lib/vehicle-normalization.ts"),
   "@/lib/db": { prisma: { localStore: { findMany: async () => [{ id: "test-store", name: "Склад", isMain: true }] } } },
   "@/lib/vehicle-identity": { lookupVehicle: async () => ({
@@ -124,9 +132,12 @@ const { quickMaintenanceQuote } = load("src/lib/ai-assistant/quick-maintenance-q
   }) },
   "@/lib/mann-research-catalog": {},
   "@/lib/mann-fluid-research": {},
-  "@/lib/maintenance-quote-stock": {},
-  "@/lib/maintenance-quote": {},
-  "@/lib/oil-normalizer": {},
+  "@/lib/maintenance-quote-stock": { loadMaintenanceQuoteStock: async input => {
+    assert.deepEqual(input, { branchId: "branch-a", storeId: "test-store", specification: "VW 507 00", viscosity: "5W-30" });
+    return [oilPack, { ...oilPack, id: "pack-1", name: "Тестовое масло 5W-30, 1 л", price: 900, litresPerUnit: 1 }];
+  } },
+  "@/lib/maintenance-quote": quoteCalculations,
+  "@/lib/oil-normalizer": quoteNormalizer,
   "@/lib/ai-agent/settings": {},
   "@/lib/rossko": {},
   "@/lib/maintenance-quote-rossko": {},
@@ -134,6 +145,12 @@ const { quickMaintenanceQuote } = load("src/lib/ai-assistant/quick-maintenance-q
   "./tariff-context": {},
   "./technical-context": { mannContext: () => assert.fail("Conflicting vehicle must not reach the parts catalogue") },
 });
+const quoteInput = { vehicle: "Volkswagen Touareg", specification: "VW 507 00", viscosities: ["5W-30"], litres: 5, warehouse: "", includeLabor: false };
+const packagedQuote = await quickOilQuote(access, quoteInput);
+assert.match(packagedQuote.text, /фасовка 4 л/);
+assert.match(packagedQuote.text, /фасовка 1 л/);
+assert.match(packagedQuote.text, /Итого: 3\s900/);
+assert.match((await quickOilQuote(access, { ...quoteInput, litres: 9.4 })).text, /нет комплекта на 9.4 л/);
 const conflictingQuote = await quickMaintenanceQuote(access, {
   vin: "X4XNA78435B675505", expectedMake: "БМВ", viscosities: ["5W-30"], filterTypes: ["oil"], warehouse: "",
 });

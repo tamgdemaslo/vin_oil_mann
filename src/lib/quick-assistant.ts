@@ -41,6 +41,18 @@ export function uniqueQuickBookingService(hint: string, services: QuickBookingOp
 
 export const QUICK_COMMAND_MAX_LENGTH = 8000;
 
+export function quickAssistantPlainText(text: string) {
+  return text
+    .replace(/\[([^\]\n]+)\]\((?:https?:\/\/|\/)[^\s)]+\)/giu, "$1")
+    .replace(/\(\s*https?:\/\/[^\s)]+\s*\)/giu, "")
+    .replace(/<?https?:\/\/[^\s<>]+>?/giu, "")
+    .replace(/\*{2,3}|_{2,3}/gu, "")
+    .replace(/(^|\s)\*([^*\n]+)\*(?=\s|[.,!?;:]|$)/gu, "$1$2")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gmu, "")
+    .replace(/[ \t]+$/gmu, "")
+    .trim();
+}
+
 export type QuickSourceLink = { label: string; href: string };
 export type QuickAnswer = { text: string; sources: QuickSourceLink[] };
 

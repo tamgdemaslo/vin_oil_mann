@@ -4,7 +4,7 @@ import { lookupVehicle } from "@/lib/vehicle-identity";
 import { addMannResearchCatalogToProfile } from "@/lib/mann-research-catalog";
 import { researchMissingMannFluids } from "@/lib/mann-fluid-research";
 import { loadMaintenanceQuoteStock } from "@/lib/maintenance-quote-stock";
-import { groupQuoteOils, quoteExtraCents, quoteRequirementChoices, quoteRub, quoteVariantAmount, sortQuoteFilterOffers, type QuoteExtra } from "@/lib/maintenance-quote";
+import { groupQuoteOils, quoteClientText, quoteExtraCents, quoteRequirementChoices, quoteRub, quoteVariantAmount, sortQuoteFilterOffers, type QuoteExtra } from "@/lib/maintenance-quote";
 import { normalizeSAE } from "@/lib/oil-normalizer";
 import { getAgentSettings } from "@/lib/ai-agent/settings";
 import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
@@ -18,23 +18,74 @@ import { mannContext, mannResolutionDiagnostic } from "./technical-context";
 const filterLabels = { oil: "Масляный", air: "Воздушный", cabin: "Салонный", fuel: "Топливный" } as const;
 type FilterKind = keyof typeof filterLabels;
 
+async function quoteStore(branchId: string, warehouse: string) {
+  const stores = await prisma.localStore.findMany({
+    where: { branchId, archived: false },
+    select: { id: true, name: true, isMain: true },
+  });
+  const choices = warehouse
+    ? stores.filter(store => store.id === warehouse || store.name.toLowerCase() === warehouse.toLowerCase())
+    : stores.length === 1 ? stores : stores.filter(store => store.isMain);
+  if (choices.length === 1) return { store: choices[0] };
+  return { error: stores.length ? `Выберите склад: ${stores.map(store => store.name).join(", ")}.` : "В выбранном филиале нет активных складов." };
+}
+
+export async function quickOilQuote(access: AIAssistantAccess, input: {
+  vehicle: string;
+  specification: string;
+  viscosities: string[];
+  litres: number;
+  warehouse: string;
+  includeLabor: boolean;
+}): Promise<QuickAnswer> {
+  const answer = (text: string): QuickAnswer => ({ text, sources: [] });
+  if (!input.specification || !Number.isFinite(input.litres) || input.litres <= 0 || input.litres > 100) {
+    return answer("Для расчёта моторного масла нужны допуск и сервисный объём до 100 л.");
+  }
+  const { store, error } = await quoteStore(access.branchId, input.warehouse);
+  if (!store) return answer(error);
+  const grades = normalizeSAE(input.viscosities.join("; ")).slice(0, 4);
+  const groups = await Promise.all((grades.length ? grades : [""]).map(viscosity =>
+    loadMaintenanceQuoteStock({ branchId: access.branchId, storeId: store.id, specification: input.specification, viscosity })));
+  const oils = [...new Map(groups.flat().filter(oil => Number.isFinite(oil.price) && oil.price > 0)
+    .map(oil => [oil.id, oil])).values()];
+  const available = groupQuoteOils(oils).flatMap(variant => {
+    const amount = quoteVariantAmount(variant, input.litres);
+    return amount?.enough ? [{ variant, amount }] : [];
+  }).sort((left, right) => left.amount.cents - right.amount.cents);
+  if (!available.length) {
+    return answer(`На складе «${store.name}» нет комплекта на ${input.litres} л с допуском ${input.specification}${grades.length ? " · " + grades.join(", ") : ""}.`);
+  }
+
+  const extras: QuoteExtra[] = [];
+  let laborNote = "";
+  if (input.includeLabor) {
+    const tariff = await assistantTariffContext(access.organizationId);
+    const labor = await resolveLaborPrice({
+      organizationId: access.organizationId, locationId: tariff.locationId ?? "",
+      materialsOwner: "service", serviceFamily: "engine_oil", procedureType: "oil_change",
+    });
+    if (!labor.requiresHumanConfirmation && labor.laborPriceCents != null && labor.priceFromCents == null && labor.priceToCents == null) {
+      extras.push({ id: "engine-oil-labor", name: "Замена моторного масла", quantity: 1, price: labor.laborPriceCents / 100 });
+    } else {
+      laborNote = "\nСтоимость работы уточняется. Итог указан за масло.";
+    }
+  }
+  const limit = 8;
+  const selected = available.slice(0, limit).flatMap(({ variant }) => variant.products);
+  const specification = [input.specification, ...grades].join(" · ");
+  const quote = quoteClientText([input.vehicle || "Моторное масло", store.name].join(" · "), specification, input.litres, selected, extras);
+  return answer(quote + laborNote + (available.length > limit ? `\nПоказано ${limit} из ${available.length} доступных вариантов.` : ""));
+}
+
 export async function quickMaintenanceQuote(access: AIAssistantAccess, input: {
   vin: string; expectedMake: string; viscosities: string[]; filterTypes: string[]; warehouse: string;
 }): Promise<QuickAnswer> {
   const sources: QuickAnswer["sources"] = [];
   const answer = (text: string): QuickAnswer => ({ text, sources });
   if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(input.vin)) return answer("Укажите VIN из 17 символов для расчёта ТО.");
-  const stores = await prisma.localStore.findMany({
-    where: { branchId: access.branchId, archived: false },
-    select: { id: true, name: true, isMain: true },
-  });
-  const choices = input.warehouse
-    ? stores.filter(store => store.id === input.warehouse || store.name.toLowerCase() === input.warehouse.toLowerCase())
-    : stores.length === 1 ? stores : stores.filter(store => store.isMain);
-  if (choices.length !== 1) {
-    return answer(stores.length ? `Выберите склад: ${stores.map(store => store.name).join(", ")}.` : "В выбранном филиале нет активных складов.");
-  }
-  const store = choices[0];
+  const { store, error } = await quoteStore(access.branchId, input.warehouse);
+  if (!store) return answer(error);
   const decoded = await lookupVehicle({
     organizationId: access.organizationId, inputType: "vin", input: input.vin, actorLogin: access.actorId,
   });
