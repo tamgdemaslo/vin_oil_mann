@@ -25999,7 +25999,7 @@ select.eco-input::-ms-expand,
   min-width: 1120px;
 }
 
-.eco-restock-rossko-table th,
+.eco-restock-rossko-table > thead > tr > th,
 .eco-restock-supplier-table th {
   padding: 10px 12px;
   border-bottom: 1px solid var(--eco-line);
@@ -26011,7 +26011,7 @@ select.eco-input::-ms-expand,
   text-transform: uppercase;
 }
 
-.eco-restock-rossko-table td,
+.eco-restock-rossko-table > tbody > tr > td,
 .eco-restock-supplier-table td {
   padding: 12px;
   border-bottom: 1px solid var(--eco-line);
@@ -26238,7 +26238,17 @@ select.eco-input::-ms-expand,
   min-width: 180px;
 }
 
-.eco-restock-offer-row td {
+.eco-restock-rossko-wrap {
+  container-type: inline-size;
+}
+
+.eco-restock-inline-offers {
+  position: sticky;
+  left: 0;
+  max-width: 100cqw;
+}
+
+.eco-restock-page .eco-restock-rossko-table > tbody > .eco-restock-offer-row > td {
   padding: 0;
   background: color-mix(in srgb, var(--eco-soft) 68%, transparent);
 }
@@ -26248,39 +26258,6 @@ select.eco-input::-ms-expand,
   padding: 14px;
   border-top: 1px solid var(--eco-line);
   background: var(--eco-surface-sunk);
-}
-
-.eco-restock-offers-drawer .eco-restock-cart-head {
-  align-items: flex-start;
-}
-
-.eco-restock-cart-drawer.eco-restock-offers-drawer {
-  box-sizing: border-box;
-  grid-template-rows: auto minmax(0, 1fr);
-  width: min(1320px, 100vw);
-}
-
-.eco-restock-offers-drawer .eco-restock-cart-head h2 {
-  max-width: 75ch;
-  font-size: 17px;
-  line-height: 1.25;
-}
-
-.eco-restock-offers-drawer .eco-restock-cart-head p {
-  margin: 4px 0 0;
-  color: var(--eco-muted);
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.eco-restock-offers-drawer .eco-restock-offer-panel {
-  padding: 0;
-  border-top: 0;
-  background: transparent;
-}
-
-.eco-restock-offers-drawer .eco-restock-offer-panel__head {
-  display: none;
 }
 
 .eco-restock-offer-panel__head {
@@ -26546,10 +26523,6 @@ select.eco-input::-ms-expand,
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.eco-restock-offers-drawer .eco-restock-offer-list {
-  overflow: visible;
 }
 
 @media (max-width: 720px) {
@@ -66917,18 +66890,18 @@ html.tgm-print-active .tgm-client-report .qr {
   max-width: 290px;
 }
 
-.eco-restock-page .eco-restock-rossko-table :is(th, td) {
+.eco-restock-page .eco-restock-rossko-table > :is(thead, tbody) > tr > :is(th, td) {
   padding-inline: 9px;
 }
 
-.eco-restock-page .eco-restock-rossko-table th,
+.eco-restock-page .eco-restock-rossko-table > thead > tr > th,
 .eco-restock-page .eco-restock-supplier-table th {
   color: var(--eco-ink-3);
   text-transform: none;
   font-size: 12px;
 }
 
-.eco-restock-page .eco-restock-rossko-table th.l-number,
+.eco-restock-page .eco-restock-rossko-table > thead > tr > th.l-number,
 .eco-restock-page .eco-restock-supplier-table th.l-number {
   white-space: normal;
 }
@@ -67044,7 +67017,7 @@ html.tgm-print-active .tgm-client-report .qr {
     max-width: 170px;
   }
 
-  .eco-restock-page .eco-restock-rossko-table :is(th, td),
+  .eco-restock-page .eco-restock-rossko-table > :is(thead, tbody) > tr > :is(th, td),
   .eco-restock-page .eco-restock-supplier-table :is(th, td) {
     padding-inline: 8px;
   }
