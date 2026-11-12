@@ -13,6 +13,9 @@ type Preview = {
   branch: { id: string; name: string; timezone: string; login: string };
   options?: QuickBookingOptions;
   selectedServiceId?: string | null;
+  requestedServices?: string[];
+  selectedServiceIds?: (string | null)[];
+  relatedTask?: { title: string; notes: string };
 };
 
 type ShipmentResult = { shipment: QuickShipmentPreview; branchName: string };
@@ -33,7 +36,8 @@ type Workspace = {
   preview?: Preview;
   reschedule?: QuickReschedulePreview;
   shipment?: ShipmentResult;
-  serviceId: string;
+  serviceId?: string;
+  serviceIds?: string[];
   masterId?: number;
   saveUncertain: boolean;
   bookingSaveKey: string | null;
@@ -60,7 +64,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   const messages = chats.find(chat => chat.id === chatId)?.messages ?? emptyMessages;
   const [reschedule, setReschedule] = useState<QuickReschedulePreview>();
   const [shipment, setShipment] = useState<ShipmentResult>();
-  const [serviceId, setServiceId] = useState("");
+  const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [masterId, setMasterId] = useState<number>();
   const [localBusy, setBusy] = useState("");
   const [remoteBusy, setRemoteBusy] = useState(false);
@@ -115,7 +119,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       setPreview(saved.preview);
       setReschedule(saved.reschedule);
       setShipment(saved.shipment);
-      setServiceId(saved.serviceId);
+      setServiceIds(saved.serviceIds ?? [saved.serviceId ?? ""]);
       setMasterId(saved.masterId);
       setSaveUncertain(saved.saveUncertain);
       setError(saved.error || (initial && saved.saveUncertain && (!shared.current || !localStorage.getItem(actionKey))
@@ -185,7 +189,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   }, [actionKey, hasBranch, historyKey, workspaceKey]);
 
   const workspace: Workspace = {
-    chats, chatId, text, preview, reschedule, shipment, serviceId, masterId,
+    chats, chatId, text, preview, reschedule, shipment, serviceIds, masterId,
     saveUncertain, bookingSaveKey: bookingSaveKey.current, error,
   };
 
@@ -267,14 +271,14 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       tab.location.replace("/ai-assistant");
       // Leave confirmation of the transferred draft in the destination tab only.
       sessionStorage.setItem(workspaceKey, JSON.stringify({
-        chats, chatId, text: "", serviceId: "", saveUncertain: false, bookingSaveKey: null, error: "",
+        chats, chatId, text: "", serviceIds: [], saveUncertain: false, bookingSaveKey: null, error: "",
       } satisfies Workspace));
       setPreview(undefined);
       setReschedule(undefined);
       setShipment(undefined);
       setSaveUncertain(false);
       setDraftOpen(false);
-      setServiceId("");
+      setServiceIds([]);
       setMasterId(undefined);
       bookingSaveKey.current = null;
       setText("");
@@ -330,7 +334,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   }
 
   async function prepare() {
-    if (!hasBranch || !text.trim() || previewKind || operation.current || capture.current) return;
+    if (!hasBranch || !text.trim() || operation.current || capture.current) return;
     const controller = new AbortController();
     operation.current = controller;
     setBusy("Разбираю команду…");
@@ -353,6 +357,11 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
         appendAnswer(result.answer.text, result.answer.sources, id);
         return;
       }
+      if (previewKind) {
+        appendAnswer("У вас открыт черновик. Подтвердите или закройте его перед созданием другого.", undefined, id);
+        setText(command);
+        return;
+      }
       if ("reschedule" in result) {
         setSaveUncertain(false);
         setReschedule(result.reschedule);
@@ -365,17 +374,22 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
         return;
       }
       const services = result.options?.services ?? [];
-      const service = result.selectedServiceId === undefined
-        ? uniqueQuickBookingService(result.draft.service, services)
-        : services.find(option => option.id === result.selectedServiceId);
-      const masters = result.options?.masters.filter(master => service?.masterIds.includes(master.id)) ?? [];
+      const selectedIds = result.selectedServiceIds?.map(id => id ?? "") ?? [
+        result.selectedServiceId === undefined
+          ? uniqueQuickBookingService(result.draft.service, services)?.id ?? ""
+          : result.selectedServiceId ?? "",
+      ];
+      const masters = result.options?.masters.filter(master => selectedIds.every(id =>
+        services.some(service => service.id === id && service.masterIds.includes(master.id)))) ?? [];
       const master = result.draft.master ? uniqueQuickOption(result.draft.master, masters) : masters.length === 1 ? masters[0] : undefined;
-      setServiceId(service?.id ?? "");
+      setServiceIds(selectedIds);
       setMasterId(master?.id);
       setSaveUncertain(false);
       bookingSaveKey.current = null;
       setPreview(result);
-      appendAnswer(result.draft.kind === "booking" ? "Подготовлен черновик записи." : "Подготовлен черновик дела.", undefined, id);
+      appendAnswer(result.relatedTask
+        ? "Подготовил запись и дело. Сначала подтвердите запись, затем дело."
+        : result.draft.kind === "booking" ? "Подготовлен черновик записи." : "Подготовлен черновик дела.", undefined, id);
     } catch (cause) {
       if (!controller.signal.aborted) {
         updateMessages(id, current => current.slice(0, -1));
@@ -493,7 +507,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       setError("Проверьте дату и время.");
       return;
     }
-    if (booking && (!datetime || !serviceId || !masterId)) {
+    if (booking && (!datetime || !serviceIds.length || serviceIds.some(id => !id) || !masterId)) {
       setError("Выберите услугу, мастера, дату и время.");
       return;
     }
@@ -516,7 +530,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       payload: {
         client: { name: draft.customerName, phone },
         staff_id: masterId,
-        services: [{ booking_service_id: serviceId }],
+        services: [...new Set(serviceIds)].map(id => ({ booking_service_id: id })),
         datetime,
         internal_comment: draft.notes || null,
       },
@@ -547,9 +561,15 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
         return;
       }
       if (!(booking ? data.data?.booking_id : data.id)) throw new Error();
-      setPreview(undefined);
+      const relatedTask = booking ? preview.relatedTask : undefined;
+      setPreview(relatedTask ? {
+        branch,
+        draft: { ...draft, ...relatedTask, kind: "task", datetime: "" },
+      } : undefined);
       setSaveUncertain(false);
-      appendAnswer(booking ? "Запись создана в журнале." : "Дело клиента создано в CRM.");
+      appendAnswer(relatedTask
+        ? "Запись создана. Проверьте и подтвердите черновик дела."
+        : booking ? "Запись создана в журнале." : "Дело клиента создано в CRM.");
     } catch (cause) {
       setSaveUncertain(true);
       const detail = cause instanceof Error && cause.message !== "Failed to fetch" ? cause.message : "";
@@ -635,8 +655,9 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   }
 
   const draft = preview?.draft;
-  const service = preview?.options?.services.find(option => option.id === serviceId);
-  const masters = preview?.options?.masters.filter(master => service?.masterIds.includes(master.id)) ?? [];
+  const services = preview?.options?.services ?? [];
+  const masters = serviceIds.length ? preview?.options?.masters.filter(master => serviceIds.every(id =>
+    services.some(service => service.id === id && service.masterIds.includes(master.id)))) ?? [] : [];
 
   const draftPanel = previewKind && (
     <aside className={styles.draftPanel} aria-label="Черновик">
@@ -703,13 +724,22 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
         <label>Клиент<input className="eco-input" required maxLength={180} value={draft.customerName} onChange={event => edit("customerName", event.target.value)} /></label>
         <label>Телефон<input className="eco-input" type="tel" required maxLength={32} value={draft.phone} onChange={event => edit("phone", event.target.value)} /></label>
         {draft.kind === "booking" ? <>
-          <label>Услуга
-            {!serviceId && draft.service && <small>В команде: {draft.service}</small>}
-            <select className="eco-input" value={serviceId} required onChange={event => { setServiceId(event.target.value); setMasterId(undefined); }}>
-              <option value="">Выберите услугу</option>
-              {preview.options?.services.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
-            </select>
-          </label>
+          {(preview.requestedServices ?? [draft.service]).map((requested, index, list) => (
+            <label key={index}>
+              {list.length === 1 ? "Услуга" : `Услуга ${index + 1}`}
+              {!serviceIds[index] && requested && <small>В команде: {requested}</small>}
+              <select className="eco-input" value={serviceIds[index] ?? ""} required
+                onChange={event => {
+                  const selected = event.target.value;
+                  setServiceIds(current => list.map((_, position) => position === index ? selected : current[position] ?? ""));
+                  setMasterId(undefined);
+                }}>
+                <option value="">Выберите услугу</option>
+                {services.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+              </select>
+            </label>
+          ))}
+          {preview.relatedTask && <p>После записи — черновик дела: {preview.relatedTask.title}</p>}
           <label>Мастер
             {!masterId && draft.master && <small>В команде: {draft.master}</small>}
             <select className="eco-input" value={masterId ?? ""} required onChange={event => setMasterId(Number(event.target.value) || undefined)}>
@@ -802,11 +832,10 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
               <button type="button" className={styles.secondary} onClick={() => void toggleRecording()} disabled={Boolean(busy)}>
                 {recording ? <Square size={16} /> : <Mic size={16} />}{recording ? "Остановить" : "Продиктовать"}
               </button>
-              <button className={styles.primary} disabled={!text.trim() || Boolean(busy || recording || previewKind)}><Send size={16} aria-hidden /> Отправить</button>
+              <button className={styles.primary} disabled={!text.trim() || Boolean(busy || recording)}><Send size={16} aria-hidden /> Отправить</button>
             </div>
             {retryAudio && <button type="button" className={styles.secondary} disabled={Boolean(busy || recording)}
               onClick={resendRecording}>Повторить отправку</button>}
-            {previewKind && text.trim() && <small>Подтвердите или закройте черновик, чтобы отправить сообщение.</small>}
             <small>Текст и голос обрабатывает OpenAI.</small>
             {recording && <p role="status">Идёт запись. Нажмите «Остановить», когда закончите.</p>}
           </form>)}
