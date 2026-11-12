@@ -165,7 +165,7 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
   } },
   "@/lib/ai-assistant/quick-vehicle": { answerQuickVehicle: async (current, question, system) => {
     assert.equal(current, access);
-    assert.equal(question, "Тестовая команда");
+    assert.equal(question, "Допуск масла VIN JTDBR32E720012345");
     assert.equal(system, "engine_oil");
     return { text: "Проверенный допуск", sources: [] };
   } },
@@ -188,7 +188,8 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
     } },
     bookingService: { findMany: async ({ where }) => {
       assert.equal(where.branchId, "branch-a");
-      return [{ id: "service-1", name: "Диагностика", masters: [{ membershipId: "membership-1" }] }];
+      return [{ id: "service-1", name: "Диагностика", masters: [{ membershipId: "membership-1" }] },
+        ...(modelResult.services ? [{ id: "service-2", name: "Замена воздушного фильтра", masters: [{ membershipId: "membership-1" }] }] : [])];
     } },
     branchMembership: { findMany: async ({ where }) => {
       assert.equal(where.branchId, "branch-a");
@@ -201,24 +202,37 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
       assert.equal(request.model, process.env.OPENAI_QUICK_ASSISTANT_MODEL?.trim() || "gpt-6-luna");
       assert.equal(request.store, false);
       if (request.tools.some(tool => tool.name === "choose_service")) {
-        assert.deepEqual(JSON.parse(request.input).catalog.map(row => row.name), ["Диагностика"]);
-        return { output: [{ type: "function_call", name: "choose_service", arguments: '{"assessments":[{"option":"1","match":"exact"}]}' }] };
+        const { draftService, catalog } = JSON.parse(request.input);
+        return { output: [{ type: "function_call", name: "choose_service", arguments: JSON.stringify({
+          assessments: catalog.map(row => ({ option: row.option, match: row.name === draftService ? "exact" : "unrelated" })),
+        }) }] };
+      }
+      if (request.tools.some(tool => tool.type === "web_search")) {
+        const vehicle = JSON.parse(request.input);
+        assert.equal(vehicle.model, "Solaris");
+        assert.equal(vehicle.engine, "1.6 бензин");
+        return { output_text: "Найдена рекомендация в руководстве.", output: [{ type: "message", content: [{
+          type: "output_text", annotations: [{ type: "url_citation", url: "https://example.test/manual", title: "Руководство" }],
+        }] }] };
       }
       assert.ok(request.tools.some(tool => tool.name === "search_stock"));
       assert.match(request.instructions, /2026-11-09T11:00/);
       const output = request.input.findLast(item => item.type === "function_call_output");
-      if (modelResult.kind === "reschedule" && lookupMaterial && output) {
+      assert.equal(request.tool_choice, undefined);
+      if (modelResult.kind === "reschedule" && lookupMaterial) {
+        if (!output) return { output: [{ type: "function_call", name: "find_catalog_product", call_id: "catalog-call",
+          arguments: JSON.stringify({ queries: ["Eurol Ultrance VCC 0W-20", "Eurol Ultrance"] }) }] };
         const facts = JSON.parse(output.output);
-        if (facts.action === "find_catalog_product") {
-          assert.equal(request.tool_choice?.name, "find_catalog_product");
-          return { output: [{ type: "function_call", name: "find_catalog_product", call_id: "catalog-call",
-            arguments: JSON.stringify({ queries: ["Eurol Ultrance VCC 0W-20", "Eurol Ultrance"] }) }] };
-        }
         return { output: [{ type: "function_call", name: "prepare_reschedule", call_id: "move-call",
           arguments: JSON.stringify({ ...modelResult, shopProductId: facts[0]?.id ?? "" }) }] };
       }
       if (output) {
         const facts = JSON.parse(output.output);
+        if (modelResult.kind === "research") {
+          assert.deepEqual(facts.sourceUrls, ["https://example.test/manual"]);
+          return { output: [], output_text: facts.findings };
+        }
+        if (modelResult.kind === "maintenance") return { output: [], output_text: facts };
         if (modelResult.kind === "vehicle") assert.equal(facts, "Проверенный допуск");
         if (modelResult.kind === "stock") assert.equal(facts.products[0].purchasedLiters, 8);
         if (modelResult.kind === "crm") {
@@ -227,8 +241,14 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
           assert.equal(facts.cases[0].linkedShipment.status, "Проведена");
           assert.equal(facts.upcomingBookings[0].confirmation, "CONFIRMED");
         }
-        const answers = { vehicle: "Проверенный допуск", stock: "Есть масло C2. Две упаковки дадут 8 л.", crm: "В CRM есть дело по подбору фильтра." };
+        const answers = { vehicle: "Проверенный допуск", stock: "Да. Масло C2 · 2 шт. (8 л).", crm: "В CRM есть дело по подбору фильтра." };
         return { output: [], output_text: answers[modelResult.kind] };
+      }
+      if (modelResult.kind === "research") {
+        assert.match(request.input[0].content, /Solaris/);
+        assert.match(request.input.at(-1).content, /бензин/);
+        return { output: [{ type: "function_call", name: "research_vehicle", call_id: "research-call",
+          arguments: JSON.stringify({ make: "Hyundai", model: "Solaris", year: "2018", engine: "1.6 бензин", topic: "Допуск масла" }) }] };
       }
       if (modelResult.kind === "unsupported") return { output: [], output_text: "Уточните, пожалуйста, что проверить." };
       if (modelResult.kind === "stock") {
@@ -304,6 +324,10 @@ const booking = await (await POST(request())).json();
 assert.equal(booking.draft.datetime, "2026-11-10T15:00");
 assert.equal(booking.selectedServiceId, "service-1");
 const bookingModelResult = modelResult;
+modelResult = { ...bookingModelResult, services: ["Диагностика", "Замена воздушного фильтра"], taskTitle: "Заказать воздушный фильтр" };
+const combinedBooking = await (await POST(request())).json();
+assert.deepEqual(combinedBooking.selectedServiceIds, ["service-1", "service-2"]);
+assert.equal(combinedBooking.relatedTask.title, "Заказать воздушный фильтр");
 modelResult = { kind: "reschedule", names: ["Аслан", "Сослан"], sourceDay: "2026-11-09", datetime: "2026-11-10T13:00", customerMaterials: "масляный фильтр", shopMaterials: "масло Eurol" };
 matchingVisits = [{ id: "visit-a", customerName: "Сослан", startsAt: new Date("2026-11-09T11:00Z"), updatedAt: new Date("2026-11-09T09:00Z") }];
 lookupMaterial = true;
@@ -326,7 +350,18 @@ assert.deepEqual(booking.options.services[0].masterIds, [booking.options.masters
 assert.equal(booking.branch.id, "branch-a");
 
 modelResult = { kind: "vehicle", system: "engine_oil" };
-assert.equal((await (await POST(request())).json()).answer.text, "Проверенный допуск");
+const ask = (text, history = []) => new NextRequest("http://localhost/api/ai-assistant/quick-command", {
+  method: "POST", headers: { "Content-Type": "application/json", "x-eco-assistant-branch": "branch-a" },
+  body: JSON.stringify({ text, history }),
+});
+assert.equal((await (await POST(ask("Допуск масла JTDBR32E720012345"))).json()).answer.text, "Проверенный допуск");
+
+modelResult = { kind: "research" };
+const publicVehicle = (await (await POST(ask("Двигатель 1.6 бензин", [
+  { role: "user", content: "Какой допуск масла для Hyundai Solaris 2018?" },
+]))).json()).answer;
+assert.equal(publicVehicle.text, "Найдена рекомендация в руководстве.");
+assert.equal(publicVehicle.sources[0].href, "https://example.test/manual");
 
 modelResult = { kind: "crm", customerName: "Тестовый Клиент", filter: "all" };
 const crm = await (await POST(request())).json();
