@@ -288,7 +288,7 @@ async function resolveAccess(authUser: AuthUser) {
   return promise;
 }
 
-export async function getBranchContext(options: { allowAll?: boolean; requireActive?: boolean } = {}): Promise<BranchContext | null> {
+export async function getBranchContext(options: { allowAll?: boolean; requireActive?: boolean; requestedBranchId?: string } = {}): Promise<BranchContext | null> {
   const session = await getSession();
   if (!session) return null;
 
@@ -298,7 +298,10 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
   const cookie = decodeCookie(store.get(ACTIVE_BRANCH_COOKIE)?.value, session.user.login);
   const allowedIds = new Set(access.branches.map((branch) => branch.id));
   const canUseAll = Boolean(access.groupRole && options.allowAll !== false);
-  const requested = cookie?.branchId;
+  const requested = options.requestedBranchId ?? cookie?.branchId;
+  if (options.requestedBranchId && !allowedIds.has(options.requestedBranchId)) {
+    throw new BranchAccessError("Филиал недоступен", 403, "branch_access_denied");
+  }
 
   if (requested === ALL_BRANCHES && canUseAll) {
     return {
@@ -368,7 +371,7 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
   };
 }
 
-export async function requireBranchContext(options: { allowAll?: boolean; requireActive?: boolean } = {}) {
+export async function requireBranchContext(options: { allowAll?: boolean; requireActive?: boolean; requestedBranchId?: string } = {}) {
   const context = await getBranchContext(options);
   if (!context) throw new BranchAccessError("Необходима авторизация", 401, "authentication_required");
   if (!options.allowAll && context.mode === "all") {

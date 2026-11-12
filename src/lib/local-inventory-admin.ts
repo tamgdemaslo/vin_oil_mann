@@ -6180,14 +6180,23 @@ async function postDraftReceiptStock(
   });
 }
 
-export async function postLocalReceipt(documentId: string, user?: ActingUser) {
-  const document = await loadReceiptForAction(documentId);
-  if (!document) return { ok: false as const, error: "Приёмка не найдена", notFound: true };
-  if (document.isDeleted) return { ok: false as const, error: "Удалённую приёмку нельзя провести" };
-  if (!isReceiptDraft(document)) return { ok: false as const, error: "Провести можно только черновик приёмки" };
-  const oldSnapshot = stockDocumentSnapshot(document);
+export async function postLocalReceipt(documentId: string, user?: ActingUser, options?: { expectedUpdatedAt: string }) {
+  const branchId = getScopedBranchId();
   try {
     const updated = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM local_inventory_documents WHERE id = ${documentId} AND branch_id = ${branchId} FOR UPDATE`);
+      const document = await tx.localInventoryDocument.findFirst({
+        where: { id: documentId, branchId, type: "receipt" },
+        include: stockDocumentActionInclude,
+      });
+      if (!document) throw new Error("Приёмка не найдена");
+      if (document.isDeleted) throw new Error("Удалённую приёмку нельзя провести");
+      if (options && document.status === "posted" && document.applicable) return document;
+      if (!isReceiptDraft(document)) throw new Error("Провести можно только черновик приёмки");
+      if (options && document.updatedAt.toISOString() !== options.expectedUpdatedAt) {
+        throw new Error("Приёмка изменилась. Подготовьте новый предпросмотр.");
+      }
+      const oldSnapshot = stockDocumentSnapshot(document);
       await postDraftReceiptStock(tx, document, user);
       const next = await tx.localInventoryDocument.update({
         where: { id: document.id },
@@ -6217,7 +6226,8 @@ export async function postLocalReceipt(documentId: string, user?: ActingUser) {
     invalidateWarehouseReadCaches();
     return { ok: true as const, message: "Приёмка проведена. Остатки обновлены.", document: stockDocumentSnapshot(updated) };
   } catch (error) {
-    return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось провести приёмку" };
+    const message = error instanceof Error ? error.message : "Не удалось провести приёмку";
+    return { ok: false as const, error: message, ...(message === "Приёмка не найдена" ? { notFound: true } : {}) };
   }
 }
 

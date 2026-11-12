@@ -15,11 +15,12 @@ type Preview = {
   selectedServiceId?: string | null;
   requestedServices?: string[];
   selectedServiceIds?: (string | null)[];
-  relatedTask?: { title: string; notes: string };
+  relatedTask?: { title: string; notes: string; datetime?: string };
 };
 
 type ShipmentResult = { shipment: QuickShipmentPreview; branchName: string };
-type CommandResult = Preview | { answer: QuickAnswer } | ShipmentResult | { reschedule: QuickReschedulePreview };
+type InventoryPreview = { title: string; details: string[]; token: string };
+type CommandResult = { inventory: InventoryPreview } | Preview | { answer: QuickAnswer } | ShipmentResult | { reschedule: QuickReschedulePreview };
 
 const rubles = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB" });
 
@@ -36,6 +37,7 @@ type Workspace = {
   preview?: Preview;
   reschedule?: QuickReschedulePreview;
   shipment?: ShipmentResult;
+  inventory?: InventoryPreview;
   serviceId?: string;
   serviceIds?: string[];
   masterId?: number;
@@ -64,6 +66,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   const messages = chats.find(chat => chat.id === chatId)?.messages ?? emptyMessages;
   const [reschedule, setReschedule] = useState<QuickReschedulePreview>();
   const [shipment, setShipment] = useState<ShipmentResult>();
+  const [inventory, setInventory] = useState<InventoryPreview>();
   const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [masterId, setMasterId] = useState<number>();
   const [localBusy, setBusy] = useState("");
@@ -86,7 +89,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   const commandInput = useRef<HTMLTextAreaElement>(null);
   const chatLog = useRef<HTMLDivElement>(null);
   const previewHeading = useRef<HTMLElement>(null);
-  const previewKind = preview?.draft.kind ?? (reschedule ? "reschedule" : shipment ? "shipment" : undefined);
+  const previewKind = preview?.draft.kind ?? (reschedule ? "reschedule" : shipment ? "shipment" : inventory ? "inventory" : undefined);
   const hasBranch = Boolean(branchId && branchId !== "all");
 
   useEffect(() => () => {
@@ -119,6 +122,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       setPreview(saved.preview);
       setReschedule(saved.reschedule);
       setShipment(saved.shipment);
+      setInventory(saved.inventory);
       setServiceIds(saved.serviceIds ?? [saved.serviceId ?? ""]);
       setMasterId(saved.masterId);
       setSaveUncertain(saved.saveUncertain);
@@ -189,7 +193,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   }, [actionKey, hasBranch, historyKey, workspaceKey]);
 
   const workspace: Workspace = {
-    chats, chatId, text, preview, reschedule, shipment, serviceIds, masterId,
+    chats, chatId, text, preview, reschedule, shipment, inventory, serviceIds, masterId,
     saveUncertain, bookingSaveKey: bookingSaveKey.current, error,
   };
 
@@ -276,6 +280,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       setPreview(undefined);
       setReschedule(undefined);
       setShipment(undefined);
+      setInventory(undefined);
       setSaveUncertain(false);
       setDraftOpen(false);
       setServiceIds([]);
@@ -352,7 +357,8 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
     setText("");
     try {
       const history = messages.slice(-8).map(({ role, content }) => ({ role, content }));
-      const result: CommandResult = await parseCommand(JSON.stringify({ text: command, history }), controller.signal);
+      const currentCustomerId = document.querySelector<HTMLElement>("[data-assistant-customer-id]")?.dataset.assistantCustomerId;
+      const result: CommandResult = await parseCommand(JSON.stringify({ text: command, history, currentCustomerId }), controller.signal);
       if ("answer" in result) {
         appendAnswer(result.answer.text, result.answer.sources, id);
         return;
@@ -360,6 +366,11 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       if (previewKind) {
         appendAnswer("У вас открыт черновик. Подтвердите или закройте его перед созданием другого.", undefined, id);
         setText(command);
+        return;
+      }
+      if ("inventory" in result) {
+        setInventory(result.inventory);
+        appendAnswer(`Проверьте черновик: ${result.inventory.title.toLocaleLowerCase("ru")}.`, undefined, id);
         return;
       }
       if ("reschedule" in result) {
@@ -491,9 +502,8 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   }
 
   async function confirm() {
-    if (!preview || capture.current || operation.current || (saveUncertain && preview.draft.kind !== "booking")) return;
+    if (!preview || capture.current || operation.current || (saveUncertain && !bookingSaveKey.current)) return;
     const { branch, draft } = preview;
-    if (branch.id !== branchId) return;
     const phone = normalizePhoneKey(draft.phone);
     if (!phone || !draft.customerName.trim()) {
       setError("Укажите имя и корректный телефон клиента.");
@@ -522,9 +532,10 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
     setSaveUncertain(true);
     setError("");
     const expectedBranchId = branch.id;
-    if (booking) bookingSaveKey.current ??= crypto.randomUUID();
+    bookingSaveKey.current ??= crypto.randomUUID();
     const payload = booking ? {
       expectedBranchId,
+      assistantTargetBranchId: expectedBranchId,
       idempotencyKey: bookingSaveKey.current,
       action: "create-record",
       payload: {
@@ -536,6 +547,8 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       },
     } : {
       expectedBranchId,
+      assistantTargetBranchId: expectedBranchId,
+      assistantIdempotencyKey: bookingSaveKey.current,
       customerName: draft.customerName,
       phone,
       title: draft.title,
@@ -562,9 +575,10 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       }
       if (!(booking ? data.data?.booking_id : data.id)) throw new Error();
       const relatedTask = booking ? preview.relatedTask : undefined;
+      bookingSaveKey.current = null;
       setPreview(relatedTask ? {
         branch,
-        draft: { ...draft, ...relatedTask, kind: "task", datetime: "" },
+        draft: { ...draft, ...relatedTask, kind: "task", datetime: relatedTask.datetime || "" },
       } : undefined);
       setSaveUncertain(false);
       appendAnswer(relatedTask
@@ -575,7 +589,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       const detail = cause instanceof Error && cause.message !== "Failed to fetch" ? cause.message : "";
       setError(booking
         ? [detail, "Не удалось подтвердить результат. Нажмите «Проверить и повторить», чтобы завершить ту же операцию без дубля."].filter(Boolean).join(" ")
-        : "Результат сохранения неизвестен. Проверьте CRM перед повтором.");
+        : "Не удалось подтвердить результат. Нажмите «Проверить и повторить», чтобы завершить сохранение дела без дубля.");
     } finally {
       operation.current = null;
       setBusy("");
@@ -648,6 +662,33 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
     }
   }
 
+  async function confirmInventory() {
+    if (!inventory || operation.current || capture.current) return;
+    operation.current = new AbortController();
+    setBusy("Сохраняю…");
+    setError("");
+    try {
+      const response = await fetch("/api/ai-assistant/quick-command/inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-eco-assistant-branch": branchId },
+        body: JSON.stringify({ confirm: true, token: inventory.token }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.id) {
+        setError(result.error || "Результат неизвестен. Повторите подтверждение.");
+        return;
+      }
+      setInventory(undefined);
+      appendAnswer(result.kind === "product" ? "Товар создан."
+        : result.posted ? "Приёмка проведена. Остатки обновлены." : "Черновик приёмки создан.");
+    } catch {
+      setError("Результат неизвестен. Повторите подтверждение того же черновика.");
+    } finally {
+      operation.current = null;
+      setBusy("");
+    }
+  }
+
   function close() {
     if (localBusy || recording) return;
     setOpen(false);
@@ -661,7 +702,16 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
 
   const draftPanel = previewKind && (
     <aside className={styles.draftPanel} aria-label="Черновик">
-    {reschedule ?
+    {inventory ? <div className={styles.form}>
+      <strong ref={previewHeading} tabIndex={-1}>{inventory.title}</strong>
+      <ul className={styles.sourceList}>{inventory.details.map((detail, index) => <li key={index}>{detail}</li>)}</ul>
+      <div className={styles.actions}>
+        <button type="button" className={styles.secondary} disabled={Boolean(busy)}
+          onClick={() => { setInventory(undefined); setError(""); }}>Закрыть черновик</button>
+        <button type="button" className={styles.primary} disabled={Boolean(busy || recording)}
+          onClick={() => void runAction(confirmInventory)}>Подтвердить</button>
+      </div>
+    </div> : reschedule ?
     <form className={styles.form} onSubmit={event => { event.preventDefault(); void runAction(confirmReschedule); }}>
       <div className={styles.previewTitle}>
         <strong ref={previewHeading} tabIndex={-1}>Перенос записи</strong>
@@ -758,7 +808,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
         <button type="button" className={styles.secondary} disabled={Boolean(recording || busy)} onClick={() => { setPreview(undefined); setError(""); setSaveUncertain(false); }}>
           Закрыть черновик
         </button>
-        <button className={styles.primary} disabled={Boolean(recording || busy || (saveUncertain && draft.kind !== "booking"))}>{saveUncertain && draft.kind === "booking" ? "Проверить и повторить" : "Подтвердить и сохранить"}</button>
+        <button className={styles.primary} disabled={Boolean(recording || busy || (saveUncertain && !bookingSaveKey.current))}>{saveUncertain && bookingSaveKey.current ? "Проверить и повторить" : "Подтвердить и сохранить"}</button>
       </div>
     </form> : null}
     </aside>
@@ -783,15 +833,15 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
         {hasBranch && <aside className={styles.history} aria-label="Чаты">
         <div className={styles.historyToolbar}>
           {!fullPage && <button type="button" className={styles.secondary} aria-expanded={historyOpen}
-            disabled={Boolean(busy || recording || preview || shipment || reschedule)} onClick={() => setHistoryOpen(value => !value)}>История чатов</button>}
+            disabled={Boolean(busy || recording || previewKind)} onClick={() => setHistoryOpen(value => !value)}>История чатов</button>}
           <button type="button" className={styles.secondary}
-            disabled={Boolean(busy || recording || preview || shipment || reschedule)} onClick={() => switchChat("")}>Новый чат</button>
+            disabled={Boolean(busy || recording || previewKind)} onClick={() => switchChat("")}>Новый чат</button>
         </div>
         {(fullPage || historyOpen) && <ul className={styles.historyList} aria-label="Прошлые чаты">
           {chats.length === 0 && <li>Пока нет сохранённых чатов.</li>}
           {chats.map(chat => <li key={chat.id}>
             <button type="button" className={styles.secondary} aria-current={chat.id === chatId ? "true" : undefined}
-              disabled={Boolean(busy || recording || preview || shipment || reschedule)} onClick={() => switchChat(chat.id)}>
+              disabled={Boolean(busy || recording || previewKind)} onClick={() => switchChat(chat.id)}>
               {chat.messages.find(message => message.role === "user")?.content.slice(0, 100) || "Чат"}
             </button>
           </li>)}

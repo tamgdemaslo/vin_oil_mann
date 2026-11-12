@@ -326,15 +326,32 @@ export async function POST(request: NextRequest) {
   const access = await requireCrmSession();
   if (access.response) return access.response;
   const session = access.session!;
-  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  const body = await request.json().catch(() => ({}));
+  const requestedBranchId = parseOptionalString(body.assistantTargetBranchId) ?? undefined;
+  if (requestedBranchId && !["owner", "admin"].includes(session.user.role)) {
+    return NextResponse.json({ error: "Нет права создавать дело через помощника." }, { status: 403 });
+  }
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true, requestedBranchId });
   if (!branchAccess.ok) return branchAccess.response;
 
   return runWithBranchApiContext(branchAccess.context, async () => {
     try {
-    const body = await request.json().catch(() => ({}));
     if (body.expectedBranchId !== undefined && body.expectedBranchId !== branchAccess.context.branchId) {
       return NextResponse.json({ error: "Филиал изменился. Подготовьте новый черновик." }, { status: 409 });
     }
+    const assistantKey = parseOptionalString(body.assistantIdempotencyKey);
+    if (assistantKey && (body.expectedBranchId !== branchAccess.context.branchId
+      || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(assistantKey))) {
+      return NextResponse.json({ error: "Некорректный ключ сохранения дела." }, { status: 400 });
+    }
+    const assistantCaseKey = assistantKey ? `assistant:${branchAccess.context.userId}:${assistantKey}` : null;
+    const existingAssistantCase = () => assistantCaseKey ? prisma.crmDeal.findFirst({
+      where: { branchId: branchAccess.context.branchId!, caseKey: assistantCaseKey },
+      select: { id: true },
+    }) : null;
+    const existing = await existingAssistantCase();
+    if (existing) return NextResponse.json({ ...existing, alreadyExists: true });
+
     const title = parseOptionalString(body.title);
     const customerName = parseOptionalString(body.customerName);
     const phoneNormalized = normalizePhoneKey(parseOptionalString(body.phone));
@@ -415,7 +432,7 @@ export async function POST(request: NextRequest) {
       caseStatus,
       caseType,
       priority: parsePriority(body.priority),
-      caseKey: parseOptionalString(body.caseKey),
+      caseKey: assistantCaseKey ?? parseOptionalString(body.caseKey),
       suppliesNote: parseOptionalString(body.suppliesNote),
       suppliesSupplier: parseOptionalString(body.suppliesSupplier),
       suppliesExpectedAt,
@@ -434,6 +451,12 @@ export async function POST(request: NextRequest) {
     try {
       created = await prisma.crmDeal.create({ data: createData });
     } catch (error) {
+      if (assistantCaseKey) {
+        const existing = await existingAssistantCase();
+        if (existing) return NextResponse.json({ ...existing, alreadyExists: true });
+        // Without the unique case key, retrying would risk creating a second task.
+        throw error;
+      }
       if (!isMissingCrmCaseColumns(error)) throw error;
       created = await prisma.crmDeal.create({ data: stripCaseFields(createData), select: LEGACY_DEAL_SELECT });
     }

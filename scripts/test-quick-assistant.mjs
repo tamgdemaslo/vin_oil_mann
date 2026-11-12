@@ -42,6 +42,11 @@ const access = {
 let signedIn = true;
 let canBook = true;
 let modelCalls = 0;
+let chainStockBranch = "branch-a";
+let chainSlotAvailable = true;
+let chainStockChecks = [];
+const secondBranch = { ...access, branchId: "branch-b", branchName: "Гагарина", context: { branch: { timezone: "Europe/Kaliningrad" } } };
+access.branches = [{ id: "branch-a", name: "Дачная" }, { id: "branch-b", name: "Гагарина" }];
 let matchingVisits = [];
 let lookupMaterial = false;
 let catalogFixtureFound = false;
@@ -49,8 +54,9 @@ let queries = 0;
 let modelResult = { kind: "task", customerName: "Тестовый Клиент", title: "Уточнить наличие фильтра" };
 const auth = {
   requireAIAssistantAccess: async () => signedIn ? access : { response: NextResponse.json({}, { status: 401 }) },
+  branchAccess: (_, id) => { assert.equal(id, "branch-b"); return secondBranch; },
   runWithAIAssistantBranchContext: (current, operation) => {
-    assert.equal(current, access);
+    assert.ok(current === access || current === secondBranch);
     return operation();
   },
 };
@@ -160,9 +166,31 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
       return catalogFixtureFound ? [{ id: "oil-vcc", name: "Eurol Ultrance VCC 0W-20", article: "E100017", viscosity: "0W-20" }] : [];
     },
     searchQuickCatalog: async input => {
-    assert.deepEqual(input, { query: "", approval: "C2", viscosity: "", liters: 6 });
+    if (modelResult.kind === "chain") {
+      assert.equal(input.maxRubles, 5000);
+      assert.equal(input.liters, 5);
+      assert.equal(input.approval, "VW 504 00");
+      const branchId = chainStockChecks.length ? "branch-b" : "branch-a";
+      chainStockChecks.push(branchId);
+      return { total: Number(branchId === chainStockBranch), complete: true, products: branchId === chainStockBranch
+        ? [{ id: "oil-a", name: "Масло VW 504 00", subtotalRubles: 4500, purchasedLiters: 5, warehouses: [{ enough: true }] }] : [] };
+    }
+    assert.deepEqual(input, { query: "", approval: "C2", viscosity: "", liters: 6, article: "", packageVolume: "", warehouse: "", maxRubles: null });
     return { total: 1, products: [{ id: "oil-a", name: "Тестовое масло C2", neededUnits: 2, purchasedLiters: 8, unit: "шт.", warehouses: [{ name: "Основной", enough: true }] }] };
   } },
+  "@/lib/ai-assistant/quick-booking-tools": {
+    lookupQuickCustomers: async (_, input) => {
+      assert.equal(input.customerId, "open-card");
+      return { status: "matched", customer: { name: "Тестовый Клиент", phone: "79990000000" } };
+    },
+    listQuickBookingServices: async () => [{ id: "service-1", name: "Диагностика" }],
+    findQuickBookingSlots: async (_, input) => {
+      assert.deepEqual(input, { date: "2026-11-10", after: "14:00", serviceIds: ["service-1"] });
+      return { slots: chainSlotAvailable ? [{ time: "14:30", master: "Мастер" }] : [] };
+    },
+  },
+  "@/lib/branch-context": { getBranchContext: async () => secondBranch.context },
+  "@/lib/ai-assistant/quick-inventory-actions": {},
   "@/lib/ai-assistant/quick-vehicle": { answerQuickVehicle: async (current, question, system) => {
     assert.equal(current, access);
     assert.equal(question, "Допуск масла VIN JTDBR32E720012345");
@@ -183,16 +211,16 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
     } },
     localCounterparty: { findMany: async ({ where }) => {
       queries++;
-      assert.equal(where.branchId, "branch-a");
+      assert.equal(where.branchId, modelResult.kind === "chain" ? chainStockBranch : "branch-a");
       return [{ name: "Тестовый Клиент", normalizedPhone: "79990000000" }];
     } },
     bookingService: { findMany: async ({ where }) => {
-      assert.equal(where.branchId, "branch-a");
+      assert.equal(where.branchId, modelResult.kind === "chain" ? chainStockBranch : "branch-a");
       return [{ id: "service-1", name: "Диагностика", masters: [{ membershipId: "membership-1" }] },
         ...(modelResult.services ? [{ id: "service-2", name: "Замена воздушного фильтра", masters: [{ membershipId: "membership-1" }] }] : [])];
     } },
     branchMembership: { findMany: async ({ where }) => {
-      assert.equal(where.branchId, "branch-a");
+      assert.equal(where.branchId, modelResult.kind === "chain" ? chainStockBranch : "branch-a");
       return [{ id: "membership-1", user: { name: "Мастер" } }];
     } },
   } },
@@ -203,7 +231,7 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
       assert.equal(request.store, false);
       if (request.tools.some(tool => tool.name === "choose_service")) {
         const { draftService, catalog } = JSON.parse(request.input);
-        return { output: [{ type: "function_call", name: "choose_service", arguments: JSON.stringify({
+        return { usage: { input_tokens: 80, output_tokens: 10 }, output: [{ type: "function_call", name: "choose_service", arguments: JSON.stringify({
           assessments: catalog.map(row => ({ option: row.option, match: row.name === draftService ? "exact" : "unrelated" })),
         }) }] };
       }
@@ -219,6 +247,25 @@ const { POST } = load("src/app/api/ai-assistant/quick-command/route.ts", {
       assert.match(request.instructions, /2026-11-09T11:00/);
       const output = request.input.findLast(item => item.type === "function_call_output");
       assert.equal(request.tool_choice, undefined);
+      if (modelResult.kind === "chain") {
+        const facts = output && JSON.parse(output.output);
+        const usage = { input_tokens: 100, output_tokens: 20 };
+        const call = (name, args) => ({ usage, output: [{ type: "function_call", name, call_id: name, arguments: JSON.stringify(args) }] });
+        const stock = branchId => call("search_stock", { branchId, approval: "VW 504 00", viscosity: "5W-30", liters: 5, maxRubles: 5000 });
+        if (!output) return call("list_branches", {});
+        if (output.call_id === "list_branches") return stock(facts.branches[0].id);
+        if (output.call_id === "search_stock") {
+          if (facts.products.length) return call("find_customer", { currentCard: true });
+          if (chainStockChecks.length === 1) return stock("branch-b");
+          return { usage, output: [], output_text: "Масло не найдено." };
+        }
+        if (output.call_id === "find_customer") return call("list_booking_services", { branchId: chainStockBranch });
+        if (output.call_id === "list_booking_services") return call("find_booking_slots", { branchId: chainStockBranch, date: "2026-11-10", after: "14:00", serviceIds: [facts[0].id] });
+        if (output.call_id === "prepare_booking") return { usage, output: [], output_text: "Черновик готов." };
+        if (!facts.slots.length) return { usage, output: [], output_text: "Свободного окна нет." };
+        return call("prepare_booking", { branchId: chainStockBranch, stockProductId: "oil-a", customerName: "Тестовый Клиент", phone: "79990000000",
+          datetime: "2026-11-10T" + facts.slots[0].time, master: facts.slots[0].master, service: "Диагностика", taskTitle: "Проверить фильтр по VIN" });
+      }
       if (modelResult.kind === "reschedule" && lookupMaterial) {
         if (!output) return { output: [{ type: "function_call", name: "find_catalog_product", call_id: "catalog-call",
           arguments: JSON.stringify({ queries: ["Eurol Ultrance VCC 0W-20", "Eurol Ultrance"] }) }] };
@@ -389,6 +436,33 @@ const quoteRequest = new NextRequest("http://localhost/api/ai-assistant/quick-co
 });
 assert.match((await (await POST(quoteRequest)).json()).answer.text, /5W-30 и 5W-40 с работой/);
 
+modelResult = { kind: "chain" };
+for (const [branch, slot, wording] of [
+  ["branch-a", true, "Посмотри на Дачной, затем Гагарина, 5 литров 5W-30 до 5000, запиши клиента из карточки и создай дело."],
+  ["branch-b", true, "Если на Дачной пусто, проверь Гагарина. Нашёл масло — поставь визит после двух и дело по фильтру."],
+  ["", true, "Проверь масло в обоих филиалах."],
+  ["branch-b", false, "Найди масло, затем первое свободное окно."],
+]) {
+  chainStockBranch = branch;
+  chainSlotAvailable = slot;
+  chainStockChecks = [];
+  const response = await POST(new NextRequest("http://localhost/api/ai-assistant/quick-command", {
+    method: "POST", headers: { "Content-Type": "application/json", "x-eco-assistant-branch": "branch-a" },
+    body: JSON.stringify({ text: wording, currentCustomerId: "open-card" }),
+  }));
+  const result = await response.json();
+  assert.deepEqual(chainStockChecks, branch === "branch-a" ? ["branch-a"] : ["branch-a", "branch-b"]);
+  if (branch && slot) {
+    assert.equal(result.branch.id, branch);
+    assert.equal(result.draft.datetime, "2026-11-10T14:30");
+    assert.equal(result.relatedTask.title, "Проверить фильтр по VIN");
+    assert.match(response.headers.get("Server-Timing"), /input=\d+, output=\d+, calls=[78]/);
+  } else {
+    assert.equal(result.draft, undefined);
+    assert.match(result.answer.text, branch ? /окна нет/ : /не найдено/);
+  }
+}
+
 modelResult = { kind: "shipment", reference: "0042" };
 orderMatches = [order, { ...order, id: "another-order" }];
 assert.equal((await (await POST(request())).json()).answer.sources.length, 2);
@@ -535,3 +609,77 @@ assert.deepEqual(await (await confirmShipment(confirmation(updated))).json(), cr
 assert.deepEqual(await (await confirmShipment(confirmation(shipment))).json(), createdData);
 assert.equal(writes, 1);
 console.log("Quick assistant CRM, shipment preview and confirmation, booking, task, VIN, and transcription checks passed");
+
+const priorSessionSecret = process.env.SESSION_SECRET;
+process.env.SESSION_SECRET = "fixture-signing-key";
+const receiptWrites = [];
+const productWrites = [];
+const postedReceiptCalls = [];
+const fixtureInventory = {
+  localStore: { findMany: async () => [], findFirst: async () => ({ name: "Учебный склад" }) },
+  localCounterparty: { findMany: async () => [], findFirst: async () => ({ name: "Учебный поставщик" }) },
+  localProduct: {
+    findMany: async () => [{ id: "filter", name: "Фильтр", article: "TEST" }],
+    findFirst: async () => productWrites.length ? { id: "created-product" } : null,
+  },
+  localInventoryDocument: {
+    findFirst: async () => receiptWrites.length ? { id: "created-receipt", applicable: true } : null,
+    findMany: async () => [{
+      id: "draft-receipt", name: "005", updatedAt: new Date("2026-11-09T09:00Z"),
+      positions: [{ productName: "Фильтр", quantity: 3, priceCentsPerUnit: 50000 }],
+    }],
+  },
+  $queryRaw: async () => {},
+  $transaction: async operation => operation(fixtureInventory),
+};
+const inventoryActions = load("src/lib/ai-assistant/quick-inventory-actions.ts", {
+  "node:crypto": crypto,
+  "@prisma/client": { Prisma: { sql: () => null } },
+  "@/lib/db": { prisma: fixtureInventory },
+  "@/lib/local-inventory-admin": {
+    createLocalStockDocument: async input => {
+      receiptWrites.push(input);
+      return { ok: true, document: { id: "created-receipt" } };
+    },
+    createLocalAdminProduct: async input => {
+      productWrites.push(input);
+      return { ok: true, product: { id: "created-product" } };
+    },
+    postLocalReceipt: async (id, _actor, options) => {
+      postedReceiptCalls.push({ id, options });
+      return { ok: true, document: { id } };
+    },
+  },
+});
+try {
+  const inventoryAccess = { ...access, context: { ...access.context, userId: "user-a", branch: { status: "active" } } };
+  const receipt = (await inventoryActions.prepareQuickInventory(inventoryAccess, {
+    kind: "receipt", storeId: "store-a", supplierId: "supplier-a", post: true,
+    lines: [{ productId: "filter", quantity: 3, unitPriceRubles: 500 }],
+  })).inventory;
+  assert.match(receipt.details.at(-1), /3 × 500 ₽/);
+  assert.equal(receiptWrites.length, 0);
+  assert.match((await inventoryActions.confirmQuickInventory({ ...inventoryAccess, branchId: "branch-b" }, receipt.token)).error, /филиал/);
+  assert.equal(receiptWrites.length, 0);
+  const savedReceipt = await inventoryActions.confirmQuickInventory(inventoryAccess, receipt.token);
+  assert.equal(savedReceipt.posted, true);
+  assert.deepEqual(await inventoryActions.confirmQuickInventory(inventoryAccess, receipt.token), savedReceipt);
+  assert.equal(receiptWrites.length, 1);
+  assert.equal(receiptWrites[0].positions[0].price, 500);
+  const item = (await inventoryActions.prepareQuickInventory(inventoryAccess, {
+    kind: "product", name: "Учебный фильтр", article: "TEST", brand: "Тест", groupPath: "Фильтры", uomName: "шт.",
+  })).inventory;
+  assert.equal(productWrites.length, 0);
+  assert.deepEqual(await inventoryActions.confirmQuickInventory(inventoryAccess, item.token), { id: "created-product", kind: "product" });
+  await inventoryActions.confirmQuickInventory(inventoryAccess, item.token);
+  assert.equal(productWrites.length, 1);
+  const existing = (await inventoryActions.prepareQuickExistingReceipt(inventoryAccess, "005")).inventory;
+  assert.match(existing.details.at(-1), /3 × 500 ₽/);
+  assert.equal(postedReceiptCalls.length, 0);
+  assert.equal((await inventoryActions.confirmQuickInventory(inventoryAccess, existing.token)).posted, true);
+  assert.deepEqual(postedReceiptCalls, [{ id: "draft-receipt", options: { expectedUpdatedAt: "2026-11-09T09:00:00.000Z" } }]);
+} finally {
+  if (priorSessionSecret === undefined) delete process.env.SESSION_SECRET;
+  else process.env.SESSION_SECRET = priorSessionSecret;
+}
+console.log("Inventory confirmations passed: preview is read-only, target branch is checked, product and receipt retries reuse the result.");
