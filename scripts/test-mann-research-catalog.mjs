@@ -7,7 +7,7 @@ const {researchMissingMannFluids:run,missingMannFluids}=await j.import('../src/l
 const {POST}=await j.import("../src/app/api/mann-catalog/technical-profile/route.ts");
 const {addMannResearchCatalogToProfile:read}=await j.import('../src/lib/mann-research-catalog.ts');
 const application={vehicleVariantKey:'key',make:'FORD',model:'Mondeo V',effectiveVehicleText:'2.5(CNG)',vehicleText:'2.5(CNG)',engineCode:'C25HDEX',vehicleYears:'05/15 ->',modelYears:null,kw:'110',hp:'150'};
-const item={systemCode:'ENGINE_OIL',specification:'TEST',volumeText:'5 л. с фильтром',sourceUrl:'https://example.com/manual',sourceTitle:'Manual',excerpt:'Test excerpt'};
+const item={systemCode:'ENGINE_OIL',specification:'VW 504.00; SAE 5W-30',volumeText:'5 л. с фильтром',sourceUrl:'https://example.com/manual',sourceTitle:'Manual',excerpt:'Test excerpt'};
 const profile={items:[],status:'none',transmissionOptions:[],containsCatalogPreview:false};
 const input={organizationId:'org1',variantKeys:['key'],vehicleContext:{make:'FORD'},profile};
 const reset=()=>globalThis.fluidResearchTest={applications:[application],rows:[],calls:0,payload:{items:[item],unresolved:[]}};
@@ -32,8 +32,13 @@ try {
  assert.equal((await run({...input,profile:loaded})).status,'unavailable');assert.equal(s.calls,1,'no AI request when service unavailable; saved fields remain visible');
  assert.equal((await read({...input,organizationId:'org2'})).items.length,0,'no organizational leak');
  assert.equal((await read({...input,transmissionType:'automatic'})).items.length,0,'different transmission must not reuse fluid scope');
- const verified={...loaded.items[0],researchResult:undefined,researchVolumeText:undefined,sourceStatus:'primary_source',specifications:['Verified'],capacities:[{nominalLiters:4}],automaticSelectionEligible:true};
+ const verified={...loaded.items[0],researchResult:undefined,researchVolumeText:undefined,sourceStatus:'primary_source',specifications:['Verified'],viscosityGrades:['5W-30'],capacities:[{nominalLiters:4}],automaticSelectionEligible:true};
  assert.deepEqual((await read({...input,profile:{...profile,status:'active',items:[verified]}})).items,[verified],'AI cannot overwrite complete catalog data');
+ const withoutViscosity={...verified,specifications:['VW 504.00'],viscosityGrades:[]};
+ assert.equal(missingMannFluids({...profile,items:[withoutViscosity]}).find(row=>row.systemCode==='ENGINE_OIL').viscosity,true);
+ const enriched=await read({...input,profile:{...profile,items:[withoutViscosity]}});
+ assert.deepEqual(enriched.items[1].viscosityGrades,['5W-30']);
+ assert.deepEqual(enriched.items[1].specifications,[]);
  // Simulate a legacy evidence row with an expired TTL and no linked catalog rows.
  s.sources=[];s.requirements=[];s.links=[];delete s.rows[0].facts.catalogMaterialized;s.rows[0].validUntil=new Date('2020-01-01');
  assert.equal((await read(input)).items.length,1);assert.equal(s.links.length,1);assert.equal(s.calls,1,'legacy evidence materialized without AI');

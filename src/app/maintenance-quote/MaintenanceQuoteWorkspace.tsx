@@ -11,6 +11,7 @@ import styles from "./maintenance-quote.module.css";
 
 type Store = { id: string; name: string; organizationId: string | null };
 type Props = { branchName?: string; organizationId: string | null; stores: Store[] };
+type FilterSelection = QuoteVehicleSelection & { variantIds?: string[] };
 type Match = {
   mannArticleNormalized: string;
   compatibleProducts?: QuoteFilterGroup["products"];
@@ -21,6 +22,8 @@ const filterLabels = new Map([
   ["oil", "Масляный фильтр"],
   ["air", "Воздушный фильтр"],
   ["cabin", "Салонный фильтр"],
+  ["fuel", "Топливный фильтр"],
+  ["other", "Прочий фильтр"],
 ]);
 
 export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }: Props) {
@@ -29,7 +32,7 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
   const storeOrganizationId = store?.organizationId ?? organizationId;
   const [vehicle, setVehicle] = useState<MaintenanceQuoteVehicleContext | null>(null);
   const [vehicleName, setVehicleName] = useState("");
-  const [selection, setSelection] = useState<QuoteVehicleSelection | null>(null);
+  const [selection, setSelection] = useState<FilterSelection | null>(null);
   const [manualCatalogOpen, setManualCatalogOpen] = useState(false);
   const [filters, setFilters] = useState<QuoteFilterGroup[]>([]);
   const [filterState, setFilterState] = useState<{ loading: boolean; error: string }>({ loading: false, error: "" });
@@ -38,39 +41,49 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
     setFilters([]);
     setFilterState({ loading: Boolean(selection), error: "" });
     if (!selection) return;
-    const { variantId, make, model, year } = selection;
+    const { variantId, variantIds: selectedVariantIds, make, model, year } = selection;
     const controller = new AbortController();
     const signal = controller.signal;
 
     async function loadFilters() {
       try {
-        const params = new URLSearchParams({ variantId, make, model });
-        if (year) params.set("year", String(year));
-        const response = await fetch(`/api/mann-catalog/filters?${params}`, { signal });
-        if (!response.ok) throw new Error("Не удалось загрузить фильтры MANN.");
-        const data = await response.json() as { filters: MannCatalogFilter[] };
-        const references = data.filters.filter((filter) => filterLabels.has(filter.filterType));
-        const groups = references.map((filter) => ({
-          key: `${filter.filterType}:${filter.mannArticleNormalized}`,
-          label: filterLabels.get(filter.filterType)!,
+        const variantIds = [...new Set(selectedVariantIds?.length ? selectedVariantIds : [variantId])];
+        const pages = await Promise.all(variantIds.map(async (id) => {
+          const params = new URLSearchParams({ variantId: id, make, model });
+          if (year) params.set("year", String(year));
+          const response = await fetch(`/api/mann-catalog/filters?${params}`, { signal });
+          if (!response.ok) throw new Error("Не удалось загрузить фильтры MANN.");
+          const data = await response.json() as { filters: MannCatalogFilter[] };
+          return data.filters;
+        }));
+        const references = new Map<string, { filter: MannCatalogFilter; conditions: Set<string> }>();
+        for (const filter of pages.flat()) {
+          const key = `${filter.filterType}:${filter.filterSubtype ?? ""}:${filter.mannArticleNormalized}`;
+          const reference = references.get(key) ?? { filter, conditions: new Set<string>() };
+          reference.conditions.add(filter.condition ?? "");
+          references.set(key, reference);
+        }
+        const groups = Array.from(references, ([key, { filter, conditions }]) => ({
+          key,
+          label: filterLabels.get(filter.filterType) ?? "Прочий фильтр",
           article: filter.mannArticle,
-          condition: filter.condition,
+          condition: conditions.has("") ? null : [...conditions].join(" / "),
           products: [],
         }));
         if (signal.aborted) return;
         setFilters(groups);
-        if (!storeId || !references.length) return;
+        if (!storeId || !references.size) return;
         const matchResponse = await fetch("/api/mann-catalog/match-local-products", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal,
-          body: JSON.stringify({ organizationId: storeOrganizationId, warehouseId: storeId, mannArticles: references }),
+          body: JSON.stringify({ organizationId: storeOrganizationId, warehouseId: storeId, mannArticles: [...references.values()].map(({ filter }) => filter) }),
         });
         if (!matchResponse.ok) throw new Error("Не удалось проверить наличие фильтров на складе.");
         const { matches = [] } = await matchResponse.json() as { matches?: Match[] };
         const byArticle = new Map(matches.map((match) => [match.mannArticleNormalized, match]));
-        if (!signal.aborted) setFilters(groups.map((group, index) => {
-          const match = byArticle.get(references[index].mannArticleNormalized);
+        if (!signal.aborted) setFilters(groups.map((group) => {
+          const match = byArticle.get(references.get(group.key)!.filter.mannArticleNormalized);
           return { ...group, products: match?.compatibleProducts ?? match?.localMatches ?? [] };
         }));
       } catch (error) {
@@ -105,12 +118,12 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
           </label>
         </header>
         <div className={styles.lookup}>
-          <VehicleLookupPanel organizationId={storeOrganizationId} warehouseId={storeId}
+          <VehicleLookupPanel organizationId={storeOrganizationId} warehouseId={storeId} combinedIdentifier
             onQuoteContextChange={setVehicle}
             onUseVehicle={(identity, resolution) => setSelection(resolution?.selectedApplication ? { ...resolution.selectedApplication, year: identity.year } : null)}
             onConfirmMannCandidate={(identity, candidate) => setSelection({ ...candidate, year: identity.year })}
-            onLookupStart={() => { setSelection(null); setManualCatalogOpen(false); }}
-            onManualMode={() => { setSelection(null); setManualCatalogOpen(true); }}
+            onLookupStart={() => { setVehicle(null); setSelection(null); setManualCatalogOpen(false); }}
+            onManualMode={() => { setVehicle(null); setSelection(null); setManualCatalogOpen(true); }}
           />
         </div>
         {!vehicle && <details className={styles.lookup} open={manualCatalogOpen} onToggle={(event) => setManualCatalogOpen(event.currentTarget.open)}>

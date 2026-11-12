@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-normalization";
+import { normalizeSAE } from "@/lib/oil-normalizer";
 import { parseFluidCapacities } from "@/lib/fluid-capacity-parser";
 import type { MannTransmissionType, MannUnifiedTechnicalProfile, MannTechnicalProfileItem } from "@/lib/mann-unified-technical-profile";
 
@@ -113,10 +114,13 @@ export async function addMannResearchCatalogToProfile(input: {
     seen.add(row.id);
     const existing = input.profile.items.filter(item => item.systemCode === row.systemCode);
     const specifications = existing.some(item => item.specifications.length) ? [] : row.specificationText ? [row.specificationText] : [];
+    const viscosityGrades = row.systemCode === "ENGINE_OIL" && !existing.some(item =>
+      normalizeSAE([...(item.viscosityGrades ?? []), ...item.specifications].join("; ")).length)
+      ? normalizeSAE(row.specificationText ?? "") : [];
     const volumeText = existing.some(item => item.capacities.length || item.researchVolumeText) ? undefined : row.fillVolumeText ?? undefined;
-    if (!specifications.length && !volumeText) continue;
+    if (!specifications.length && !viscosityGrades.length && !volumeText) continue;
     items.push({ revisionId: row.id, systemCode: row.systemCode, systemLabel: row.systemNameRaw,
-      capacities: [], specifications, viscosityGrades: [], evidence: [{ title: row.sourceRow.pageTitle ?? undefined, url: row.sourceUrl }],
+      capacities: [], specifications, viscosityGrades, evidence: [{ title: row.sourceRow.pageTitle ?? undefined, url: row.sourceUrl }],
       sourceStatus: "catalog_preview", requiresReview: true, userConfirmedTransmission: false, automaticSelectionEligible: false,
       researchVolumeText: volumeText, researchResult: true, recommendation: "Найдено ИИ; сохранено в каталоге. Требуется проверка источника.",
     });
