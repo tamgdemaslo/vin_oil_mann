@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bot, ExternalLink, Mic, Send, Square, X } from "lucide-react";
 import { journalLocalToUtcIso } from "@/lib/booking/journal-time";
@@ -62,11 +62,19 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   const [shipment, setShipment] = useState<ShipmentResult>();
   const [serviceId, setServiceId] = useState("");
   const [masterId, setMasterId] = useState<number>();
-  const [busy, setBusy] = useState("");
+  const [localBusy, setBusy] = useState("");
+  const [remoteBusy, setRemoteBusy] = useState(false);
+  const busy = localBusy || (remoteBusy ? "Помощник работает в другой вкладке…" : "");
   const [recording, setRecording] = useState(false);
   const [retryAudio, setRetryAudio] = useState<Blob>();
   const [error, setError] = useState("");
   const [saveUncertain, setSaveUncertain] = useState(false);
+  const shared = useRef(false);
+  const observedWorkspace = useRef<string | null>(null);
+  const appliedWorkspace = useRef<string | null>(null);
+  const releaseAction = useRef<(() => void) | null>(null);
+  const [actionFinished, setActionFinished] = useState(0);
+  const actionKey = `${workspaceKey}:action`;
   const operation = useRef<AbortController | null>(null);
   const capture = useRef<MediaRecorder | null>(null);
   const bookingSaveKey = useRef<string | null>(null);
@@ -98,32 +106,83 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   }, [open, messages]);
 
   useEffect(() => {
-    try {
-      const saved: Workspace | null = JSON.parse(sessionStorage.getItem(workspaceKey) ?? "null");
-      const stored: unknown = saved?.chats ?? JSON.parse(sessionStorage.getItem(historyKey) ?? "[]");
-      if (Array.isArray(stored)) {
-        const history = (stored as Chat[]).filter(chat => chat && typeof chat.id === "string" && Array.isArray(chat.messages)).slice(0, maxSavedChats);
-        setChats(history);
-        setChatId(saved?.chatId ?? history[0]?.id ?? "");
+    function restore(raw: string, initial = false) {
+      const saved: Workspace = JSON.parse(raw);
+      appliedWorkspace.current = JSON.stringify(saved);
+      setChats(saved.chats);
+      setChatId(saved.chatId);
+      setText(saved.text);
+      setPreview(saved.preview);
+      setReschedule(saved.reschedule);
+      setShipment(saved.shipment);
+      setServiceId(saved.serviceId);
+      setMasterId(saved.masterId);
+      setSaveUncertain(saved.saveUncertain);
+      setError(saved.error || (initial && saved.saveUncertain && (!shared.current || !localStorage.getItem(actionKey))
+        ? "Сохранение прервалось. Проверьте результат перед повтором."
+        : ""));
+      bookingSaveKey.current = saved.bookingSaveKey;
+    }
+
+    function refreshAction() {
+      const active = localStorage.getItem(actionKey);
+      setRemoteBusy(Boolean(active && !releaseAction.current));
+      if (!active || releaseAction.current) return;
+      // A browser tab can disappear before it clears the marker. The browser releases its lock.
+      void navigator.locks.request(actionKey, { ifAvailable: true }, lock => {
+        if (lock && localStorage.getItem(actionKey) === active) {
+          localStorage.removeItem(actionKey);
+          setRemoteBusy(false);
+        }
+      }).catch(() => {});
+    }
+
+    function sync(event: StorageEvent) {
+      if (event.storageArea !== localStorage) return;
+      try {
+        if (event.key === actionKey) refreshAction();
+        if (event.key !== workspaceKey) return;
+        const latest = localStorage.getItem(workspaceKey);
+        if (latest && latest !== observedWorkspace.current) {
+          observedWorkspace.current = latest;
+          restore(latest);
+        }
+      } catch {
+        // The current conversation remains available in this tab.
       }
-      if (saved) {
-        setText(saved.text);
-        setPreview(saved.preview);
-        setReschedule(saved.reschedule);
-        setShipment(saved.shipment);
-        setServiceId(saved.serviceId);
-        setMasterId(saved.masterId);
-        setSaveUncertain(saved.saveUncertain);
-        setError(saved.error || (saved.saveUncertain
-          ? "Сохранение прервалось. Проверьте результат перед повтором."
-          : ""));
-        bookingSaveKey.current = saved.bookingSaveKey;
+    }
+
+    try {
+      if (hasBranch && navigator.locks) {
+        observedWorkspace.current = localStorage.getItem(workspaceKey);
+        shared.current = true;
+        refreshAction();
+      }
+      const raw = observedWorkspace.current ?? sessionStorage.getItem(workspaceKey);
+      if (raw) {
+        restore(raw, true);
+      } else {
+        const stored: unknown = JSON.parse(sessionStorage.getItem(historyKey) ?? "[]");
+        if (Array.isArray(stored)) {
+          const history = (stored as Chat[]).filter(chat => chat && typeof chat.id === "string" && Array.isArray(chat.messages)).slice(0, maxSavedChats);
+          setChats(history);
+          setChatId(history[0]?.id ?? "");
+        }
       }
     } catch {
       // The chat remains usable if browser storage is unavailable.
     }
+    if (shared.current) window.addEventListener("storage", sync);
     setHistoryLoaded(true);
-  }, [historyKey, workspaceKey]);
+    return () => {
+      window.removeEventListener("storage", sync);
+      if (releaseAction.current) {
+        try { localStorage.removeItem(actionKey); } catch { /* The lock is still released. */ }
+        releaseAction.current();
+        releaseAction.current = null;
+      }
+    };
+  }, [actionKey, hasBranch, historyKey, workspaceKey]);
 
   const workspace: Workspace = {
     chats, chatId, text, preview, reschedule, shipment, serviceId, masterId,
@@ -133,15 +192,70 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   useEffect(() => {
     if (!historyLoaded) return;
     try {
-      sessionStorage.setItem(workspaceKey, JSON.stringify(workspace));
+      const snapshot = JSON.stringify(workspace);
+      if (!shared.current) {
+        sessionStorage.setItem(workspaceKey, snapshot);
+        return;
+      }
+      if (snapshot === observedWorkspace.current) return;
+      // Applying a snapshot from another tab must never write it back over a newer edit.
+      if (snapshot === appliedWorkspace.current && observedWorkspace.current !== null) return;
+      appliedWorkspace.current = null;
+      if (localStorage.getItem(workspaceKey) === observedWorkspace.current
+        && (!localStorage.getItem(actionKey) || releaseAction.current)) {
+        localStorage.setItem(workspaceKey, snapshot);
+        observedWorkspace.current = snapshot;
+      }
     } catch {
-      // The chat remains usable if browser storage is unavailable.
+      // The chat remains usable if the browser storage quota is exhausted.
     }
   });
 
-  function openFullPage() {
-    if (!historyLoaded || operation.current || capture.current) return;
+  useEffect(() => {
+    if (!actionFinished || !releaseAction.current) return;
+    try { localStorage.removeItem(actionKey); } catch { /* The lock is still released. */ }
+    releaseAction.current();
+    releaseAction.current = null;
+  }, [actionFinished, actionKey]);
+
+  async function runAction(action: () => Promise<void>) {
+    if (!historyLoaded || busy || operation.current || capture.current) return;
+    if (!shared.current) return action();
     try {
+      await navigator.locks.request(actionKey, { ifAvailable: true }, async lock => {
+        if (!lock || localStorage.getItem(workspaceKey) !== observedWorkspace.current
+          || JSON.stringify(workspace) !== observedWorkspace.current) return;
+
+        const finished = new Promise<void>(resolve => { releaseAction.current = resolve; });
+        try {
+          localStorage.setItem(actionKey, crypto.randomUUID());
+          await action();
+        } finally {
+          // Publish the result before another tab can start an action with this draft.
+          setActionFinished(count => count + 1);
+          await finished;
+        }
+      });
+    } catch {
+      setError("Не удалось синхронизировать чат. Попробуйте ещё раз.");
+    }
+  }
+
+  function openFullPage() {
+    if (!historyLoaded || busy || operation.current || capture.current) return;
+    try {
+      if (shared.current) {
+        if (localStorage.getItem(workspaceKey) !== JSON.stringify(workspace)) {
+          setError("Чат ещё синхронизируется. Попробуйте открыть вкладку ещё раз.");
+          return;
+        }
+        if (!window.open("/ai-assistant", "_blank")) {
+          setError("Разрешите открытие новой вкладки для этого сайта.");
+          return;
+        }
+        close();
+        return;
+      }
       sessionStorage.setItem(workspaceKey, JSON.stringify(workspace));
       // A same-origin tab with an opener starts with a copy of this tab's session storage.
       const tab = window.open("about:blank", "_blank");
@@ -215,8 +329,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
     return data;
   }
 
-  async function prepare(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function prepare() {
     if (!hasBranch || !text.trim() || previewKind || operation.current || capture.current) return;
     const controller = new AbortController();
     operation.current = controller;
@@ -363,8 +476,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
     setPreview(current => current ? { ...current, draft: { ...current.draft, [field]: value } } : current);
   }
 
-  async function confirm(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function confirm() {
     if (!preview || capture.current || operation.current || (saveUncertain && preview.draft.kind !== "booking")) return;
     const { branch, draft } = preview;
     if (branch.id !== branchId) return;
@@ -450,8 +562,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
     }
   }
 
-  async function confirmReschedule(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function confirmReschedule() {
     if (!reschedule || capture.current || operation.current || saveUncertain) return;
     operation.current = new AbortController();
     setBusy("Переношу запись…");
@@ -518,7 +629,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   }
 
   function close() {
-    if (busy || recording) return;
+    if (localBusy || recording) return;
     setOpen(false);
     launcher.current?.focus();
   }
@@ -530,7 +641,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   const draftPanel = previewKind && (
     <aside className={styles.draftPanel} aria-label="Черновик">
     {reschedule ?
-    <form className={styles.form} onSubmit={confirmReschedule}>
+    <form className={styles.form} onSubmit={event => { event.preventDefault(); void runAction(confirmReschedule); }}>
       <div className={styles.previewTitle}>
         <strong ref={previewHeading} tabIndex={-1}>Перенос записи</strong>
         <span>{reschedule.customerName} · {reschedule.branchName}</span>
@@ -579,10 +690,10 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
         <button type="button" className={styles.secondary} disabled={Boolean(recording || busy)}
           onClick={() => { setShipment(undefined); setError(""); }}>Закрыть черновик</button>
         <button type="button" className={styles.primary} disabled={Boolean(recording || busy)}
-          onClick={() => void confirmShipment()}>Подтвердить и создать</button>
+          onClick={() => void runAction(confirmShipment)}>Подтвердить и создать</button>
       </div>
     </div> : draft ?
-    <form className={styles.form} onSubmit={confirm}>
+    <form className={styles.form} onSubmit={event => { event.preventDefault(); void runAction(confirm); }}>
       <div className={styles.previewTitle}>
         <strong ref={previewHeading} tabIndex={-1}>{draft.kind === "booking" ? "Черновик записи" : "Черновик дела клиента"}</strong>
         <span>{preview.branch.name} · {preview.branch.timezone}</span>
@@ -635,7 +746,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
           {fullPage ? <a href="/ai-assistant?mode=research">Технические расчёты</a> : <div className={styles.actions}>
             <button type="button" className={styles.secondary} onClick={openFullPage}
               disabled={!historyLoaded || Boolean(busy || recording)}>Открыть в новой вкладке <ExternalLink size={15} aria-hidden /></button>
-            <button type="button" className={styles.icon} onClick={close} disabled={Boolean(busy || recording)} aria-label="Закрыть"><X size={18} /></button>
+            <button type="button" className={styles.icon} onClick={close} disabled={Boolean(localBusy || recording)} aria-label="Закрыть"><X size={18} /></button>
           </div>}
         </header>
         <div className={styles.layout}>
@@ -676,7 +787,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
           {!draftOpen && draft?.customerName && <span>{draft.customerName} · {draft.datetime.replace("T", " ")}</span>}
         </button>}
         {!fullPage && previewKind && draftOpen && <div className={styles.inlineDraft}>{draftPanel}</div>}
-        {hasBranch && (<form className={styles.composerForm} onSubmit={prepare}>
+        {hasBranch && (<form className={styles.composerForm} onSubmit={event => { event.preventDefault(); void runAction(prepare); }}>
             <label>Сообщение
               <textarea ref={commandInput} className={styles.composer} rows={2} required
                 placeholder="Напишите или продиктуйте сообщение"
