@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { decodePartsApiVin } from "@/lib/integrations/partsapi/client";
 import { tronkClient, type TronkCallResult, type TronkMethod } from "@/lib/integrations/tronk/client";
 import { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel, splitCombinedVehicleDescription } from "@/lib/vehicle-normalization";
 
@@ -10,7 +11,7 @@ import { resolveVehicleMarket, mergeVehicleMarketEvidence, type VehicleMarketEvi
 import { consistentVehicleProductionMonth } from "@/lib/vehicle-production-month";
 
 export type VehicleLookupInputType = "vin" | "plate" | "frame";
-export type VehicleSourceMethod = "tronk_vindecode" | "tronk_vindecode2" | "tronk_plate" | "tronk_frame" | "tronk_convertb2b" | "tronk_convertgate" | "manual" | "mann_manual";
+export type VehicleSourceMethod = "partsapi_vindecode" | "tronk_vindecode" | "tronk_vindecode2" | "tronk_plate" | "tronk_frame" | "tronk_convertb2b" | "tronk_convertgate" | "manual" | "mann_manual";
 export type VinStatus = "valid" | "check_digit_absent" | "format_warning" | "invalid" | "frame_number" | "unknown";
 export type VehicleDecodeQualityStatus = "complete" | "partial" | "insufficient";
 export type VehicleDecodeFailureCode =
@@ -80,8 +81,8 @@ export type VehicleDecodeQuality = {
   missing: string[];
 };
 
-export type TronkAttemptDiagnostics = {
-  method: TronkMethod;
+export type VehicleAttemptDiagnostics = {
+  method: TronkMethod | "partsapi_vindecode";
   ok: boolean;
   fromCache: boolean;
   durationMs: number;
@@ -93,7 +94,7 @@ export type VehicleDecodeDiagnostics = {
   quality: VehicleDecodeQuality;
   failureCode?: VehicleDecodeFailureCode;
   fallbackUsed: boolean;
-  attempts: TronkAttemptDiagnostics[];
+  attempts: VehicleAttemptDiagnostics[];
 };
 
 export type VehicleLookupResult = {
@@ -349,7 +350,7 @@ function decodeFailureCode(vehicle: NormalizedVehicleIdentity | null | undefined
 }
 
 function failedDiagnostics(
-  attempts: TronkAttemptDiagnostics[],
+  attempts: VehicleAttemptDiagnostics[],
   failureCode: VehicleDecodeFailureCode,
   fallbackUsed = attempts.length > 1
 ): VehicleDecodeDiagnostics {
@@ -364,7 +365,7 @@ function failedDiagnostics(
 
 function diagnosticsForVehicle(
   vehicle: NormalizedVehicleIdentity | null | undefined,
-  attempts: TronkAttemptDiagnostics[],
+  attempts: VehicleAttemptDiagnostics[],
   fallbackUsed: boolean,
   primaryOnly = false
 ): VehicleDecodeDiagnostics {
@@ -579,7 +580,7 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
   if (!normalizedInput) return { status: "not_found", vehicle: null, candidates: [], message: "Введите VIN, госномер или номер кузова", fromCache: false, cacheIds: [], sourceMethods: [], diagnostics: failedDiagnostics([], "INVALID_INPUT", false) };
 
   const cacheIds: string[] = [];
-  const attempts: TronkAttemptDiagnostics[] = [];
+  const attempts: VehicleAttemptDiagnostics[] = [];
   let fromCache = true;
   const collect = async (method: TronkMethod, inputType: VehicleLookupInputType, call: () => Promise<TronkCallResult>) => {
     const item = await cachedTronkCall({ organizationId: options.organizationId, inputType, normalizedInput, method, refresh: options.refresh, call });
@@ -617,7 +618,7 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
         cacheIds.push(...decoded.cacheIds);
         fromCache &&= decoded.fromCache;
         attempts.push(...decoded.diagnostics.attempts);
-        if (decoded.vehicle && decoded.diagnostics.quality.status === "complete") {
+        if (decoded.vehicle && (decoded.sourceMethods.includes("partsapi_vindecode") || decoded.diagnostics.quality.status === "complete")) {
           const attached = attachPlateToLookup(decoded, plate.original);
           return {
             ...attached,
@@ -693,6 +694,40 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
     return { status: "not_found", vehicle: null, candidates: [], message: "Не удалось точно определить автомобиль по госномеру.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertb2b", "tronk_convertgate"], diagnostics: failedDiagnostics(attempts, resolvedVin ? "VIN_DECODE_FAILED" : "VIN_NOT_RESOLVED", true) };
   }
 
+  if (/^[A-HJ-NPR-Z0-9]{17}$/.test(normalizedVin)) {
+    const startedAt = Date.now();
+    const decoded = await decodePartsApiVin(normalizedVin);
+    const vehicles = decoded.status === "decoded"
+      ? decoded.vehicles.map((card) => toVehicle(card, "partsapi_vindecode", { vin: normalizedVin }))
+        .filter((vehicle) => vehicle.makeCanonical && vehicle.modelCanonical)
+      : [];
+    // VINdecode returns catalogue variants. Only collapse identical evidence.
+    const distinctVehicles = [...new Map(vehicles.map((vehicle) => [JSON.stringify(vehicle), vehicle])).values()];
+    const vehicle = distinctVehicles.length === 1 ? distinctVehicles[0] : null;
+    if (decoded.status !== "unconfigured") {
+      attempts.push({
+        method: "partsapi_vindecode",
+        ok: Boolean(vehicle),
+        fromCache: false,
+        durationMs: Date.now() - startedAt,
+        failureCode: vehicle ? undefined
+          : decoded.status === "unavailable" ? "PROVIDER_UNAVAILABLE"
+          : distinctVehicles.length > 1 ? "DECODE_INSUFFICIENT_CHARACTERISTICS" : "PROVIDER_NO_DATA",
+      });
+    }
+    if (vehicle) {
+      return resultFromVehicles({
+        vehicles: [vehicle],
+        inputVin: normalizedVin,
+        fromCache: false,
+        cacheIds,
+        sourceMethods: vehicle.sourceMethods,
+        diagnostics: diagnosticsForVehicle(vehicle, attempts, false, true),
+      });
+    }
+  }
+
+  const usedPartsApi = attempts.some((attempt) => attempt.method === "partsapi_vindecode");
   const primary = await collect("vindecode", "vin", () => tronkClient.decodeVinPrimary(normalizedVin));
   const primaryRaw = primary.ok ? primary.data : null;
   const primaryVehicles = primaryRaw
@@ -729,13 +764,13 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
   }
   const best = bestVehicleByQuality(mergedVehicles);
   if (!best || assessVehicleDecodeQuality(best).status === "insufficient") {
-    const anyUnavailable = attempts.some((attempt) => attempt.failureCode === "PROVIDER_UNAVAILABLE");
+    const anyUnavailable = attempts.some((attempt) => attempt.method !== "partsapi_vindecode" && attempt.failureCode === "PROVIDER_UNAVAILABLE");
     const failureCode = primary.ok ? decodeFailureCode(best ?? primaryBest) : anyUnavailable ? "PROVIDER_UNAVAILABLE" : "VIN_DECODE_FAILED";
-    return { status: anyUnavailable && !primary.ok ? "unavailable" : "not_found", vehicle: null, candidates: [], message: primary.ok ? "Не удалось определить автомобиль. Введите VIN повторно или выберите автомобиль вручную." : primary.message, fromCache, cacheIds, sourceMethods: ["tronk_vindecode", ...(wantsExtended ? ["tronk_vindecode2" as const] : [])], diagnostics: failedDiagnostics(attempts, failureCode, wantsExtended) };
+    return { status: anyUnavailable && !primary.ok ? "unavailable" : "not_found", vehicle: null, candidates: [], message: primary.ok ? "Не удалось определить автомобиль. Введите VIN повторно или выберите автомобиль вручную." : primary.message, fromCache, cacheIds, sourceMethods: ["tronk_vindecode", ...(wantsExtended ? ["tronk_vindecode2" as const] : [])], diagnostics: failedDiagnostics(attempts, failureCode, usedPartsApi || wantsExtended) };
   }
   const status = vinStatus(normalizedVin, primaryRaw);
   mergedVehicles = mergedVehicles.map((vehicle) => ({ ...vehicle, vinStatus: status }));
-  return resultFromVehicles({ vehicles: mergedVehicles, inputVin: normalizedVin, fromCache, cacheIds, sourceMethods: [...new Set(mergedVehicles.flatMap((vehicle) => vehicle.sourceMethods))], diagnostics: diagnosticsForVehicle(best, attempts, wantsExtended, !wantsExtended) });
+  return resultFromVehicles({ vehicles: mergedVehicles, inputVin: normalizedVin, fromCache, cacheIds, sourceMethods: [...new Set(mergedVehicles.flatMap((vehicle) => vehicle.sourceMethods))], diagnostics: diagnosticsForVehicle(best, attempts, usedPartsApi || wantsExtended, !usedPartsApi && !wantsExtended) });
 }
 
 export function vehicleFieldValues(vehicle: NormalizedVehicleIdentity): Partial<Record<string, { value: string; source: VehicleSourceMethod }>> {

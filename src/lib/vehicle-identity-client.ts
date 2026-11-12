@@ -1,7 +1,7 @@
 import type { VehicleMarketEvidence } from "@/lib/vehicle-market";
 
 export type VehicleLookupInputType = "vin" | "plate" | "frame";
-export type VehicleSourceMethod = "tronk_vindecode" | "tronk_vindecode2" | "tronk_plate" | "tronk_frame" | "tronk_convertb2b" | "tronk_convertgate" | "manual" | "mann_manual";
+export type VehicleSourceMethod = "partsapi_vindecode" | "tronk_vindecode" | "tronk_vindecode2" | "tronk_plate" | "tronk_frame" | "tronk_convertb2b" | "tronk_convertgate" | "manual" | "mann_manual";
 export type VinStatus = "valid" | "check_digit_absent" | "format_warning" | "invalid" | "frame_number" | "unknown";
 export type VehicleDecodeQualityStatus = "complete" | "partial" | "insufficient";
 export type VehicleDecodeFailureCode = "INVALID_INPUT" | "PROVIDER_UNAVAILABLE" | "PROVIDER_NO_DATA" | "VIN_NOT_RESOLVED" | "VIN_DECODE_FAILED" | "DECODE_MISSING_MAKE" | "DECODE_MISSING_MODEL" | "DECODE_INSUFFICIENT_CHARACTERISTICS" | "UNSUPPORTED_VEHICLE" | "FRAME_NUMBER" | "UNKNOWN";
@@ -66,7 +66,7 @@ export type VehicleLookupResult = {
     quality: { status: VehicleDecodeQualityStatus; score: number; present: string[]; missing: string[] };
     failureCode?: VehicleDecodeFailureCode;
     fallbackUsed: boolean;
-    attempts: Array<{ method: "vindecode" | "vindecode2" | "number2vin" | "frameapi" | "convertb2b" | "convertgate"; ok: boolean; fromCache: boolean; durationMs: number; failureCode?: VehicleDecodeFailureCode }>;
+    attempts: Array<{ method: "partsapi_vindecode" | "vindecode" | "vindecode2" | "number2vin" | "frameapi" | "convertb2b" | "convertgate"; ok: boolean; fromCache: boolean; durationMs: number; failureCode?: VehicleDecodeFailureCode }>;
   };
 };
 

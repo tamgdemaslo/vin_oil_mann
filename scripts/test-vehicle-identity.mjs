@@ -119,3 +119,87 @@ for (const [providerModel, expectedMake, expectedModel] of combinedFallbackCases
 }
 
 console.log("Vehicle identity normalization tests — passed");
+
+// Exercise the shared lookup, including the paid-provider boundary, without a database or network.
+const { lookupVehicle } = await jiti.import("../src/lib/vehicle-identity.ts");
+const { tronkClient } = await jiti.import("../src/lib/integrations/tronk/client.ts");
+const vin = "WBAFG410X0L197055";
+const partsCard = {
+  manuName: "BMW", modelName: "X6 (E71, E72)", typeName: "xDrive 35 i",
+  motorCodes: ["N54B30O0"], cylinderCapacityCcm: 2979, powerKwFrom: 225,
+  fuelType: "бензин", impulsionType: "привод на все колеса",
+  yearOfConstrFrom: "200801", yearOfConstrTo: "201407",
+};
+process.env.PARTSAPI_VINDECODE_KEY = "test-key";
+let calls = [];
+let partsResponse;
+globalThis.fetch = async (url) => {
+  calls.push("partsapi");
+  assert.equal(url.origin, "https://api.partsapi.ru");
+  assert.equal(url.searchParams.get("method"), "VINdecode");
+  assert.equal(url.searchParams.get("key"), "test-key");
+  assert.equal(url.searchParams.get("lang"), "ru");
+  assert.equal(url.searchParams.get("vin"), vin);
+  return partsResponse();
+};
+const cache = globalThis.prisma.vehicleLookupCache;
+cache.create = async () => ({ id: "test-cache" });
+cache.updateMany = async () => ({ count: 1 });
+tronkClient.decodeVinPrimary = async () => {
+  calls.push("tronk");
+  return {
+    ok: true, method: "vindecode", durationMs: 1, providerRequestId: null,
+    data: { decode: { Reports: [{ Data: {
+      Brand: "BMW", Model: "X6", Year: 2012, EngineCode: "TEST-ENGINE",
+      EngineVolumeLiters: 3.5, PowerHp: 290, FuelType: "gasoline",
+    } }] } },
+  };
+};
+tronkClient.decodeVinExtended = async () => {
+  calls.push("tronk-extended");
+  return { ok: false, method: "vindecode2", durationMs: 1, code: "provider", message: "no data" };
+};
+
+const lookupVin = (extended = false) => lookupVehicle({ organizationId: "test", inputType: "vin", input: vin, refresh: true, extended });
+for (const [extended, resultCards] of [
+  [false, [partsCard]],
+  [true, { first: partsCard, duplicate: partsCard }],
+  [false, [{ ...partsCard, powerKwFrom: undefined, motorCodes: [] }]],
+]) {
+  partsResponse = () => Response.json({ result: resultCards });
+  calls = [];
+  const result = await lookupVin(extended);
+  assert.deepEqual(calls, ["partsapi"]);
+  assert.equal(result.status, "found");
+  assert.deepEqual(result.sourceMethods, ["partsapi_vindecode"]);
+  assert.equal(result.vehicle.makeCanonical, "BMW");
+  assert.equal(result.vehicle.modelCanonical, "X6");
+  assert.equal(result.vehicle.engineVolumeCc, 2979);
+  assert.equal(result.vehicle.driveType, "AWD");
+  assert.equal(result.vehicle.year, undefined, "catalogue production start is not the vehicle build year");
+  assert.equal(result.vehicle.modelYearFrom, 2008);
+  assert.equal(result.vehicle.modelYearTo, 2014);
+  assert.equal(result.diagnostics.fallbackUsed, false);
+}
+
+for (const response of [
+  () => Response.json({ result: [] }),
+  () => Response.json({ result: [{ ...partsCard, modelName: "" }] }),
+  () => Response.json({ result: [{ ...partsCard, vin: "WBAFG410X0L197056" }] }),
+  () => Response.json({ result: [partsCard, { ...partsCard, motorCodes: ["N55B30"] }] }),
+  () => new Response(null, { status: 503 }),
+  () => { throw new TypeError("PartsAPI offline"); },
+]) {
+  partsResponse = response;
+  calls = [];
+  const result = await lookupVin();
+  assert.deepEqual(calls, ["partsapi", "tronk"]);
+  assert.deepEqual(result.sourceMethods, ["tronk_vindecode"]);
+  assert.equal(result.diagnostics.fallbackUsed, true);
+}
+
+delete process.env.PARTSAPI_VINDECODE_KEY;
+calls = [];
+assert.equal((await lookupVin()).status, "found");
+assert.deepEqual(calls, ["tronk"]);
+console.log("vehicle-identity PartsAPI priority and TRONK fallback passed");
