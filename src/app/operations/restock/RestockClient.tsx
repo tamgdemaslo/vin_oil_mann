@@ -649,7 +649,7 @@ function coverageForItem(item: RestockItem, cartQty: number, orderLines: Supplie
   const remaining = Math.max(0, item.spentInPeriod !== undefined
     ? Math.ceil(item.spentInPeriod) - orderedToday - cartQty
     : min - available - ordered - cartQty);
-  return { available, reserve, min, deficit, inCart: cartQty, ordered, remaining, expectedLabel };
+  return { available, reserve, min, deficit, inCart: cartQty, ordered, remaining };
 }
 
 function routeText(it: RestockItem): string {
