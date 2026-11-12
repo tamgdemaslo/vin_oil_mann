@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Bot, ExternalLink, Mic, Send, Square, X } from "lucide-react";
 import { journalLocalToUtcIso } from "@/lib/booking/journal-time";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
-import { QUICK_COMMAND_MAX_LENGTH, uniqueQuickBookingService, uniqueQuickOption, type QuickAnswer, type QuickBookingOptions, type QuickCommand, type QuickReschedulePreview, type QuickShipmentPreview } from "@/lib/quick-assistant";
+import { QUICK_COMMAND_MAX_LENGTH, quickAssistantPlainText, uniqueQuickBookingService, uniqueQuickOption, type QuickAnswer, type QuickBookingOptions, type QuickCommand, type QuickReschedulePreview, type QuickShipmentPreview } from "@/lib/quick-assistant";
 import styles from "./quick-assistant.module.css";
 
 type Preview = {
@@ -803,10 +803,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
           {messages.map((message, index) => (
             <div key={index} className={message.role === "user" ? styles.userMessage : styles.assistantMessage}>
               <span className={styles.messageAuthor}>{message.role === "user" ? "Вы" : "Помощник"}</span>
-              <p>{message.content}</p>
-              {!!message.sources?.length && <ul className={styles.sourceList}>
-                {message.sources.map(source => <li key={source.href}><a href={source.href}>{source.label}</a></li>)}
-              </ul>}
+              <p>{message.role === "assistant" ? quickAssistantPlainText(message.content) : message.content}</p>
             </div>
           ))}
         </div>}
