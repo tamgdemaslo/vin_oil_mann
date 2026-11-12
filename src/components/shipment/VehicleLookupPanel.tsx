@@ -25,6 +25,7 @@ export type VehicleLookupManualContext = {
 };
 
 type Props = {
+  combinedIdentifier?: boolean;
   onQuoteContextChange?: (context: MaintenanceQuoteVehicleContext | null) => void;
   organizationId?: string | null;
   warehouseId?: string | null;
@@ -456,7 +457,7 @@ export function TechnicalProfile({
   );
 }
 
-export function VehicleLookupPanel({ onQuoteContextChange, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
+export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextChange, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
   const [tab, setTab] = useState<LookupTab>("vin");
   const [input, setInput] = useState(initialVin ?? "");
   const [loading, setLoading] = useState(false);
@@ -681,13 +682,13 @@ export function VehicleLookupPanel({ onQuoteContextChange, organizationId, wareh
     }
   };
 
-  const runLookup = async (extended = false, refresh = false, rawValue?: string) => {
+  const runLookup = async (extended = false, refresh = false, rawValue?: string, lookupTab = tab) => {
     const sourceValue = rawValue ?? input;
-    const value = tab === "plate" ? normalizePlateDraft(sourceValue) : normalizeVinInput(sourceValue);
+    const value = lookupTab === "plate" ? normalizePlateDraft(sourceValue) : normalizeVinInput(sourceValue);
     setInput(value);
     if (!value) return;
 
-    if (tab === "plate" && !isLikelyRussianPlate(value)) {
+    if (lookupTab === "plate" && !isLikelyRussianPlate(value)) {
       resetLookupState();
       setInput(value);
       setFeedback({
@@ -698,8 +699,8 @@ export function VehicleLookupPanel({ onQuoteContextChange, organizationId, wareh
       return;
     }
 
-    const endpoint = tab === "plate" ? "/api/vehicle-lookup/plate" : extended ? "/api/vehicle-lookup/vin/extended" : "/api/vehicle-lookup/vin";
-    const body = tab === "plate" ? { plate: value, organizationId, refresh } : { vin: value, organizationId, refresh };
+    const endpoint = lookupTab === "plate" ? "/api/vehicle-lookup/plate" : extended ? "/api/vehicle-lookup/vin/extended" : "/api/vehicle-lookup/vin";
+    const body = lookupTab === "plate" ? { plate: value, organizationId, refresh } : { vin: value, organizationId, refresh };
     const requestId = ++lookupRequestIdRef.current;
     resolutionRequestIdRef.current += 1;
     technicalProfileRequestIdRef.current += 1;
@@ -737,7 +738,7 @@ export function VehicleLookupPanel({ onQuoteContextChange, organizationId, wareh
         const message = data?.error ?? "Повторите попытку позже или продолжите подбор вручную.";
         setFeedback({
           tone: "warning",
-          title: tab === "plate" ? "Сервис определения автомобиля временно недоступен" : "Не удалось определить автомобиль",
+          title: lookupTab === "plate" ? "Сервис определения автомобиля временно недоступен" : "Не удалось определить автомобиль",
           body: message,
           actionLabel: "Перейти к ручному подбору",
         });
@@ -750,11 +751,11 @@ export function VehicleLookupPanel({ onQuoteContextChange, organizationId, wareh
       if (data.status === "not_found" || (!data.vehicle && data.status !== "unavailable")) {
         setFeedback({
           tone: "neutral",
-          title: tab === "plate" ? "Не удалось точно определить автомобиль по госномеру" : "Автомобиль не найден",
-          body: tab === "plate" ? "Можно ввести VIN или выбрать марку, модель, год и двигатель вручную." : "Выберите марку, модель, год и двигатель вручную.",
-          actionLabel: tab === "plate" ? "Ввести VIN" : "Выбрать автомобиль вручную",
-          action: tab === "plate" ? "vin" : "manual",
-          secondaryActionLabel: tab === "plate" ? "Выбрать автомобиль вручную" : undefined,
+          title: lookupTab === "plate" ? "Не удалось точно определить автомобиль по госномеру" : "Автомобиль не найден",
+          body: lookupTab === "plate" ? "Можно ввести VIN или выбрать марку, модель, год и двигатель вручную." : "Выберите марку, модель, год и двигатель вручную.",
+          actionLabel: lookupTab === "plate" ? "Ввести VIN" : "Выбрать автомобиль вручную",
+          action: lookupTab === "plate" ? "vin" : "manual",
+          secondaryActionLabel: lookupTab === "plate" ? "Выбрать автомобиль вручную" : undefined,
         });
         return;
       }
@@ -1090,26 +1091,44 @@ export function VehicleLookupPanel({ onQuoteContextChange, organizationId, wareh
         {tab !== "manual" ? (
           <div className="eco-vehicle-lookup__controls">
             <label className="eco-vehicle-lookup__field">
-              <span className="eco-sr-only">{tab === "vin" ? "VIN или номер кузова" : "Госномер"}</span>
+              <span className="eco-sr-only">{combinedIdentifier ? "VIN или госномер" : tab === "vin" ? "VIN или номер кузова" : "Госномер"}</span>
               <input
                 ref={inputRef}
                 className="eco-input"
                 value={input}
                 onChange={(event) => {
-                  const nextValue = tab === "plate" ? normalizePlateDraft(event.target.value) : event.target.value.toUpperCase();
-                  const normalizedValue = tab === "plate" ? normalizePlateDraft(nextValue) : normalizeVinInput(nextValue);
-                  const isComplete = tab === "plate"
+                  const raw = event.target.value.toUpperCase();
+                  const vin = normalizeVinInput(combinedIdentifier ? raw.replace(/-/g, "") : raw);
+                  const plate = normalizePlateDraft(raw);
+                  const lookupTab = combinedIdentifier
+                    ? /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) ? "vin"
+                      : /^[0-9А-ЯЁABCEHKMOPTXY\s-]+$/.test(raw) && isLikelyRussianPlate(plate) ? "plate" : tab
+                    : tab;
+                  const nextValue = lookupTab === "plate" && !combinedIdentifier ? plate : raw;
+                  const normalizedValue = lookupTab === "plate" ? plate : vin;
+                  const isComplete = lookupTab === "plate"
                     ? isLikelyRussianPlate(normalizedValue)
                     : /^[A-HJ-NPR-Z0-9]{17}$/.test(normalizedValue);
                   setInput(nextValue);
                   if (!isComplete) {
                     lastAutomaticLookupRef.current = "";
+                    if (combinedIdentifier && (loading || resolving || lookup)) {
+                      lookupRequestIdRef.current += 1;
+                      resolutionRequestIdRef.current += 1;
+                      lookupControllerRef.current?.abort();
+                      resolutionControllerRef.current?.abort();
+                      setLoading(false);
+                      setResolving(false);
+                      resetLookupState();
+                      onLookupStart();
+                    }
                     return;
                   }
-                  const lookupKey = `${tab}:${normalizedValue}`;
+                  const lookupKey = `${lookupTab}:${normalizedValue}`;
                   if (lastAutomaticLookupRef.current === lookupKey) return;
                   lastAutomaticLookupRef.current = lookupKey;
-                  void runLookup(false, false, nextValue);
+                  if (lookupTab !== tab) setTab(lookupTab);
+                  void runLookup(false, false, normalizedValue, lookupTab);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !loading) {
@@ -1117,7 +1136,7 @@ export function VehicleLookupPanel({ onQuoteContextChange, organizationId, wareh
                     void runLookup();
                   }
                 }}
-                placeholder={tab === "vin" ? "Введите VIN — поиск начнётся автоматически" : "Введите госномер, например Т332ЕК39"}
+                placeholder={combinedIdentifier ? "Введите VIN или госномер" : tab === "vin" ? "Введите VIN — поиск начнётся автоматически" : "Введите госномер, например Т332ЕК39"}
                 autoCapitalize="characters"
                 autoComplete="off"
                 autoCorrect="off"

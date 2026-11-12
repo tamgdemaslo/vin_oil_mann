@@ -14,7 +14,7 @@ type Props = { vehicleTitle: string; warehouseId?: string | null; profile: MannU
 const number = (value: string) => Number(value.replace(",", "."));
 
 export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, research, requirements, filters: vehicleFilters = [], filtersLoading = false }: Props) {
-  const choices = useMemo(() => profile || research ? quoteRequirementChoices(profile, research) : requirements ?? quoteRequirementChoices(null, null), [profile, research, requirements]);
+  const choices = useMemo(() => profile || research ? quoteRequirementChoices(profile, research, { prefillResearchVolume: true }) : requirements ?? quoteRequirementChoices(null, null), [profile, research, requirements]);
   const [manualFilters, setManualFilters] = useState<QuoteFilterGroup[]>([]);
   const [manualArticle, setManualArticle] = useState("");
   const [manualFilterType, setManualFilterType] = useState("Масляный фильтр");
@@ -136,6 +136,9 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
         <QuoteSearchField label="Вязкость" value={viscosity} options={[...choices.viscosities, ...referenceViscosities]} onChange={value => { invalidate(); setViscosity(value); }} />
         <QuoteSearchField label="Объём замены, л" value={volume} options={[...choices.volumes.map(String), ...referenceVolumes]} onChange={setVolume} inputMode="decimal" />
       </div>
+      {volumeDraft === null && "volumeFromResearch" in choices && choices.volumeFromResearch && (
+        <p className={styles.note}>Объём подставлен из поиска ИИ. Сверьте источник в карточке автомобиля.</p>
+      )}
       <p className={styles.note}>Можно начать вручную. Данные автомобиля подставятся после подбора. Если вариантов несколько, выберите подходящий. Объём — с фильтром; значения из общего справочника нужно сверить с требованиями автомобиля.</p>
       <button type="button" className="eco-btn eco-btn--primary" disabled={!warehouseId || !specification.trim() || loading} onClick={() => void findOils()}>{loading ? "Проверяем наличие…" : "Подобрать масла из наличия"}</button>
       {error ? <p role="alert">{error}</p> : null}

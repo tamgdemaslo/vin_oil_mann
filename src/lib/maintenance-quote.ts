@@ -1,6 +1,7 @@
 import { buildRequirementsNorm } from "@/lib/oil-normalizer";
 import { resolveProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 import { parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
+import { parseFluidCapacities } from "@/lib/fluid-capacity-parser";
 import { isLiterSaleUnit } from "@/lib/product-marking";
 
 export type QuoteStockProduct = {
@@ -119,17 +120,40 @@ export type QuoteFilterGroup = {
   products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean; source?: "rossko"; deliveryLabel?: string; brand?: string | null; relation?: "mann" | "analogue"; referenceArticle?: string; deliveryAt?: string | null; deliveryDays?: number | null }[];
 };
 
-export function quoteRequirementChoices(profile: import("@/lib/mann-unified-technical-profile").MannUnifiedTechnicalProfile | null, research: import("@/lib/mann-fluid-research").MannFluidResearchResult | null) {
+export function quoteRequirementChoices(profile: import("@/lib/mann-unified-technical-profile").MannUnifiedTechnicalProfile | null, research: import("@/lib/mann-fluid-research").MannFluidResearchResult | null, options?: { prefillResearchVolume?: boolean }) {
   const engines = profile?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
   const discoveries = research?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
   const raw = [...engines.flatMap(item => item.specifications), ...discoveries.map(item => item.specification)].join("; ");
   const norm = buildRequirementsNorm({ oem: raw, acea: raw, api: raw, ilsac: raw, sae: [...engines.flatMap(item => item.viscosityGrades), raw].join("; ") });
   const specifications = [...new Set(norm.oem.length ? norm.oem : [...norm.acea, ...norm.api, ...norm.ilsac])];
   const viscosities = [...new Set(norm.sae)];
-  const capacities = engines.flatMap(item => item.capacities.map(capacity => ({ capacity, trusted: !item.requiresReview && item.sourceStatus === "primary_source" && (!capacity.qualifier || capacity.qualifier === "EXACT") })));
-  const volumes = [...new Set(capacities.flatMap(({capacity}) => [capacity.nominalLiters, capacity.minLiters, capacity.maxLiters]).filter((value): value is number => !!value && value > 0))];
-  const trustedVolumes = [...new Set(capacities.filter(item => item.trusted).map(item => item.capacity.nominalLiters).filter((value): value is number => !!value))];
-  return { specifications, viscosities, volumes, automaticVolume: trustedVolumes.length === 1 && volumes.length === 1 ? String(trustedVolumes[0]) : "" };
+  const catalogCapacities = engines.flatMap(item => item.capacities
+    .filter(capacity => !["TOTAL", "DRY_FILL", "WITHOUT_FILTER", "PARTIAL"].includes(capacity.serviceContext ?? ""))
+    .map(capacity => ({
+      capacity,
+      trusted: !item.requiresReview && item.sourceStatus === "primary_source" && (!capacity.qualifier || capacity.qualifier === "EXACT"),
+    })));
+  const researchedCapacities = [
+    ...engines.filter(item => item.researchResult).map(item => item.researchVolumeText),
+    ...discoveries.map(item => item.volumeText),
+  ].flatMap(text => {
+    const parsed = parseFluidCapacities(text, "ENGINE_OIL");
+    if (parsed.needsReview) return [];
+    return parsed.capacities.filter(capacity =>
+      !["TOTAL", "DRY_FILL", "PARTIAL"].includes(capacity.serviceContext)
+      && capacity.filterContext !== "WITHOUT_FILTER"
+      && !/(?:полн[а-яё]*|общ[а-яё]*)\s+объ[её]м|сух[а-яё]*\s+заправ|dry fill/i.test(capacity.context));
+  });
+  const values = (capacities: readonly { nominalLiters?: number | null; minLiters?: number | null; maxLiters?: number | null }[]) =>
+    [...new Set(capacities.flatMap(capacity => [capacity.nominalLiters, capacity.minLiters, capacity.maxLiters])
+      .filter((value): value is number => typeof value === "number" && value > 0))];
+  const catalogVolumes = values(catalogCapacities.map(item => item.capacity));
+  const volumes = catalogVolumes.length ? catalogVolumes : values(researchedCapacities);
+  const catalogVolume = catalogVolumes.length === 1 && catalogCapacities.some(item => item.trusted) ? String(catalogVolumes[0]) : "";
+  const researchVolume = options?.prefillResearchVolume && !catalogVolumes.length && volumes.length === 1 && researchedCapacities.every(capacity =>
+    capacity.qualifier === "EXACT" && capacity.filterContext === "WITH_FILTER")
+    ? String(volumes[0]) : "";
+  return { specifications, viscosities, volumes, automaticVolume: catalogVolume || researchVolume, volumeFromResearch: Boolean(researchVolume) };
 }
 
 

@@ -34,7 +34,7 @@ try {
  let s=reset();assert.equal((await run({...input,variantKeys:['a','b']})).status,'needs_context');assert.equal(s.calls,0);
  assert.equal((await run({...input,vehicleContext:{make:'NISSAN'}})).status,'needs_context');assert.equal(s.calls,0);assert.equal(s.rows.length,0,'cross-make selection must not create research evidence');
  assert.equal(missingMannFluids(profile).length,MANN_FLUID_SYSTEMS.length,'all aggregates researched, including missing ones');
- const completeProfile={...profile,items:MANN_FLUID_SYSTEMS.map(systemCode=>({systemCode,specifications:['Existing'],capacities:[{nominalLiters:5}]}))};
+ const completeProfile={...profile,items:MANN_FLUID_SYSTEMS.map(systemCode=>({systemCode,specifications:['Existing'],viscosityGrades:['5W-30'],capacities:[{nominalLiters:5}]}))};
  assert.equal((await run({...input,profile:completeProfile})).status,'complete');assert.equal(s.calls,0);
  const first=await run(input);assert.equal(first.status,'saved');assert.equal(s.request.model,'gpt-6-luna');assert.equal(s.request.tool_choice,'required');assert.equal(s.rows[0].status,'pending_review');assert.equal(s.rows[0].confidence,0);
  assert.match(s.lock.sql,/SELECT pg_advisory_xact_lock/);assert.deepEqual(s.lock.values,['org1','VIN_FLUID_RESEARCH_V1']);
@@ -70,6 +70,8 @@ try {
  assert.equal((await run({...input,vehicleContext:undefined})).status,'saved','catalog description sufficient without engine code');
  const gaps=missingMannFluids(profile);assert.deepEqual(citedResearchItems({items:[{...item,sourceUrl:'https://invented.example/manual'}],unresolved:[]},new Set([item.sourceUrl]),gaps),[]);
  assert.equal(citedResearchItems({items:[item],unresolved:[]},new Set([item.sourceUrl]),[{systemCode:'ENGINE_OIL',specification:false,volume:true}])[0].specification,'');
+ const viscosityOnly=citedResearchItems({items:[{...item,specification:'VW 504.00; SAE 5W-30'}],unresolved:[]},new Set([item.sourceUrl]),[{systemCode:'ENGINE_OIL',specification:false,volume:false,viscosity:true}]);
+ assert.equal(viscosityOnly[0].specification,'5W-30','research fills missing viscosity without replacing the existing approval');
  s=reset();s.fail=true;assert.equal((await run(input)).status,'unavailable');assert.equal(s.rows[0].status,'failed');assert.equal((await run(input)).status,'unavailable');assert.equal(s.calls,1);
  s=reset();s.limit=true;assert.equal((await run(input)).status,'unavailable');assert.equal(s.calls,0);
  s=reset();s.payload={items:[{...item,sourceUrl:'https://unvisited.example/manual'}],unresolved:[]};assert.equal((await run(input)).status,'saved');assert.equal(s.rows[0].status,'not_found');

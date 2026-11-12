@@ -31,6 +31,17 @@ assert.equal(quoteRequirementChoices({items:[engine]}, null).automaticVolume, '4
 assert.equal(quoteRequirementChoices({items:[{...engine,requiresReview:true}]}, null).automaticVolume, '');
 assert.equal(quoteRequirementChoices({items:[{...engine,capacities:[{qualifier:'RANGE',minLiters:4,maxLiters:5}]}]}, null).automaticVolume, '');
 assert.deepEqual(quoteRequirementChoices({items:[{...engine,capacities:[{qualifier:'RANGE',minLiters:4,maxLiters:5}]}]}, null).volumes, [4,5]);
+const withResearchPrefill = { prefillResearchVolume: true };
+const researchedVolume = (volumeText) => ({ items: [{ ...research.items[0], volumeText }] });
+assert.equal(quoteRequirementChoices(null, researchedVolume('4,5 л с масляным фильтром'), withResearchPrefill).automaticVolume, '4.5');
+assert.equal(quoteRequirementChoices(null, researchedVolume('4,5 л с фильтром')).automaticVolume, '', 'client quote still requires verified volume');
+assert.equal(quoteRequirementChoices(null, researchedVolume('Общий объём 4,5 л с фильтром'), withResearchPrefill).automaticVolume, '');
+assert.equal(quoteRequirementChoices(null, researchedVolume('4,5 л без фильтра'), withResearchPrefill).automaticVolume, '');
+assert.equal(quoteRequirementChoices(null, researchedVolume('4,5–5 л с фильтром'), withResearchPrefill).automaticVolume, '');
+assert.equal(quoteRequirementChoices(null, researchedVolume('4,5 л с фильтром; 5 л с фильтром'), withResearchPrefill).automaticVolume, '');
+assert.equal(quoteRequirementChoices({items:[engine]}, researchedVolume('5 л с фильтром'), withResearchPrefill).automaticVolume, '4.5');
+const savedResearch = { ...engine, capacities: [], researchResult: true, researchVolumeText: '4,5 л с фильтром' };
+assert.equal(quoteRequirementChoices({items:[savedResearch]}, null, withResearchPrefill).automaticVolume, '4.5');
 console.log('maintenance requirement choices: ok');
 const {groupQuoteOils,quoteVariantAmount}=await jiti.import('../src/lib/maintenance-quote.ts');
 const ngn4={...packed,id:'ngn4',name:'NGN 5W-20 A-Line SP/ILSAC GF-6, моторное масло, 4 л.',sae:'5W-20',price:4300,available:1};
