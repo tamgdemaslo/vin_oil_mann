@@ -56,7 +56,7 @@ export function readableBranchIds(context: BranchContext) {
       : [];
 }
 
-export async function requireBranchApi(options: { allowAll?: boolean; requireActive?: boolean } = {}) {
+export async function requireBranchApi(options: { allowAll?: boolean; requireActive?: boolean; requestedBranchId?: string } = {}) {
   try {
     const context = await requireBranchContext(options);
     return { ok: true as const, context };

@@ -1348,7 +1348,7 @@ function ClientDrawer({
 
   return (
     <div className="eco-client-drawer-backdrop" role="presentation" onMouseDown={onClose}>
-      <aside className="eco-client-drawer" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+      <aside className="eco-client-drawer" role="dialog" aria-modal="true" data-assistant-customer-id={row.category !== "SUPPLIER" && canPersistCounterparty(row) ? row.id : undefined} onMouseDown={(event) => event.stopPropagation()}>
         <header className="eco-client-drawer__header">
           <div>
             <span className="eco-page-kicker">{row.category === "SUPPLIER" ? "Карточка поставщика" : "Карточка клиента"}</span>

@@ -399,11 +399,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  const body = object(await request.json().catch(() => null));
+  const requestedBranchId = text(body.assistantTargetBranchId) ?? undefined;
+  const access = await requireBranchApi({ allowAll: false, requireActive: true, requestedBranchId });
   if (!access.ok) return access.response;
   try {
+    if (requestedBranchId && !["owner", "admin"].includes(access.context.user.role)) {
+      throw new BookingError("Нет права создавать записи через помощника.", "booking_access_denied", 403);
+    }
     requireBookingCapability(canManageBookings(access.context), "Нет права создавать записи");
-    const body = object(await request.json().catch(() => null));
     if (body.expectedBranchId !== undefined && body.expectedBranchId !== access.context.branchId) {
       throw new BookingError("Филиал изменился. Подготовьте новый черновик.", "booking_branch_changed", 409);
     }
