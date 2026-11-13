@@ -5,7 +5,7 @@ import { caseClosureById } from "@/lib/client-case-closure";
 import { anonymousRetailCounterpartyExclusion } from "@/lib/anonymous-retail-counterparty";
 import { validCaseCorrespondence, withCaseCorrespondence } from "@/lib/client-case-correspondence";
 import { caseDayDeadline } from "@/lib/client-case-simple";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { caseStatusFromStageName, defaultNextActionForCaseStatus, isClientCaseStatus } from "@/lib/client-case-shared";
@@ -335,6 +335,19 @@ export async function POST(request: NextRequest) {
     if (body.expectedBranchId !== undefined && body.expectedBranchId !== branchAccess.context.branchId) {
       return NextResponse.json({ error: "Филиал изменился. Подготовьте новый черновик." }, { status: 409 });
     }
+    const assistantKey = parseOptionalString(body.assistantIdempotencyKey);
+    if (assistantKey && (body.expectedBranchId !== branchAccess.context.branchId
+      || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(assistantKey))) {
+      return NextResponse.json({ error: "Некорректный ключ сохранения дела." }, { status: 400 });
+    }
+    const assistantCaseKey = assistantKey ? `assistant:${branchAccess.context.userId}:${assistantKey}` : null;
+    const existingAssistantCase = () => assistantCaseKey ? prisma.crmDeal.findFirst({
+      where: { branchId: branchAccess.context.branchId!, caseKey: assistantCaseKey },
+      select: { id: true },
+    }) : null;
+    const existing = await existingAssistantCase();
+    if (existing) return NextResponse.json({ ...existing, alreadyExists: true });
+
     const title = parseOptionalString(body.title);
     const customerName = parseOptionalString(body.customerName);
     const phoneNormalized = normalizePhoneKey(parseOptionalString(body.phone));
@@ -415,7 +428,7 @@ export async function POST(request: NextRequest) {
       caseStatus,
       caseType,
       priority: parsePriority(body.priority),
-      caseKey: parseOptionalString(body.caseKey),
+      caseKey: assistantCaseKey ?? parseOptionalString(body.caseKey),
       suppliesNote: parseOptionalString(body.suppliesNote),
       suppliesSupplier: parseOptionalString(body.suppliesSupplier),
       suppliesExpectedAt,
@@ -434,11 +447,17 @@ export async function POST(request: NextRequest) {
     try {
       created = await prisma.crmDeal.create({ data: createData });
     } catch (error) {
+      if (assistantCaseKey) {
+        const existing = await existingAssistantCase();
+        if (existing) return NextResponse.json({ ...existing, alreadyExists: true });
+        throw error;
+      }
       if (!isMissingCrmCaseColumns(error)) throw error;
       created = await prisma.crmDeal.create({ data: stripCaseFields(createData), select: LEGACY_DEAL_SELECT });
     }
 
-    if (created.responsibleLogin) {
+    const notifyAssigned = async () => {
+      if (!created.responsibleLogin) return;
       try {
         await notifyClientCaseTaskAssigned({
           caseId: created.id,
@@ -449,6 +468,11 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.warn("[crm/deals POST] telegram task notification failed", error);
       }
+    };
+    if (assistantCaseKey) {
+      after(() => runWithBranchApiContext(branchAccess.context, notifyAssigned));
+    } else {
+      await notifyAssigned();
     }
 
     await writeClientCaseEvent({

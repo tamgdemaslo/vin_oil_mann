@@ -123,7 +123,9 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       setMasterId(saved.masterId);
       setSaveUncertain(saved.saveUncertain);
       setError(saved.error || (initial && saved.saveUncertain && (!shared.current || !localStorage.getItem(actionKey))
-        ? "Сохранение прервалось. Проверьте результат перед повтором."
+        ? (saved.preview?.draft.kind === "task" && saved.bookingSaveKey
+          ? "Сохранение прервалось. Нажмите «Проверить и повторить»."
+          : "Сохранение прервалось. Проверьте результат перед повтором.")
         : ""));
       bookingSaveKey.current = saved.bookingSaveKey;
     }
@@ -491,7 +493,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
   }
 
   async function confirm() {
-    if (!preview || capture.current || operation.current || (saveUncertain && preview.draft.kind !== "booking")) return;
+    if (!preview || capture.current || operation.current || (saveUncertain && preview.draft.kind === "task" && !bookingSaveKey.current)) return;
     const { branch, draft } = preview;
     if (branch.id !== branchId) return;
     const phone = normalizePhoneKey(draft.phone);
@@ -522,7 +524,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
     setSaveUncertain(true);
     setError("");
     const expectedBranchId = branch.id;
-    if (booking) bookingSaveKey.current ??= crypto.randomUUID();
+    bookingSaveKey.current ??= crypto.randomUUID();
     const payload = booking ? {
       expectedBranchId,
       idempotencyKey: bookingSaveKey.current,
@@ -536,6 +538,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       },
     } : {
       expectedBranchId,
+      assistantIdempotencyKey: bookingSaveKey.current,
       customerName: draft.customerName,
       phone,
       title: draft.title,
@@ -547,6 +550,26 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       caseType: "manual",
       source: "Голосовой помощник",
     };
+    try {
+      if (!booking) {
+        const pending = JSON.stringify({
+          ...workspace, saveUncertain: true, bookingSaveKey: bookingSaveKey.current, error: "",
+        });
+        if (shared.current) {
+          localStorage.setItem(workspaceKey, pending);
+          observedWorkspace.current = pending;
+        } else {
+          sessionStorage.setItem(workspaceKey, pending);
+        }
+      }
+    } catch {
+      if (!saveUncertain) bookingSaveKey.current = null;
+      operation.current = null;
+      setSaveUncertain(saveUncertain);
+      setBusy("");
+      setError("Не удалось сохранить состояние черновика. Попробуйте ещё раз.");
+      return;
+    }
     try {
       const response = await fetch(booking ? "/api/booking-journal" : "/api/crm/deals", {
         method: "POST",
@@ -562,6 +585,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       }
       if (!(booking ? data.data?.booking_id : data.id)) throw new Error();
       const relatedTask = booking ? preview.relatedTask : undefined;
+      bookingSaveKey.current = null;
       setPreview(relatedTask ? {
         branch,
         draft: { ...draft, ...relatedTask, kind: "task", datetime: "" },
@@ -575,7 +599,7 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
       const detail = cause instanceof Error && cause.message !== "Failed to fetch" ? cause.message : "";
       setError(booking
         ? [detail, "Не удалось подтвердить результат. Нажмите «Проверить и повторить», чтобы завершить ту же операцию без дубля."].filter(Boolean).join(" ")
-        : "Результат сохранения неизвестен. Проверьте CRM перед повтором.");
+        : "Не удалось подтвердить сохранение дела. Нажмите «Проверить и повторить», чтобы завершить ту же операцию без дубля.");
     } finally {
       operation.current = null;
       setBusy("");
@@ -755,10 +779,10 @@ export default function QuickAssistant({ branchId, login, fullPage = false }: {
         <label>Заметка<textarea className="eco-input" rows={2} maxLength={1000} value={draft.notes} onChange={event => edit("notes", event.target.value)} /></label>
       </fieldset>
       <div className={styles.actions}>
-        <button type="button" className={styles.secondary} disabled={Boolean(recording || busy)} onClick={() => { setPreview(undefined); setError(""); setSaveUncertain(false); }}>
+        <button type="button" className={styles.secondary} disabled={Boolean(recording || busy)} onClick={() => { setPreview(undefined); bookingSaveKey.current = null; setError(""); setSaveUncertain(false); }}>
           Закрыть черновик
         </button>
-        <button className={styles.primary} disabled={Boolean(recording || busy || (saveUncertain && draft.kind !== "booking"))}>{saveUncertain && draft.kind === "booking" ? "Проверить и повторить" : "Подтвердить и сохранить"}</button>
+        <button className={styles.primary} disabled={Boolean(recording || busy || (saveUncertain && draft.kind === "task" && !bookingSaveKey.current))}>{saveUncertain && (draft.kind === "booking" || bookingSaveKey.current) ? "Проверить и повторить" : "Подтвердить и сохранить"}</button>
       </div>
     </form> : null}
     </aside>
