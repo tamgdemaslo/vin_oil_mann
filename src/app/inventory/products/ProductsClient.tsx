@@ -1886,6 +1886,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
   const [search, setSearch] = useState(initialSearch);
   const [filters, setFilters] = useState<ProductFilters>({ ...emptyFilters, oemParts: initialOemParts, articleMissing: searchParams.get("articleMissing") === "1" });
   const [storageStores, setStorageStores] = useState<ProductStoreOption[]>([]);
+  const [storageStoresReady, setStorageStoresReady] = useState(Boolean(initialStorageStoreId));
   const [storageStoreId, setStorageStoreId] = useState(initialStorageStoreId);
   const [storageCells, setStorageCells] = useState<ProductCellOption[]>([]);
   const [storageCellFilter, setStorageCellFilter] = useState(initialStorageCell);
@@ -2199,7 +2200,10 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch("/api/local-inventory/stores", { cache: "no-store" });
+        const response = await fetch("/api/local-inventory/stores", {
+          cache: "no-store",
+          signal: AbortSignal.timeout(PRODUCT_LIST_TIMEOUT_MS),
+        });
         const data = await readJson<{ stores?: ProductStoreOption[]; error?: string }>(response);
         if (!response.ok || !data) throw new Error(data?.error || "Не удалось загрузить склады");
         if (cancelled) return;
@@ -2208,6 +2212,8 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
         setStorageStoreId((current) => current || activeStores.find((store) => store.isMain)?.id || activeStores[0]?.id || "");
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : "Не удалось загрузить склады");
+      } finally {
+        if (!cancelled) setStorageStoresReady(true);
       }
     })();
     return () => { cancelled = true; };
@@ -2752,6 +2758,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
   }, []);
 
   useEffect(() => {
+    if (!storageStoresReady) return;
     if (skipNextListLoadRef.current) {
       skipNextListLoadRef.current = false;
       return;
@@ -2768,7 +2775,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     }, delay);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult, storageStoreId, storageCellFilter, listViewRevision]);
+  }, [search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult, storageStoresReady, storageStoreId, storageCellFilter, listViewRevision]);
 
   useEffect(() => {
     setSelectedProductIds([]);
