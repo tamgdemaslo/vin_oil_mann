@@ -88,6 +88,7 @@ export type CatalogSearchParams = {
 };
 
 type CatalogProduct = Prisma.LocalProductGetPayload<{
+  omit: { raw: true };
   include: {
     stockBalances: {
       include: { store: true };
@@ -506,7 +507,7 @@ function tokenize(value: string): CatalogSearchToken[] {
     if (!compact) continue;
     if (compact.length < 2 && !/\d/.test(compact)) continue;
     const extra = synonymsByToken.get(normalized) ?? [];
-    const variants = [...new Set([normalized, compact, stemToken(normalized), ...extra].filter((item) => item.length >= 2))];
+    const variants = [...new Set([normalized, compact, stemToken(normalized), ...extra].filter((item) => item.length >= 2 || /^\d$/.test(item)))];
     const key = `${compact}:${variants.join("|")}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -739,7 +740,11 @@ function searchCandidateWhere(tokens: CatalogSearchToken[], params: CatalogSearc
       OR.push({ name: { contains: raw, mode: "insensitive" } });
     }
   }
+  const brandSeriesQuery = tokens.length === 2 && tokens.some((token) => token.kind === "word" && token.compact.length >= 3);
   for (const token of tokens) {
+    // A digit in a phrase such as "Mobil 1" should refine matches during
+    // scoring, without filling the SQL candidate limit with unrelated rows.
+    if (brandSeriesQuery && /^\d$/.test(token.compact)) continue;
     const candidates = [...new Set([token.normalized, token.compact, ...token.variants].filter((item) => item.length >= 2 || /\d/.test(item)))].slice(0, 5);
     for (const candidate of candidates) {
       OR.push({ searchText: { contains: candidate, mode: "insensitive" } });
@@ -782,20 +787,21 @@ async function findNormalizedCatalogCandidateIds(tokens: CatalogSearchToken[], p
   const terms = normalizedCatalogLookupTerms(tokens, params);
   if (terms.length === 0) return [];
   const patterns = Prisma.sql`ARRAY[${Prisma.join(terms.map((term) => `%${term}%`))}]::text[]`;
-  const numericTerm = terms.length === 1 && /^\d+$/.test(terms[0]) ? terms[0] : null;
-  const orderedDigits = numericTerm ? `%${[...numericTerm].join("%")}%` : null;
-  function matches(column: Prisma.Sql) {
-    const normalizedMatch = Prisma.sql`
-      regexp_replace(replace(lower(COALESCE(${column}, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ANY (${patterns})
-    `;
-    if (!numericTerm) return normalizedMatch;
+  // Removing separators cannot add or reorder letters and digits. Checking a
+  // short prefix as a subsequence bounds the cost of the prefilter itself.
+  const orderedPrefixes = Prisma.sql`ARRAY[${Prisma.join(
+    terms.map((term) => `%${[...term.slice(0, 5)].join("%")}%`),
+  )}]::text[]`;
+  const numericOnly = terms.every((term) => /^\d+$/.test(term));
 
-    // Normalization cannot add or reorder digits. Check the raw value first
-    // and normalize only possible matches that have separators.
+  function matches(column: Prisma.Sql) {
+    const folded = Prisma.sql`replace(lower(${column}), 'ё', 'е')`;
+    const prefilter = numericOnly ? column : folded;
     return Prisma.sql`
       CASE
-        WHEN ${column} LIKE ${`%${numericTerm}%`} THEN TRUE
-        WHEN ${column} LIKE ${orderedDigits} THEN ${normalizedMatch}
+        WHEN ${prefilter} LIKE ANY (${patterns}) THEN TRUE
+        WHEN ${prefilter} LIKE ANY (${orderedPrefixes})
+          THEN regexp_replace(${folded}, '[^0-9a-zа-я]', '', 'g') LIKE ANY (${patterns})
         ELSE FALSE
       END
     `;
@@ -1424,6 +1430,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
             ...oemEnrichmentStatusFilter(params),
             id: { in: strictCandidateIds },
           },
+          omit: { raw: true },
           include: {
             stockBalances: {
               where: storeId ? { storeId } : undefined,
@@ -1524,6 +1531,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
   const candidateTake = needsCompleteOemResult ? undefined : catalogCandidateTake(tokens.length, limit);
   const products = await prisma.localProduct.findMany({
     where,
+    omit: { raw: true },
     include: {
       stockBalances: {
         where: storeId ? { storeId } : undefined,
