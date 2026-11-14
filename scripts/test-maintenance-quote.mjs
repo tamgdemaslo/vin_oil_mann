@@ -33,6 +33,7 @@ assert.equal(quoteRequirementChoices({items:[{...engine,capacities:[{qualifier:'
 assert.deepEqual(quoteRequirementChoices({items:[{...engine,capacities:[{qualifier:'RANGE',minLiters:4,maxLiters:5}]}]}, null).volumes, [4,5]);
 const withResearchPrefill = { prefillResearchVolume: true };
 const researchedVolume = (volumeText) => ({ items: [{ ...research.items[0], volumeText }] });
+assert.equal(quoteRequirementChoices(null, researchedVolume('5,2 л — сервисный объём; источник указывает объём с заменой фильтра.'), withResearchPrefill).automaticVolume, '5.2');
 assert.equal(quoteRequirementChoices(null, researchedVolume('4,5 л с масляным фильтром'), withResearchPrefill).automaticVolume, '4.5');
 assert.equal(quoteRequirementChoices(null, researchedVolume('4,5 л с фильтром')).automaticVolume, '', 'client quote still requires verified volume');
 assert.equal(quoteRequirementChoices(null, researchedVolume('Общий объём 4,5 л с фильтром'), withResearchPrefill).automaticVolume, '');

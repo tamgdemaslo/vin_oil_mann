@@ -137,7 +137,12 @@ export function quoteRequirementChoices(profile: import("@/lib/mann-unified-tech
     ...engines.filter(item => item.researchResult).map(item => item.researchVolumeText),
     ...discoveries.map(item => item.volumeText),
   ].flatMap(text => {
-    const parsed = parseFluidCapacities(text, "ENGINE_OIL");
+    // Research may put the filter condition in the clause after the service amount.
+    const volumeText = text?.replace(
+      /((?:сервисн[а-яё]+|объ[её]м\s+замены)[^;\n]*);\s*(?:источник\s+указывает\s+объ[её]м\s+)?с\s+заменой\s+(?:масляного\s+)?фильтра(?=[.!]?\s*$)/iu,
+      "$1, с фильтром",
+    )?.replace(/(\d[\d.,]*\s+л)\s*[—–-]\s*сервисный\s+объ[её]м,\s*с фильтром/iu, "$1 с фильтром");
+    const parsed = parseFluidCapacities(volumeText, "ENGINE_OIL");
     if (parsed.needsReview) return [];
     return parsed.capacities.filter(capacity =>
       !["TOTAL", "DRY_FILL", "PARTIAL"].includes(capacity.serviceContext)
