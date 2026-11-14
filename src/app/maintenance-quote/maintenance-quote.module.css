@@ -35,7 +35,11 @@
 .lookup :global(.eco-vehicle-lookup__field) { min-width: 0; }
 @media (max-width: 540px) { .title h1 { font-size: 27px; } }
 .lookup :global(.eco-vehicle-lookup__controls) {
+  display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
   max-width: 740px;
 }
 .lookup :global(.eco-vehicle-lookup__controls .eco-btn) { white-space: nowrap; }
