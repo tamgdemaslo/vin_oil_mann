@@ -106,7 +106,6 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores, 
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Работа / Расчёт ТО</span>
       <div className={styles.title}><h1>Расчёт ТО</h1></div>
-      <p>Подбор и предложение клиенту</p>
     </header>
     {!branchName ? <p role="status" className={styles.setup}>Выберите рабочий филиал в верхнем меню.</p> : <>
       <MaintenanceQuotePanel vehicleSetup={<section className={styles.setup} aria-labelledby="quote-setup-title">

@@ -24,6 +24,11 @@ export type VehicleLookupManualContext = {
   message?: string;
 };
 
+export type VehicleLookupSnapshot = {
+  vehicle: NormalizedVehicleIdentity;
+  profile?: MannUnifiedTechnicalProfile | null;
+  research?: MannFluidResearchResult | null;
+};
 export type MannManualSelection = {
   variantId: string;
   make: string;
@@ -34,6 +39,7 @@ export type MannManualSelection = {
 
 type Props = {
   manualSelection?: MannManualSelection | null;
+  initialState?: VehicleLookupSnapshot;
   combinedIdentifier?: boolean;
   onQuoteContextChange?: (context: MaintenanceQuoteVehicleContext | null) => void;
   organizationId?: string | null;
@@ -472,7 +478,8 @@ export function TechnicalProfile({
   );
 }
 
-export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection, onQuoteContextChange, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
+export function VehicleLookupPanel({ initialState, combinedIdentifier = false, manualSelection, onQuoteContextChange, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
+  const [clarificationStep, setClarificationStep] = useState<"market" | "production">("market");
   const [tab, setTab] = useState<LookupTab>("vin");
   const [input, setInput] = useState(initialVin ?? "");
   const [loading, setLoading] = useState(false);
@@ -481,10 +488,10 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
   const [resolution, setResolution] = useState<MannVehicleResolution | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<LookupFeedback | null>(null);
-  const [appliedVehicle, setAppliedVehicle] = useState<NormalizedVehicleIdentity | null>(null);
+  const [appliedVehicle, setAppliedVehicle] = useState<NormalizedVehicleIdentity | null>(initialState?.vehicle ?? null);
   const [appliedFromCache, setAppliedFromCache] = useState(false);
-  const [technicalProfile, setTechnicalProfile] = useState<MannUnifiedTechnicalProfile | null>(null);
-  const [fluidResearch, setFluidResearch] = useState<MannFluidResearchResult | null>(null);
+  const [technicalProfile, setTechnicalProfile] = useState<MannUnifiedTechnicalProfile | null>(initialState?.profile ?? null);
+  const [fluidResearch, setFluidResearch] = useState<MannFluidResearchResult | null>(initialState?.research ?? null);
   const [technicalProfileVariantKeys, setTechnicalProfileVariantKeys] = useState<string[]>([]);
   const [selectedTransmissionType, setSelectedTransmissionType] = useState<MannTransmissionType | undefined>();
   const [selectedTransmissionModel, setSelectedTransmissionModel] = useState("");
@@ -872,6 +879,7 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
   const changeTab = (next: LookupTab) => {
     if (next === tab && !(combinedIdentifier && next === "manual")) {
       if (next !== "manual") inputRef.current?.focus();
+      else if (combinedIdentifier) onManualMode({ reason: "manual" });
       return;
     }
     lookupRequestIdRef.current += 1;
@@ -934,6 +942,16 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
   const TechnicalDetails = combinedIdentifier ? "details" : "div";
 
   if (appliedVehicle) {
+    const applyProductionMonth = () => {
+              const control = productionMonthRef.current;
+              if (productionMonthDraft && appliedVehicle.year && Number(productionMonthDraft.slice(0, 4)) !== appliedVehicle.year) {
+                control?.setCustomValidity("Год отличается от данных автомобиля. Сначала уточните выбранный автомобиль.");
+              }
+              if (control && !control.reportValidity()) return false;
+              void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { confirmedEngineCode, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonthDraft || undefined });
+
+      return true;
+    };
     return (
       <section className="eco-vehicle-lookup is-compact" aria-label="Определить автомобиль и подобрать фильтры">
         <div className="eco-vehicle-lookup__selected">
@@ -943,13 +961,13 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
               {appliedFromCache && !combinedIdentifier ? <em>Из карточки</em> : null}
             </div>
             <strong>{vehicleTitle(appliedVehicle)}</strong>
-            <span>{vehicleDetails(appliedVehicle) || "Подбор фильтров — ниже."}</span>
+            {vehicleDetails(appliedVehicle) && <span>{vehicleDetails(appliedVehicle)}</span>}
           </div>
           <div className="eco-vehicle-lookup__actions">
             <button type="button" onClick={changeAppliedVehicle}>
               Изменить
             </button>
-            {!manuallySelected && <details className="eco-vehicle-lookup__more">
+            <details className="eco-vehicle-lookup__more">
               <summary aria-label="Другие действия с автомобилем" title="Другие действия">⋯</summary>
               <div>
                 <button type="button" onClick={() => void runLookup(false, true)} disabled={loading}>
@@ -959,7 +977,7 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
                   Выбрать другой автомобиль
                 </button>
               </div>
-            </details>}
+            </details>
           </div>
         </div>
         {!appliedVehicle.engineCode && (confirmedTechnicalCandidateRef.current?.technicalIdentity?.engineOptions?.length ?? 0) > 1 ? (
@@ -984,11 +1002,15 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
         {resolution?.selectedApplication ? <div className="eco-vehicle-selected-conditions"><CandidateConditions candidate={resolution.selectedApplication} /></div> : null}
         {combinedIdentifier && technicalProfileLoading && <p className="eco-quote-technical-status" role="status">Уточняем требования к маслу…</p>}
         {combinedIdentifier && technicalProfileError && <p className="eco-quote-technical-error" role="alert">{technicalProfileError}</p>}
-        <TechnicalDetails open={manuallySelected ? true : undefined} className={combinedIdentifier ? "eco-quote-technical-details" : undefined}>
-        {combinedIdentifier && <summary>Технические данные и уточнения<span>Жидкости, комплектация и источники</span></summary>}
-        <details className="eco-vehicle-refinements"><summary>Уточнить данные автомобиля</summary>
-        {canConfirmVehicleDestinationMarket(appliedVehicle) ? (
-          <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date">
+        {(!combinedIdentifier || technicalProfileVariantKeys.length > 0 || Boolean(technicalProfile?.items.length) || Boolean(fluidResearch?.items.length)) && <TechnicalDetails open={manuallySelected ? true : undefined} className={combinedIdentifier ? "eco-quote-technical-details" : undefined}>
+        {combinedIdentifier && <summary onClick={() => setClarificationStep(
+          (canConfirmVehicleDestinationMarket(appliedVehicle) || unsupportedVehicleMarketLabels(appliedVehicle).length > 0) && !confirmedMarket ? "market" : "production"
+        )}>Уточнить автомобиль</summary>}
+        <div className={combinedIdentifier ? "eco-quote-refinement-flow" : undefined} data-step={clarificationStep}>
+        {combinedIdentifier && <p className="eco-quote-refinement-progress">{clarificationStep === "market" ? "Рынок автомобиля" : "Дата выпуска"}</p>}
+        <details className="eco-vehicle-refinements" open={combinedIdentifier ? true : undefined}><summary>Уточнить данные автомобиля</summary>
+        {canConfirmVehicleDestinationMarket(appliedVehicle) && (!combinedIdentifier || unsupportedVehicleMarketLabels(appliedVehicle).length === 0) ? (
+          <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date" data-refinement="market" open={combinedIdentifier ? true : undefined}>
             <summary>Уточнить рынок автомобиля{confirmedMarket ? ` · ${confirmedMarket}` : ""}</summary>
             <fieldset className="eco-vehicle-lookup__transmission-choice">
               <legend>Рынок первоначальной продажи</legend>
@@ -1012,12 +1034,12 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
                   <option value="SOUTHEAST_ASIA">Юго-Восточная Азия</option>
                 </select>
               </label>
-              <p id="vehicle-market-help">Укажите рынок по документам или заводским данным. Это не страна сборки и не текущая регистрация. Если не знаете, оставьте «Не уточнён» — жидкости с ограничением по рынку останутся скрыты.</p>
+              <p id="vehicle-market-help">Если рынок неизвестен, пропустите этот шаг. Жидкости с ограничением по рынку останутся скрыты.</p>
             </fieldset>
           </details>
         ) : null}
         {unsupportedVehicleMarketLabels(appliedVehicle).length > 0 ? (
-          <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date">
+          <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date" data-refinement="market" open={combinedIdentifier ? true : undefined}>
             <summary>Проверить рынок из ответа VIN{marketClarification && confirmedMarket ? ` · ${confirmedMarket}` : ""}</summary>
             <fieldset className="eco-vehicle-lookup__transmission-choice">
               <legend>Уточнение по документам автомобиля</legend>
@@ -1040,7 +1062,7 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
             </fieldset>
           </details>
         ) : null}
-        <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date">
+        <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date" data-refinement="production" open={combinedIdentifier ? true : undefined}>
           <summary>Уточнить месяц выпуска</summary>
           <fieldset className="eco-vehicle-lookup__transmission-choice">
             <legend>Дата производства автомобиля</legend>
@@ -1048,18 +1070,26 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
               <input ref={productionMonthRef} type="month" min="1886-01" max="2100-12" value={productionMonthDraft} disabled={technicalProfileLoading}
                 onChange={event => { event.target.setCustomValidity(""); setProductionMonthDraft(event.target.value); }} />
             </label>
-            <p>Используйте дату производства, а не регистрации. Она нужна на границах применяемости жидкости.</p>
-            <button type="button" disabled={technicalProfileLoading || !technicalProfileVariantKeys.length} onClick={() => {
-              const control = productionMonthRef.current;
-              if (productionMonthDraft && appliedVehicle.year && Number(productionMonthDraft.slice(0, 4)) !== appliedVehicle.year) {
-                control?.setCustomValidity("Год отличается от данных автомобиля. Сначала уточните выбранный автомобиль.");
-              }
-              if (control && !control.reportValidity()) return;
-              void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, { confirmedEngineCode, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonthDraft || undefined });
-            }}>Применить дату</button>
+            <p>Укажите по документам, если месяц производства известен.</p>
+            {!combinedIdentifier && <button type="button" disabled={technicalProfileLoading || !technicalProfileVariantKeys.length} onClick={applyProductionMonth}>Применить дату</button>}
           </fieldset>
         </details>
         </details>
+        {combinedIdentifier && <div className="eco-quote-refinement-actions">
+          {clarificationStep === "market" ? <>
+            <button type="button" disabled={technicalProfileLoading} onClick={() => setClarificationStep("production")}>{confirmedMarket ? "Далее" : "Пропустить"}</button>
+          </> : <>
+            {(canConfirmVehicleDestinationMarket(appliedVehicle) || unsupportedVehicleMarketLabels(appliedVehicle).length > 0) && <button type="button" onClick={() => setClarificationStep("market")}>Назад</button>}
+            <button type="button" className="eco-btn" disabled={technicalProfileLoading} onClick={event => {
+              if (!applyProductionMonth()) return;
+              const details = event.currentTarget.closest(".eco-quote-technical-details") as HTMLDetailsElement | null;
+              if (details) details.open = false;
+              const oil = document.getElementById("quote-oil");
+              oil?.scrollIntoView({block: "start"}); oil?.focus({preventScroll: true});
+            }}>{productionMonthDraft ? "Применить и продолжить" : "Пропустить"}</button>
+          </>}
+        </div>}
+        </div>
         {technicalProfile?.vehicleDriveRequired ? (
           <fieldset className="eco-vehicle-lookup__transmission-choice">
             <legend>Привод автомобиля</legend>
@@ -1103,6 +1133,8 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
             <p id="rear-air-conditioning-help">От этого зависит объём антифриза. Если комплектация неизвестна, оставьте «Не уточнено» — объём не будет выбран автоматически.</p>
           </fieldset>
         ) : null}
+        {(!combinedIdentifier || Boolean(technicalProfile?.items.length) || Boolean(fluidResearch?.items.length)) && <TechnicalDetails className={combinedIdentifier ? "eco-quote-source-details" : undefined}>
+        {combinedIdentifier && <summary>Технические сведения</summary>}
         {fluidResearch ? <FluidResearchResults key={fluidResearch.status} result={fluidResearch} onRetry={() => {
           if (!technicalProfileVariantKeys.length) return;
           void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, selectedTransmissionType, {
@@ -1143,7 +1175,8 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
             void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, transmissionType, { confirmedEngineCode, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
         />
-        </TechnicalDetails>
+        </TechnicalDetails>}
+        </TechnicalDetails>}
       </section>
     );
   }
