@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, Plus, ArrowRight, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
@@ -7,22 +8,33 @@ import { groupQuoteOils, sortQuoteFilterOffers, quoteVariantAmount, quoteRequire
 import { getProductAttributeDictionary } from "@/lib/product-attribute-values";
 import { QuoteFilterOffers } from "./QuoteFilterOffers";
 import { QuoteSearchField } from "./QuoteSearchField";
+import { InlineOilPrice } from "./InlineOilPrice";
 import styles from "./MaintenanceQuotePanel.module.css";
 
 export type MaintenanceQuoteVehicleContext = { key: string; vin: string | null; vehicleTitle: string; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null };
-type Props = { vehicleSetup?: ReactNode; quoteContextKey?: string; vehicleTitle: string; warehouseId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; requirements?: ReturnType<typeof quoteRequirementChoices>; filters?: QuoteFilterGroup[]; filtersLoading?: boolean; services?: QuoteService[]; timeZone?: string };
+export type MaintenanceQuoteSnapshot = {
+  products?: QuoteStockProduct[];
+  selected?: QuoteStockProduct[];
+  extras?: QuoteExtra[];
+  specification?: string;
+  viscosity?: string;
+  volume?: string;
+  filterSelection?: Record<string, string>;
+};
+type Props = { initialState?: MaintenanceQuoteSnapshot; vehicleSetup?: ReactNode; quoteContextKey?: string; vehicleTitle: string; warehouseId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; requirements?: ReturnType<typeof quoteRequirementChoices>; filters?: QuoteFilterGroup[]; filtersLoading?: boolean; services?: QuoteService[]; timeZone?: string };
 const number = (value: string) => Number(value.replace(",", "."));
 
-export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTitle, warehouseId, profile, research, requirements, filters: vehicleFilters = [], filtersLoading = false, services, timeZone }: Props) {
+export function MaintenanceQuotePanel({ initialState, vehicleSetup, quoteContextKey, vehicleTitle, warehouseId, profile, research, requirements, filters: vehicleFilters = [], filtersLoading = false, services, timeZone }: Props) {
   const choices = useMemo(() => profile || research ? quoteRequirementChoices(profile, research, { prefillResearchVolume: true }) : requirements ?? quoteRequirementChoices(null, null), [profile, research, requirements]);
+  const [activeSection, setActiveSection] = useState<"oil" | "filters" | "work">("oil");
   const [manualFilters, setManualFilters] = useState<QuoteFilterGroup[]>([]);
   const [manualArticle, setManualArticle] = useState("");
   const [manualFilterType, setManualFilterType] = useState("Масляный фильтр");
   const filters = useMemo(() => [...vehicleFilters, ...manualFilters.filter(group => !vehicleFilters.some(item => item.article.replace(/[^a-z0-9]/gi, "").toUpperCase() === group.article.replace(/[^a-z0-9]/gi, "").toUpperCase()))], [vehicleFilters, manualFilters]);
-  const [specificationDraft, setSpecification] = useState<string | null>(null);
-  const [viscosityDraft, setViscosity] = useState<string | null>(null);
-  const [volumeDraft, setVolume] = useState<string | null>(null);
-  const [filterSelection, setFilterSelection] = useState<Record<string, string>>({});
+  const [specificationDraft, setSpecification] = useState<string | null>(initialState?.specification ?? null);
+  const [viscosityDraft, setViscosity] = useState<string | null>(initialState?.viscosity ?? null);
+  const [volumeDraft, setVolume] = useState<string | null>(initialState?.volume ?? null);
+  const [filterSelection, setFilterSelection] = useState<Record<string, string>>(initialState?.filterSelection ?? {});
   const specification = specificationDraft ?? (choices.specifications.length === 1 ? choices.specifications[0] : "");
   const viscosity = viscosityDraft ?? (choices.viscosities.length === 1 ? choices.viscosities[0] : "");
   const volume = volumeDraft ?? choices.automaticVolume;
@@ -36,17 +48,18 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
   const referenceSpecifications = useMemo(() => [...new Set(specificationGroups.flatMap(group => group.options))], [specificationGroups]);
   const referenceViscosities = [...new Set([...getProductAttributeDictionary("engineSae")].filter(value => value && !choices.viscosities.includes(value)))];
   const referenceVolumes = [...new Set([...Array.from({length: 25}, (_, index) => String(2 + index * 0.5))].filter(value => value && !choices.volumes.map(String).includes(value)))];
-  const [products, setProducts] = useState<QuoteStockProduct[]>([]);
-  const [selected, setSelected] = useState<QuoteStockProduct[]>([]);
-  const quickServices = useMemo(() => quoteServiceGroups(services ?? []), [services]);
-  const [extras, setExtras] = useState<QuoteExtra[]>([]);
+  const [products, setProducts] = useState<QuoteStockProduct[]>(initialState?.products ?? []);
+  const [selected, setSelected] = useState<QuoteStockProduct[]>(initialState?.selected ?? []);
+  const [extras, setExtras] = useState<QuoteExtra[]>(initialState?.extras ?? []);
   const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [searched, setSearched] = useState(Boolean(initialState?.products?.length));
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const quickServices = useMemo(() => quoteServiceGroups(services ?? []), [services]);
   const [extraProducts, setExtraProducts] = useState<QuoteStockProduct[]>([]);
   const [extraLoading, setExtraLoading] = useState(false);
   const [extraError, setExtraError] = useState("");
+  const [extraSearchCompleted, setExtraSearchCompleted] = useState(false);
   const [supplierRefresh, setSupplierRefresh] = useState(0);
   const [supplierResults, setSupplierResults] = useState<Record<string, { products: QuoteFilterGroup["products"]; error?: string }>>({});
   const filterArticlesKey = JSON.stringify([...new Set(filters.map(group => group.article))].sort());
@@ -81,7 +94,10 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
   const previousRequirements = useRef(requirementsKey);
   const requestRef = useRef<AbortController | null>(null);
   useEffect(() => () => requestRef.current?.abort(), []);
+  const previousWarehouse = useRef(warehouseId);
   useEffect(() => {
+    if (previousWarehouse.current === warehouseId) return;
+    previousWarehouse.current = warehouseId;
     requestRef.current?.abort(); setProducts([]); setSelected([]); setSearched(false); setLoading(false); setExtraProducts([]); setExtraLoading(false); setExtraError(""); setError(""); setFilterSelection({});
     setExtras(rows => rows.filter(row => !row.stockStoreId || row.stockStoreId === warehouseId));
   }, [warehouseId]);
@@ -91,6 +107,7 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
     requestRef.current?.abort(); setProducts([]); setSelected([]); setSearched(false); setLoading(false); setError("");
   }, [requirementsKey]);
   useEffect(() => {
+    setExtraSearchCompleted(false);
     if (!warehouseId || search.trim().length < 2) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -100,9 +117,12 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
         const response = await fetch(`/api/maintenance-quote/stock?${params}`, { signal: controller.signal });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Не удалось найти расходники");
-        setExtraProducts(data.products);
+        if (!controller.signal.aborted) {
+          setExtraProducts(data.products);
+          setExtraSearchCompleted(true);
+        }
       } catch (reason) {
-        if (!controller.signal.aborted) { setExtraProducts([]); setExtraError(reason instanceof Error ? reason.message : "Ошибка поиска"); }
+        if (!controller.signal.aborted) { setExtraProducts([]); setExtraError(reason instanceof Error ? reason.message : "Ошибка поиска"); setExtraSearchCompleted(true); }
       } finally { if (!controller.signal.aborted) setExtraLoading(false); }
     }, 300);
     return () => { clearTimeout(timer); controller.abort(); };
@@ -130,8 +150,7 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
   const oilVariants = useMemo(() => groupQuoteOils(products), [products]);
   const validExtras = extras.every(row => row.name.trim() && Number.isFinite(row.quantity) && row.quantity > 0 && Number.isFinite(row.price) && row.price >= 0);
   const ready = validExtras && (selected.length > 0 ? selected.every(oil => Number.isFinite(oil.price) && oil.price > 0) && litres > 0 && litres <= 100 && Number.isFinite(litres) && selectedVariants.every(variant => quoteVariantAmount(variant, litres)) : extras.length > 0);
-  const quoteSpecification = [specification, viscosity].filter(Boolean).join(" · ");
-  const text = ready ? quoteClientText(vehicleTitle, quoteSpecification, litres, selected, extras, { timeZone }) : "";
+  const text = ready ? quoteClientText(vehicleTitle, [specification, viscosity].filter(Boolean).join(" · "), litres, selected, extras, { timeZone }) : "";
   useEffect(() => { setCopied(false); setCopyError(""); }, [text]);
   const extraTotal = quoteExtraCents(extras);
   const isFilter = (row: QuoteExtra) => Boolean(row.filterLabel) || /^(?:масляный|воздушный|салонный|топливный)\s+фильтр/i.test(row.name);
@@ -139,9 +158,19 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
   const otherRows = extras.filter(row => !isFilter(row));
   const variantAmounts = selectedVariants.map(variant => quoteVariantAmount(variant, litres));
   const totals = ready ? variantAmounts.flatMap(amount => amount ? [amount.cents + extraTotal] : []) : [];
-  const totalLabel = !ready ? (selected.length || extras.length ? "Уточните позиции" : quoteRub(0)) : totals.length > 1 ? `${quoteRub(Math.min(...totals))} – ${quoteRub(Math.max(...totals))}` : quoteRub(totals[0] ?? extraTotal);
-  function updateExtra(id: string, update: Partial<QuoteExtra>) {
-    setExtras(rows => rows.map(row => row.id === id ? { ...row, ...update } : row));
+  const totalLabel = !ready ? (selected.length || extras.length ? "Уточните позиции" : quoteRub(0)) : totals.length > 1 && Math.min(...totals) !== Math.max(...totals) ? `от ${quoteRub(Math.min(...totals))}` : quoteRub(totals[0] ?? extraTotal);
+  function goToSection(section: "oil" | "filters" | "work") {
+    setActiveSection(section);
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(`quote-${section}`);
+      target?.scrollIntoView({ block: "start", behavior: "auto" });
+      target?.focus({ preventScroll: true });
+    });
+  }
+  function updateOilPrices(prices: Record<string, number>) {
+    const apply = (rows: QuoteStockProduct[]) => rows.map(row => row.id in prices ? { ...row, price: prices[row.id] } : row);
+    setProducts(apply);
+    setSelected(apply);
   }
   function serviceButton(service: QuoteService) {
     const id = `service:${service.id}`;
@@ -152,33 +181,50 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
     }}>{service.name}</button>;
   }
 
-  return <div className={`${styles.panel} ${vehicleSetup ? styles.workspace : ""}`}>
+
+  function addManualWork() {
+    const name = search.trim();
+    if (!name || !extraSearchCompleted || extraLoading || extraProducts.length) return;
+    const id = crypto.randomUUID();
+    setExtras(rows => [...rows, { id, name, quantity: 1, price: 0 }]);
+    setSearch(""); setExtraProducts([]); setExtraSearchCompleted(false);
+    window.requestAnimationFrame(() => document.getElementById(`quote-extra-${id}`)?.querySelector<HTMLInputElement>("label:last-of-type input")?.focus());
+  }
+  function updateExtra(id: string, update: Partial<QuoteExtra>) {
+    setExtras(rows => rows.map(row => row.id === id ? { ...row, ...update } : row));
+  }
+  return <div className={`${styles.panel} ${vehicleSetup ? styles.workspace : ""}`} data-active-section={activeSection}>
     <div className={styles.body}>
       {vehicleSetup}
-      <section id="quote-oil" className={styles.step} aria-labelledby="quote-oil-title">
-      <header className={styles.stepHeader}><div><h2 id="quote-oil-title">Моторное масло</h2><p>Проверьте допуск, вязкость и объём замены.</p></div></header>
+      {vehicleSetup && <nav className={styles.stageNav} aria-label="Этапы подбора">
+        <button type="button" aria-current={activeSection === "oil" ? "step" : undefined} onClick={() => goToSection("oil")}>Масло<small>{selectedVariants.length || ""}</small></button>
+        <button type="button" aria-current={activeSection === "filters" ? "step" : undefined} onClick={() => goToSection("filters")}>Фильтры<small>{filterRows.length || ""}</small></button>
+        <button type="button" aria-current={activeSection === "work" ? "step" : undefined} onClick={() => goToSection("work")}>Работы<small>{otherRows.length || ""}</small></button>
+      </nav>}
+      <section id="quote-oil" tabIndex={-1} data-quote-section="oil" className={styles.step} aria-labelledby="quote-oil-title">
+      <header className={styles.stepHeader}><div><h2 id="quote-oil-title">Моторное масло</h2></div></header>
       {!warehouseId && <p className={styles.warehousePrompt} role="status">Выберите склад в блоке «Автомобиль и склад», чтобы проверить наличие.</p>}
       <div className={styles.fields}>
         <QuoteSearchField label="Допуск / стандарт" value={specification} options={referenceSpecifications} groups={specificationGroups} onChange={value => { invalidate(); setSpecification(value); }} />
         <QuoteSearchField label="Вязкость" value={viscosity} options={[...choices.viscosities, ...referenceViscosities]} onChange={value => { invalidate(); setViscosity(value); }} />
-        <QuoteSearchField label="Объём замены, л" value={volume} options={[...choices.volumes.map(String), ...referenceVolumes]} onChange={setVolume} inputMode="decimal" />
+        <QuoteSearchField label="Объём с фильтром, л" value={volume} options={[...choices.volumes.map(String), ...referenceVolumes]} onChange={setVolume} inputMode="decimal" />
       </div>
-      <p className={styles.note}>{volumeDraft === null && "volumeFromResearch" in choices && choices.volumeFromResearch
-        ? "Объём из предварительных данных. Сверьте его в технических сведениях автомобиля."
-        : "Объём замены указан с фильтром."}</p>
+      {volumeDraft === null && "volumeFromResearch" in choices && choices.volumeFromResearch && <p className={styles.note}>Сверьте предварительный объём по данным автомобиля.</p>}
+      {!specification.trim() ? <p className={styles.note} role="status">Сначала укажите допуск масла.</p> : !(litres > 0) ? <p className={styles.note} role="status">Теперь укажите объём замены.</p> : null}
       <button type="button" className="eco-btn eco-btn--primary" disabled={!warehouseId || !specification.trim() || loading} onClick={() => void findOils()}>{loading ? "Проверяем наличие…" : "Подобрать масло"}</button>
       {error ? <p role="alert">{error}</p> : null}
       {searched && !products.length ? <p role="status">Совпадений по указанному допуску и вязкости нет. Проверьте требования и технические характеристики товаров на складе.</p> : null}
-      {products.length ? <div className={styles.oilTable} aria-label="Варианты масла"><div className={styles.oilColumns} aria-hidden="true"><span>Масло и фасовка</span><span>Стоимость</span><span>Вариант</span></div>{oilVariants.map(variant => {
+      {products.length ? <div className={styles.oilTable} aria-label="Варианты масла"><div className={styles.oilColumns} aria-hidden="true"><span>Масло</span><span>Стоимость</span><span aria-label="Добавить" /></div>{oilVariants.map(variant => {
         const amount = quoteVariantAmount(variant, litres);
         const chosen = selectedVariants.some(item => item.key === variant.key);
         return <div key={variant.key} className={styles.oilColumns} data-selected={chosen}><div><strong>{variant.name}</strong>
-          {variant.products.map(oil => <p key={oil.id}>Наш склад · {oil.article || "Артикул не указан"} · фасовка {oil.litresPerUnit ?? "?"} л · остаток {oil.available} {oil.unit} · {quoteRub(Math.round(oil.price * 100))} / {oil.unit}</p>)}
+          <p>{variant.products.map(oil => `${oil.available} ${oil.unit} в наличии`).join(" · ")}</p>
           {amount ? <p>Комплект: {amount.lines.map(line=>`${line.quantity} × ${line.product.litresPerUnit} л`).join(" + ")}{!amount.enough ? " · Недостаточно на складе" : ""}</p> : <p>Уточните объём, фасовку и цену.</p>}
-        </div><strong className={styles.oilPrice}>{amount ? quoteRub(amount.cents) : "—"}</strong><button type="button" className="eco-btn" disabled={!chosen && (!amount || !amount.enough)} aria-pressed={chosen} onClick={() => setSelected(rows => chosen ? rows.filter(item => !variant.products.some(product=>product.id===item.id)) : [...rows, ...variant.products.filter(item=>item.price>0 && item.litresPerUnit)])}>{chosen ? "Убрать вариант" : "Добавить в расчёт"}</button></div>;
+        </div><InlineOilPrice name={variant.name} products={variant.products} cents={amount?.cents ?? null} onCommit={updateOilPrices} /><button type="button" className="eco-btn" disabled={!chosen && (!amount || !amount.enough)} aria-pressed={chosen} onClick={() => setSelected(rows => chosen ? rows.filter(item => !variant.products.some(product=>product.id===item.id)) : [...rows, ...variant.products.filter(item=>item.price>0 && item.litresPerUnit)])} aria-label={`${chosen ? "Убрать" : "Добавить"} ${variant.name}`}>{chosen ? <Check size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}</button></div>;
       })}</div> : null}
+      {vehicleSetup && <div className={styles.nextStep}><span /><button type="button" className="eco-btn" onClick={() => goToSection("filters")}>К фильтрам <ArrowRight size={16} aria-hidden="true" /></button></div>}
       </section>
-      <section className={styles.step} aria-labelledby="quote-parts-title">
+      <section id="quote-filters" tabIndex={-1} data-quote-section="filters" className={styles.step} aria-labelledby="quote-parts-title">
       <header className={styles.stepHeader}><div><h2 id="quote-parts-title">Фильтры</h2></div></header>
       <div className={styles.filterPicker} aria-label="Фильтры из подбора MANN">
         <div className={styles.filterHeading}>{filters.length ? <button type="button" className="eco-btn" onClick={() => setSupplierRefresh(value => value + 1)}>Обновить Роско</button> : null}</div>
@@ -220,7 +266,7 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
           }
           return <div key={group.key} className={styles.filterRow}>
             <div className={styles.filterGroupHeading}>
-              <strong>{group.label} · MANN {group.article}</strong>
+              <strong>{group.label}</strong>
               {!existingRow && <button type="button" className={styles.manualFilterPrice} disabled={filtersLoading} onClick={() => chooseFilter("reference")}>Указать цену вручную</button>}
             </div>
             {filterProducts.length > 0 && <QuoteFilterOffers products={filterProducts} selectedId={selectedId} compact={Boolean(vehicleSetup)} initiallyExpanded={Boolean(vehicleSetup) || index === 0} label={`${group.label} MANN ${group.article}`} disabled={filtersLoading} onSelect={chooseFilter} />}
@@ -236,52 +282,71 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
           <button type="button" className="eco-btn" aria-label={`Удалить ${row.name}`} onClick={() => setExtras(rows => rows.filter(item => item.id !== row.id))}>Удалить</button>
         </div>)}
       </div>
+      {vehicleSetup && <div className={styles.nextStep}><span /><button type="button" className="eco-btn" onClick={() => goToSection("work")}>К работам <ArrowRight size={16} aria-hidden="true" /></button></div>}
       </section>
-      <section className={styles.step} aria-labelledby="quote-work-title">
+      <section id="quote-work" tabIndex={-1} data-quote-section="work" className={styles.step} aria-labelledby="quote-work-title">
       <header className={styles.stepHeader}><div><h2 id="quote-work-title">Работы</h2></div></header>
       {quickServices.popular.length > 0 && <div className={styles.quickServices}>{quickServices.popular.map(serviceButton)}</div>}
       {quickServices.other.length > 0 && <details className={styles.quickServiceMore}>
         <summary>Все остальные услуги</summary>
         <div className={styles.quickServices}>{quickServices.other.map(serviceButton)}</div>
       </details>}
-      <label className={styles.search}>Найти услугу или расходник<input value={search} onChange={event => { setSearch(event.target.value); setExtraProducts([]); setExtraLoading(false); setExtraError(""); }} placeholder="Название или артикул, минимум 2 символа" disabled={!warehouseId} /></label>
+      <label className={styles.search}>Найти услугу или расходник
+        <span className={styles.workSearchControl}>
+          <Search size={16} aria-hidden="true" />
+          <input value={search} onChange={event => { setSearch(event.target.value); setExtraProducts([]); setExtraLoading(false); setExtraError(""); setExtraSearchCompleted(false); }}
+            onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addManualWork(); } }}
+            placeholder="Название или артикул" disabled={!warehouseId} />
+        </span>
+      </label>
       {extraLoading ? <p role="status">Ищем товары и услуги…</p> : null}
       {extraError ? <p role="alert">{extraError}</p> : null}
       {extraProducts.map(product => <div key={product.id} className={styles.option}><span>{product.name} · {product.article} · {quoteRub(Math.round(product.price * 100))}</span><button type="button" className="eco-btn" onClick={() => { setExtras(rows => [...rows, { id: crypto.randomUUID(), name: product.name, brand: product.brand, quantity: 1, price: product.price, stockStoreId: warehouseId ?? undefined }]); setSearch(""); setExtraProducts([]); }}>Добавить</button></div>)}
-      <p className={styles.note}>Работы и расходники включаются в каждый вариант предложения.</p>
-      <button type="button" className="eco-btn" onClick={() => setExtras(rows => [...rows, { id: crypto.randomUUID(), name: "", quantity: 1, price: 0 }])}>Добавить работу</button>
-      {otherRows.map(row => <div key={row.id} className={styles.extra}><label>Наименование<input value={row.name} onChange={event => updateExtra(row.id, { name: event.target.value })} placeholder="Масляный фильтр / замена масла" /></label><label>Количество<input type="number" min="0.001" step="0.001" value={Number.isFinite(row.quantity) ? row.quantity : ""} onChange={event => updateExtra(row.id, { quantity: event.target.value ? Number(event.target.value) : NaN })} /></label><label>Цена, ₽<input type="number" min="0" step="0.01" value={Number.isFinite(row.price) ? row.price : ""} onChange={event => updateExtra(row.id, { price: event.target.value ? Number(event.target.value) : NaN })} /></label><button type="button" className="eco-btn" aria-label={`Удалить строку ${row.name || "без названия"}`} onClick={() => setExtras(rows => rows.filter(item => item.id !== row.id))}>Удалить</button></div>)}
+      {extraSearchCompleted && !extraLoading && !extraProducts.length && search.trim().length >= 2 && <div className={styles.option}>
+        <span>{search.trim()}<small className={styles.manualWorkHint}>Добавить вручную</small></span>
+        <button type="button" className={`eco-btn ${styles.manualWorkAdd}`} aria-label={`Добавить работу ${search.trim()}`} onClick={addManualWork}><Plus size={16} aria-hidden="true" /></button>
+      </div>}
+      {otherRows.map(row => <div key={row.id} id={`quote-extra-${row.id}`} className={styles.extra}><label>Наименование<input value={row.name} onChange={event => updateExtra(row.id, { name: event.target.value })} placeholder="Масляный фильтр / замена масла" /></label><label>Количество<input type="number" min="0.001" step="0.001" value={Number.isFinite(row.quantity) ? row.quantity : ""} onChange={event => updateExtra(row.id, { quantity: event.target.value ? Number(event.target.value) : NaN })} /></label><label>Цена, ₽<input type="number" min="0" step="0.01" value={Number.isFinite(row.price) ? row.price : ""} onChange={event => updateExtra(row.id, { price: event.target.value ? Number(event.target.value) : NaN })} /></label><button type="button" className="eco-btn" aria-label={`Удалить строку ${row.name || "без названия"}`} onClick={() => setExtras(rows => rows.filter(item => item.id !== row.id))}>Удалить</button></div>)}
       </section>
     </div>
     <aside id="quote-summary" tabIndex={-1} className={styles.summary} aria-labelledby="quote-summary-title">
-      <header className={styles.stepHeader}><div><h2 id="quote-summary-title">Предложение клиенту</h2><p>{vehicleTitle}</p></div></header>
-      {!selectedVariants.length && !extras.length && <p className={styles.empty}>Добавьте позиции из подбора. Итог рассчитается автоматически.</p>}
-      {!!extras.length && !validExtras && <p className={styles.note}>Проверьте наименования, количество и цены добавленных позиций.</p>}
-      {selectedVariants.length ? <details className={styles.priceEditor}><summary>Изменить цены масла</summary><div className={styles.totals}>{selectedVariants.map((variant, index) => {
-        const amount = quoteVariantAmount(variant, litres);
-        return <div key={variant.key} className={styles.variantTotal}><span>Вариант {index + 1}: {variant.name}</span>
-          {variant.products.map(oil=><label key={oil.id}>Цена {oil.litresPerUnit} л / {oil.unit}, ₽<input aria-label={`Цена ${oil.name}, ₽`} type="number" min="0.01" step="0.01" value={Number.isFinite(oil.price) ? oil.price : ""} onChange={event => setSelected(rows => rows.map(row => row.id === oil.id ? { ...row, price: event.target.value ? Number(event.target.value) : NaN } : row))} /></label>)}
-          <strong>{amount && validExtras ? quoteRub(amount.cents + extraTotal) : "Уточните количество и цены"}</strong>
-          {amount ? <small>Комплект: {amount.lines.map(line=>`${line.quantity} × ${line.product.litresPerUnit} л`).join(" + ")}{!amount.enough ? " · недостаточно на складе" : ""}</small> : null}
-        </div>;
-      })}</div></details> : null}
+      <header className={styles.stepHeader}><h2 id="quote-summary-title">Расчёт</h2></header>
+      {!selectedVariants.length && !extras.length && <p className={styles.empty}>Добавьте позиции из подбора.</p>}
+      {!!extras.length && !validExtras && <p className={styles.note}>Проверьте количество и цены позиций.</p>}
       {(selected.length > 0 || extras.length > 0) && <div className={styles.groupedSummary}>
-        <h3>Масло</h3>
-        {selectedVariants.length ? selectedVariants.map(variant => { const amount = quoteVariantAmount(variant, litres); return <div key={variant.key} className={styles.summaryLine}><span>{variant.name}</span><strong>{amount ? quoteRub(amount.cents) : "Уточните цену"}</strong></div>; }) : <p className={styles.note}>Масло не добавлено</p>}
-        <h3>Фильтры</h3>
-        {filterRows.length ? filterRows.map(row => <div key={row.id} className={styles.summaryLine}><span>{row.name}<small>{row.quantity} шт.</small></span><strong>{Number.isFinite(row.price) ? quoteRub(quoteExtraCents([row])) : "Укажите цену"}</strong></div>) : <p className={styles.note}>Фильтры не добавлены</p>}
-        <h3>Работы и прочие позиции</h3>
-        {otherRows.length ? otherRows.map(row => <div key={row.id} className={styles.summaryLine}><span>{row.name || "Без названия"}<small>Количество: {Number.isFinite(row.quantity) ? row.quantity : "—"}</small></span><strong>{Number.isFinite(row.price) && Number.isFinite(row.quantity) ? quoteRub(quoteExtraCents([row])) : "Уточните цену"}</strong></div>) : <p className={styles.note}>Работы не добавлены</p>}
+        {selectedVariants.length > 0 && <section className={styles.summaryGroup} aria-labelledby="summary-oil-group">
+          <h3 id="summary-oil-group" className={styles.summaryGroupTitle}>{vehicleSetup ? <button type="button" aria-label="Перейти к подбору масла" onClick={() => goToSection("oil")}>Масло</button> : "Масло"}</h3>
+          {selectedVariants.map((variant, index) => {
+            const amount = quoteVariantAmount(variant, litres);
+            return <div key={variant.key} className={styles.summaryLine} data-stripe={index % 2 === 1}>
+              <span>{variant.name}{amount && ready && selectedVariants.length > 1 && <small>С фильтрами и работами {quoteRub(amount.cents + extraTotal)}</small>}</span>
+              <InlineOilPrice name={variant.name} products={variant.products} cents={amount?.cents ?? null} onCommit={updateOilPrices} />
+            </div>;
+          })}
+        </section>}
+        {filterRows.length > 0 && <section className={styles.summaryGroup} aria-labelledby="summary-filter-group">
+          <h3 id="summary-filter-group" className={styles.summaryGroupTitle}>{vehicleSetup ? <button type="button" aria-label="Перейти к подбору фильтров" onClick={() => goToSection("filters")}>Фильтры</button> : "Фильтры"}</h3>
+          {filterRows.map((row, index) => <div key={row.id} className={styles.summaryLine} data-stripe={(selectedVariants.length + index) % 2 === 1}>
+            <span>{row.name}{row.quantity !== 1 && <small>× {Number.isFinite(row.quantity) ? row.quantity : "—"}</small>}</span>
+            <strong>{Number.isFinite(row.price) && Number.isFinite(row.quantity) ? quoteRub(quoteExtraCents([row])) : "Укажите цену"}</strong>
+          </div>)}
+        </section>}
+        {otherRows.length > 0 && <section className={styles.summaryGroup} aria-labelledby="summary-work-group">
+          <h3 id="summary-work-group" className={styles.summaryGroupTitle}>{vehicleSetup ? <button type="button" aria-label="Перейти к работам" onClick={() => goToSection("work")}>Работы</button> : "Работы"}</h3>
+          {otherRows.map((row, index) => <div key={row.id} className={styles.summaryLine} data-stripe={(selectedVariants.length + filterRows.length + index) % 2 === 1}>
+            <span>{row.name || "Без названия"}{row.quantity !== 1 && <small>× {Number.isFinite(row.quantity) ? row.quantity : "—"}</small>}</span>
+            <strong>{Number.isFinite(row.price) && Number.isFinite(row.quantity) ? quoteRub(quoteExtraCents([row])) : "Уточните цену"}</strong>
+          </div>)}
+        </section>}
       </div>}
       <div className={styles.singleTotal} aria-live="polite"><span>{totals.length > 1 ? "Итого по вариантам" : "Итого"}</span><strong>{totalLabel}</strong></div>
       {totals.length > 1 && <p className={styles.note}>Каждый вариант масла — отдельное предложение. Фильтры и работы включены в каждый вариант.</p>}
-      {text ? <details className={styles.preview} open={copyError ? true : undefined}><summary>Предпросмотр предложения</summary><label>Текст для клиента<textarea readOnly rows={Math.min(18, text.split("\n").length)} value={text} /></label></details> : null}
+      {text ? <details className={styles.preview} open={copyError ? true : undefined}><summary>Текст предложения</summary><label><textarea aria-label="Текст предложения для клиента" readOnly rows={Math.min(18, text.split("\n").length)} value={text} /></label></details> : null}
       <button type="button" className="eco-btn eco-btn--primary" disabled={!ready} onClick={async () => {
         setCopyError(""); setCopied(false);
-        try { await navigator.clipboard.writeText(quoteClientText(vehicleTitle, quoteSpecification, litres, selected, extras, { timeZone })); setCopied(true); } catch { setCopyError("Копирование недоступно. Выделите и скопируйте текст предложения выше."); }
+        try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopyError("Копирование недоступно. Выделите и скопируйте текст предложения выше."); }
       }}>Скопировать предложение</button>
       {copied ? <p role="status">Предложение скопировано.</p> : null}{copyError ? <p role="alert">{copyError}</p> : null}
-      <p className={styles.note}>Скопируйте предложение перед закрытием страницы.</p>
     </aside>
     <div className={styles.mobileBar}>
       <div><span>Итого{totals.length > 1 ? " по вариантам" : ""}</span><strong aria-live="polite">{totalLabel}</strong></div>

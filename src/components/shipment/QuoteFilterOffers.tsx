@@ -29,25 +29,27 @@ export function QuoteFilterOffers({ products, selectedId, label, onSelect, disab
 
   function renderOffer(item: Offer) {
     const selected = selectedId === item.id;
-    const price = quoteRub(Math.round(item.price * 100));
-    const availability = item.source === "rossko"
-      ? [item.available > 0 ? `${item.available} шт.` : null, item.deliveryLabel].filter(Boolean).join(" · ")
-      : item.available > 0 ? `${item.available} шт. в наличии` : item.orderable ? "Под заказ" : "Нет в наличии";
+    const unavailable = !(item.available > 0);
+    const priceMissing = !Number.isFinite(item.price) || item.price <= 0;
+    const price = priceMissing ? "—" : quoteRub(Math.round(item.price * 100));
     const source = item.source === "rossko" ? "Росско" : "Наш склад";
-    return <div key={item.id} className={styles.supplierOffer} data-selected={selected}>
-      <div className={styles.supplierOfferInfo}>
-        <strong>{item.name}</strong>
-        <small>{[item.article || "Артикул не указан", source, item.relation === "analogue" ? "Аналог" : null, availability].filter(Boolean).join(" · ")}</small>
-      </div>
-      <div className={styles.supplierOfferAction}>
-        <strong>{price}</strong>
+    const stock = unavailable ? "Нет" : `${item.available} шт.`;
+    const delivery = item.source === "rossko"
+      ? item.deliveryLabel?.replace(/^доставка\s*:\s*/i, "") || "Не указан"
+      : "—";
+    return <div key={item.id} className={styles.supplierOffer} role="row"
+      data-selected={selected} data-unavailable={unavailable} aria-disabled={unavailable || undefined}>
+      <div className={styles.supplierOfferInfo} role="cell"><strong>{item.name}</strong></div>
+      <div className={styles.offerDelivery} role="cell" aria-label={`Поставка ${delivery}`}>{delivery}</div>
+      <div className={styles.offerPrice} role="cell">{price}</div>
+      <div className={styles.offerStock} role="cell" aria-label={unavailable ? "Нет в наличии" : `Остаток ${stock}`}>{stock}</div>
+      <div className={styles.supplierOfferAction} role="cell">
         <button type="button" className={`eco-btn ${styles.offerAdd}`}
           aria-label={`${selected ? "Добавлено" : "Добавить"} ${item.name}, ${price}, ${source}`}
-          aria-pressed={selected}
-          disabled={disabled || selected || (item.available < 1 && !item.orderable)}
+          aria-pressed={selected} title={unavailable ? "Нет в наличии" : selected ? "В расчёте" : "Добавить в расчёт"}
+          disabled={disabled || selected || unavailable || priceMissing}
           onClick={() => onSelect(item.id)}>
           {selected ? <Check size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
-          {compact && <span>{selected ? "В расчёте" : "Добавить"}</span>}
         </button>
       </div>
     </div>;
@@ -56,16 +58,22 @@ export function QuoteFilterOffers({ products, selectedId, label, onSelect, disab
   function renderOffers(offers: Offer[], limit: number, setLimit: (limit: number) => void) {
     const visible = compact ? offers.slice(0, limit) : offers;
     const selected = offers.find(item => item.id === selectedId);
-    const pinnedSelection = selected && !visible.some(item => item.id === selected.id) ? selected : null;
+    const pinned = selected && !visible.some(item => item.id === selected.id) ? selected : null;
     return <>
-      {pinnedSelection && renderOffer(pinnedSelection)}
-      {visible.map(renderOffer)}
+      <div role="table" aria-label={`Товары для ${label}`}>
+        <div className={styles.offerColumns} role="row">
+          <span role="columnheader">Наименование</span><span role="columnheader">Поставка</span>
+          <span role="columnheader">Цена</span><span role="columnheader">Остаток</span><span role="columnheader" aria-label="Добавить" />
+        </div>
+        <div className={styles.offerRows} role="rowgroup">
+          {pinned && renderOffer(pinned)}
+          {visible.map(renderOffer)}
+        </div>
+      </div>
       {compact && offers.length > limit && <button type="button" className={styles.moreOffers}
-        onClick={() => setLimit(limit + 10)}>
-        Показать ещё · {offers.length - limit}
-      </button>}
+        onClick={() => setLimit(limit + 10)}>Показать ещё · {offers.length - limit}</button>}
       {compact && limit > 3 && offers.length > 3 && <button type="button" className={styles.moreOffers}
-        onClick={() => setLimit(3)}>Свернуть список</button>}
+        onClick={() => setLimit(3)}>Свернуть</button>}
     </>;
   }
 
@@ -73,12 +81,12 @@ export function QuoteFilterOffers({ products, selectedId, label, onSelect, disab
     open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
     <summary>Предложения · {products.length}</summary>
     <div className={styles.supplierOfferList} aria-label={`Предложения для ${label}`}>
-      <section aria-label="Наш склад">
+      <section className={styles.warehouseOffers} aria-label="Наш склад">
         <div className={styles.supplierToolbar}><strong>Наш склад</strong></div>
         {warehouse.length ? renderOffers(warehouse, warehouseLimit, setWarehouseLimit)
-          : <p className={styles.offerEmpty}>На выбранном складе нет совпадений.</p>}
+          : <p className={styles.offerEmpty}>Нет в наличии</p>}
       </section>
-      <section aria-label="Росско">
+      <section className={styles.rosskoOffers} aria-label="Росско">
         <div className={styles.supplierToolbar}>
           <strong>Росско</strong>
           {supplier.length > 1 && <div className={styles.supplierSort} role="group" aria-label={`Сортировка Росско для ${label}`}>
@@ -87,7 +95,7 @@ export function QuoteFilterOffers({ products, selectedId, label, onSelect, disab
           </div>}
         </div>
         {supplier.length ? renderOffers(supplier, supplierLimit, setSupplierLimit)
-          : <p className={styles.offerEmpty}>Доступных предложений нет.</p>}
+          : <p className={styles.offerEmpty}>Нет предложений</p>}
       </section>
     </div>
   </details>;

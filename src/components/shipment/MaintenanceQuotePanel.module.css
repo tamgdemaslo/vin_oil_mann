@@ -249,6 +249,224 @@
 .filterEditor[open] > summary::after { content: "−"; }
 .filterEditor > div { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 8px 0; }
 
+/* The desktop workbench shows one task at a time. Mobile keeps the steps in flow. */
+.stageNav { display: flex; align-items: stretch; gap: 24px; margin-bottom: 24px; border-bottom: 1px solid var(--eco-line); }
+.stageNav > button { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 4px; min-height: 52px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #586474; font: inherit; font-size: 15px; font-weight: 550; }
+.stageNav > button[aria-current="step"] { color: var(--eco-ink); border-bottom-color: var(--eco-rust); font-weight: 650; }
+.stageNav small { font-size: 12px; font-weight: 500; color: #586474; }
+.workspace .body { padding: 0; background: transparent; gap: 0; }
+.workspace .body > section:first-child { padding: 24px; border-radius: 8px; background: #fff; margin-bottom: 20px; border-bottom: 0; }
+.workspace .stageNav { background: #fff; margin: 0; padding-inline: 24px; border-radius: 8px 8px 0 0; }
+.workspace .step { padding: 24px; background: #fff; border: 0; border-radius: 0 0 8px 8px; min-height: 420px; }
+.workspace .step:last-child { padding-bottom: 24px; }
+.workspace .stepHeader { margin-bottom: 24px; }
+.workspace .fields { padding: 16px; background: #f5f7f9; border-radius: 6px; }
+.workspace .fields input { background: #fff; border-color: #b7c1cc; }
+.workspace .searchToggle { height: 42px; width: 36px; min-height: 42px; bottom: 1px; }
+.workspace .oilColumns { grid-template-columns: minmax(0,1fr) 104px 120px; padding: 20px 12px; gap: 16px; }
+.workspace .oilColumns:first-child { display: grid; grid-template-columns: minmax(0,1fr) 104px 120px; padding: 8px 12px; background: transparent; color: #586474; font-size: 12px; }
+.workspace .oilColumns:first-child > span:last-child { text-align: right; }
+.workspace .oilColumns .oilPrice { text-align: right; }
+.workspace .oilColumns > button { grid-column: auto; font-size: 13px; }
+.workspace .oilColumns[data-selected="true"] { background: #f2f7f3; }
+.workspace .oilColumns[data-selected="true"] > button { border-color: #c4d7c9; background: #f2f7f3; color: #315b40; }
+.workspace .oilColumns > div > strong { font-size: 15px; line-height: 1.5; }
+.workspace .oilColumns p { color: #586474; font-size: 12px; }
+.workspace .oilTable { margin-top: 24px; }
+.nextStep { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--eco-line); }
+.nextStep > span { color: #586474; font-size: 13px; }
+.nextStep > button { flex: none; font-size: 13px; }
+.workspace .summary { border-top: 3px solid var(--eco-ink); border-radius: 6px; }
+.workspace .summary .stepHeader { margin-bottom: 12px; border: 0; padding-bottom: 0; }
+.workspace .summary .stepHeader h2 { font-size: 20px; }
+.workspace .groupedSummary { margin-top: 20px; }
+.summaryGroupTitle { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; border-bottom: 1px solid var(--eco-line); padding-bottom: 4px; }
+.summaryGroupTitle h3 { color: #586474; font-size: 13px; font-weight: 600; margin: 0; }
+.summaryGroupTitle > button { min-height: 36px; border: 0; padding: 4px 0 4px 8px; font: inherit; font-size: 12px; color: #586474; background: transparent; }
+.workspace .summaryLine { padding: 12px 0; gap: 12px; }
+.workspace .summaryLine > span { font-size: 14px; font-weight: 500; }
+.workspace .summaryLine > strong { font-size: 14px; }
+.workspace .singleTotal { margin-top: 20px; margin-bottom: 20px; padding-top: 20px; }
+.workspace .singleTotal > strong { font-size: 32px; }
+.workspace .summary > .preview { order: 2; }
+.workspace .summary > button { min-height: 48px; }
+.workspace .priceEditor > summary { min-height: 36px; font-size: 12px; }
+.workspace .filterHeading { display: flex; justify-content: flex-end; }
+.workspace .articleDisclosure { margin-bottom: 8px; }
+.workspace .filterGroupHeading { align-items: center; }
+.workspace .filterGroupHeading > strong { font-size: 15px; }
+.workspace .filterRow .filterPrice { min-width: 120px; }
+.workspace .extra { padding: 16px 0; margin: 0; border-bottom: 1px solid var(--eco-line); }
+.workspace .extra:last-child { border-bottom: 0; }
+@media(min-width:901px) {
+  .workspace[data-active-section="oil"] [data-quote-section]:not([data-quote-section="oil"]),
+  .workspace[data-active-section="filters"] [data-quote-section]:not([data-quote-section="filters"]),
+  .workspace[data-active-section="work"] [data-quote-section]:not([data-quote-section="work"]) { display: none; }
+}
+@media(min-width:901px) and (max-width:1150px) {
+  .workspace .oilColumns, .workspace .oilColumns:first-child { grid-template-columns: minmax(0,1fr) 112px; }
+  .workspace .oilColumns > div { grid-column: 1/-1; }
+  .workspace .oilColumns > button { grid-column: 2; }
+  .workspace .oilColumns:first-child { display: none; }
+}
+@media(max-width:900px) {
+  .stageNav { display: none; }
+  .workspace .step { min-height: 0; margin-bottom: 16px; border-radius: 8px; }
+  .workspace .nextStep { display: none; }
+  .workspace .body > section:first-child { margin-bottom: 16px; }
+  .summaryGroupTitle > button { min-height: 44px; }
+}
+@media(max-width:600px) {
+  .workspace .step, .workspace .body > section:first-child { padding: 20px 16px; }
+  .workspace .fields { padding: 0; background: transparent; gap: 12px; }
+  .workspace .oilColumns { grid-template-columns: minmax(0,1fr) auto; padding: 16px 0; gap: 12px; }
+  .workspace .oilColumns > div { grid-column: 1/-1; }
+  .workspace .oilColumns > button { grid-column: 2; }
+  .workspace .oilColumns:first-child { display: none; }
+  .workspace .oilColumns .oilPrice { text-align: left; }
+  .workspace .summary { padding: 20px 16px; }
+  .workspace .singleTotal > strong { font-size: 28px; }
+  .workspace .filterHeading { justify-content: flex-end; }
+}
+
+/* Compact, source-separated stock tables. */
+.supplierComparison { --offer-columns: minmax(160px,1fr) 128px 96px 64px 36px; --offer-zebra: #f5f7f9; }
+.supplierComparison .supplierOffer, .supplierComparison .offerColumns { display: grid; grid-template-columns: var(--offer-columns); align-items: center; gap: 8px; padding: 8px 10px; }
+.supplierComparison .supplierOffer { border: 0; font-size: 13px; }
+.offerColumns { color: #566373; font-size: 11px; }
+.offerColumns > :nth-child(3) { text-align: right; }
+.offerRows > .supplierOffer:nth-of-type(even) { background: var(--offer-zebra); }
+.supplierComparison .supplierOfferInfo { display: block; min-width: 0; }
+.supplierComparison .supplierOfferInfo > strong { font-size: 13px; font-weight: 500; line-height: 1.45; }
+.offerStock, .offerDelivery { font-size: 12px; color: #566373; }
+.offerDelivery { overflow-wrap: anywhere; }
+.offerPrice { white-space: nowrap; text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.supplierComparison .supplierOfferAction { display: flex; width: auto; justify-content: flex-end; gap: 0; }
+.supplierComparison .offerAdd { width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; border: 0; background: transparent; }
+.supplierComparison .supplierOffer[data-selected="true"] .offerAdd { color: #315b40; background: #e6f0e8; }
+.supplierComparison .supplierOffer[data-unavailable="true"] { color: #737e89; }
+.supplierComparison .supplierOffer[data-unavailable="true"] :is(.offerStock,.offerDelivery,.offerPrice) { color: #737e89; }
+.supplierComparison .supplierOffer[data-unavailable="true"] .offerAdd { background: transparent; color: #a1aab4; }
+.supplierComparison .warehouseOffers > .supplierToolbar { background: #edf4ef; }
+.supplierComparison .rosskoOffers > .supplierToolbar { background: #edf1f7; }
+.supplierComparison .supplierToolbar { padding: 6px 10px; margin-top: 8px; min-height: 32px; }
+.supplierComparison .supplierToolbar > strong { color: #344756; font-size: 12px; font-weight: 650; }
+.workspace .compactOffers { flex-basis: 100%; }
+.workspace .compactOffers > summary { min-height: 32px; font-size: 12px; }
+.workspace .compactOffers .supplierOffer { display: grid; grid-template-columns: var(--offer-columns); align-items: center; gap: 8px; padding: 8px 10px; }
+.workspace .compactOffers .supplierOfferInfo { display: block; flex-basis: auto; }
+.workspace .compactOffers .supplierOfferInfo > strong { font-size: 13px; font-weight: 500; }
+.workspace .compactOffers .supplierOfferAction { width: auto; justify-content: flex-end; }
+.workspace .compactOffers .offerAdd { width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; }
+.workspace .step { min-height: 0; padding: 16px; }
+.workspace .stepHeader { margin-bottom: 16px; }
+.workspace .stepHeader h2 { font-size: 16px; }
+.workspace .stageNav { padding-inline: 16px; }
+.workspace .stageNav > button { font-size: 14px; min-height: 40px; padding-block: 8px; }
+.workspace .fields { grid-template-columns: minmax(160px,1.5fr) 112px 136px; justify-content: start; padding: 0; background: transparent; }
+.workspace .fields :is(input,select) { min-height: 32px; height: 32px; padding: 4px 8px; font-size: 14px; }
+.workspace .fields label { font-size: 12px; }
+.workspace .searchToggle { min-height: 30px; height: 30px; width: 28px; }
+.workspace .oilTable { margin-top: 16px; }
+.workspace .oilColumns, .workspace .oilColumns:first-child { grid-template-columns: minmax(0,1fr) 100px 36px; padding: 8px 10px; gap: 8px; }
+.workspace .oilColumns:first-child { font-size: 11px; }
+.workspace .oilColumns > div > strong { font-size: 13px; font-weight: 500; }
+.workspace .oilColumns p { margin-top: 2px; font-size: 11px; }
+.workspace .oilColumns:nth-child(odd):not(:first-child) { background: #f5f7f9; }
+.workspace .oilColumns > button { width: 32px; height: 32px; min-height: 32px; min-width: 32px; padding: 0; border: 0; justify-self: end; }
+.workspace .oilColumns[data-selected="true"] > button { background: #e6f0e8; }
+.workspace .oilPrice { font-size: 13px; }
+.workspace .filterRow { padding: 12px 0; }
+.workspace .filterGroupHeading > strong { font-size: 14px; }
+.workspace .filterArticleEntry { grid-template-columns: minmax(120px,1fr) minmax(140px,1fr) auto; }
+.workspace .filterArticleEntry :is(input,select), .workspace .extra input { min-height: 32px; padding: 4px 8px; font-size: 14px; }
+.workspace .nextStep { margin-top: 16px; padding-top: 12px; }
+.workspace .nextStep > span:empty { display: none; }
+.workspace .nextStep > button { margin-left: auto; min-height: 36px; }
+.workspace .summary { padding: 16px; border-top: 0; }
+.workspace .summary .stepHeader h2 { font-size: 18px; }
+.workspace .summaryLine { padding-block: 8px; }
+.workspace .summaryGroupTitle { margin-top: 12px; }
+.workspace .singleTotal > strong { font-size: 28px; }
+@media(max-width:1150px) {
+  .supplierComparison .supplierOffer, .workspace .compactOffers .supplierOffer { grid-template-columns: minmax(0,1fr) auto 36px; grid-template-areas: "name name name" "delivery price action" "stock price action"; gap: 4px 8px; }
+  .supplierComparison .offerColumns { display: none; }
+  .supplierOfferInfo { grid-area: name; }
+  .offerStock { grid-area: stock; }
+  .offerDelivery { grid-area: delivery; }
+  .offerPrice { grid-area: price; }
+  .supplierOfferAction { grid-area: action; }
+  .offerStock::before { content: "Остаток "; }
+  .offerDelivery::before { content: "Поставка "; }
+  .workspace .fields { grid-template-columns: minmax(0,1fr) 104px 112px; }
+  .workspace .filterArticleEntry { grid-template-columns: 1fr 1fr; }
+  .workspace .filterArticleEntry > button { grid-column: 1/-1; justify-self: start; }
+}
+@media(max-width:600px) {
+  .workspace .fields { grid-template-columns: 1fr 1fr; }
+  .workspace .fields > :first-child { grid-column: 1/-1; }
+  .workspace .fields :is(input,select), .workspace .filterArticleEntry :is(input,select), .workspace .extra input { height: 44px; min-height: 44px; font-size: 16px; }
+  .workspace .searchToggle { min-height: 42px; height: 42px; width: 36px; }
+  .workspace .compactOffers .offerAdd, .workspace .oilColumns > button { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+  .supplierComparison .supplierOffer, .workspace .compactOffers .supplierOffer { grid-template-columns: minmax(0,1fr) auto 44px; }
+  .workspace .oilColumns { grid-template-columns: minmax(0,1fr) 44px; padding: 10px 8px; }
+  .workspace .oilColumns > div { grid-column: 1/-1; }
+  .workspace .oilColumns .oilPrice { text-align: left; }
+  .workspace .oilColumns > button { grid-column: 2; }
+  .workspace .oilColumns:first-child { display: none; }
+  .workspace .filterArticleEntry { grid-template-columns: 1fr; }
+}
+
+.inlineOilPrice { min-width: 0; text-align: right; }
+.panel .priceValue { display: inline-flex; align-items: center; justify-content: flex-end; min-height: 32px; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: var(--eco-ink); font-size: 14px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; text-decoration: underline dotted #9aa4ae; text-underline-offset: 4px; cursor: text; }
+.inlinePriceFields { display: grid; gap: 8px; text-align: left; }
+.inlinePriceFields label { font-size: 11px; }
+.workspace .inlinePriceFields input { width: 100%; min-height: 32px; padding: 4px 8px; font-size: 14px; }
+.inlinePriceFields > small { font-size: 12px; color: #a32420; }
+.workspace .oilColumns:has(.inlineOilPrice[data-editing="true"]) { grid-template-columns: minmax(0,1fr) 176px 36px; }
+.summaryLine:has(.inlineOilPrice[data-editing="true"]) { flex-wrap: wrap; }
+.summaryLine:has(.inlineOilPrice[data-editing="true"]) > span { flex-basis: 100%; }
+.summaryLine .inlineOilPrice[data-editing="true"] { width: 176px; margin-left: auto; }
+@media(max-width:600px) {
+  .workspace .oilColumns:has(.inlineOilPrice[data-editing="true"]) { grid-template-columns: minmax(0,1fr) 44px; }
+  .workspace .inlinePriceFields input { min-height: 44px; font-size: 16px; }
+  .workspace .priceValue { min-height: 44px; }
+  .oilColumns .inlineOilPrice { text-align: left; }
+}
+
+.workSearchControl { display: flex; align-items: center; gap: 8px; min-width: 0; border: 1px solid var(--eco-line-strong); border-radius: 4px; background: #fff; padding-inline: 10px; }
+.workSearchControl > svg { flex: none; color: #586474; }
+.workspace .workSearchControl > input { flex: 1; min-width: 0; min-height: 32px; border: 0; padding: 4px 0; background: transparent; }
+.workSearchControl:focus-within { outline: 2px solid var(--eco-rust); outline-offset: 2px; }
+.workSearchControl > input:focus-visible { outline: none; }
+.manualWorkHint { display: block; font-size: 12px; color: #586474; }
+.workspace .manualWorkAdd { min-width: 32px; min-height: 32px; width: 32px; height: 32px; padding: 0; border: 0; }
+@media(max-width:600px) { .workspace .workSearchControl > input { min-height: 44px; font-size: 16px; } .workspace .manualWorkAdd { min-width: 44px; min-height: 44px; } }
+
+/* Summary hierarchy: quiet group headings, compact rows, one prominent total. */
+.workspace .summary .stepHeader { margin-bottom: 16px; }
+.workspace .summary .stepHeader h2 { margin: 0; font-size: 18px; line-height: 1.3; font-weight: 650; }
+.workspace .groupedSummary { margin: 0; }
+.summaryGroup { min-width: 0; margin: 0 0 12px; }
+.workspace .summaryGroupTitle { display: flex; align-items: center; margin: 0; padding: 0 8px; border: 0; min-height: 32px; font-size: 12px; font-weight: 600; color: #566373; }
+.workspace .summaryGroupTitle > button { min-height: 32px; padding: 4px 0; font-size: 12px; font-weight: 600; text-align: left; color: #566373; background: transparent; border: 0; }
+.workspace .summaryLine { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 10px 8px; border: 0; background: #fff; }
+.workspace .summaryLine[data-stripe="true"] { background: #f3f5f8; }
+.workspace .summaryLine > span { min-width: 0; font-size: 13px; line-height: 1.45; font-weight: 400; }
+.workspace .summaryLine > strong { font-size: 13px; font-weight: 550; }
+.workspace .summaryLine .priceValue { min-height: 28px; padding-block: 0; font-size: 13px; font-weight: 550; }
+.workspace .summaryLine small { margin-top: 2px; font-size: 11px; color: #566373; }
+.workspace .singleTotal { margin: 16px 0; padding: 16px 8px 0; border-top: 1px solid #cfd7e1; }
+.workspace .singleTotal > span { font-size: 14px; font-weight: 600; }
+.workspace .singleTotal > strong { font-size: 30px; line-height: 1.2; font-weight: 750; letter-spacing: -.02em; }
+.workspace .summary > .preview { margin: 0 8px 8px; }
+.workspace .summary .preview summary { min-height: 32px; font-size: 12px; font-weight: 400; color: #566373; }
+@media(max-width:600px) {
+  .workspace .summaryGroupTitle > button, .workspace .summaryLine .priceValue { min-height: 44px; }
+  .workspace .summaryLine { gap: 8px 12px; padding-block: 6px; }
+  .workspace .summaryLine > span { flex: 1 1 160px; }
+  .workspace .singleTotal > strong { font-size: 28px; }
+}
 .quickServices { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 8px 14px; }
 .quickServices > button { white-space: normal; text-align: left; }
 .quickServiceMore { margin-block: 8px 16px; }
