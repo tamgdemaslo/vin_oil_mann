@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Warehouse } from "lucide-react";
 import { MaintenanceQuotePanel, type MaintenanceQuoteVehicleContext } from "@/components/shipment/MaintenanceQuotePanel";
 import { VehicleLookupPanel, type MannManualSelection } from "@/components/shipment/VehicleLookupPanel";
@@ -31,6 +31,25 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores, 
   const store = stores.find((item) => item.id === storeId);
   const storeOrganizationId = store?.organizationId ?? organizationId;
   const [vehicle, setVehicle] = useState<MaintenanceQuoteVehicleContext | null>(null);
+  const [activeEditor, setActiveEditor] = useState(0);
+  const nextEditor = useRef(0);
+  const [draftEditor, setDraftEditor] = useState<number | null>(null);
+  const [draftVehicle, setDraftVehicle] = useState<MaintenanceQuoteVehicleContext | null>(null);
+  const [draftLookup, setDraftLookup] = useState<FilterSelection | null>(null);
+  const [draftManual, setDraftManual] = useState<MannManualSelection | null>(null);
+  const [draftCatalog, setDraftCatalog] = useState(false);
+  const [confirmChange, setConfirmChange] = useState(false);
+  const confirmDialog = useRef<HTMLDialogElement>(null);
+  const editorTrigger = useRef<HTMLElement | null>(null);
+  const draftHeading = useRef<HTMLHeadingElement>(null);
+  useLayoutEffect(() => {
+    if (draftEditor !== null) draftHeading.current?.focus();
+  }, [draftEditor]);
+  useLayoutEffect(() => {
+    const dialog = confirmDialog.current;
+    if (confirmChange && !dialog?.open) dialog?.showModal();
+    if (!confirmChange && dialog?.open) dialog.close();
+  }, [confirmChange]);
   const [vehicleName, setVehicleName] = useState("");
   const [lookupSelection, setLookupSelection] = useState<FilterSelection | null>(null);
   const [manualSelection, setManualSelection] = useState<MannManualSelection | null>(null);
@@ -102,6 +121,33 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores, 
 
   const vehicleTitle = (manualSelection && vehicleName.trim()) || vehicle?.vehicleTitle || vehicleName.trim() || (selection ? `${selection.make} ${selection.model}` : "Автомобиль не указан");
 
+  function editVehicle() {
+    editorTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setDraftVehicle(null);
+    setDraftLookup(null);
+    setDraftManual(null);
+    setDraftCatalog(false);
+    setDraftEditor(++nextEditor.current);
+  }
+
+  function cancelEdit() {
+    setConfirmChange(false);
+    setDraftEditor(null);
+    requestAnimationFrame(() => editorTrigger.current?.focus());
+  }
+
+  function saveVehicle() {
+    if (!draftVehicle || draftEditor === null) return;
+    setVehicle(draftVehicle);
+    setLookupSelection(draftLookup);
+    setManualSelection(draftManual);
+    setManualCatalogOpen(false);
+    setVehicleName("");
+    setActiveEditor(draftEditor);
+    setDraftEditor(null);
+    setConfirmChange(false);
+  }
+
   return <div className={`eco-page ${styles.page}`}>
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Работа / Расчёт ТО</span>
@@ -118,27 +164,67 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores, 
             </select>
           </label>
         </header>
-        <div className={styles.lookup}>
-          <VehicleLookupPanel organizationId={storeOrganizationId} warehouseId={storeId} combinedIdentifier manualSelection={manualSelection}
-            onQuoteContextChange={setVehicle}
-            onUseVehicle={(identity, resolution) => setLookupSelection(resolution?.selectedApplication ? { ...resolution.selectedApplication, year: identity.year } : null)}
-            onConfirmMannCandidate={(identity, candidate) => setLookupSelection({ ...candidate, year: identity.year })}
-            onLookupStart={() => { setVehicleName(""); setVehicle(null); setLookupSelection(null); setManualSelection(null); setManualCatalogOpen(false); }}
-            onManualMode={() => { setVehicle(null); setLookupSelection(null); setManualSelection(null); setManualCatalogOpen(true); }}
-          />
-        </div>
-        <section id="quote-manual-catalog" className={styles.manualCatalog} hidden={Boolean(vehicle) || !manualCatalogOpen} aria-labelledby="quote-manual-title">
-          <div className={styles.manualHeader}>
-            <h3 id="quote-manual-title">Каталог MANN</h3>
-            <button type="button" className="eco-btn" onClick={() => setManualCatalogOpen(false)}>Свернуть</button>
-          </div>
-          {manualCatalogOpen && !vehicle && <ManualVehiclePicker active onSelect={setManualSelection} />}
-        </section>
-        {(manualSelection || (manualCatalogOpen && !vehicle)) && <label className={styles.manual}>Название для предложения <span>Необязательно</span>
+        {draftEditor !== null && <div className={styles.vehicleEdit}>
+          <h3 ref={draftHeading} tabIndex={-1}>Изменить автомобиль</h3>
+          <p>Текущий автомобиль: {vehicleTitle}</p>
+          <button type="button" className="eco-btn" onClick={cancelEdit}>Отмена</button>
+        </div>}
+        {(draftEditor === null ? [activeEditor] : [activeEditor, draftEditor]).map(editor => {
+          const draft = editor === draftEditor;
+          const selectedVehicle = draft ? draftVehicle : vehicle;
+          const setVehicleContext = draft ? setDraftVehicle : setVehicle;
+          const setLookup = draft ? setDraftLookup : setLookupSelection;
+          const setManual = draft ? setDraftManual : setManualSelection;
+          const setCatalog = draft ? setDraftCatalog : setManualCatalogOpen;
+          const catalogOpen = draft ? draftCatalog : manualCatalogOpen;
+          const catalogId = draft ? "quote-draft-manual-catalog" : "quote-manual-catalog";
+          function resetVehicle(openCatalog: boolean) {
+            if (!draft) setVehicleName("");
+            setVehicleContext(null);
+            setLookup(null);
+            setManual(null);
+            setCatalog(openCatalog);
+          }
+          return <div key={editor} hidden={!draft && draftEditor !== null}>
+            <div className={styles.lookup}>
+              <VehicleLookupPanel organizationId={storeOrganizationId} warehouseId={storeId} combinedIdentifier
+                manualCatalogId={catalogId} manualSelection={draft ? draftManual : manualSelection}
+                onEditVehicle={draft ? undefined : editVehicle}
+                onQuoteContextChange={setVehicleContext}
+                onUseVehicle={(identity, resolution) => setLookup(resolution?.selectedApplication ? { ...resolution.selectedApplication, year: identity.year } : null)}
+                onConfirmMannCandidate={(identity, candidate) => setLookup({ ...candidate, year: identity.year })}
+                onLookupStart={() => resetVehicle(false)}
+                onManualMode={() => resetVehicle(true)}
+              />
+            </div>
+            <section id={catalogId} className={styles.manualCatalog} hidden={Boolean(selectedVehicle) || !catalogOpen} aria-label="Каталог MANN">
+              <div className={styles.manualHeader}>
+                <h3>Каталог MANN</h3>
+                <button type="button" className="eco-btn" onClick={() => setCatalog(false)}>Свернуть</button>
+              </div>
+              {catalogOpen && !selectedVehicle && <ManualVehiclePicker active onSelect={setManual} />}
+            </section>
+            {draft && selectedVehicle && <button type="button" className="eco-btn eco-btn--primary" onClick={() => {
+              if ((selectedVehicle.vin && selectedVehicle.vin === vehicle?.vin) || selectedVehicle.key === vehicle?.key) cancelEdit();
+              else setConfirmChange(true);
+            }}>Подтвердить выбор</button>}
+          </div>;
+        })}
+        <dialog ref={confirmDialog} className={styles.vehicleConfirm} aria-labelledby="quote-confirm-vehicle" onCancel={event => {
+          event.preventDefault();
+          setConfirmChange(false);
+        }}>
+          <h3 id="quote-confirm-vehicle">Сменить автомобиль?</h3>
+          <p>Проверьте применяемость масла и фильтров для нового автомобиля.</p>
+          <p>{draftVehicle?.vehicleTitle}</p>
+          <button type="button" className="eco-btn" onClick={() => setConfirmChange(false)}>Отмена</button>
+          <button type="button" className="eco-btn eco-btn--primary" onClick={saveVehicle}>Сменить автомобиль</button>
+        </dialog>
+        {draftEditor === null && (manualSelection || (manualCatalogOpen && !vehicle)) && <label className={styles.manual}>Название для предложения <span>Необязательно</span>
           <input id="quote-vehicle-name" value={vehicleName} onChange={(event) => setVehicleName(event.target.value)} placeholder="Например, Kia K5 2.0, 2021" />
         </label>}
         {filterState.error && <p role="status" className={styles.error}>{filterState.error} Можно указать артикул вручную.</p>}
-      </section>} quoteContextKey={vehicle?.key ?? selection?.variantId ?? "manual"} vehicleTitle={vehicleTitle} warehouseId={storeId}
+      </section>} quoteContextKey={String(activeEditor)} vehicleTitle={vehicleTitle} warehouseId={storeId} organizationId={storeOrganizationId}
         profile={vehicle?.profile ?? null} research={vehicle?.research ?? null} filters={filters} filtersLoading={filterState.loading} services={services} timeZone={timeZone ?? undefined} />
     </>}
   </div>;

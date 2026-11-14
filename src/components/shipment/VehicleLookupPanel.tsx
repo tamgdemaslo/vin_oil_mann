@@ -40,6 +40,8 @@ export type MannManualSelection = {
 type Props = {
   manualSelection?: MannManualSelection | null;
   initialState?: VehicleLookupSnapshot;
+  manualCatalogId?: string;
+  onEditVehicle?: () => void;
   combinedIdentifier?: boolean;
   onQuoteContextChange?: (context: MaintenanceQuoteVehicleContext | null) => void;
   organizationId?: string | null;
@@ -478,8 +480,10 @@ export function TechnicalProfile({
   );
 }
 
-export function VehicleLookupPanel({ initialState, combinedIdentifier = false, manualSelection, onQuoteContextChange, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
+export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manual-catalog", onEditVehicle, combinedIdentifier = false, manualSelection, onQuoteContextChange, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
   const [clarificationStep, setClarificationStep] = useState<"market" | "production">("market");
+  const inputErrorId = useId();
+  const [inputError, setInputError] = useState<string | null>(null);
   const [tab, setTab] = useState<LookupTab>("vin");
   const [input, setInput] = useState(initialVin ?? "");
   const [loading, setLoading] = useState(false);
@@ -741,9 +745,17 @@ export function VehicleLookupPanel({ initialState, combinedIdentifier = false, m
 
   const runLookup = async (extended = false, refresh = false, rawValue?: string, lookupTab = tab) => {
     const sourceValue = rawValue ?? input;
+    setInputError(null);
     if (combinedIdentifier && rawValue === undefined) {
       const vin = normalizeVinInput(sourceValue.replace(/-/g, ""));
-      lookupTab = /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) || !isLikelyRussianPlate(normalizePlateDraft(sourceValue)) ? "vin" : "plate";
+      const plate = normalizePlateDraft(sourceValue);
+      if (/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) lookupTab = "vin";
+      else if (/^[0-9А-ЯЁABCEHKMOPTXY\s-]+$/i.test(sourceValue) && isLikelyRussianPlate(plate)) lookupTab = "plate";
+      else {
+        setInputError("Проверьте ввод: укажите VIN из 17 символов или полный госномер");
+        inputRef.current?.focus();
+        return;
+      }
     }
     const value = lookupTab === "plate" ? normalizePlateDraft(sourceValue) : normalizeVinInput(combinedIdentifier ? sourceValue.replace(/-/g, "") : sourceValue);
     setInput(value);
@@ -810,6 +822,10 @@ export function VehicleLookupPanel({ initialState, combinedIdentifier = false, m
       setLookup(data);
 
       if (data.status === "not_found" || (!data.vehicle && data.status !== "unavailable")) {
+        if (combinedIdentifier) {
+          setInputError("Автомобиль не найден. Проверьте номер или выберите автомобиль вручную");
+          return;
+        }
         setFeedback({
           tone: "neutral",
           title: lookupTab === "plate" ? "Не удалось точно определить автомобиль по госномеру" : "Автомобиль не найден",
@@ -964,7 +980,7 @@ export function VehicleLookupPanel({ initialState, combinedIdentifier = false, m
             {vehicleDetails(appliedVehicle) && <span>{vehicleDetails(appliedVehicle)}</span>}
           </div>
           <div className="eco-vehicle-lookup__actions">
-            <button type="button" onClick={changeAppliedVehicle}>
+            <button type="button" onClick={onEditVehicle ?? changeAppliedVehicle}>
               Изменить
             </button>
             <details className="eco-vehicle-lookup__more">
@@ -973,7 +989,7 @@ export function VehicleLookupPanel({ initialState, combinedIdentifier = false, m
                 <button type="button" onClick={() => void runLookup(false, true)} disabled={loading}>
                   Повторить определение
                 </button>
-                <button type="button" onClick={chooseAnotherVehicle}>
+                <button type="button" onClick={onEditVehicle ?? chooseAnotherVehicle}>
                   Выбрать другой автомобиль
                 </button>
               </div>
@@ -1199,10 +1215,13 @@ export function VehicleLookupPanel({ initialState, combinedIdentifier = false, m
               {!combinedIdentifier && <span className="eco-sr-only">{tab === "vin" ? "VIN или номер кузова" : "Госномер"}</span>}
               <input
                 ref={inputRef}
+                aria-describedby={inputError ? inputErrorId : undefined}
+                aria-invalid={inputError ? true : undefined}
                 aria-label={combinedIdentifier ? "VIN или госномер" : undefined}
                 className="eco-input"
                 value={input}
                 onChange={(event) => {
+                  setInputError(null);
                   const raw = event.target.value.toUpperCase();
                   const vin = normalizeVinInput(combinedIdentifier ? raw.replace(/-/g, "") : raw);
                   const plate = normalizePlateDraft(raw);
@@ -1256,13 +1275,14 @@ export function VehicleLookupPanel({ initialState, combinedIdentifier = false, m
                 autoCorrect="off"
                 spellCheck={false}
               />
+              {inputError && <small id={inputErrorId} role="alert">{inputError}</small>}
             </label>
             <button type="button" className="eco-btn eco-btn--primary" disabled={loading || resolving || !input.trim()} onClick={() => void runLookup()}>
               {loading || resolving ? <span className="eco-vehicle-lookup__spinner" aria-hidden /> : null}
               {loading ? "Определяем" : resolving ? "Подбираем" : combinedIdentifier ? "Найти" : tab === "vin" ? "Найти по VIN" : "Найти по номеру"}
             </button>
-            {combinedIdentifier && <button type="button" className="eco-btn" aria-controls="quote-manual-catalog"
-              onClick={() => changeTab("manual")}>Выбрать вручную</button>}
+            {combinedIdentifier && <button type="button" className="eco-btn" aria-controls={manualCatalogId}
+              onClick={() => { setInputError(null); changeTab("manual"); }}>Выбрать автомобиль вручную</button>}
           </div>
         ) : null}
       </div>

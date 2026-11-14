@@ -146,6 +146,12 @@ const { quoteSupplierDeliveryAt, quoteServiceGroups } = await jiti.import('../sr
 const quoteNow = Date.parse('2026-11-14T21:50:00Z');
 const quoteTime = { timeZone: 'Europe/Kaliningrad', now: quoteNow };
 const deliveryPart = { id: 'part', name: 'Фильтр Роско', filterLabel: 'Воздушный фильтр', brand: 'MANN', quantity: 1, price: 1000, supplierProductId: 'rossko:part' };
+const scheduledPart = { ...deliveryPart, supplierDeliveryLabel: 'доставка: 17.11.2026, 10:00–12:00' };
+const scheduledText = quoteClientText('Автомобиль', '', 0, [], [scheduledPart]);
+assert.match(scheduledText, /Ориентировочная поставка: 17\.11\.2026, 10:00–12:00/u);
+const replacementText = quoteClientText('Автомобиль', '', 0, [], [{ ...scheduledPart, supplierDeliveryLabel: 'доставка: 18.11.2026, 09:30' }]);
+assert.match(replacementText, /Ориентировочная поставка: 18\.11\.2026, 09:30/u);
+assert.doesNotMatch(replacementText, /10:00–12:00/u);
 const quoteWithPart = (deliveryAt, deliveryDays, oils = []) => quoteClientText('Автомобиль', '5W-30', 4.5, oils, [
   { ...deliveryPart, supplierDeliveryAt: quoteSupplierDeliveryAt({ deliveryAt, deliveryDays }, quoteNow) },
 ], quoteTime);
