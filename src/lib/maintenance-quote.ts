@@ -9,10 +9,22 @@ export type QuoteStockProduct = {
   brand?: string | null; unit: string; litresPerUnit: number | null; sae: string; oem: string;
 };
 export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string; filterLabel?: string; brand?: string | null };
+// Ford approval codes are also stored as custom OEM attributes.
+function fordOilApprovals(text?: string | null): string[] {
+  return [...(text ?? "").matchAll(/\bWSS[ -]*M2C[ -]*(\d{3})[ -]*([A-Z])\b/gi)]
+    .map(([, number, suffix]) => `WSS-M2C${number}-${suffix.toUpperCase()}`);
+}
+
 export function matchesQuoteOil(product: { groupPath?: string | null; entityType?: string; sae?: string | null; oem?: string | null; acea?: string | null; apiSpec?: string | null; ilsac?: string | null }, specification: string, viscosity: string) {
   if (resolveProductFluidAttributeProfile(product) !== "ENGINE_OIL") return false;
   const required = buildRequirementsNorm({ oem: specification, acea: specification, api: specification, ilsac: specification, sae: viscosity });
   const actual = buildRequirementsNorm({ ...product, api: product.apiSpec });
+  const fordRequired = fordOilApprovals(specification);
+  if (fordRequired.length) {
+    const fordActual = fordOilApprovals(product.oem);
+    if (!fordRequired.some(value => fordActual.includes(value))) return false;
+    return !viscosity.trim() || required.sae.some(value => actual.sae.includes(value));
+  }
   // An OEM approval cannot be replaced by a viscosity or a lower-level standard.
   const family = required.oem.length ? "oem" : required.acea.length ? "acea" : required.api.length ? "api" : "ilsac";
   if (!required[family].length || !required[family].some(value => actual[family].includes(value))) return false;
@@ -125,7 +137,8 @@ export function quoteRequirementChoices(profile: import("@/lib/mann-unified-tech
   const discoveries = research?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
   const raw = [...engines.flatMap(item => item.specifications), ...discoveries.map(item => item.specification)].join("; ");
   const norm = buildRequirementsNorm({ oem: raw, acea: raw, api: raw, ilsac: raw, sae: [...engines.flatMap(item => item.viscosityGrades), raw].join("; ") });
-  const specifications = [...new Set(norm.oem.length ? norm.oem : [...norm.acea, ...norm.api, ...norm.ilsac])];
+  const oem = [...norm.oem.filter(value => !fordOilApprovals(value).length), ...fordOilApprovals(raw)];
+  const specifications = [...new Set(oem.length ? oem : [...norm.acea, ...norm.api, ...norm.ilsac])];
   const viscosities = [...new Set(norm.sae)];
   const catalogCapacities = engines.flatMap(item => item.capacities
     .filter(capacity => !["TOTAL", "DRY_FILL", "WITHOUT_FILTER", "PARTIAL"].includes(capacity.serviceContext ?? ""))
@@ -141,7 +154,8 @@ export function quoteRequirementChoices(profile: import("@/lib/mann-unified-tech
     const volumeText = text?.replace(
       /((?:сервисн[а-яё]+|объ[её]м\s+замены)[^;\n]*);\s*(?:источник\s+указывает\s+объ[её]м\s+)?с\s+заменой\s+(?:масляного\s+)?фильтра(?=[.!]?\s*$)/iu,
       "$1, с фильтром",
-    )?.replace(/(\d[\d.,]*\s+л)\s*[—–-]\s*сервисный\s+объ[её]м,\s*с фильтром/iu, "$1 с фильтром");
+    )?.replace(/с\s+заменой\s+(?:масляного\s+)?фильтра/giu, "с фильтром")
+      .replace(/(\d[\d.,]*\s+л)\s*[—–-]\s*сервисный\s+объ[её]м,\s*с фильтром/iu, "$1 с фильтром");
     const parsed = parseFluidCapacities(volumeText, "ENGINE_OIL");
     if (parsed.needsReview) return [];
     return parsed.capacities.filter(capacity =>
