@@ -337,7 +337,8 @@ export default function PlatformShell() {
 
     void loadShellState();
     const handleShiftChanged = () => {
-      if (document.visibilityState === "visible") void loadShellState(true);
+      if (document.visibilityState !== "visible") return;
+      void loadShellState(true);
     };
     window.addEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
     return () => {
