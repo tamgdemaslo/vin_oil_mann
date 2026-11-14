@@ -27,7 +27,7 @@ export function QuoteFilterOffers({ products, selectedId, label, onSelect, disab
       ? `${item.relation === "analogue" ? "Аналог · " : ""}${item.available} шт. · ${item.deliveryLabel}`
       : item.available > 0 ? `${item.available} шт. в наличии` : item.orderable ? "Под заказ" : "Нет в наличии";
     return <div key={item.id} className={styles.supplierOffer} data-selected={selected}>
-      <div className={styles.supplierOfferInfo}><strong>{item.name}</strong><small>{[item.article && !item.name.includes(item.article) ? item.article : null, availability].filter(Boolean).join(" · ")}</small></div>
+      <div className={styles.supplierOfferInfo}><strong>{item.name}</strong><small>{[item.article || "Артикул не указан", item.source === "rossko" ? "Росско" : "Наш склад", availability].filter(Boolean).join(" · ")}</small></div>
       <div className={styles.supplierOfferAction}>
         <strong>{price}</strong>
         <button type="button" className={`eco-btn ${styles.offerAdd}`}
