@@ -263,6 +263,8 @@ export default function PlatformShell() {
   const [deadlineToast, setDeadlineToast] = useState<DeadlineNotification | null>(null);
   const [deadlineExpanded, setDeadlineExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sessionError, setSessionError] = useState(false);
+  const [sessionAttempt, setSessionAttempt] = useState(0);
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -278,67 +280,72 @@ export default function PlatformShell() {
   useEffect(() => {
     if (shouldHideShell(pathname)) return;
     let cancelled = false;
-    let started = false;
+    let requestId = 0;
+    let sessionController: AbortController | null = null;
 
     async function loadShellState(force = false) {
+      const id = ++requestId;
+      const isCurrent = () => !cancelled && id === requestId;
+      sessionController?.abort();
+      const controller = new AbortController();
+      sessionController = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 12_000);
       setLoading(true);
+      setSessionError(false);
       try {
-        const [sessionRes, dashboardBundle] = await Promise.all([
-          fetch("/api/auth/session", { cache: "no-store" }),
-          loadDashboardClientBundle<{ notificationCounts?: NotificationCounts }, { shift?: CurrentCashShift }>({ force }).catch(() => null),
-        ]);
+        const sessionRes = await fetch("/api/auth/session", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
         const sessionData = await safeReadJson<{
           user?: PlatformUser;
           navigation?: PlatformNavigation;
           branchContext?: ShellBranchContext | null;
         }>(sessionRes);
-        if (cancelled) return;
-        setUser(sessionData?.user ?? null);
-        setNavigation(sessionData?.navigation ?? null);
-        setCurrentCashShift(dashboardBundle?.cash?.shift ?? null);
-        setNotificationCounts(dashboardBundle?.dashboard.notificationCounts ?? null);
-        const branchContext = sessionData?.branchContext ?? null;
+        if (!sessionRes.ok || !sessionData) throw new Error("Не удалось загрузить меню CRM");
+        if (!isCurrent()) return;
+        setUser(sessionData.user ?? null);
+        setNavigation(sessionData.navigation ?? null);
+        const branchContext = sessionData.branchContext ?? null;
         setBranches(branchContext?.branches ?? []);
         setSelectedBranchId(branchContext?.activeBranchId ?? "");
         setSelectedBranch(branchContext?.activeBranch ?? null);
-        setCanViewAllBranches(Boolean(sessionData?.navigation?.canViewAllBranches ?? branchContext?.groupRole));
+        setCanViewAllBranches(Boolean(sessionData.navigation?.canViewAllBranches ?? branchContext?.groupRole));
+        if (sessionData.user) {
+          void loadDashboardClientBundle<{ notificationCounts?: NotificationCounts }, { shift?: CurrentCashShift }>({ force })
+            .then((bundle) => {
+              if (!isCurrent()) return;
+              setCurrentCashShift(bundle.cash?.shift ?? null);
+              setNotificationCounts(bundle.dashboard.notificationCounts ?? null);
+            })
+            .catch(() => {
+              if (!isCurrent()) return;
+              setCurrentCashShift(null);
+              setNotificationCounts(null);
+            });
+        } else {
+          setCurrentCashShift(null);
+          setNotificationCounts(null);
+        }
       } catch {
-        if (cancelled) return;
-        setUser(null);
-        setNavigation(null);
-        setCurrentCashShift(null);
-        setNotificationCounts(null);
-        setBranches([]);
-        setSelectedBranchId("");
-        setSelectedBranch(null);
-        setCanViewAllBranches(false);
+        if (isCurrent()) setSessionError(true);
       } finally {
-        if (!cancelled) setLoading(false);
+        window.clearTimeout(timeout);
+        if (isCurrent()) setLoading(false);
       }
     }
 
-    const startWhenVisible = () => {
-      if (cancelled || started || document.visibilityState !== "visible") return;
-      started = true;
-      void loadShellState();
-    };
-    startWhenVisible();
-    document.addEventListener("visibilitychange", startWhenVisible);
+    void loadShellState();
     const handleShiftChanged = () => {
-      if (document.visibilityState !== "visible") return;
-      if (!started) {
-        startWhenVisible();
-        return;
-      }
-      void loadShellState(true);
+      if (document.visibilityState === "visible") void loadShellState(true);
     };
     window.addEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
     return () => {
       cancelled = true;
-      document.removeEventListener("visibilitychange", startWhenVisible);
+      sessionController?.abort();
       window.removeEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
     };
-  }, [pathname]);
+  }, [pathname, sessionAttempt]);
 
   const loadDeadlineNotifications = useCallback(async () => {
     if (shouldHideShell(pathname)) return;
@@ -708,6 +715,10 @@ export default function PlatformShell() {
           {user && <button type="button" className="platform-shell__search-toggle platform-shell__icon-btn" aria-label={searchOpen ? "Закрыть поиск" : "Открыть поиск"} aria-expanded={searchOpen} onClick={() => { setMobileOpen(false); setProfileOpen(false); setBranchMenuOpen(false); if (searchOpen) { setSearchOpen(false); searchInputRef.current?.blur(); } else { setSearchOpen(true); window.requestAnimationFrame(() => searchInputRef.current?.focus()); } }}><Search aria-hidden className="eco-icon" /></button>}
           {loading ? (
             <span className="platform-shell__loading">Загрузка...</span>
+          ) : sessionError ? (
+            <button type="button" className="eco-btn eco-btn--sm" onClick={() => setSessionAttempt((attempt) => attempt + 1)}>
+              Повторить загрузку меню
+            </button>
           ) : user ? (
             <>
               {branches.length > 0 && (

@@ -62,9 +62,10 @@ export async function loadDashboardClientBundle<TDashboard, TCash>(options?: {
   }
 
   inFlightBundle = (async () => {
+    const signal = AbortSignal.timeout(12_000);
     const [cashResponse, dashboardResponse] = await Promise.all([
-      fetch("/api/cash", { cache: "no-store" }),
-      fetch("/api/dashboard/operations", { cache: "no-store" }),
+      fetch("/api/cash", { cache: "no-store", signal }),
+      fetch("/api/dashboard/operations", { cache: "no-store", signal }),
     ]);
 
     const dashboard = await readRequiredJson<unknown>(dashboardResponse, "Операционная сводка");
