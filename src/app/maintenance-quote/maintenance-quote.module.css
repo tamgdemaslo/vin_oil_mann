@@ -111,3 +111,27 @@
   .lookup :global(.eco-vehicle-lookup__controls) { grid-template-columns: minmax(0, 1fr) auto; }
   .lookup :global(.eco-vehicle-lookup__controls > button:last-child) { grid-column: 1 / -1; justify-self: start; }
 }
+
+/* Maintenance workspace: restrained surfaces, the existing CRM action color. */
+.page { --quote-gap: 24px; --quote-control: 44px; --quote-text: 16px; --quote-radius: 6px; --quote-bottom: 104px; --eco-surface: #fff; --eco-hover: #f5f6f7; --eco-ink: #17191c; --eco-muted: #555c65; --eco-line: #e0e3e7; --eco-line-strong: #adb4bd; font-size: var(--quote-text); line-height: 1.5; }
+.pageHeader { margin-bottom: var(--quote-gap); }
+.title h1 { font-size: 28px; letter-spacing: -.02em; }
+.kicker { font-size: 14px; }
+.page .setup { padding: 0 0 var(--quote-gap); border: 0; border-bottom: 1px solid var(--eco-line); }
+.page .setupTitle h2 { font-size: 20px; }
+.page input, .page select, .page textarea { font-size: var(--quote-text); }
+.page button, .page select, .page input { min-height: var(--quote-control); }
+.page button { cursor: pointer; }
+.page button:disabled { cursor: default; }
+.page :focus-visible { outline: 2px solid var(--eco-rust); outline-offset: 3px; }
+.page .lookup { border-top: 0; margin-top: 8px; }
+.page .store { min-width: min(220px, 100%); }
+.lookup :global(.eco-vehicle-lookup__controls) { max-width: none; padding-top: 0; }
+.lookup :global(.eco-vehicle-lookup__selected) { display:flex; justify-content:space-between; gap:16px; padding:16px 0; }
+.lookup :global(.eco-vehicle-lookup__identity) { display:grid; gap:4px; min-width:0; overflow-wrap:anywhere; }
+.lookup :global(.eco-vehicle-lookup__identity strong) { font-size:18px; }
+.lookup :global(.eco-vehicle-lookup__actions) { display:flex; gap:8px; align-items:start; flex:none; }
+.lookup :global(.eco-vehicle-lookup__actions button) { padding:8px 12px; }
+.manualCatalog { border:0; padding:12px 0; }
+@media(max-width: 900px) { .page { padding-bottom:calc(var(--quote-bottom) + env(safe-area-inset-bottom)); } }
+@media(max-width: 570px) { .setupHeader { align-items:start; } .page .store { width:100%; } .lookup :global(.eco-vehicle-lookup__controls > button:last-child) { justify-self:start; } }

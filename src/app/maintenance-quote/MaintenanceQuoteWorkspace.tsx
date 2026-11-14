@@ -104,12 +104,12 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Работа / Расчёт ТО</span>
       <div className={styles.title}><h1>Расчёт ТО</h1></div>
-      <p>Подберите масло, фильтры и работы. Соберите предложение, которое можно отправить клиенту.</p>
+      <p>Автомобиль → масло и фильтры → работы → предложение</p>
     </header>
     {!branchName ? <p role="status" className={styles.setup}>Выберите рабочий филиал в верхнем меню.</p> : <>
-      <section className={styles.setup} aria-labelledby="quote-setup-title">
+      <MaintenanceQuotePanel vehicleSetup={<section className={styles.setup} aria-labelledby="quote-setup-title">
         <header className={styles.setupHeader}>
-          <div className={styles.setupTitle}><div><h2 id="quote-setup-title">Автомобиль и склад</h2><p>{branchName}</p></div></div>
+          <div className={styles.setupTitle}><div><h2 id="quote-setup-title">Автомобиль</h2><p>{branchName}</p></div></div>
           <label className={styles.store}><span><Warehouse size={16} aria-hidden="true" /> Склад</span>
             <select value={storeId} onChange={(event) => { setFilters([]); setStoreId(event.target.value); }} disabled={!stores.length}>
               {!stores.length && <option value="">Нет доступных складов</option>}
@@ -137,8 +137,7 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
           </label>
         </section>
         {filterState.error && <p role="status" className={styles.error}>{filterState.error} Можно указать артикул вручную.</p>}
-      </section>
-      <MaintenanceQuotePanel key={vehicle?.key ?? selection?.variantId ?? "manual"} vehicleTitle={vehicleTitle} warehouseId={storeId}
+      </section>} quoteContextKey={vehicle?.key ?? selection?.variantId ?? "manual"} vehicleTitle={vehicleTitle} warehouseId={storeId}
         profile={vehicle?.profile ?? null} research={vehicle?.research ?? null} filters={filters} filtersLoading={filterState.loading} />
     </>}
   </div>;

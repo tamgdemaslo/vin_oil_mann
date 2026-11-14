@@ -128,3 +128,58 @@
   .oilColumns:first-child { display: none; }
   .oilColumns > button { grid-column: 1 / -1; justify-self: start; }
 }
+
+.groupedSummary { margin:16px 0; }
+.groupedSummary h3 { font-size:14px; margin:16px 0 8px; }
+.summaryLine { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:8px 0; }
+.summaryLine > span { min-width:0; overflow-wrap:anywhere; }
+.summaryLine small { display:block; color:var(--eco-muted); font-size:12px; }
+.summaryLine strong { flex:none; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.mobileBar { display:none; }
+.panel:has(.body > section[id="quote-setup-title"]) { margin-top:0; }
+.panel:has(.body [id="quote-setup-title"]) { font-size:16px; line-height:1.5; gap:32px; margin-top:0; grid-template-columns:minmax(0,1fr) minmax(300px,.48fr); }
+.panel:has(.body [id="quote-setup-title"]) .body { gap:24px; }
+.panel:has(.body [id="quote-setup-title"]) .step { padding:0 0 24px; }
+.panel:has(.body [id="quote-setup-title"]) .step + .step { padding-top:24px; }
+.panel:has(.body [id="quote-setup-title"]) .summary { top:88px; background:#f7f8f9; border:0; padding:24px; border-radius:6px; }
+.panel:has(.body [id="quote-setup-title"]) :is(input,select,textarea) { font-size:16px; min-height:44px; }
+.panel:has(.body [id="quote-setup-title"]) button { min-height:44px; }
+.panel:has(.body [id="quote-setup-title"]) .stepHeader h2 { font-size:20px; }
+.panel:has(.body [id="quote-setup-title"]) .note { font-size:14px; }
+.panel:has(.body [id="quote-setup-title"]) .oilColumns { grid-template-columns:minmax(0,1fr) auto; padding:16px 0; }
+.panel:has(.body [id="quote-setup-title"]) .oilColumns:first-child { display:none; }
+.panel:has(.body [id="quote-setup-title"]) .oilColumns > button { grid-column:2; }
+.panel:has(.body [id="quote-setup-title"]) .oilColumns > div { grid-row:span 2; overflow-wrap:anywhere; }
+.panel:has(.body [id="quote-setup-title"]) .oilTable { border:0; }
+.panel:has(.body [id="quote-setup-title"]) .filterArticleEntry { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.panel:has(.body [id="quote-setup-title"]) .filterArticleEntry button { grid-column:1/-1; justify-self:start; }
+.panel:has(.body [id="quote-setup-title"]) .supplierOfferInfo { display:grid; gap:4px; }
+.panel:has(.body [id="quote-setup-title"]) .supplierOffer { padding:12px; align-items:start; }
+.panel:has(.body [id="quote-setup-title"]) .supplierOfferAction { flex-wrap:wrap; justify-content:end; }
+.panel:has(.body [id="quote-setup-title"]) .extra { grid-template-columns:minmax(0,1fr) 88px 112px auto; }
+.panel:has(.body [id="quote-setup-title"]) .singleTotal { align-items:start; }
+.panel:has(.body [id="quote-setup-title"]) .singleTotal strong { font-size:24px; text-align:right; }
+@media(max-width:1100px) and (min-width:901px) { .panel:has(.body [id="quote-setup-title"]) .extra { grid-template-columns:1fr 1fr; } .panel:has(.body [id="quote-setup-title"]) .extra > label:first-child { grid-column:1/-1; } }
+@media(max-width:900px) {
+ .panel:has(.body [id="quote-setup-title"]) { grid-template-columns:minmax(0,1fr); }
+ .panel:has(.body [id="quote-setup-title"]) .summary { position:static; scroll-margin-top:88px; }
+ .panel:has(.body [id="quote-setup-title"]) .mobileBar { display:flex; position:fixed; bottom:0; left:0; right:0; z-index:var(--eco-z-floating-control,140); padding:12px 16px calc(12px + env(safe-area-inset-bottom)); background:#fff; color:#17191c; border-top:1px solid var(--eco-line); align-items:center; justify-content:space-between; gap:16px; }
+ .mobileBar > div { display:grid; gap:0; min-width:0; }
+ .mobileBar span { font-size:12px; }
+ .mobileBar strong { font-size:18px; font-variant-numeric:tabular-nums; }
+ .mobileBar button { flex:none; }
+}
+@media(max-width:620px) {
+ .panel:has(.body [id="quote-setup-title"]) .fields { grid-template-columns:1fr 1fr; }
+ .panel:has(.body [id="quote-setup-title"]) .fields > :first-child { grid-column:1/-1; }
+ .panel:has(.body [id="quote-setup-title"]) .extra { grid-template-columns:1fr 1fr; }
+ .panel:has(.body [id="quote-setup-title"]) .extra > label:first-child { grid-column:1/-1; }
+ .panel:has(.body [id="quote-setup-title"]) .oilColumns > div { grid-column:1/-1; grid-row:auto; }
+ .panel:has(.body [id="quote-setup-title"]) .oilColumns > button { grid-column:2; }
+ .panel:has(.body [id="quote-setup-title"]) .summary { padding:20px 16px; }
+ .summaryLine { flex-wrap:wrap; }
+ .summaryLine > span { flex:1 1 160px; }
+}
+
+.priceEditor { margin:16px 0; }
+.priceEditor > summary { cursor:pointer; min-height:44px; display:flex; align-items:center; font-size:14px; font-weight:600; }

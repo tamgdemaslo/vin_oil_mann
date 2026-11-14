@@ -888,7 +888,7 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
             <span>{vehicleDetails(appliedVehicle) || "Подбор фильтров — ниже."}</span>
           </div>
           <div className="eco-vehicle-lookup__actions">
-            <button type="button" onClick={() => openManualMode({ reason: "manual", vehicle: appliedVehicle })}>
+            <button type="button" onClick={() => combinedIdentifier ? chooseAnotherVehicle() : openManualMode({ reason: "manual", vehicle: appliedVehicle })}>
               Изменить
             </button>
             <details className="eco-vehicle-lookup__more">
@@ -1121,6 +1121,14 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
                     ? isLikelyRussianPlate(normalizedValue)
                     : /^[A-HJ-NPR-Z0-9]{17}$/.test(normalizedValue);
                   setInput(nextValue);
+                  if (combinedIdentifier) {
+                    lastAutomaticLookupRef.current = "";
+                    lookupRequestIdRef.current += 1;
+                    resolutionRequestIdRef.current += 1;
+                    lookupControllerRef.current?.abort(); resolutionControllerRef.current?.abort();
+                    setLoading(false); setResolving(false); resetLookupState();
+                    return;
+                  }
                   if (!isComplete) {
                     lastAutomaticLookupRef.current = "";
                     if (combinedIdentifier && (loading || resolving || lookup)) {
