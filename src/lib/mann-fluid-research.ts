@@ -1,4 +1,4 @@
-import { persistMannResearchCatalog, mannResearchIdentity } from "@/lib/mann-research-catalog";
+import { persistMannResearchCatalog, mannResearchIdentity, mannResearchEngineCode } from "@/lib/mann-research-catalog";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -106,7 +106,8 @@ export async function researchMissingMannFluids(input: { organizationId: string;
   }
   // Catalog selection is authoritative for research; VIN/card context must not
   // replace its engine or production years. Deduplicate repeated filter rows.
-  const identity = mannResearchIdentity(applications, input.transmissionType);
+  const engineCode = mannResearchEngineCode(applications, input.vehicleContext?.engineCode);
+  const identity = mannResearchIdentity(applications, input.transmissionType, engineCode);
   const vehicleKey = "mann-research:" + createHash("sha256").update(JSON.stringify(identity)).digest("hex");
   const aggregate = createHash("sha256").update(JSON.stringify({ version: "grouped_v2_structured", group, gaps })).digest("hex");
   const now = new Date();
@@ -126,7 +127,7 @@ export async function researchMissingMannFluids(input: { organizationId: string;
   if (claim.previous) {
     const facts = claim.previous.facts as { items?: unknown; systems?: unknown; unresolved?: unknown; failure?: { code?: string; message?: string } };
     const cached = z.array(itemSchema).safeParse(facts.items);
-    if (cached.success && cached.data.length) await prisma.$transaction(tx => persistMannResearchCatalog(tx, { ...input, applications, evidenceId: claim.previous!.id, items: cached.data }));
+    if (cached.success && cached.data.length) await prisma.$transaction(tx => persistMannResearchCatalog(tx, { ...input, applications, engineCode, evidenceId: claim.previous!.id, items: cached.data }));
     const cachedSystems = z.array(systemStateSchema).safeParse(facts.systems);
     const unresolved = z.array(z.string()).safeParse(facts.unresolved);
     return { status: claim.previous.status === "researching" ? "searching" : ["pending_review", "approved", "not_found"].includes(claim.previous.status) ? "saved" : "unavailable", items: cached.success ? cached.data : [], systems: cachedSystems.success ? cachedSystems.data : undefined, unresolved: unresolved.success ? unresolved.data : [], errorCode: facts.failure?.code, message: claim.previous.status === "researching" ? "Эта группа уже ищется." : facts.failure?.message ?? "Результат группы загружен из БД." };
@@ -160,7 +161,7 @@ export async function researchMissingMannFluids(input: { organizationId: string;
     const found = items.length > 0 || systemStates.some(row => row.applicability === "absent");
     stage = "save";
     await prisma.$transaction(async tx => {
-      await persistMannResearchCatalog(tx, { ...input, applications, evidenceId: claim.id!, items });
+      await persistMannResearchCatalog(tx, { ...input, applications, engineCode, evidenceId: claim.id!, items });
       await tx.aIAgentTechnicalEvidence.update({ where: { id: claim.id }, data: { status: found ? "pending_review" : "not_found", facts: JSON.parse(JSON.stringify({ group, items, systems: systemStates, unresolved: parsed.unresolved, model: MODEL, responseId: response.id, gaps, catalogMaterialized: true })), validUntil: found ? null : new Date(Date.now() + 6 * 3600_000) } });
     });
     return { status: "saved", items, systems: systemStates, unresolved: parsed.unresolved, message: found ? "Группа сохранена в БД." : "Поиск группы завершён; применимые данные с источниками не найдены." };

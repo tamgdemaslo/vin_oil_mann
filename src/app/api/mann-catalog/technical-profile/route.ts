@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     const profile = await runWithBranchApiContext(branch.context, async () => {
       const profile = await getMannUnifiedTechnicalProfile(parsed.data.variantKeys, parsed.data.transmissionType, parsed.data.vehicleContext);
       if (!branch.context.organizationId) return profile;
-      return addMannResearchCatalogToProfile({ organizationId: branch.context.organizationId, variantKeys: parsed.data.variantKeys, transmissionType: parsed.data.transmissionType, profile });
+      return addMannResearchCatalogToProfile({ organizationId: branch.context.organizationId, variantKeys: parsed.data.variantKeys, transmissionType: parsed.data.transmissionType, engineCode: parsed.data.vehicleContext?.engineCode, profile });
     });
     if (parsed.data.researchMissing) {
       const organizationId = branch.context.organizationId;
