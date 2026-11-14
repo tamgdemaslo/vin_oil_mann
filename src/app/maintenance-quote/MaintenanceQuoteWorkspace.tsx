@@ -104,12 +104,12 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Работа / Расчёт ТО</span>
       <div className={styles.title}><h1>Расчёт ТО</h1></div>
-      <p>Автомобиль → масло и фильтры → работы → предложение</p>
+      <p>Подбор и предложение клиенту</p>
     </header>
     {!branchName ? <p role="status" className={styles.setup}>Выберите рабочий филиал в верхнем меню.</p> : <>
       <MaintenanceQuotePanel vehicleSetup={<section className={styles.setup} aria-labelledby="quote-setup-title">
         <header className={styles.setupHeader}>
-          <div className={styles.setupTitle}><div><h2 id="quote-setup-title">Автомобиль</h2><p>{branchName}</p></div></div>
+          <div className={styles.setupTitle}><div><h2 id="quote-setup-title">Автомобиль</h2></div></div>
           <label className={styles.store}><span><Warehouse size={16} aria-hidden="true" /> Склад</span>
             <select value={storeId} onChange={(event) => { setFilters([]); setStoreId(event.target.value); }} disabled={!stores.length}>
               {!stores.length && <option value="">Нет доступных складов</option>}

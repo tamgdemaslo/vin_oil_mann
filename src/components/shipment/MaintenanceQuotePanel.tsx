@@ -141,7 +141,7 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
   function updateExtra(id: string, update: Partial<QuoteExtra>) {
     setExtras(rows => rows.map(row => row.id === id ? { ...row, ...update } : row));
   }
-  return <div className={styles.panel}>
+  return <div className={`${styles.panel} ${vehicleSetup ? styles.workspace : ""}`}>
     <div className={styles.body}>
       {vehicleSetup}
       <section id="quote-oil" className={styles.step} aria-labelledby="quote-oil-title">
@@ -152,11 +152,10 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
         <QuoteSearchField label="Вязкость" value={viscosity} options={[...choices.viscosities, ...referenceViscosities]} onChange={value => { invalidate(); setViscosity(value); }} />
         <QuoteSearchField label="Объём замены, л" value={volume} options={[...choices.volumes.map(String), ...referenceVolumes]} onChange={setVolume} inputMode="decimal" />
       </div>
-      {volumeDraft === null && "volumeFromResearch" in choices && choices.volumeFromResearch && (
-        <p className={styles.note}>Объём подставлен из поиска ИИ. Сверьте источник в карточке автомобиля.</p>
-      )}
-      <p className={styles.note}>Объём указан с заменой фильтра. Сверьте требования перед добавлением масла.</p>
-      <button type="button" className="eco-btn eco-btn--primary" disabled={!warehouseId || !specification.trim() || loading} onClick={() => void findOils()}>{loading ? "Проверяем наличие…" : "Подобрать масла из наличия"}</button>
+      <p className={styles.note}>{volumeDraft === null && "volumeFromResearch" in choices && choices.volumeFromResearch
+        ? "Объём из предварительных данных. Сверьте его в технических сведениях автомобиля."
+        : "Объём замены указан с фильтром."}</p>
+      <button type="button" className="eco-btn eco-btn--primary" disabled={!warehouseId || !specification.trim() || loading} onClick={() => void findOils()}>{loading ? "Проверяем наличие…" : "Подобрать масло"}</button>
       {error ? <p role="alert">{error}</p> : null}
       {searched && !products.length ? <p role="status">Совпадений по указанному допуску и вязкости нет. Проверьте требования и технические характеристики товаров на складе.</p> : null}
       {products.length ? <div className={styles.oilTable} aria-label="Варианты масла"><div className={styles.oilColumns} aria-hidden="true"><span>Масло и фасовка</span><span>Стоимость</span><span>Вариант</span></div>{oilVariants.map(variant => {
@@ -169,11 +168,13 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
       })}</div> : null}
       </section>
       <section className={styles.step} aria-labelledby="quote-parts-title">
-      <header className={styles.stepHeader}><div><h2 id="quote-parts-title">Фильтры</h2><p>Подбор по автомобилю или известному артикулу.</p></div></header>
+      <header className={styles.stepHeader}><div><h2 id="quote-parts-title">Фильтры</h2></div></header>
       <div className={styles.filterPicker} aria-label="Фильтры из подбора MANN">
-        <div className={styles.filterHeading}><strong>Фильтры MANN и аналоги Роско</strong>{filters.length ? <button type="button" className="eco-btn" onClick={() => setSupplierRefresh(value => value + 1)}>Обновить Роско</button> : null}</div>
+        <div className={styles.filterHeading}>{filters.length ? <button type="button" className="eco-btn" onClick={() => setSupplierRefresh(value => value + 1)}>Обновить Роско</button> : null}</div>
         {filtersLoading ? <p role="status">Загружаем подбор MANN…</p> : !filters.length ? <p className={styles.note}>Выберите автомобиль для подбора фильтров или укажите известный артикул MANN ниже.</p> : null}
-        <div className={styles.filterArticleEntry}>
+        <details className={styles.articleDisclosure} open={!filters.length}>
+          <summary>Найти по артикулу</summary>
+          <div className={styles.filterArticleEntry}>
           <label>Тип фильтра<select value={manualFilterType} onChange={event => setManualFilterType(event.target.value)}>{["Масляный фильтр", "Воздушный фильтр", "Салонный фильтр", "Топливный фильтр"].map(label => <option key={label}>{label}</option>)}</select></label>
           <label>Артикул MANN<input value={manualArticle} onChange={event => setManualArticle(event.target.value)} placeholder="Например: CU 3172/1" maxLength={64} /></label>
           <button type="button" className="eco-btn" disabled={!/[a-z0-9]/i.test(manualArticle)} onClick={() => {
@@ -183,8 +184,9 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
             setManualFilters(rows => rows.some(row => row.key === key) ? rows : [...rows, {key, label: manualFilterType, article, condition: "Артикул указан вручную — сверьте применяемость с автомобилем.", products: []}]);
             setManualArticle("");
             setSupplierRefresh(value => value + 1);
-          }}>Проверить MANN и аналоги</button>
+          }}>Найти предложения</button>
         </div>
+        </details>
         {filters.map((group, index) => {
           const supplier = supplierResults[group.article];
           const localProducts = warehouseId ? group.products : [];
@@ -209,28 +211,34 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
               <strong>{group.label} · MANN {group.article}</strong>
               {!existingRow && <button type="button" className={styles.manualFilterPrice} disabled={filtersLoading} onClick={() => chooseFilter("reference")}>Указать цену вручную</button>}
             </div>
-            {filterProducts.length > 0 && <QuoteFilterOffers products={filterProducts} selectedId={selectedId} initiallyExpanded={index === 0} label={`${group.label} MANN ${group.article}`} disabled={filtersLoading} onSelect={chooseFilter} />}
-            {existingRow ? <><label className={styles.filterPrice}>Цена фильтра, ₽<input aria-label={`Цена ${group.label} MANN ${group.article}, ₽`} type="number" min="0" step="0.01" placeholder="Укажите цену" value={Number.isFinite(existingRow.price) ? existingRow.price : ""} onChange={event=>updateExtra(rowId,{price:event.target.value ? Number(event.target.value) : NaN})} /></label><button type="button" className="eco-btn" onClick={()=>{setExtras(rows=>rows.filter(row=>row.id!==rowId));setFilterSelection(values=>({...values,[group.key]:""}));}}>Убрать фильтр</button><small className={styles.filterAdded}>{existingRow.name} · в расчёте{existingRow.supplierProductId ? " · Роско" : existingRow.stockStoreId ? " · Наш склад" : ""}{!Number.isFinite(existingRow.price) ? " — укажите цену рядом" : ""}</small></> : null}
+            {filterProducts.length > 0 && <QuoteFilterOffers products={filterProducts} selectedId={selectedId} compact={Boolean(vehicleSetup)} initiallyExpanded={Boolean(vehicleSetup) || index === 0} label={`${group.label} MANN ${group.article}`} disabled={filtersLoading} onSelect={chooseFilter} />}
+            {existingRow ? <details className={styles.filterEditor} open={!Number.isFinite(existingRow.price) || undefined}><summary>В расчёте · изменить количество или цену</summary><div><label className={styles.filterPrice}>Цена фильтра, ₽<input aria-label={`Цена ${group.label} MANN ${group.article}, ₽`} type="number" min="0" step="0.01" placeholder="Укажите цену" value={Number.isFinite(existingRow.price) ? existingRow.price : ""} onChange={event=>updateExtra(rowId,{price:event.target.value ? Number(event.target.value) : NaN})} /></label><label className={styles.filterPrice}>Количество<input aria-label={`Количество ${group.label} MANN ${group.article}`} type="number" min="0.001" step="0.001" value={Number.isFinite(existingRow.quantity) ? existingRow.quantity : ""} onChange={event => updateExtra(rowId, {quantity: event.target.value ? Number(event.target.value) : NaN})} /></label><button type="button" className="eco-btn" onClick={()=>{setExtras(rows=>rows.filter(row=>row.id!==rowId));setFilterSelection(values=>({...values,[group.key]:""}));}}>Убрать фильтр</button><small className={styles.filterAdded}>{existingRow.name} · в расчёте{existingRow.supplierProductId ? " · Роско" : existingRow.stockStoreId ? " · Наш склад" : ""}{!Number.isFinite(existingRow.price) ? " — укажите цену рядом" : ""}</small></div></details> : null}
             {!supplier ? <p className={styles.note} role="status">Проверяем цену и доставку в Роско…</p> : supplier.error ? <p className={styles.note} role="status">Роско: {supplier.error}</p> : !supplier.products.length ? <p className={styles.note}>В Роско нет доступных предложений MANN {group.article} и его аналогов.</p> : null}
             {group.condition ? <p className={styles.note}>Условие MANN: {group.condition}</p> : null}
           </div>;
         })}
+        {filterRows.filter(row => !filters.some(group => row.id === `mann:${group.key}`)).map(row => <div key={row.id} className={styles.extra}>
+          <label>Фильтр<input value={row.name} onChange={event => updateExtra(row.id, { name: event.target.value })} /></label>
+          <label>Количество<input type="number" min="0.001" step="0.001" value={Number.isFinite(row.quantity) ? row.quantity : ""} onChange={event => updateExtra(row.id, { quantity: event.target.value ? Number(event.target.value) : NaN })} /></label>
+          <label>Цена, ₽<input type="number" min="0" step="0.01" value={Number.isFinite(row.price) ? row.price : ""} onChange={event => updateExtra(row.id, { price: event.target.value ? Number(event.target.value) : NaN })} /></label>
+          <button type="button" className="eco-btn" aria-label={`Удалить ${row.name}`} onClick={() => setExtras(rows => rows.filter(item => item.id !== row.id))}>Удалить</button>
+        </div>)}
       </div>
       </section>
       <section className={styles.step} aria-labelledby="quote-work-title">
-      <header className={styles.stepHeader}><div><h2 id="quote-work-title">Работы и дополнительные позиции</h2><p>Добавьте услугу из поиска или укажите название и цену.</p></div></header>
-      <label className={styles.search}>Найти фильтр, расходник или услугу на складе<input value={search} onChange={event => { setSearch(event.target.value); setExtraProducts([]); setExtraLoading(false); setExtraError(""); }} placeholder="Название или артикул, минимум 2 символа" disabled={!warehouseId} /></label>
+      <header className={styles.stepHeader}><div><h2 id="quote-work-title">Работы</h2></div></header>
+      <label className={styles.search}>Найти услугу или расходник<input value={search} onChange={event => { setSearch(event.target.value); setExtraProducts([]); setExtraLoading(false); setExtraError(""); }} placeholder="Название или артикул, минимум 2 символа" disabled={!warehouseId} /></label>
       {extraLoading ? <p role="status">Ищем товары и услуги…</p> : null}
       {extraError ? <p role="alert">{extraError}</p> : null}
       {extraProducts.map(product => <div key={product.id} className={styles.option}><span>{product.name} · {product.article} · {quoteRub(Math.round(product.price * 100))}</span><button type="button" className="eco-btn" onClick={() => { setExtras(rows => [...rows, { id: crypto.randomUUID(), name: product.name, brand: product.brand, quantity: 1, price: product.price, stockStoreId: warehouseId ?? undefined }]); setSearch(""); setExtraProducts([]); }}>Добавить</button></div>)}
-      <p className={styles.note}>Применяемость фильтра проверьте по подбору автомобиля. Все строки ниже входят в каждый вариант.</p>
+      <p className={styles.note}>Работы и расходники включаются в каждый вариант предложения.</p>
       <button type="button" className="eco-btn" onClick={() => setExtras(rows => [...rows, { id: crypto.randomUUID(), name: "", quantity: 1, price: 0 }])}>Добавить работу</button>
-      {extras.map(row => <div key={row.id} className={styles.extra}><label>Наименование<input value={row.name} onChange={event => updateExtra(row.id, { name: event.target.value })} placeholder="Масляный фильтр / замена масла" /></label><label>Количество<input type="number" min="0.001" step="0.001" value={Number.isFinite(row.quantity) ? row.quantity : ""} onChange={event => updateExtra(row.id, { quantity: event.target.value ? Number(event.target.value) : NaN })} /></label><label>Цена, ₽<input type="number" min="0" step="0.01" value={Number.isFinite(row.price) ? row.price : ""} onChange={event => updateExtra(row.id, { price: event.target.value ? Number(event.target.value) : NaN })} /></label><button type="button" className="eco-btn" aria-label={`Удалить строку ${row.name || "без названия"}`} onClick={() => setExtras(rows => rows.filter(item => item.id !== row.id))}>Удалить</button></div>)}
+      {otherRows.map(row => <div key={row.id} className={styles.extra}><label>Наименование<input value={row.name} onChange={event => updateExtra(row.id, { name: event.target.value })} placeholder="Масляный фильтр / замена масла" /></label><label>Количество<input type="number" min="0.001" step="0.001" value={Number.isFinite(row.quantity) ? row.quantity : ""} onChange={event => updateExtra(row.id, { quantity: event.target.value ? Number(event.target.value) : NaN })} /></label><label>Цена, ₽<input type="number" min="0" step="0.01" value={Number.isFinite(row.price) ? row.price : ""} onChange={event => updateExtra(row.id, { price: event.target.value ? Number(event.target.value) : NaN })} /></label><button type="button" className="eco-btn" aria-label={`Удалить строку ${row.name || "без названия"}`} onClick={() => setExtras(rows => rows.filter(item => item.id !== row.id))}>Удалить</button></div>)}
       </section>
     </div>
     <aside id="quote-summary" tabIndex={-1} className={styles.summary} aria-labelledby="quote-summary-title">
       <header className={styles.stepHeader}><div><h2 id="quote-summary-title">Предложение клиенту</h2><p>{vehicleTitle}</p></div></header>
-      {!selectedVariants.length && !extras.length && <p className={styles.empty}>Здесь появятся стоимость и готовый текст, когда вы добавите позиции.</p>}
+      {!selectedVariants.length && !extras.length && <p className={styles.empty}>Добавьте позиции из подбора. Итог рассчитается автоматически.</p>}
       {!!extras.length && !validExtras && <p className={styles.note}>Проверьте наименования, количество и цены добавленных позиций.</p>}
       {selectedVariants.length ? <details className={styles.priceEditor}><summary>Изменить цены масла</summary><div className={styles.totals}>{selectedVariants.map((variant, index) => {
         const amount = quoteVariantAmount(variant, litres);
@@ -256,7 +264,7 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
         try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopyError("Копирование недоступно. Выделите и скопируйте текст предложения выше."); }
       }}>Скопировать предложение</button>
       {copied ? <p role="status">Предложение скопировано.</p> : null}{copyError ? <p role="alert">{copyError}</p> : null}
-      <p className={styles.note}>Расчёт доступен, пока открыта страница. Скопируйте предложение перед уходом.</p>
+      <p className={styles.note}>Скопируйте предложение перед закрытием страницы.</p>
     </aside>
     <div className={styles.mobileBar}>
       <div><span>Итого{totals.length > 1 ? " по вариантам" : ""}</span><strong aria-live="polite">{totalLabel}</strong></div>
