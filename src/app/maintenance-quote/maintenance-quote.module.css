@@ -93,3 +93,21 @@
 }
 .lookup :global(.eco-fluid-popover__trigger:hover) { background: var(--eco-hover); }
 .lookup :global(.eco-fluid-popover__trigger:focus-visible) { outline: 2px solid var(--eco-rust); }
+
+.lookup :global(.eco-vehicle-lookup__controls) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  max-width: 740px;
+}
+.lookup :global(.eco-vehicle-lookup__controls .eco-btn) { white-space: nowrap; }
+.manualCatalog { margin-top: 12px; padding: 12px; border: 1px solid var(--eco-line); border-radius: 6px; }
+.manualCatalog[hidden] { display: none; }
+.manualHeader { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.manualHeader h3 { margin: 0; font-size: 15px; }
+@media (max-width: 570px) {
+  .lookup :global(.eco-vehicle-lookup__controls) { grid-template-columns: minmax(0, 1fr) auto; }
+  .lookup :global(.eco-vehicle-lookup__controls > button:last-child) { grid-column: 1 / -1; justify-self: start; }
+}

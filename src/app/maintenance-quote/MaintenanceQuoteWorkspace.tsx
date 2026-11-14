@@ -126,13 +126,16 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
             onManualMode={() => { setVehicle(null); setSelection(null); setManualCatalogOpen(true); }}
           />
         </div>
-        {!vehicle && <details className={styles.lookup} open={manualCatalogOpen} onToggle={(event) => setManualCatalogOpen(event.currentTarget.open)}>
-          <summary>Выбрать вручную в каталоге MANN</summary>
-          <ManualVehiclePicker active={manualCatalogOpen} onSelect={setSelection} />
-        </details>}
-        {!vehicle && <label className={styles.manual}>Автомобиль вручную <span>Необязательно</span>
-          <input id="quote-vehicle-name" value={vehicleName} onChange={(event) => setVehicleName(event.target.value)} placeholder="Например, Kia K5 2.0, 2021" />
-        </label>}
+        <section id="quote-manual-catalog" className={styles.manualCatalog} hidden={Boolean(vehicle) || !manualCatalogOpen} aria-labelledby="quote-manual-title">
+          <div className={styles.manualHeader}>
+            <h3 id="quote-manual-title">Каталог MANN</h3>
+            <button type="button" className="eco-btn" onClick={() => setManualCatalogOpen(false)}>Свернуть</button>
+          </div>
+          <ManualVehiclePicker active={manualCatalogOpen && !vehicle} onSelect={setSelection} />
+          <label className={styles.manual}>Название для предложения <span>Необязательно</span>
+            <input id="quote-vehicle-name" value={vehicleName} onChange={(event) => setVehicleName(event.target.value)} placeholder="Например, Kia K5 2.0, 2021" />
+          </label>
+        </section>
         {filterState.error && <p role="status" className={styles.error}>{filterState.error} Можно указать артикул вручную.</p>}
       </section>
       <MaintenanceQuotePanel key={vehicle?.key ?? selection?.variantId ?? "manual"} vehicleTitle={vehicleTitle} warehouseId={storeId}

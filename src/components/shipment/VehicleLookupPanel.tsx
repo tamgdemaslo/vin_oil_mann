@@ -689,7 +689,11 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
 
   const runLookup = async (extended = false, refresh = false, rawValue?: string, lookupTab = tab) => {
     const sourceValue = rawValue ?? input;
-    const value = lookupTab === "plate" ? normalizePlateDraft(sourceValue) : normalizeVinInput(sourceValue);
+    if (combinedIdentifier && rawValue === undefined) {
+      const vin = normalizeVinInput(sourceValue.replace(/-/g, ""));
+      lookupTab = /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) || !isLikelyRussianPlate(normalizePlateDraft(sourceValue)) ? "vin" : "plate";
+    }
+    const value = lookupTab === "plate" ? normalizePlateDraft(sourceValue) : normalizeVinInput(combinedIdentifier ? sourceValue.replace(/-/g, "") : sourceValue);
     setInput(value);
     if (!value) return;
 
@@ -823,6 +827,7 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
   const changeTab = (next: LookupTab) => {
     if (next === tab) {
       if (next !== "manual") inputRef.current?.focus();
+      else if (combinedIdentifier) onManualMode({ reason: "manual" });
       return;
     }
     lookupRequestIdRef.current += 1;
@@ -1088,17 +1093,18 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
       aria-busy={loading || resolving}
     >
       <div className="eco-vehicle-lookup__query">
-        <div className="eco-vehicle-lookup__tabs" role="tablist" aria-label="Способ определения автомобиля">
+        {!combinedIdentifier && <div className="eco-vehicle-lookup__tabs" role="tablist" aria-label="Способ определения автомобиля">
           <button type="button" role="tab" aria-selected={tab === "vin"} className={tab === "vin" ? "is-active" : ""} onClick={() => changeTab("vin")}>VIN</button>
           <button type="button" role="tab" aria-selected={tab === "plate"} className={tab === "plate" ? "is-active" : ""} onClick={() => changeTab("plate")}>Госномер</button>
           <button type="button" role="tab" aria-selected={tab === "manual"} className={tab === "manual" ? "is-active" : ""} onClick={() => changeTab("manual")}>Вручную</button>
-        </div>
-        {tab !== "manual" ? (
+        </div>}
+        {combinedIdentifier || tab !== "manual" ? (
           <div className="eco-vehicle-lookup__controls">
             <label className="eco-vehicle-lookup__field">
-              <span className="eco-sr-only">{combinedIdentifier ? "VIN или госномер" : tab === "vin" ? "VIN или номер кузова" : "Госномер"}</span>
+              {!combinedIdentifier && <span className="eco-sr-only">{tab === "vin" ? "VIN или номер кузова" : "Госномер"}</span>}
               <input
                 ref={inputRef}
+                aria-label={combinedIdentifier ? "VIN или госномер" : undefined}
                 className="eco-input"
                 value={input}
                 onChange={(event) => {
@@ -1150,8 +1156,10 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
             </label>
             <button type="button" className="eco-btn eco-btn--primary" disabled={loading || resolving || !input.trim()} onClick={() => void runLookup()}>
               {loading || resolving ? <span className="eco-vehicle-lookup__spinner" aria-hidden /> : null}
-              {loading ? "Определяем" : resolving ? "Подбираем" : tab === "vin" ? "Найти по VIN" : "Найти по номеру"}
+              {loading ? "Определяем" : resolving ? "Подбираем" : combinedIdentifier ? "Найти" : tab === "vin" ? "Найти по VIN" : "Найти по номеру"}
             </button>
+            {combinedIdentifier && <button type="button" className="eco-btn" aria-controls="quote-manual-catalog"
+              onClick={() => changeTab("manual")}>Выбрать вручную</button>}
           </div>
         ) : null}
       </div>
