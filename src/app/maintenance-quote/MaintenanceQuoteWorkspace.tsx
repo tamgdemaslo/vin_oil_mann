@@ -3,15 +3,15 @@
 import { useEffect, useState } from "react";
 import { Warehouse } from "lucide-react";
 import { MaintenanceQuotePanel, type MaintenanceQuoteVehicleContext } from "@/components/shipment/MaintenanceQuotePanel";
-import { VehicleLookupPanel } from "@/components/shipment/VehicleLookupPanel";
+import { VehicleLookupPanel, type MannManualSelection } from "@/components/shipment/VehicleLookupPanel";
 import type { MannCatalogFilter } from "@/lib/mann-catalog";
-import { ManualVehiclePicker, type QuoteVehicleSelection } from "./ManualVehiclePicker";
-import type { QuoteFilterGroup } from "@/lib/maintenance-quote";
+import { ManualVehiclePicker } from "./ManualVehiclePicker";
+import type { QuoteFilterGroup, QuoteService } from "@/lib/maintenance-quote";
 import styles from "./maintenance-quote.module.css";
 
 type Store = { id: string; name: string; organizationId: string | null };
-type Props = { branchName?: string; organizationId: string | null; stores: Store[] };
-type FilterSelection = QuoteVehicleSelection & { variantIds?: string[] };
+type Props = { branchName?: string; organizationId: string | null; stores: Store[]; services: QuoteService[]; timeZone?: string | null };
+type FilterSelection = Pick<MannManualSelection, "variantId" | "make" | "model"> & { variantIds?: string[]; year?: number | null };
 type Match = {
   mannArticleNormalized: string;
   compatibleProducts?: QuoteFilterGroup["products"];
@@ -26,13 +26,15 @@ const filterLabels = new Map([
   ["other", "Прочий фильтр"],
 ]);
 
-export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }: Props) {
+export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores, services, timeZone }: Props) {
   const [storeId, setStoreId] = useState(stores[0]?.id ?? "");
   const store = stores.find((item) => item.id === storeId);
   const storeOrganizationId = store?.organizationId ?? organizationId;
   const [vehicle, setVehicle] = useState<MaintenanceQuoteVehicleContext | null>(null);
   const [vehicleName, setVehicleName] = useState("");
-  const [selection, setSelection] = useState<FilterSelection | null>(null);
+  const [lookupSelection, setLookupSelection] = useState<FilterSelection | null>(null);
+  const [manualSelection, setManualSelection] = useState<MannManualSelection | null>(null);
+  const selection: FilterSelection | null = manualSelection ?? lookupSelection;
   const [manualCatalogOpen, setManualCatalogOpen] = useState(false);
   const [filters, setFilters] = useState<QuoteFilterGroup[]>([]);
   const [filterState, setFilterState] = useState<{ loading: boolean; error: string }>({ loading: false, error: "" });
@@ -98,7 +100,7 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
     return () => controller.abort();
   }, [selection, storeId, storeOrganizationId]);
 
-  const vehicleTitle = vehicle?.vehicleTitle || vehicleName.trim() || (selection ? `${selection.make} ${selection.model}` : "Автомобиль не указан");
+  const vehicleTitle = (manualSelection && vehicleName.trim()) || vehicle?.vehicleTitle || vehicleName.trim() || (selection ? `${selection.make} ${selection.model}` : "Автомобиль не указан");
 
   return <div className={`eco-page ${styles.page}`}>
     <header className={styles.pageHeader}>
@@ -118,12 +120,12 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
           </label>
         </header>
         <div className={styles.lookup}>
-          <VehicleLookupPanel organizationId={storeOrganizationId} warehouseId={storeId} combinedIdentifier
+          <VehicleLookupPanel organizationId={storeOrganizationId} warehouseId={storeId} combinedIdentifier manualSelection={manualSelection}
             onQuoteContextChange={setVehicle}
-            onUseVehicle={(identity, resolution) => setSelection(resolution?.selectedApplication ? { ...resolution.selectedApplication, year: identity.year } : null)}
-            onConfirmMannCandidate={(identity, candidate) => setSelection({ ...candidate, year: identity.year })}
-            onLookupStart={() => { setVehicle(null); setSelection(null); setManualCatalogOpen(false); }}
-            onManualMode={() => { setVehicle(null); setSelection(null); setManualCatalogOpen(true); }}
+            onUseVehicle={(identity, resolution) => setLookupSelection(resolution?.selectedApplication ? { ...resolution.selectedApplication, year: identity.year } : null)}
+            onConfirmMannCandidate={(identity, candidate) => setLookupSelection({ ...candidate, year: identity.year })}
+            onLookupStart={() => { setVehicleName(""); setVehicle(null); setLookupSelection(null); setManualSelection(null); setManualCatalogOpen(false); }}
+            onManualMode={() => { setVehicle(null); setLookupSelection(null); setManualSelection(null); setManualCatalogOpen(true); }}
           />
         </div>
         <section id="quote-manual-catalog" className={styles.manualCatalog} hidden={Boolean(vehicle) || !manualCatalogOpen} aria-labelledby="quote-manual-title">
@@ -131,14 +133,14 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores }
             <h3 id="quote-manual-title">Каталог MANN</h3>
             <button type="button" className="eco-btn" onClick={() => setManualCatalogOpen(false)}>Свернуть</button>
           </div>
-          <ManualVehiclePicker active={manualCatalogOpen && !vehicle} onSelect={setSelection} />
-          <label className={styles.manual}>Название для предложения <span>Необязательно</span>
-            <input id="quote-vehicle-name" value={vehicleName} onChange={(event) => setVehicleName(event.target.value)} placeholder="Например, Kia K5 2.0, 2021" />
-          </label>
+          {manualCatalogOpen && !vehicle && <ManualVehiclePicker active onSelect={setManualSelection} />}
         </section>
+        {(manualSelection || (manualCatalogOpen && !vehicle)) && <label className={styles.manual}>Название для предложения <span>Необязательно</span>
+          <input id="quote-vehicle-name" value={vehicleName} onChange={(event) => setVehicleName(event.target.value)} placeholder="Например, Kia K5 2.0, 2021" />
+        </label>}
         {filterState.error && <p role="status" className={styles.error}>{filterState.error} Можно указать артикул вручную.</p>}
       </section>} quoteContextKey={vehicle?.key ?? selection?.variantId ?? "manual"} vehicleTitle={vehicleTitle} warehouseId={storeId}
-        profile={vehicle?.profile ?? null} research={vehicle?.research ?? null} filters={filters} filtersLoading={filterState.loading} />
+        profile={vehicle?.profile ?? null} research={vehicle?.research ?? null} filters={filters} filtersLoading={filterState.loading} services={services} timeZone={timeZone ?? undefined} />
     </>}
   </div>;
 }

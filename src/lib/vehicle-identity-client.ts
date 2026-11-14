@@ -23,6 +23,7 @@ export type NormalizedVehicleIdentity = {
   productionMonth?: string;
   modelYearFrom?: number;
   modelYearTo?: number;
+  modificationName?: string;
   engineName?: string;
   engineCode?: string;
   engineSeries?: string;

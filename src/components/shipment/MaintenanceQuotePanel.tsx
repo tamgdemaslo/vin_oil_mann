@@ -3,17 +3,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
-import { groupQuoteOils, sortQuoteFilterOffers, quoteVariantAmount, quoteRequirementChoices, quoteClientText, quoteExtraCents, quoteRub, type QuoteFilterGroup, type QuoteExtra, type QuoteStockProduct } from "@/lib/maintenance-quote";
+import { groupQuoteOils, sortQuoteFilterOffers, quoteVariantAmount, quoteRequirementChoices, quoteClientText, quoteExtraCents, quoteRub, quoteServiceGroups, quoteSupplierDeliveryAt, type QuoteService, type QuoteFilterGroup, type QuoteExtra, type QuoteStockProduct } from "@/lib/maintenance-quote";
 import { getProductAttributeDictionary } from "@/lib/product-attribute-values";
 import { QuoteFilterOffers } from "./QuoteFilterOffers";
 import { QuoteSearchField } from "./QuoteSearchField";
 import styles from "./MaintenanceQuotePanel.module.css";
 
 export type MaintenanceQuoteVehicleContext = { key: string; vin: string | null; vehicleTitle: string; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null };
-type Props = { vehicleSetup?: ReactNode; quoteContextKey?: string; vehicleTitle: string; warehouseId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; requirements?: ReturnType<typeof quoteRequirementChoices>; filters?: QuoteFilterGroup[]; filtersLoading?: boolean };
+type Props = { vehicleSetup?: ReactNode; quoteContextKey?: string; vehicleTitle: string; warehouseId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; requirements?: ReturnType<typeof quoteRequirementChoices>; filters?: QuoteFilterGroup[]; filtersLoading?: boolean; services?: QuoteService[]; timeZone?: string };
 const number = (value: string) => Number(value.replace(",", "."));
 
-export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTitle, warehouseId, profile, research, requirements, filters: vehicleFilters = [], filtersLoading = false }: Props) {
+export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTitle, warehouseId, profile, research, requirements, filters: vehicleFilters = [], filtersLoading = false, services, timeZone }: Props) {
   const choices = useMemo(() => profile || research ? quoteRequirementChoices(profile, research, { prefillResearchVolume: true }) : requirements ?? quoteRequirementChoices(null, null), [profile, research, requirements]);
   const [manualFilters, setManualFilters] = useState<QuoteFilterGroup[]>([]);
   const [manualArticle, setManualArticle] = useState("");
@@ -38,6 +38,7 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
   const referenceVolumes = [...new Set([...Array.from({length: 25}, (_, index) => String(2 + index * 0.5))].filter(value => value && !choices.volumes.map(String).includes(value)))];
   const [products, setProducts] = useState<QuoteStockProduct[]>([]);
   const [selected, setSelected] = useState<QuoteStockProduct[]>([]);
+  const quickServices = useMemo(() => quoteServiceGroups(services ?? []), [services]);
   const [extras, setExtras] = useState<QuoteExtra[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -129,7 +130,8 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
   const oilVariants = useMemo(() => groupQuoteOils(products), [products]);
   const validExtras = extras.every(row => row.name.trim() && Number.isFinite(row.quantity) && row.quantity > 0 && Number.isFinite(row.price) && row.price >= 0);
   const ready = validExtras && (selected.length > 0 ? selected.every(oil => Number.isFinite(oil.price) && oil.price > 0) && litres > 0 && litres <= 100 && Number.isFinite(litres) && selectedVariants.every(variant => quoteVariantAmount(variant, litres)) : extras.length > 0);
-  const text = ready ? quoteClientText(vehicleTitle, [specification, viscosity].filter(Boolean).join(" · "), litres, selected, extras) : "";
+  const quoteSpecification = [specification, viscosity].filter(Boolean).join(" · ");
+  const text = ready ? quoteClientText(vehicleTitle, quoteSpecification, litres, selected, extras, { timeZone }) : "";
   useEffect(() => { setCopied(false); setCopyError(""); }, [text]);
   const extraTotal = quoteExtraCents(extras);
   const isFilter = (row: QuoteExtra) => Boolean(row.filterLabel) || /^(?:масляный|воздушный|салонный|топливный)\s+фильтр/i.test(row.name);
@@ -141,6 +143,15 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
   function updateExtra(id: string, update: Partial<QuoteExtra>) {
     setExtras(rows => rows.map(row => row.id === id ? { ...row, ...update } : row));
   }
+  function serviceButton(service: QuoteService) {
+    const id = `service:${service.id}`;
+    return <button key={id} type="button" className="eco-btn" disabled={extras.some(row => row.id === id)} onClick={() => {
+      setExtras(rows => rows.some(row => row.id === id) ? rows : [...rows, {
+        id, name: service.name, quantity: 1, price: service.salePriceCents / 100,
+      }]);
+    }}>{service.name}</button>;
+  }
+
   return <div className={`${styles.panel} ${vehicleSetup ? styles.workspace : ""}`}>
     <div className={styles.body}>
       {vehicleSetup}
@@ -200,10 +211,11 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
           function chooseFilter(value: string) {
               setFilterSelection(values => ({...values, [group.key]: value}));
               const chosen=filterProducts.find(item=>item.id===value);
+              const supplierDeliveryAt = chosen?.source === "rossko" ? quoteSupplierDeliveryAt(chosen) : undefined;
               setExtras(rows => {
                 const others=rows.filter(row=>row.id!==rowId);
                 if (!value || (value!=="reference" && !chosen)) return others;
-                return [...others,{id:rowId,filterLabel:group.label,brand:chosen ? chosen.brand : "MANN",name:chosen ? `${chosen.name}${chosen.source === "rossko" ? ` (${chosen.relation === "analogue" ? `аналог Роско для MANN ${group.article}; ` : "Роско: "}${chosen.deliveryLabel})` : chosen.available<1 ? " (под заказ)" : ""}` : `${group.label} MANN ${group.article}`,quantity:1,price:chosen && chosen.price>0 ? chosen.price : NaN,...(chosen?.source === "rossko" ? {supplierProductId:chosen.id} : {}),...(chosen && warehouseId && chosen.source !== "rossko" ? {stockStoreId:warehouseId} : {})}];
+                return [...others,{id:rowId,filterLabel:group.label,brand:chosen ? chosen.brand : "MANN",name:chosen ? `${chosen.name}${chosen.source === "rossko" ? ` (${chosen.relation === "analogue" ? `аналог Роско для MANN ${group.article}; ` : "Роско: "}${chosen.deliveryLabel})` : chosen.available<1 ? " (под заказ)" : ""}` : `${group.label} MANN ${group.article}`,quantity:1,price:chosen && chosen.price>0 ? chosen.price : NaN,...(chosen?.source === "rossko" ? {supplierProductId:chosen.id, supplierDeliveryAt} : {}),...(chosen && warehouseId && chosen.source !== "rossko" ? {stockStoreId:warehouseId} : {})}];
               });
           }
           return <div key={group.key} className={styles.filterRow}>
@@ -227,6 +239,11 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
       </section>
       <section className={styles.step} aria-labelledby="quote-work-title">
       <header className={styles.stepHeader}><div><h2 id="quote-work-title">Работы</h2></div></header>
+      {quickServices.popular.length > 0 && <div className={styles.quickServices}>{quickServices.popular.map(serviceButton)}</div>}
+      {quickServices.other.length > 0 && <details className={styles.quickServiceMore}>
+        <summary>Все остальные услуги</summary>
+        <div className={styles.quickServices}>{quickServices.other.map(serviceButton)}</div>
+      </details>}
       <label className={styles.search}>Найти услугу или расходник<input value={search} onChange={event => { setSearch(event.target.value); setExtraProducts([]); setExtraLoading(false); setExtraError(""); }} placeholder="Название или артикул, минимум 2 символа" disabled={!warehouseId} /></label>
       {extraLoading ? <p role="status">Ищем товары и услуги…</p> : null}
       {extraError ? <p role="alert">{extraError}</p> : null}
@@ -261,7 +278,7 @@ export function MaintenanceQuotePanel({ vehicleSetup, quoteContextKey, vehicleTi
       {text ? <details className={styles.preview} open={copyError ? true : undefined}><summary>Предпросмотр предложения</summary><label>Текст для клиента<textarea readOnly rows={Math.min(18, text.split("\n").length)} value={text} /></label></details> : null}
       <button type="button" className="eco-btn eco-btn--primary" disabled={!ready} onClick={async () => {
         setCopyError(""); setCopied(false);
-        try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopyError("Копирование недоступно. Выделите и скопируйте текст предложения выше."); }
+        try { await navigator.clipboard.writeText(quoteClientText(vehicleTitle, quoteSpecification, litres, selected, extras, { timeZone })); setCopied(true); } catch { setCopyError("Копирование недоступно. Выделите и скопируйте текст предложения выше."); }
       }}>Скопировать предложение</button>
       {copied ? <p role="status">Предложение скопировано.</p> : null}{copyError ? <p role="alert">{copyError}</p> : null}
       <p className={styles.note}>Скопируйте предложение перед закрытием страницы.</p>
