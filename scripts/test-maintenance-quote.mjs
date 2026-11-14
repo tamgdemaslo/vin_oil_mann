@@ -41,6 +41,18 @@ assert.equal(quoteRequirementChoices(null, researchedVolume('4,5 л без фи�
 assert.equal(quoteRequirementChoices(null, researchedVolume('4,5–5 л с фильтром'), withResearchPrefill).automaticVolume, '');
 assert.equal(quoteRequirementChoices(null, researchedVolume('4,5 л с фильтром; 5 л с фильтром'), withResearchPrefill).automaticVolume, '');
 assert.equal(quoteRequirementChoices({items:[engine]}, researchedVolume('5 л с фильтром'), withResearchPrefill).automaticVolume, '4.5');
+const mondeoResearch = { items: [{
+  systemCode: 'ENGINE_OIL',
+  specification: 'SAE 5W-20, WSS-M2C948-B',
+  volumeText: '5,0 л — система смазки с заменой масляного фильтра.',
+}] };
+const mondeo = quoteRequirementChoices(null, mondeoResearch, withResearchPrefill);
+assert.deepEqual(mondeo.specifications, ['WSS-M2C948-B']);
+assert.deepEqual(mondeo.viscosities, ['5W-20']);
+assert.equal(mondeo.automaticVolume, '5');
+const fordOil = {...product, oem: 'Ford WSS-M2C948-B', sae: '5W-20'};
+assert.equal(matchesQuoteOil(fordOil, mondeo.specifications[0], '5W-20'), true);
+assert.equal(matchesQuoteOil({...fordOil, oem: 'WSS-M2C913-D'}, mondeo.specifications[0], '5W-20'), false);
 const savedResearch = { ...engine, capacities: [], researchResult: true, researchVolumeText: '4,5 л с фильтром' };
 assert.equal(quoteRequirementChoices({items:[savedResearch]}, null, withResearchPrefill).automaticVolume, '4.5');
 console.log('maintenance requirement choices: ok');
