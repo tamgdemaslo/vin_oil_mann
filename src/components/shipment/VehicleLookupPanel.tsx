@@ -74,6 +74,11 @@ function normalizeVinInput(value: string): string {
   return value.toUpperCase().replace(/\s+/g, "");
 }
 
+function readableFluidIssue(message: string): string {
+  const code = message.match(/^[A-Z_]+(?=:\s)/)?.[0] as MannFluidSystem | undefined;
+  return code && MANN_FLUID_LABELS[code] ? message.replace(code, MANN_FLUID_LABELS[code]) : message;
+}
+
 function normalizePlateDraft(value: string): string {
   return value
     .toUpperCase()
@@ -278,7 +283,7 @@ export function FluidResearchResults({ result, onRetry }: { result: MannFluidRes
       {searching ? <span className="eco-fluid-research__spinner" aria-hidden="true" /> : null}
       {!searching && failed && onRetry ? <button type="button" className="eco-btn" onClick={onRetry}>{result.groups ? "Повторить незавершённые" : "Повторить поиск"}</button> : null}
     </div>
-    {result.unresolved?.length ? <details><summary>Что осталось уточнить</summary><ul>{result.unresolved.map((reason, index) => <li key={index}>{reason}</li>)}</ul></details> : null}
+    {result.unresolved?.length ? <details><summary>Что осталось уточнить</summary><ul>{result.unresolved.map((reason, index) => <li key={index}>{readableFluidIssue(reason)}</li>)}</ul></details> : null}
   </section>;
 }
 

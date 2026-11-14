@@ -12,13 +12,23 @@ type ResearchItem = { systemCode: string; specification: string; volumeText: str
 type Application = { vehicleVariantKey: string; make: string; model: string; effectiveVehicleText: string | null; vehicleText: string | null; engineCode: string | null; vehicleYears?: string | null; modelYears?: string | null; kw?: string | null; hp?: string | null };
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
-export function mannResearchIdentity(applications: Application[], transmissionType?: MannTransmissionType) {
+/** Use a precise engine only when every selected variant supports that code. */
+export function mannResearchEngineCode(applications: Application[], engineCode?: string) {
+  const code = normalizeEngineCode(engineCode);
+  if (!code || !applications.length) return undefined;
+  const codes = (row: Application) => (row.engineCode ?? "").split(/[,;/|]+/).map(normalizeEngineCode);
+  const keys = [...new Set(applications.map(row => row.vehicleVariantKey))];
+  return keys.every(key => applications.some(row => row.vehicleVariantKey === key && codes(row).includes(code)))
+    ? code : undefined;
+}
+
+export function mannResearchIdentity(applications: Application[], transmissionType?: MannTransmissionType, engineCode?: string) {
   const variants = [...new Set(applications.map(row => JSON.stringify({
     variantKey: row.vehicleVariantKey, make: row.make, model: row.model,
-    modification: row.effectiveVehicleText || row.vehicleText, engineCode: row.engineCode,
+    modification: row.effectiveVehicleText || row.vehicleText, engineCode: engineCode ?? row.engineCode,
     productionYears: row.vehicleYears || row.modelYears, powerKw: row.kw, powerHp: row.hp,
   })))].sort().map(value => JSON.parse(value));
-  return { source: "selected_mann_all_systems_v3", variants, transmissionType: transmissionType ?? null };
+  return { source: "selected_mann_all_systems_v3", variants, transmissionType: transmissionType ?? null, ...(engineCode ? { engineCode } : {}) };
 }
 
 const savedItemsSchema = z.array(z.object({
@@ -26,13 +36,14 @@ const savedItemsSchema = z.array(z.object({
   sourceUrl: z.string().url(), sourceTitle: z.string(), excerpt: z.string(),
 }));
 
-async function materializeSavedResearch(input: { organizationId: string; variantKeys: string[]; transmissionType?: MannTransmissionType }) {
+async function materializeSavedResearch(input: { organizationId: string; variantKeys: string[]; transmissionType?: MannTransmissionType; engineCode?: string }) {
   const applications = await prisma.mannFilterApplication.findMany({
     where: { vehicleVariantKey: { in: input.variantKeys } },
     select: { vehicleVariantKey: true, make: true, model: true, effectiveVehicleText: true, vehicleText: true, engineCode: true, vehicleYears: true, modelYears: true, kw: true, hp: true },
   });
   if (input.variantKeys.some(key => !applications.some(row => row.vehicleVariantKey === key))) return;
-  const vehicleKey = "mann-research:" + hash(mannResearchIdentity(applications, input.transmissionType));
+  const engineCode = mannResearchEngineCode(applications, input.engineCode);
+  const vehicleKey = "mann-research:" + hash(mannResearchIdentity(applications, input.transmissionType, engineCode));
   const records = await prisma.aIAgentTechnicalEvidence.findMany({ where: {
     organizationId: input.organizationId, vehicleKey, factType: "VIN_FLUID_RESEARCH_V1",
     invalidatedAt: null, status: { in: ["pending_review", "approved"] },
@@ -43,29 +54,30 @@ async function materializeSavedResearch(input: { organizationId: string; variant
     const items = savedItemsSchema.safeParse(facts.items);
     if (!items.success || !items.data.length) continue;
     await prisma.$transaction(async tx => {
-      await persistMannResearchCatalog(tx, { ...input, applications, evidenceId: record.id, items: items.data });
+      await persistMannResearchCatalog(tx, { ...input, applications, engineCode, evidenceId: record.id, items: items.data });
       await tx.aIAgentTechnicalEvidence.update({ where: { id: record.id }, data: { facts: JSON.parse(JSON.stringify({ ...facts, catalogMaterialized: true })) } });
     });
   }
+  return engineCode;
 }
 
 /** Preserve source, normalized requirement and explicit MANN links as one transaction. */
 export async function persistMannResearchCatalog(tx: Prisma.TransactionClient, input: {
   organizationId: string; variantKeys: string[]; applications: Application[];
-  transmissionType?: MannTransmissionType; evidenceId: string; items: ResearchItem[];
+  transmissionType?: MannTransmissionType; engineCode?: string; evidenceId: string; items: ResearchItem[];
 }) {
   const keys = [...new Set(input.variantKeys)].sort();
   const applications = keys.map(key => input.applications.find(row => row.vehicleVariantKey === key));
   if (applications.some(row => !row)) throw new Error("Модификация MANN не найдена при сохранении жидкостей");
   for (const item of input.items) {
-    const identity = { organizationId: input.organizationId, keys, transmissionType: input.transmissionType ?? null, item };
+    const identity = { organizationId: input.organizationId, keys, transmissionType: input.transmissionType ?? null, ...(input.engineCode ? { engineCode: input.engineCode } : {}), item };
     const id = "ai-fluid:" + hash(identity);
     const sourceId = id + ":source";
     const first = applications[0]!;
     const make = normalizeVehicleMake(first.make);
     const model = normalizeVehicleModel(first.model, make).canonical;
     if (!make || !model) throw new Error("Не удалось нормализовать модификацию MANN при сохранении жидкостей");
-    const provenance = { method: METHOD, organizationId: input.organizationId, variantKeys: keys, transmissionType: input.transmissionType ?? null, evidenceId: input.evidenceId, item };
+    const provenance = { method: METHOD, organizationId: input.organizationId, variantKeys: keys, transmissionType: input.transmissionType ?? null, engineCode: input.engineCode ?? null, evidenceId: input.evidenceId, item };
     await tx.fluidSourceRow.upsert({ where: { id: sourceId }, update: {}, create: {
       id: sourceId, sourceUrl: item.sourceUrl, pageTitle: item.sourceTitle,
       makeRaw: first.make, makeNormalized: make, modelRaw: first.model, modelNormalized: model,
@@ -75,7 +87,7 @@ export async function persistMannResearchCatalog(tx: Prisma.TransactionClient, i
     await tx.vehicleFluidRequirement.upsert({ where: { id }, update: {}, create: {
       id, sourceRowId: sourceId, sourceTableKey: METHOD, sourceUrl: item.sourceUrl,
       make: first.make, makeNormalized: make, model: first.model, modelNormalized: model,
-      engineCodeNormalized: applications.length === 1 ? normalizeEngineCode(first.engineCode) : null,
+      engineCodeNormalized: input.engineCode ?? (applications.length === 1 ? normalizeEngineCode(first.engineCode) : null),
       transmissionType: input.transmissionType, systemCode: item.systemCode, systemNameRaw: item.systemCode,
       specificationText: item.specification || null, specificationsJson: item.specification ? [item.specification] : [],
       fillVolumeText: item.volumeText || null, capacitiesJson: JSON.parse(JSON.stringify(parseFluidCapacities(item.volumeText, item.systemCode).capacities)),
@@ -96,10 +108,10 @@ export async function persistMannResearchCatalog(tx: Prisma.TransactionClient, i
 
 /** Read accumulated linked knowledge before considering another AI lookup. */
 export async function addMannResearchCatalogToProfile(input: {
-  organizationId: string; variantKeys: string[]; transmissionType?: MannTransmissionType; profile: MannUnifiedTechnicalProfile;
+  organizationId: string; variantKeys: string[]; transmissionType?: MannTransmissionType; engineCode?: string; profile: MannUnifiedTechnicalProfile;
 }): Promise<MannUnifiedTechnicalProfile> {
   const keys = [...new Set(input.variantKeys)].sort();
-  await materializeSavedResearch({ ...input, variantKeys: keys });
+  const engineCode = await materializeSavedResearch({ ...input, variantKeys: keys });
   const links = await prisma.mannFluidRequirementLink.findMany({ where: {
     mannVariantKey: { in: keys }, matchMethod: METHOD, status: { in: ["review_required", "confirmed"] },
     evidenceJson: { path: ["organizationId"], equals: input.organizationId },
@@ -107,8 +119,9 @@ export async function addMannResearchCatalogToProfile(input: {
   const items: MannTechnicalProfileItem[] = [];
   const seen = new Set<string>();
   for (const link of links) {
-    const raw = link.evidenceJson as { variantKeys?: string[]; transmissionType?: string | null };
+    const raw = link.evidenceJson as { variantKeys?: string[]; transmissionType?: string | null; engineCode?: string | null };
     if (JSON.stringify(raw.variantKeys) !== JSON.stringify(keys) || (raw.transmissionType ?? null) !== (input.transmissionType ?? null)) continue;
+    if (raw.engineCode && raw.engineCode !== engineCode) continue;
     const row = link.requirement;
     if (seen.has(row.id)) continue;
     seen.add(row.id);

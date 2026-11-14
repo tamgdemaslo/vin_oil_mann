@@ -189,23 +189,12 @@ export function MaintenanceQuotePanel({ vehicleTitle, warehouseId, profile, rese
               });
           }
           return <div key={group.key} className={styles.filterRow}>
-            <label>{group.label} · MANN {group.article}<select aria-label={`Товар для ${group.label} MANN ${group.article}`} value={selectedId} disabled={filtersLoading} onChange={event => chooseFilter(event.target.value)}>
-              <option value="">Выберите подходящий товар</option>
-              {existingRow?.supplierProductId === selectedId && !filterProducts.some(item => item.id === selectedId) ? <option value={selectedId} disabled>{existingRow.name} — выбран ранее</option> : null}
-              {warehouseProducts.length > 0 && <optgroup label="Наш склад">
-                {warehouseProducts.map(item => <option key={item.id} value={item.id} disabled={item.available < 1 && !item.orderable}>
-                  {item.name} · {quoteRub(Math.round(item.price * 100))} · {item.available >= 1 ? `${item.available} шт. в наличии` : item.orderable ? "под заказ" : "нет в наличии"}
-                </option>)}
-              </optgroup>}
-              {supplierProducts.length > 0 && <optgroup label="Роско">
-                {supplierProducts.map(item => <option key={item.id} value={item.id} disabled={item.available < 1 && !item.orderable}>
-                  {item.name} · {quoteRub(Math.round(item.price * 100))} · {item.relation === "analogue" ? "аналог · " : ""}{item.deliveryLabel}
-                </option>)}
-              </optgroup>}
-              <option value="reference">MANN {group.article} — указать цену</option>
-            </select></label>
+            <div className={styles.filterGroupHeading}>
+              <strong>{group.label} · MANN {group.article}</strong>
+              {!existingRow && <button type="button" className={styles.manualFilterPrice} disabled={filtersLoading} onClick={() => chooseFilter("reference")}>Указать цену вручную</button>}
+            </div>
             {filterProducts.length > 0 && <QuoteFilterOffers products={filterProducts} selectedId={selectedId} initiallyExpanded={index === 0} label={`${group.label} MANN ${group.article}`} disabled={filtersLoading} onSelect={chooseFilter} />}
-            {existingRow ? <><label className={styles.filterPrice}>Цена фильтра, ₽<input aria-label={`Цена ${group.label} MANN ${group.article}, ₽`} type="number" min="0" step="0.01" placeholder="Укажите цену" value={Number.isFinite(existingRow.price) ? existingRow.price : ""} onChange={event=>updateExtra(rowId,{price:event.target.value ? Number(event.target.value) : NaN})} /></label><button type="button" className="eco-btn" onClick={()=>{setExtras(rows=>rows.filter(row=>row.id!==rowId));setFilterSelection(values=>({...values,[group.key]:""}));}}>Убрать фильтр</button><small className={styles.filterAdded}>Добавлен в расчёт{existingRow.supplierProductId ? " · Роско" : existingRow.stockStoreId ? " · Наш склад" : ""}{!Number.isFinite(existingRow.price) ? " — укажите цену рядом" : ""}</small></> : null}
+            {existingRow ? <><label className={styles.filterPrice}>Цена фильтра, ₽<input aria-label={`Цена ${group.label} MANN ${group.article}, ₽`} type="number" min="0" step="0.01" placeholder="Укажите цену" value={Number.isFinite(existingRow.price) ? existingRow.price : ""} onChange={event=>updateExtra(rowId,{price:event.target.value ? Number(event.target.value) : NaN})} /></label><button type="button" className="eco-btn" onClick={()=>{setExtras(rows=>rows.filter(row=>row.id!==rowId));setFilterSelection(values=>({...values,[group.key]:""}));}}>Убрать фильтр</button><small className={styles.filterAdded}>{existingRow.name} · в расчёте{existingRow.supplierProductId ? " · Роско" : existingRow.stockStoreId ? " · Наш склад" : ""}{!Number.isFinite(existingRow.price) ? " — укажите цену рядом" : ""}</small></> : null}
             {!supplier ? <p className={styles.note} role="status">Проверяем цену и доставку в Роско…</p> : supplier.error ? <p className={styles.note} role="status">Роско: {supplier.error}</p> : !supplier.products.length ? <p className={styles.note}>В Роско нет доступных предложений MANN {group.article} и его аналогов.</p> : null}
             {group.condition ? <p className={styles.note}>Условие MANN: {group.condition}</p> : null}
           </div>;
