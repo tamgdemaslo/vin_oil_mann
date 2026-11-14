@@ -1,137 +1,89 @@
-.page { max-width: 1280px; padding-bottom: 48px; }
+.page {
+  --quote-accent: var(--eco-rust, #c2410c);
+  --quote-ink: #1e2630;
+  --quote-muted: #586474;
+  --quote-ground: #f2f4f7;
+  --quote-line: #e3e7ed;
+  --quote-radius: 8px;
+  --quote-space: 24px;
+  --quote-mobile-clearance: 112px;
+  --eco-surface: #fff;
+  --eco-ink: var(--quote-ink);
+  --eco-muted: var(--quote-muted);
+  --eco-hover: #f5f7fa;
+  --eco-line: var(--quote-line);
+  --eco-line-strong: #aeb8c5;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: 24px 32px 48px;
+  color: var(--quote-ink);
+  background: var(--quote-ground);
+  font-size: 16px;
+  line-height: 1.5;
+}
 .pageHeader { margin-bottom: 24px; }
-.kicker { color: var(--eco-muted); font-size: 13px; }
-.title { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-.title svg { width: 30px; height: 30px; color: var(--eco-rust); }
-.title h1 { margin: 0; font-size: clamp(30px, 5vw, 42px); line-height: 1.1; font-weight: 700; letter-spacing: -.03em; }
-.pageHeader p { margin: 10px 0 0; color: var(--eco-muted); font-size: 15px; max-width: 60ch; }
-.setup { min-width: 0; padding: clamp(14px, 3vw, 22px); border: 1px solid var(--eco-line); border-radius: 12px; background: var(--eco-surface); }
-.setupHeader, .setupTitle { display: flex; align-items: center; gap: 12px; }
-.setupHeader { justify-content: space-between; flex-wrap: wrap; }
-.setupTitle > span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: var(--eco-rust); background: var(--eco-hover); font-size: 12px; font-weight: 700; }
-.setupTitle h2 { margin: 0; font-size: 19px; font-weight: 650; }
-.setupTitle p, .error { margin: 4px 0 0; font-size: 13px; color: var(--eco-muted); }
-.store, .manual { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
-.store { min-width: min(220px, 100%); }
-.store span { display: flex; align-items: center; gap: 6px; }
-.manual { margin-top: 14px; max-width: 420px; grid-template-columns: 1fr auto; }
-.manual span { color: var(--eco-muted); font-weight: 400; }
-.manual input { grid-column: 1 / -1; }
-.store select, .manual input { min-width: 0; width: 100%; min-height: 40px; border: 1px solid var(--eco-line-strong); border-radius: 6px; padding: 8px 10px; color: var(--eco-ink); background: var(--eco-surface); font: inherit; font-weight: 400; }
-.lookup { margin-top: 14px; border-top: 1px solid var(--eco-line); }
-.lookup summary { cursor: pointer; padding: 12px 0 0; font-size: 14px; font-weight: 600; }
-.lookup[open] summary { margin-bottom: 12px; }
-@media (max-width: 540px) { .store { width: 100%; } }
-.catalogFields { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 12px; }
-.catalogFields label { display: grid; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; }
-.catalogFields select { min-width: 0; width: 100%; min-height: 40px; border: 1px solid var(--eco-line-strong); border-radius: 6px; padding: 8px 10px; color: var(--eco-ink); background: var(--eco-surface); font: inherit; font-weight: 400; }
-@media (max-width: 700px) { .catalogFields { grid-template-columns: 1fr; } }
-
-.pageHeader { margin-bottom: 18px; }
-.title h1 { font-size: 34px; }
-.setup { padding: 16px 0; border-inline: 0; border-radius: 0; background: transparent; }
-.lookup :global(.eco-vehicle-lookup) { margin: 0; min-width: 0; }
-.lookup :global(.eco-vehicle-lookup__controls) { min-width: 0; }
-.lookup :global(.eco-vehicle-lookup__field) { min-width: 0; }
-@media (max-width: 540px) { .title h1 { font-size: 27px; } }
-
-.lookup :global(.eco-fluid-research--status) {
-  margin: 12px 0;
-  padding: 10px 12px;
-  border: 1px solid var(--eco-line);
-  border-radius: 8px;
-  background: var(--eco-surface);
-}
-.lookup :global(.eco-fluid-research__head),
-.lookup :global(.eco-vehicle-lookup__profile-head) {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-}
-.lookup :global(.eco-fluid-research__head > p) { flex: 1 1 260px; margin: 0; }
-.lookup :global(.eco-fluid-research--status ul) { margin: 6px 0 0; padding-left: 20px; max-width: 72ch; }
-.lookup :global(.eco-fluid-research--status li + li) { margin-top: 4px; }
-.lookup :global(.eco-vehicle-lookup__profile-head) { margin-bottom: 8px; }
-.lookup :global(.eco-vehicle-lookup__profile-head > span) { color: var(--eco-muted); font-size: 12px; }
-.lookup :global(.eco-fluid-grid) {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
-  gap: 1px;
-  border: 1px solid var(--eco-line);
-  border-radius: 8px;
-  background: var(--eco-line);
-}
-.lookup :global(.eco-fluid-card) { min-width: 0; padding: 10px; background: var(--eco-surface); }
-.lookup :global(.eco-fluid-card__head) { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.lookup :global(.eco-fluid-card__title) { flex: 1; }
-.lookup :global(.eco-fluid-card__title > span) { display: block; }
-.lookup :global(.eco-fluid-card__status) { color: var(--eco-muted); font-size: 12px; }
-.lookup :global(.eco-fluid-card__status.is-warning) { color: #79531c; }
-.lookup :global(.eco-fluid-card__fact) {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 30px;
-  align-items: start;
-  gap: 8px;
-  padding: 5px 0;
-  border-top: 1px solid var(--eco-line);
-  font-size: 13px;
-}
-.lookup :global(.eco-fluid-card__fact > span) { color: var(--eco-muted); }
-.lookup :global(.eco-fluid-card__fact > strong) { overflow-wrap: anywhere; font-weight: 600; }
-.lookup :global(.eco-fluid-popover__trigger) {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  color: var(--eco-ink);
-  background: transparent;
-  cursor: pointer;
-}
-.lookup :global(.eco-fluid-popover__trigger:hover) { background: var(--eco-hover); }
-.lookup :global(.eco-fluid-popover__trigger:focus-visible) { outline: 2px solid var(--eco-rust); }
-
-.lookup :global(.eco-vehicle-lookup__controls) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 8px;
-  padding-top: 12px;
-  max-width: 740px;
-}
-.lookup :global(.eco-vehicle-lookup__controls .eco-btn) { white-space: nowrap; }
-.manualCatalog { margin-top: 12px; padding: 12px; border: 1px solid var(--eco-line); border-radius: 6px; }
-.manualCatalog[hidden] { display: none; }
-.manualHeader { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
-.manualHeader h3 { margin: 0; font-size: 15px; }
-@media (max-width: 570px) {
-  .lookup :global(.eco-vehicle-lookup__controls) { grid-template-columns: minmax(0, 1fr) auto; }
-  .lookup :global(.eco-vehicle-lookup__controls > button:last-child) { grid-column: 1 / -1; justify-self: start; }
-}
-
-/* Maintenance workspace: restrained surfaces, the existing CRM action color. */
-.page { --quote-gap: 24px; --quote-control: 44px; --quote-text: 16px; --quote-radius: 6px; --quote-bottom: 104px; --eco-surface: #fff; --eco-hover: #f5f6f7; --eco-ink: #17191c; --eco-muted: #555c65; --eco-line: #e0e3e7; --eco-line-strong: #adb4bd; font-size: var(--quote-text); line-height: 1.5; }
-.pageHeader { margin-bottom: var(--quote-gap); }
-.title h1 { font-size: 28px; letter-spacing: -.02em; }
-.kicker { font-size: 14px; }
-.page .setup { padding: 0 0 var(--quote-gap); border: 0; border-bottom: 1px solid var(--eco-line); }
-.page .setupTitle h2 { font-size: 20px; }
-.page input, .page select, .page textarea { font-size: var(--quote-text); }
-.page button, .page select, .page input { min-height: var(--quote-control); }
+.kicker { display: block; color: var(--quote-muted); font-size: 12px; margin-bottom: 8px; }
+.title h1 { margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: -.02em; font-weight: 700; }
+.pageHeader p { margin: 8px 0 0; color: var(--quote-muted); font-size: 14px; }
 .page button { cursor: pointer; }
 .page button:disabled { cursor: default; }
-.page :focus-visible { outline: 2px solid var(--eco-rust); outline-offset: 3px; }
-.page .lookup { border-top: 0; margin-top: 8px; }
-.page .store { min-width: min(220px, 100%); }
-.lookup :global(.eco-vehicle-lookup__controls) { max-width: none; padding-top: 0; }
-.lookup :global(.eco-vehicle-lookup__selected) { display:flex; justify-content:space-between; gap:16px; padding:16px 0; }
-.lookup :global(.eco-vehicle-lookup__identity) { display:grid; gap:4px; min-width:0; overflow-wrap:anywhere; }
-.lookup :global(.eco-vehicle-lookup__identity strong) { font-size:18px; }
-.lookup :global(.eco-vehicle-lookup__actions) { display:flex; gap:8px; align-items:start; flex:none; }
-.lookup :global(.eco-vehicle-lookup__actions button) { padding:8px 12px; }
-.manualCatalog { border:0; padding:12px 0; }
-@media(max-width: 900px) { .page { padding-bottom:calc(var(--quote-bottom) + env(safe-area-inset-bottom)); } }
-@media(max-width: 570px) { .setupHeader { align-items:start; } .page .store { width:100%; } .lookup :global(.eco-vehicle-lookup__controls > button:last-child) { justify-self:start; } }
+.page :is(button, input, select) { min-height: 44px; }
+.page :is(input, select, textarea) { font-size: 16px; }
+.page :focus-visible { outline: 2px solid var(--quote-accent); outline-offset: 3px; }
+.setup { min-width: 0; padding-bottom: 24px; border-bottom: 1px solid var(--quote-line); }
+.setupHeader { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
+.setupTitle h2 { margin: 0; font-size: 18px; font-weight: 650; }
+.setupTitle p { margin: 4px 0 0; color: var(--quote-muted); }
+.store { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--quote-muted); min-width: 0; }
+.store > span { display: flex; align-items: center; gap: 8px; }
+.store select { width: 184px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--eco-line-strong); border-radius: 6px; background: #fff; color: var(--quote-ink); font: inherit; font-size: 14px; }
+.lookup { min-width: 0; }
+.lookup :global(.eco-vehicle-lookup) { margin: 0; min-width: 0; padding: 0; border: 0; background: transparent; }
+.lookup :global(.eco-vehicle-lookup__controls) { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 8px; max-width: none; }
+.lookup :global(.eco-vehicle-lookup__query) { padding: 0; }
+.lookup :global(.eco-vehicle-lookup__field) { min-width: 0; }
+.lookup :global(.eco-vehicle-lookup__controls input) { width: 100%; min-width: 0; }
+.lookup :global(.eco-vehicle-lookup__controls button) { white-space: nowrap; }
+.lookup :global(.eco-vehicle-lookup__controls > button:last-child) { color: var(--quote-accent); border-color: transparent; background: transparent; }
+.lookup :global(.eco-vehicle-lookup__selected) { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0; border: 0; background: transparent; }
+.lookup :global(.eco-vehicle-lookup__identity) { display: grid; gap: 4px; min-width: 0; }
+.lookup :global(.eco-vehicle-lookup__identity-head) { display: flex; gap: 8px; align-items: center; font-size: 12px; color: #356244; }
+.lookup :global(.eco-vehicle-lookup__identity strong) { font-size: 18px; font-weight: 650; overflow-wrap: anywhere; }
+.lookup :global(.eco-vehicle-lookup__identity > span) { font-size: 14px; color: var(--quote-muted); }
+.lookup :global(.eco-vehicle-lookup__actions) { display: flex; align-items: center; gap: 8px; flex: none; }
+.lookup :global(.eco-vehicle-lookup__actions > button) { padding: 8px 12px; border: 0; background: #f2f4f7; border-radius: 6px; color: var(--quote-ink); font-size: 13px; }
+.lookup :global(.eco-vehicle-lookup__more > summary) { min-width: 44px; min-height: 44px; display: grid; place-items: center; cursor: pointer; }
+.lookup :global(.eco-vehicle-selected-conditions) { margin-top: 12px; color: #795017; font-size: 13px; }
+.lookup :global(.eco-vehicle-selected-conditions p) { margin: 4px 0; }
+.lookup :global(.eco-quote-technical-details) { margin-top: 16px; border-top: 1px solid var(--quote-line); }
+.lookup :global(.eco-quote-technical-details > summary) { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; min-height: 44px; padding-top: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.lookup :global(.eco-quote-technical-details > summary::before) { content: "＋"; color: var(--quote-muted); }
+.lookup :global(.eco-quote-technical-details[open] > summary::before) { content: "−"; }
+.lookup :global(.eco-quote-technical-details > summary > span) { margin-left: auto; color: var(--quote-muted); font-size: 12px; font-weight: 400; }
+.lookup :global(.eco-quote-technical-details > summary:focus-visible) { outline: 2px solid var(--quote-accent); outline-offset: 2px; }
+.lookup :global(.eco-quote-technical-status), .lookup :global(.eco-quote-technical-error) { margin: 12px 0 0; font-size: 13px; }
+.lookup :global(.eco-quote-technical-error) { color: #a32420; }
+.lookup :global(.eco-fluid-grid) { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin-top: 16px; }
+.lookup :global(.eco-fluid-card) { min-width: 0; padding: 12px; border: 1px solid var(--quote-line); border-radius: 6px; background: #fff; }
+.lookup :global(.eco-fluid-card__head) { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.lookup :global(.eco-fluid-card__title) { flex: 1; }
+.lookup :global(.eco-fluid-card__title > span) { display: block; }
+.lookup :global(.eco-fluid-card__fact) { display: grid; grid-template-columns: 48px minmax(0,1fr) 44px; gap: 8px; padding: 8px 0; border-top: 1px solid var(--quote-line); font-size: 13px; }
+.lookup :global(.eco-fluid-card__fact strong) { overflow-wrap: anywhere; }
+.lookup :global(.eco-fluid-popover__trigger) { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; background: transparent; }
+.lookup :global(.eco-fluid-research--status) { margin-top: 16px; padding: 12px; font-size: 13px; background: #f5f7fa; }
+.lookup :global(.eco-fluid-research__head), .lookup :global(.eco-vehicle-lookup__profile-head) { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.lookup :global(.eco-fluid-card__status) { font-size: 12px; color: var(--quote-muted); }
+.manualCatalog { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--quote-line); }
+.manualCatalog[hidden] { display: none; }
+.manualHeader { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+.manualHeader h3 { margin: 0; font-size: 16px; }
+.manual { display: grid; gap: 8px; margin-top: 16px; max-width: 480px; font-size: 14px; }
+.manual span { color: var(--quote-muted); font-size: 12px; }
+.manual input, .catalogFields select { width: 100%; min-width: 0; border: 1px solid var(--eco-line-strong); border-radius: 6px; padding: 8px 12px; background: #fff; color: var(--quote-ink); }
+.catalogFields { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 12px; }
+.catalogFields label { display: grid; gap: 8px; min-width: 0; font-size: 14px; }
+.error { font-size: 14px; color: #a32420; margin-top: 12px; }
+@media(max-width: 1100px) { .lookup :global(.eco-vehicle-lookup__controls) { grid-template-columns: minmax(0,1fr) auto; } .lookup :global(.eco-vehicle-lookup__controls > button:last-child) { grid-column: 1/-1; justify-self: start; padding-left: 0; } }
+@media(max-width: 900px) { .page { padding: 20px 16px calc(var(--quote-mobile-clearance) + env(safe-area-inset-bottom)); } }
+@media(max-width: 600px) { .setupHeader { align-items: start; flex-wrap: wrap; gap: 12px; } .store { width: 100%; justify-content: space-between; } .catalogFields { grid-template-columns: 1fr; } .lookup :global(.eco-fluid-grid) { grid-template-columns: 1fr; } .lookup :global(.eco-quote-technical-details > summary > span) { display: none; } .lookup :global(.eco-vehicle-lookup__selected) { align-items: start; } .lookup :global(.eco-vehicle-lookup__actions) { gap: 0; } }

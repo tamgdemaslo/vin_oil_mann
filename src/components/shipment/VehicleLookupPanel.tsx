@@ -875,6 +875,8 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
     window.requestAnimationFrame(() => inputRef.current?.focus());
   };
 
+  const TechnicalDetails = combinedIdentifier ? "details" : "div";
+
   if (appliedVehicle) {
     return (
       <section className="eco-vehicle-lookup is-compact" aria-label="Определить автомобиль и подобрать фильтры">
@@ -882,7 +884,7 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
           <div className="eco-vehicle-lookup__identity">
             <div className="eco-vehicle-lookup__identity-head">
               <span className="eco-vehicle-lookup__status is-ready">Автомобиль найден</span>
-              {appliedFromCache ? <em>Из карточки</em> : null}
+              {appliedFromCache && !combinedIdentifier ? <em>Из карточки</em> : null}
             </div>
             <strong>{vehicleTitle(appliedVehicle)}</strong>
             <span>{vehicleDetails(appliedVehicle) || "Подбор фильтров — ниже."}</span>
@@ -924,6 +926,10 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
           </fieldset>
         ) : null}
         {resolution?.selectedApplication ? <div className="eco-vehicle-selected-conditions"><CandidateConditions candidate={resolution.selectedApplication} /></div> : null}
+        {combinedIdentifier && technicalProfileLoading && <p className="eco-quote-technical-status" role="status">Уточняем требования к маслу…</p>}
+        {combinedIdentifier && technicalProfileError && <p className="eco-quote-technical-error" role="alert">{technicalProfileError}</p>}
+        <TechnicalDetails className={combinedIdentifier ? "eco-quote-technical-details" : undefined}>
+        {combinedIdentifier && <summary>Технические данные и уточнения<span>Жидкости, комплектация и источники</span></summary>}
         <details className="eco-vehicle-refinements"><summary>Уточнить данные автомобиля</summary>
         {canConfirmVehicleDestinationMarket(appliedVehicle) ? (
           <details className="eco-vehicle-lookup__profile-source eco-vehicle-lookup__production-date">
@@ -1081,7 +1087,7 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
             void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, transmissionType, { confirmedEngineCode, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
         />
-
+        </TechnicalDetails>
       </section>
     );
   }
