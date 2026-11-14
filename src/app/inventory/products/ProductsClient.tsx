@@ -6752,7 +6752,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                 <option value="unassigned">Без ячейки</option>
                 {storageCells.map((cell) => <option key={cell.id} value={cell.id}>{cell.code}{cell.name ? ` · ${cell.name}` : ""}</option>)}
               </select>
-              <Link href="/inventory/cells" className="mt-2 inline-flex text-xs font-semibold text-[var(--eco-rust)] hover:underline">Управление ячейками</Link>
+              <a href="/inventory/cells" className="mt-2 inline-flex text-xs font-semibold text-[var(--eco-rust)] hover:underline">Управление ячейками</a>
             </div>
 
             <div className="eco-filter-group">
