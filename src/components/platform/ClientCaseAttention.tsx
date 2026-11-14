@@ -1,5 +1,4 @@
 import React from "react";
-import Link from "next/link";
 import type { ClientCaseAttention } from "@/lib/client-case-attention";
 
 export function ClientAttentionBadges({ counts }: { counts: ClientCaseAttention | null }) {
@@ -14,7 +13,7 @@ export function ClientAttentionLinks({ counts, mobile = false, onNavigate }: { c
   if (!counts) return null;
   const className = mobile ? "platform-shell__mobile-link" : "platform-shell__dropdown-link";
   return <>
-    {counts.overdue > 0 && <Link href="/crm?filter=overdue" prefetch={false} onClick={onNavigate} className={className} role={mobile ? undefined : "menuitem"}><span>Просроченные дела · {counts.overdue}</span><small>Требуют внимания</small></Link>}
-    {counts.calculationNeeded > 0 && <Link href="/crm?filter=calculation_needed" prefetch={false} onClick={onNavigate} className={className} role={mobile ? undefined : "menuitem"}><span>Нужно рассчитать · {counts.calculationNeeded}</span><small>Включая заявки с сайта</small></Link>}
+    {counts.overdue > 0 && <a href="/crm?filter=overdue" onClick={onNavigate} className={className} role={mobile ? undefined : "menuitem"}><span>Просроченные дела · {counts.overdue}</span><small>Требуют внимания</small></a>}
+    {counts.calculationNeeded > 0 && <a href="/crm?filter=calculation_needed" onClick={onNavigate} className={className} role={mobile ? undefined : "menuitem"}><span>Нужно рассчитать · {counts.calculationNeeded}</span><small>Включая заявки с сайта</small></a>}
   </>;
 }
