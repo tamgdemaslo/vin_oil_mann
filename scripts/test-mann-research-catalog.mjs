@@ -13,6 +13,14 @@ const input={organizationId:'org1',variantKeys:['key'],vehicleContext:{make:'FOR
 const reset=()=>globalThis.fluidResearchTest={applications:[application],rows:[],calls:0,payload:{items:[item],unresolved:[]}};
 const previous=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY='test-only-not-a-real-key';
 try {
+ let scoped=reset();
+ scoped.applications=[{...application,engineCode:'B47D20A,B47D20B'}];
+ const exact={...input,vehicleContext:{make:'FORD',engineCode:'B47D20A'}};
+ assert.equal((await run(exact)).status,'saved');
+ assert.equal(JSON.parse(scoped.request.input).vehicle.variants[0].engineCode,'B47D20A');
+ assert.equal((await read({...input,engineCode:'B47D20A'})).items.length,1);
+ assert.equal((await read({...input,engineCode:'B47D20B'})).items.length,0);
+ assert.equal((await read(input)).items.length,0);
  let s=reset();
  assert.equal((await run(input)).status,'saved');
  assert.equal(s.sources.length,1);assert.equal(s.requirements.length,1);assert.equal(s.links.length,1);

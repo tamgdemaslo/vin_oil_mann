@@ -2,6 +2,7 @@ import type { NormalizedVehicleIdentity } from "@/lib/vehicle-identity-client";
 import type { MannTechnicalVehicleContext } from "@/lib/mann-technical-applicability";
 import { isVehicleDestinationMarket, mergeVehicleMarketEvidence, resolveVehicleMarket } from "@/lib/vehicle-market";
 import { consistentVehicleProductionMonth } from "@/lib/vehicle-production-month";
+import { normalizeEngineCode } from "@/lib/vehicle-normalization";
 import type { MannVehicleCandidate } from "@/lib/mann-vehicle-resolver";
 
 export type MannTechnicalContextDetails = Pick<MannTechnicalVehicleContext, "transmissionModel" | "transmissionGearCount" | "productionMonth" | "confirmedEquipment" | "rearAirConditioning" | "confirmedDrive" | "confirmedMarket"> & { confirmedEngineCode?: string; marketClarification?: { sourceLabels: string[]; evidenceReference: string } };
@@ -32,11 +33,13 @@ export function mannTechnicalContextFromVehicle(vehicle: NormalizedVehicleIdenti
   const selected = confirmedCandidate?.mismatchedFields?.length === 0 ? confirmedCandidate.technicalIdentity : undefined;
   const confirmedEngine = details.confirmedEngineCode && selected?.engineOptions?.includes(details.confirmedEngineCode)
     ? details.confirmedEngineCode : undefined;
+  const decodedSeries = normalizeEngineCode(vehicle.engineSeries);
+  const exactSeries = decodedSeries && selected?.engineOptions?.includes(decodedSeries) ? decodedSeries : undefined;
   return {
     make: vehicle.makeRaw ?? vehicle.makeCanonical,
     model: vehicle.modelRaw ?? vehicle.modelCanonical,
     generation: vehicle.generationRaw ?? vehicle.generationCanonical ?? selected?.generation,
-    engineCode: vehicle.engineCode ?? selected?.engineCode ?? confirmedEngine,
+    engineCode: vehicle.engineCode ?? confirmedEngine ?? exactSeries ?? selected?.engineCode,
     year: vehicle.year,
     transmissionModel: details.transmissionModel,
     transmissionGearCount: details.transmissionGearCount,

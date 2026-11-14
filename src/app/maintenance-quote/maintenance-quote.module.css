@@ -34,6 +34,66 @@
 .lookup :global(.eco-vehicle-lookup__controls) { min-width: 0; }
 .lookup :global(.eco-vehicle-lookup__field) { min-width: 0; }
 @media (max-width: 540px) { .title h1 { font-size: 27px; } }
+
+.lookup :global(.eco-fluid-research--status) {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--eco-line);
+  border-radius: 8px;
+  background: var(--eco-surface);
+}
+.lookup :global(.eco-fluid-research__head),
+.lookup :global(.eco-vehicle-lookup__profile-head) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.lookup :global(.eco-fluid-research__head > p) { flex: 1 1 260px; margin: 0; }
+.lookup :global(.eco-fluid-research--status ul) { margin: 6px 0 0; padding-left: 20px; max-width: 72ch; }
+.lookup :global(.eco-fluid-research--status li + li) { margin-top: 4px; }
+.lookup :global(.eco-vehicle-lookup__profile-head) { margin-bottom: 8px; }
+.lookup :global(.eco-vehicle-lookup__profile-head > span) { color: var(--eco-muted); font-size: 12px; }
+.lookup :global(.eco-fluid-grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: 1px;
+  border: 1px solid var(--eco-line);
+  border-radius: 8px;
+  background: var(--eco-line);
+}
+.lookup :global(.eco-fluid-card) { min-width: 0; padding: 10px; background: var(--eco-surface); }
+.lookup :global(.eco-fluid-card__head) { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.lookup :global(.eco-fluid-card__title) { flex: 1; }
+.lookup :global(.eco-fluid-card__title > span) { display: block; }
+.lookup :global(.eco-fluid-card__status) { color: var(--eco-muted); font-size: 12px; }
+.lookup :global(.eco-fluid-card__status.is-warning) { color: #79531c; }
+.lookup :global(.eco-fluid-card__fact) {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 30px;
+  align-items: start;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid var(--eco-line);
+  font-size: 13px;
+}
+.lookup :global(.eco-fluid-card__fact > span) { color: var(--eco-muted); }
+.lookup :global(.eco-fluid-card__fact > strong) { overflow-wrap: anywhere; font-weight: 600; }
+.lookup :global(.eco-fluid-popover__trigger) {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--eco-ink);
+  background: transparent;
+  cursor: pointer;
+}
+.lookup :global(.eco-fluid-popover__trigger:hover) { background: var(--eco-hover); }
+.lookup :global(.eco-fluid-popover__trigger:focus-visible) { outline: 2px solid var(--eco-rust); }
+
 .lookup :global(.eco-vehicle-lookup__controls) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;

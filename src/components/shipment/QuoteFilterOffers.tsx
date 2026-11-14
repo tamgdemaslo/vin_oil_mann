@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { quoteRub, sortQuoteFilterOffers, type QuoteFilterGroup } from "@/lib/maintenance-quote";
 import styles from "./MaintenanceQuotePanel.module.css";
@@ -26,13 +27,13 @@ export function QuoteFilterOffers({ products, selectedId, label, onSelect, disab
       ? `${item.relation === "analogue" ? "Аналог · " : ""}${item.available} шт. · ${item.deliveryLabel}`
       : item.available > 0 ? `${item.available} шт. в наличии` : item.orderable ? "Под заказ" : "Нет в наличии";
     return <div key={item.id} className={styles.supplierOffer} data-selected={selected}>
-      <div><strong>{item.name}</strong><small>{[item.article, availability].filter(Boolean).join(" · ")}</small></div>
+      <div className={styles.supplierOfferInfo}><strong>{item.name}</strong><small>{[item.article && !item.name.includes(item.article) ? item.article : null, availability].filter(Boolean).join(" · ")}</small></div>
       <div className={styles.supplierOfferAction}>
         <strong>{price}</strong>
-        <button type="button" className="eco-btn"
-          aria-label={`Выбрать ${item.name}, ${price}, ${item.source === "rossko" ? "Роско" : "наш склад"}`}
+        <button type="button" className={`eco-btn ${styles.offerAdd}`}
+          aria-label={`${selected ? "Добавлено" : "Добавить"} ${item.name}, ${price}, ${item.source === "rossko" ? "Роско" : "наш склад"}`}
           aria-pressed={selected} disabled={disabled || selected || (item.available < 1 && !item.orderable)}
-          onClick={() => onSelect(item.id)}>{selected ? "Выбран" : "Выбрать"}</button>
+          onClick={() => onSelect(item.id)}>{selected ? <Check size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}</button>
       </div>
     </div>;
   }
