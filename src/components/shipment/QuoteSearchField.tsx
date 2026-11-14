@@ -4,8 +4,8 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import styles from "./MaintenanceQuotePanel.module.css";
 
-export function QuoteSearchField({ label, value, options, onChange, inputMode, groups }: {
-  label: string; value: string; options: string[]; onChange: (value: string) => void; inputMode?: "decimal"; groups?: { label: string; options: string[] }[];
+export function QuoteSearchField({ label, value, options, onChange, inputMode, groups, placeholder = "Выберите или введите…", hint, preferredGroup }: {
+  placeholder?: string; hint?: string; preferredGroup?: string; label: string; value: string; options: string[]; onChange: (value: string) => void; inputMode?: "decimal"; groups?: { label: string; options: string[] }[];
 }) {
   const id = useId();
   const [draft, setDraft] = useState(value);
@@ -58,10 +58,10 @@ export function QuoteSearchField({ label, value, options, onChange, inputMode, g
   function choose(option: string) { setDraft(option); commit(option); setOpen(false); setTyped(false); setActive(-1); }
   return <div ref={anchor} className={styles.searchField}>
     <label htmlFor={id}>{label}</label>
-    <input id={id} role="combobox" aria-expanded={open} aria-controls={open ? `${id}-options` : undefined} aria-autocomplete="list" aria-activedescendant={open && active >= 0 && matches[active] ? `${id}-option-${active}` : undefined} value={draft} autoComplete="off" inputMode={inputMode} placeholder="Выберите или введите…"
-      onFocus={event => { event.currentTarget.select(); setOpen(true); setTyped(false); setActive(-1); }}
+    <div className={styles.searchControl}><input id={id} role="combobox" aria-expanded={open} aria-controls={open ? `${id}-options` : undefined} aria-autocomplete="list" aria-activedescendant={open && active >= 0 && matches[active] ? `${id}-option-${active}` : undefined} value={draft} autoComplete="off" inputMode={inputMode} placeholder={placeholder} aria-describedby={hint ? `${id}-hint` : undefined}
+      onFocus={event => { event.currentTarget.select(); setOpen(true); setCategory(preferredGroup ?? ""); setTyped(false); setActive(-1); }}
       onBlur={() => { commit(draft); setOpen(false); }}
-      onChange={event => { const next = event.target.value; setDraft(next); if (pending.current) clearTimeout(pending.current); pending.current = setTimeout(() => onChange(next), 350); setTyped(true); setOpen(true); setActive(-1); }}
+      onChange={event => { const next = event.target.value; setDraft(next); if (pending.current) clearTimeout(pending.current); pending.current = setTimeout(() => onChange(next), 350); setTyped(true); setCategory(""); setOpen(true); setActive(-1); }}
       onKeyDown={event => {
         if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setActive(index => Math.min(index + 1, matches.length - 1)); }
         if (event.key === "ArrowUp") { event.preventDefault(); setActive(index => Math.max(0,index - 1)); }
@@ -70,7 +70,8 @@ export function QuoteSearchField({ label, value, options, onChange, inputMode, g
         if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
         if (event.key === "Enter" && open) { event.preventDefault(); if (active >= 0 && matches[active]) choose(matches[active]); else { commit(draft); setOpen(false); } }
       }} />
-    <button type="button" className={styles.searchToggle} aria-label={`Показать все: ${label}`} aria-expanded={open} onMouseDown={event => event.preventDefault()} onClick={() => { setOpen(!open); setCategory(""); setTyped(false); setActive(-1); }}>⌄</button>
+    <button type="button" className={styles.searchToggle} aria-label={`Показать все: ${label}`} aria-expanded={open} onMouseDown={event => event.preventDefault()} onClick={() => { setOpen(!open); setCategory(preferredGroup ?? ""); setTyped(false); setActive(-1); }}>⌄</button></div>
+    {hint && <small id={`${id}-hint`} className={styles.note}>{hint}</small>}
     {open && position ? createPortal(<div ref={popup} className={styles.searchPopup} style={position} onMouseDown={event => event.preventDefault()}>
       {groups ? <div className={styles.searchCategories} aria-label="Раздел справочника">{[{label: "Все", options}, ...groups].map(group => <button key={group.label} type="button" aria-pressed={category === (group.label === "Все" ? "" : group.label)} onClick={() => { setCategory(group.label === "Все" ? "" : group.label); setTyped(false); setActive(-1); }}>{group.label}</button>)}</div> : null}
       <div className={styles.searchList} id={`${id}-options`} role="listbox" aria-label={label}>

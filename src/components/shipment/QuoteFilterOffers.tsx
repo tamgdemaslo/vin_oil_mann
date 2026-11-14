@@ -13,10 +13,11 @@ type Props = {
   onSelect: (id: string) => void;
   disabled?: boolean;
   initiallyExpanded?: boolean;
+  stockPending?: boolean;
   compact?: boolean;
 };
 
-export function QuoteFilterOffers({ products, selectedId, label, onSelect, disabled, initiallyExpanded = false, compact = false }: Props) {
+export function QuoteFilterOffers({ products, selectedId, label, onSelect, disabled, initiallyExpanded = false, compact = false, stockPending = false }: Props) {
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const [priority, setPriority] = useState<"price" | "delivery">("delivery");
   const [warehouseLimit, setWarehouseLimit] = useState(3);
@@ -39,7 +40,7 @@ export function QuoteFilterOffers({ products, selectedId, label, onSelect, disab
       : "—";
     return <div key={item.id} className={styles.supplierOffer} role="row"
       data-selected={selected} data-unavailable={unavailable} aria-disabled={unavailable || undefined}>
-      <div className={styles.supplierOfferInfo} role="cell"><strong>{item.name}</strong></div>
+      <div className={styles.supplierOfferInfo} role="cell"><strong>{item.name}</strong>{item.source !== "rossko" && item.matchType && <small>{item.matchType === "EXACT_PRODUCT_BRAND_ARTICLE" ? "Точный артикул" : "Проверенный аналог"}</small>}</div>
       <div className={styles.offerDelivery} role="cell" aria-label={`Поставка ${delivery}`}>{delivery}</div>
       <div className={styles.offerPrice} role="cell">{price}</div>
       <div className={styles.offerStock} role="cell" aria-label={unavailable ? "Нет в наличии" : `Остаток ${stock}`}>{stock}</div>
@@ -84,7 +85,7 @@ export function QuoteFilterOffers({ products, selectedId, label, onSelect, disab
       <section className={styles.warehouseOffers} aria-label="Наш склад">
         <div className={styles.supplierToolbar}><strong>Наш склад</strong></div>
         {warehouse.length ? renderOffers(warehouse, warehouseLimit, setWarehouseLimit)
-          : <p className={styles.offerEmpty}>Нет в наличии</p>}
+          : <p className={styles.offerEmpty}>{stockPending ? "Проверяем наличие…" : "Точный артикул и проверенные аналоги не найдены"}</p>}
       </section>
       <section className={styles.rosskoOffers} aria-label="Росско">
         <div className={styles.supplierToolbar}>

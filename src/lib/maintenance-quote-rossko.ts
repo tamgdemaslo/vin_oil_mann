@@ -31,7 +31,15 @@ export function quoteRosskoFilters(raw: unknown, article: string, branchId: stri
   ]);
   const windows = deliveryWindows({PartsList:{Part:parts.map(item => item.part)}});
   const seen = new Set<string>();
-  const date = new Intl.DateTimeFormat("ru-RU", {timeZone, day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit"});
+  const date = new Intl.DateTimeFormat("ru-RU", { timeZone, day: "2-digit", month: "2-digit", year: "numeric" });
+  const time = new Intl.DateTimeFormat("ru-RU", { timeZone, hour: "2-digit", minute: "2-digit" });
+  function formatWindow(start: Date, end?: Date | null) {
+    const firstDay = date.format(start);
+    const first = `${firstDay}, ${time.format(start)}`;
+    if (!end || end.getTime() === start.getTime()) return first;
+    const lastDay = date.format(end);
+    return lastDay === firstDay ? `${first}–${time.format(end)}` : `${first} — ${lastDay}, ${time.format(end)}`;
+  }
   return parts.flatMap(({part, relation}) => parseAssistantRosskoOffers({PartsList:{Part:part}}, branchId).flatMap(offer => {
     if (!offer.id || seen.has(offer.id) || !(offer.availableQuantity! >= 1) || !(offer.purchasePriceCents! > 0) || (offer.quantityMultiple != null && offer.quantityMultiple > 1)) return [];
     const cents = offer.purchasePriceCents!;
@@ -41,7 +49,7 @@ export function quoteRosskoFilters(raw: unknown, article: string, branchId: stri
     if (!Number.isFinite(price) || price <= 0) return [];
     const days = offer.deliveryDays;
     const window = windows.get(`${offer.partId}|${offer.stockId}`);
-    const deliveryLabel = window ? `доставка: ${date.format(window.start)}${window.end ? ` — ${date.format(window.end)}` : ""}` : days === 0 ? "в наличии у поставщика · срок 0 дн." : days != null && days > 0 ? `доставка: ${days} дн.` : "срок доставки не указан";
+    const deliveryLabel = window ? `доставка: ${formatWindow(window.start, window.end)}` : days === 0 ? "в наличии у поставщика · срок 0 дн." : days != null && days > 0 ? `доставка: ${days} дн.` : "срок доставки не указан";
     seen.add(offer.id);
     return [{brand:offer.brand, relation, referenceArticle:article, deliveryAt:window?.start.toISOString() ?? null, deliveryDays:days, id: `rossko:${offer.id}`, name: `${offer.brand} ${offer.article}`, article: offer.article, price, available: offer.availableQuantity!, orderable: true, source: "rossko" as const, deliveryLabel}];
   }));

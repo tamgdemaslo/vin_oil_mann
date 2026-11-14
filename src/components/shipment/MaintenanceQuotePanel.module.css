@@ -471,3 +471,27 @@
 .quickServices > button { white-space: normal; text-align: left; }
 .quickServiceMore { margin-block: 8px 16px; }
 .quickServiceMore > summary { cursor: pointer; width: fit-content; }
+
+.workspace [data-quote-section], .workspace .summary {
+  scroll-margin-top: calc(var(--eco-topbar-h, 64px) + var(--eco-substrip-h, 28px) + 16px);
+}
+.workspace [data-quote-section]:focus-visible {
+  outline: 2px solid var(--eco-rust);
+  outline-offset: 3px;
+}
+.panel .searchControl { position: relative; min-width: 0; }
+.panel .searchControl input { width: 100%; padding-right: 36px; }
+.panel .searchControl input:focus-visible, .panel .searchToggle:focus-visible, .preview summary:focus-visible {
+  outline: 2px solid var(--eco-rust);
+  outline-offset: 2px;
+}
+.preview summary { cursor: pointer; padding: 10px; font-weight: 650; border: 1px solid var(--eco-line); border-radius: 6px; }
+.review { padding: 12px; border: 1px solid var(--eco-line); border-radius: 8px; margin-block: 12px; }
+.review > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.review small { display: block; color: var(--eco-rust); }
+.review h3, .review p { margin: 0 0 6px; }
+.workspace .summaryLine > button { grid-column: 1 / -1; justify-self: start; }
+@media (max-width: 600px) {
+  .workspace .searchControl input { min-height: 44px; padding-right: 50px; }
+  .workspace .searchControl .searchToggle { min-height: 44px; height: 44px; width: 44px; bottom: 0; }
+}

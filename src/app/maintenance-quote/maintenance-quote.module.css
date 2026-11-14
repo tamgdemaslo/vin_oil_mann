@@ -137,3 +137,12 @@
   .page .lookup :global(.eco-vehicle-lookup__actions > button),
   .page .lookup :global(.eco-vehicle-lookup__more > summary) { min-height: 44px; min-width: 44px; }
 }
+
+.vehicleEdit { margin-block: 12px; }
+.vehicleEdit h3, .vehicleEdit p { margin: 0 0 8px; }
+.vehicleConfirm { margin: auto; max-width: min(440px, calc(100vw - 32px)); padding: 20px; background: var(--eco-surface); color: var(--eco-ink); border: 1px solid var(--eco-line); border-radius: 8px; }
+.vehicleConfirm::backdrop { background: rgb(0 0 0 / 45%); }
+.vehicleConfirm p { margin: 8px 0 14px; }
+.vehicleConfirm button + button { margin-inline-start: 8px; }
+.lookup :global([aria-invalid="true"]) { border-color: var(--eco-rust); }
+.lookup :global(.eco-vehicle-lookup__field [role="alert"]) { display: block; color: var(--eco-rust); margin-top: 4px; }

@@ -8,7 +8,7 @@ export type QuoteStockProduct = {
   id: string; name: string; article: string; price: number; available: number;
   brand?: string | null; unit: string; litresPerUnit: number | null; sae: string; oem: string;
 };
-export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string; supplierDeliveryAt?: number; filterLabel?: string; brand?: string | null };
+export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string; supplierDeliveryAt?: number; supplierDeliveryLabel?: string; filterLabel?: string; brand?: string | null };
 // Ford approval codes are also stored as custom OEM attributes.
 function fordOilApprovals(text?: string | null): string[] {
   return [...(text ?? "").matchAll(/\bWSS[ -]*M2C[ -]*(\d{3})[ -]*([A-Z])\b/gi)]
@@ -129,7 +129,12 @@ export function quoteSupplierDeliveryAt(offer: Pick<QuoteFilterGroup["products"]
 }
 
 function quoteDeliverySuffix(row: QuoteExtra, timeZone: string, now: number) {
-  if (!row.supplierProductId || row.supplierDeliveryAt == null) return "";
+  if (!row.supplierProductId) return "";
+  const label = row.supplierDeliveryLabel?.trim();
+  if (label && label !== "срок доставки не указан") {
+    return `\nОриентировочная поставка: ${label.replace(/^доставка:\s*/i, "")}`;
+  }
+  if (row.supplierDeliveryAt == null) return "";
   const day = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
   // Compare calendar days in the branch, including around midnight and clock changes.
   const dayNumber = (value: number) => {
@@ -167,7 +172,7 @@ export function quoteClientText(vehicle: string, specification: string, litres: 
 
 export type QuoteFilterGroup = {
   key: string; label: string; article: string; condition?: string | null;
-  products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean; source?: "rossko"; deliveryLabel?: string; brand?: string | null; relation?: "mann" | "analogue"; referenceArticle?: string; deliveryAt?: string | null; deliveryDays?: number | null }[];
+  products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean; source?: "rossko"; deliveryLabel?: string; brand?: string | null; relation?: "mann" | "analogue"; referenceArticle?: string; matchType?: string; deliveryAt?: string | null; deliveryDays?: number | null }[];
 };
 
 export function quoteRequirementChoices(profile: import("@/lib/mann-unified-technical-profile").MannUnifiedTechnicalProfile | null, research: import("@/lib/mann-fluid-research").MannFluidResearchResult | null, options?: { prefillResearchVolume?: boolean }) {
