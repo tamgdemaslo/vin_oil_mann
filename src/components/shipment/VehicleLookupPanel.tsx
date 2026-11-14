@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, CircleStop, Cog, Droplet, Gauge, GitBranch, Info, Link2, RefreshCw, Settings, Snowflake, type LucideIcon } from "lucide-react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import type { MannTransmissionType, MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
@@ -24,7 +24,16 @@ export type VehicleLookupManualContext = {
   message?: string;
 };
 
+export type MannManualSelection = {
+  variantId: string;
+  make: string;
+  model: string;
+  modification?: string;
+  engineCode?: string;
+};
+
 type Props = {
+  manualSelection?: MannManualSelection | null;
   combinedIdentifier?: boolean;
   onQuoteContextChange?: (context: MaintenanceQuoteVehicleContext | null) => void;
   organizationId?: string | null;
@@ -101,6 +110,7 @@ function vehicleDetails(vehicle: NormalizedVehicleIdentity): string {
   return [
     vehicle.licensePlate,
     vehicle.year,
+    vehicle.modificationName && vehicle.sourceMethods.includes("mann_manual") ? vehicle.modificationName : undefined,
     vehicle.engineVolumeLiters ? `${vehicle.engineVolumeLiters} л` : undefined,
     vehicle.engineCode,
     vehicle.powerHp ? `${Math.round(vehicle.powerHp)} л.с.` : undefined,
@@ -462,7 +472,7 @@ export function TechnicalProfile({
   );
 }
 
-export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextChange, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
+export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection, onQuoteContextChange, organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onConfirmTransmission, onLookupStart, onManualMode }: Props) {
   const [tab, setTab] = useState<LookupTab>("vin");
   const [input, setInput] = useState(initialVin ?? "");
   const [loading, setLoading] = useState(false);
@@ -510,7 +520,7 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
     onQuoteContextChange?.(appliedVehicle ? {
       key: quoteVehicleKey,
       vin: appliedVehicle.vin ?? null,
-      vehicleTitle: `${vehicleTitle(appliedVehicle)} · ${vehicleDetails(appliedVehicle)}`,
+      vehicleTitle: [vehicleTitle(appliedVehicle), vehicleDetails(appliedVehicle)].filter(Boolean).join(" · "),
       profile: technicalProfile,
       research: fluidResearch,
     } : null);
@@ -612,6 +622,41 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
         const research = await responseJson<MannFluidResearchResult>(researchResponse);
           return researchResponse.ok && research ? research : { status: "unavailable", items: [], message: "Запрос группы не выполнен. Остальные результаты сохранены." };
         },
+  const applyManualSelection = useEffectEvent((selection: MannManualSelection) => {
+    lookupRequestIdRef.current += 1;
+    resolutionRequestIdRef.current += 1;
+    lookupControllerRef.current?.abort();
+    resolutionControllerRef.current?.abort();
+    resetLookupState();
+    setLoading(false);
+    setResolving(false);
+    const vehicle: NormalizedVehicleIdentity = {
+      makeRaw: selection.make,
+      modelRaw: selection.model,
+      modificationName: selection.modification,
+      engineCode: selection.engineCode,
+      sourceMethods: ["mann_manual"],
+      rawResultIds: [],
+      confidence: "medium",
+      vinStatus: "unknown",
+    };
+    setAppliedVehicle(vehicle);
+    void loadTechnicalProfile([selection.variantId], vehicle);
+  });
+
+  useEffect(() => {
+    if (manualSelection) applyManualSelection(manualSelection);
+  }, [manualSelection]);
+
+  useEffect(() => () => {
+    lookupRequestIdRef.current += 1;
+    resolutionRequestIdRef.current += 1;
+    technicalProfileRequestIdRef.current += 1;
+    lookupControllerRef.current?.abort();
+    resolutionControllerRef.current?.abort();
+    technicalProfileControllerRef.current?.abort();
+  }, []);
+
       });
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return;
@@ -825,9 +870,10 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
   };
 
   const changeTab = (next: LookupTab) => {
-    if (next === tab) {
+    if (next === tab && !(combinedIdentifier && next === "manual")) {
+    setLoading(false);
+    setResolving(false);
       if (next !== "manual") inputRef.current?.focus();
-      else if (combinedIdentifier) onManualMode({ reason: "manual" });
       return;
     }
     lookupRequestIdRef.current += 1;
@@ -865,6 +911,16 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
   const chooseAnotherVehicle = () => {
     lookupRequestIdRef.current += 1;
     resolutionRequestIdRef.current += 1;
+  const manuallySelected = appliedVehicle?.sourceMethods.includes("mann_manual");
+  const changeAppliedVehicle = () => {
+    if (!combinedIdentifier) {
+      openManualMode({ reason: "manual", vehicle: appliedVehicle });
+      return;
+    }
+    chooseAnotherVehicle();
+    if (manuallySelected) openManualMode({ reason: "manual" });
+  };
+
     lookupControllerRef.current?.abort();
     resolutionControllerRef.current?.abort();
     technicalProfileControllerRef.current?.abort();
@@ -883,17 +939,17 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
         <div className="eco-vehicle-lookup__selected">
           <div className="eco-vehicle-lookup__identity">
             <div className="eco-vehicle-lookup__identity-head">
-              <span className="eco-vehicle-lookup__status is-ready">Автомобиль найден</span>
+              <span className="eco-vehicle-lookup__status is-ready">{manuallySelected ? "Выбран из каталога" : "Автомобиль найден"}</span>
               {appliedFromCache && !combinedIdentifier ? <em>Из карточки</em> : null}
             </div>
             <strong>{vehicleTitle(appliedVehicle)}</strong>
             <span>{vehicleDetails(appliedVehicle) || "Подбор фильтров — ниже."}</span>
           </div>
           <div className="eco-vehicle-lookup__actions">
-            <button type="button" onClick={() => combinedIdentifier ? chooseAnotherVehicle() : openManualMode({ reason: "manual", vehicle: appliedVehicle })}>
+            <button type="button" onClick={changeAppliedVehicle}>
               Изменить
             </button>
-            <details className="eco-vehicle-lookup__more">
+            {!manuallySelected && <details className="eco-vehicle-lookup__more">
               <summary aria-label="Другие действия с автомобилем" title="Другие действия">⋯</summary>
               <div>
                 <button type="button" onClick={() => void runLookup(false, true)} disabled={loading}>
@@ -903,7 +959,7 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
                   Выбрать другой автомобиль
                 </button>
               </div>
-            </details>
+            </details>}
           </div>
         </div>
         {!appliedVehicle.engineCode && (confirmedTechnicalCandidateRef.current?.technicalIdentity?.engineOptions?.length ?? 0) > 1 ? (
@@ -928,7 +984,7 @@ export function VehicleLookupPanel({ combinedIdentifier = false, onQuoteContextC
         {resolution?.selectedApplication ? <div className="eco-vehicle-selected-conditions"><CandidateConditions candidate={resolution.selectedApplication} /></div> : null}
         {combinedIdentifier && technicalProfileLoading && <p className="eco-quote-technical-status" role="status">Уточняем требования к маслу…</p>}
         {combinedIdentifier && technicalProfileError && <p className="eco-quote-technical-error" role="alert">{technicalProfileError}</p>}
-        <TechnicalDetails className={combinedIdentifier ? "eco-quote-technical-details" : undefined}>
+        <TechnicalDetails open={manuallySelected ? true : undefined} className={combinedIdentifier ? "eco-quote-technical-details" : undefined}>
         {combinedIdentifier && <summary>Технические данные и уточнения<span>Жидкости, комплектация и источники</span></summary>}
         <details className="eco-vehicle-refinements"><summary>Уточнить данные автомобиля</summary>
         {canConfirmVehicleDestinationMarket(appliedVehicle) ? (

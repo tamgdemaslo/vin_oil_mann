@@ -248,3 +248,8 @@
 .filterEditor > summary::after { content: "+"; }
 .filterEditor[open] > summary::after { content: "−"; }
 .filterEditor > div { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 8px 0; }
+
+.quickServices { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 8px 14px; }
+.quickServices > button { white-space: normal; text-align: left; }
+.quickServiceMore { margin-block: 8px 16px; }
+.quickServiceMore > summary { cursor: pointer; width: fit-content; }

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { MannManualSelection } from "@/components/shipment/VehicleLookupPanel";
 import styles from "./maintenance-quote.module.css";
 
-export type QuoteVehicleSelection = { variantId: string; make: string; model: string; year?: number | null };
-type Variant = { variantId: string; effectiveVehicleText?: string; vehicleText?: string; engineCode?: string; vehicleYears?: string };
+type Variant = { variantId: string; effectiveVehicleText: string | null; vehicleText: string | null; engineCode: string | null; vehicleYears: string | null };
 
 function useCatalogOptions<T>(path: string, field: string) {
   const [result, setResult] = useState<{ path: string; items: T[]; failed?: boolean }>();
@@ -23,7 +23,7 @@ function useCatalogOptions<T>(path: string, field: string) {
   return result?.path === path ? result : undefined;
 }
 
-export function ManualVehiclePicker({ active, onSelect }: { active: boolean; onSelect: (selection: QuoteVehicleSelection | null) => void }) {
+export function ManualVehiclePicker({ active, onSelect }: { active: boolean; onSelect: (selection: MannManualSelection | null) => void }) {
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
   const [variantId, setVariantId] = useState("");
@@ -47,8 +47,14 @@ export function ManualVehiclePicker({ active, onSelect }: { active: boolean; onS
       <label>Модификация
         <select value={variantId} disabled={!model || !variants} onChange={(event) => {
           const next = event.target.value;
+          const variant = variants?.items.find(item => item.variantId === next);
           setVariantId(next);
-          onSelect(next ? { make, model, variantId: next } : null);
+          const engine = variant?.engineCode?.trim();
+          onSelect(variant ? {
+            make, model, variantId: variant.variantId,
+            modification: variant.effectiveVehicleText || variant.vehicleText || undefined,
+            engineCode: engine && !/[,;/|]/.test(engine) && engine.length <= 80 ? engine : undefined,
+          } : null);
         }}>
           <option value="">{model && !variants ? "Загружаем модификации…" : "Выберите модификацию"}</option>
           {variants?.items.map((item) => <option key={item.variantId} value={item.variantId}>

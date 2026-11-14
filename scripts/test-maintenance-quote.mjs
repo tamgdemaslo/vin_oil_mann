@@ -141,3 +141,23 @@ assert.match(filterOnlyText,/Воздушный фильтр LYNXauto: 1\s*715,3
 assert.match(filterOnlyText,/Итого: 6\s*324,30/);
 assert.doesNotMatch(filterOnlyText,/Моторное масло|Вариант/);
 console.log('Shipment quote suggestions, MANN reference safety, warehouse isolation and filter-only quote: ok');
+
+const { quoteSupplierDeliveryAt, quoteServiceGroups } = await jiti.import('../src/lib/maintenance-quote.ts');
+const quoteNow = Date.parse('2026-11-14T21:50:00Z');
+const quoteTime = { timeZone: 'Europe/Kaliningrad', now: quoteNow };
+const deliveryPart = { id: 'part', name: 'Фильтр Роско', filterLabel: 'Воздушный фильтр', brand: 'MANN', quantity: 1, price: 1000, supplierProductId: 'rossko:part' };
+const quoteWithPart = (deliveryAt, deliveryDays, oils = []) => quoteClientText('Автомобиль', '5W-30', 4.5, oils, [
+  { ...deliveryPart, supplierDeliveryAt: quoteSupplierDeliveryAt({ deliveryAt, deliveryDays }, quoteNow) },
+], quoteTime);
+assert.doesNotMatch(quoteWithPart('2026-11-14T21:59:00Z', null), /доставка/u);
+assert.doesNotMatch(quoteWithPart('2026-11-15T21:59:00Z', 4), /доставка/u, 'exact date overrides estimated days');
+assert.match(quoteWithPart('2026-11-15T22:00:00Z', null), /Воздушный фильтр MANN: .*доставка 16\.11\.2026/u);
+assert.doesNotMatch(quoteWithPart(null, null), /доставка/u);
+assert.match(quoteWithPart(null, 3, [bulk]), /Воздушный фильтр MANN: .*доставка 17\.11\.2026/u);
+assert.doesNotMatch(quoteClientText('Автомобиль', '', 0, [], [{ ...deliveryPart, supplierProductId: undefined, supplierDeliveryAt: quoteNow + 3 * 86400000 }], quoteTime), /доставка/u);
+const services = ['Частичная замена масла в АКПП', 'Замена топливного фильтра', 'Замена масла в двигателе', 'Замена масла в заднем редукторе', 'Замена салонного фильтра']
+  .map((name, index) => ({ id: String(index), name, salePriceCents: 100000 }));
+const serviceGroups = quoteServiceGroups(services);
+assert.deepEqual(serviceGroups.popular.map(service => service.id), ['2', '4', '1']);
+assert.deepEqual(serviceGroups.other.map(service => service.id), ['0', '3']);
+console.log('Rossko calendar-day delivery and branch service shortcuts: ok');

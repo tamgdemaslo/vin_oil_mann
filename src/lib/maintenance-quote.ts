@@ -8,7 +8,7 @@ export type QuoteStockProduct = {
   id: string; name: string; article: string; price: number; available: number;
   brand?: string | null; unit: string; litresPerUnit: number | null; sae: string; oem: string;
 };
-export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string; filterLabel?: string; brand?: string | null };
+export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string; supplierDeliveryAt?: number; filterLabel?: string; brand?: string | null };
 // Ford approval codes are also stored as custom OEM attributes.
 function fordOilApprovals(text?: string | null): string[] {
   return [...(text ?? "").matchAll(/\bWSS[ -]*M2C[ -]*(\d{3})[ -]*([A-Z])\b/gi)]
@@ -104,20 +104,58 @@ export function quoteVariantAmount(variant: QuoteOilVariant, litres: number) {
   const lines=products.flatMap((product,index)=>solution.state.counts[index] ? [{product,quantity:solution.state.counts[index],cents:solution.state.counts[index]*Math.round(product.price*100)}] : []);
   return {quantity:lines.reduce((sum,line)=>sum+line.quantity,0),suppliedLitres:solution.suppliedLitres,cents:solution.state.cents,enough:Boolean(inStock),lines};
 }
-export function quoteClientText(vehicle: string, specification: string, litres: number, oils: QuoteStockProduct[], extras: QuoteExtra[]) {
+export type QuoteService = { id: string; name: string; salePriceCents: number };
+
+export function quoteServiceGroups(services: QuoteService[]) {
+  const popular = [
+    /замен[а-я]* .*(?:моторн[а-я]* масл|масл[а-я]* (?:в )?двигател)/i,
+    /замен[а-я]* .*маслян[а-я]* фильтр/i,
+    /замен[а-я]* .*воздушн[а-я]* фильтр/i,
+    /замен[а-я]* .*салонн[а-я]* фильтр/i,
+    /замен[а-я]* .*топливн[а-я]* фильтр/i,
+  ];
+  const rank = (service: QuoteService) => popular.findIndex(pattern => pattern.test(service.name));
+  return {
+    popular: services.filter(service => rank(service) >= 0).sort((a, b) => rank(a) - rank(b)),
+    other: services.filter(service => rank(service) < 0),
+  };
+}
+
+export function quoteSupplierDeliveryAt(offer: Pick<QuoteFilterGroup["products"][number], "deliveryAt" | "deliveryDays">, now = Date.now()) {
+  const exact = offer.deliveryAt ? Date.parse(offer.deliveryAt) : NaN;
+  if (Number.isFinite(exact)) return exact;
+  const days = offer.deliveryDays;
+  if (days != null && Number.isInteger(days) && days >= 0) return now + days * 86_400_000;
+}
+
+function quoteDeliverySuffix(row: QuoteExtra, timeZone: string, now: number) {
+  if (!row.supplierProductId || row.supplierDeliveryAt == null) return "";
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+  // Compare calendar days in the branch, including around midnight and clock changes.
+  const dayNumber = (value: number) => {
+    const parts = day.formatToParts(value);
+    const part = (type: string) => Number(parts.find(entry => entry.type === type)?.value);
+    return Date.UTC(part("year"), part("month") - 1, part("day"));
+  };
+  if (dayNumber(row.supplierDeliveryAt) - dayNumber(now) < 2 * 86_400_000) return "";
+  const date = new Intl.DateTimeFormat("ru-RU", { timeZone, dateStyle: "short" }).format(row.supplierDeliveryAt);
+  return ` (доставка ${date})`;
+}
+
+export function quoteClientText(vehicle: string, specification: string, litres: number, oils: QuoteStockProduct[], extras: QuoteExtra[], { timeZone = "Europe/Kaliningrad", now = Date.now() } = {}) {
   const extraLines = extras.map(row => {
     const filterName = row.name.trim().match(/^(?:масляный|воздушный|салонный|топливный)\s+фильтр(?=$|[^\p{L}\p{N}])/iu)?.[0];
     const filterLabel = row.filterLabel ?? filterName;
     const unitCents = Math.round(row.price * 100);
+    const delivery = quoteDeliverySuffix(row, timeZone, now);
     if (filterLabel) {
       // Free-text names can contain a brand before the article or a parenthesized code.
       const brandFromName = filterName && row.name.trim().slice(filterName.length).trim().split(/\s*\(|(?:^|\s+)\S*\d/)[0].trim();
       const brand = row.brand?.trim() || brandFromName;
       const label = brand ? `${filterLabel} ${brand}` : filterLabel;
-      return row.quantity === 1 ? `${label}: ${quoteRub(unitCents)}` : `${label}: ${row.quantity} × ${quoteRub(unitCents)} = ${quoteRub(Math.round(row.quantity * unitCents))}`;
+      return row.quantity === 1 ? `${label}: ${quoteRub(unitCents)}${delivery}` : `${label}: ${row.quantity} × ${quoteRub(unitCents)} = ${quoteRub(Math.round(row.quantity * unitCents))}${delivery}`;
     }
-    const label = row.name;
-    return `${label}: ${row.quantity} × ${quoteRub(unitCents)} = ${quoteRub(Math.round(row.quantity * unitCents))}`;
+    return `${row.name}: ${row.quantity} × ${quoteRub(unitCents)} = ${quoteRub(Math.round(row.quantity * unitCents))}${delivery}`;
   });
   if (!oils.length) return [`Расчёт ТО: ${vehicle}`, ...extraLines, `Итого: ${quoteRub(quoteExtraCents(extras))}`, "", "Предварительный расчёт. Наличие и цены уточняются при записи."].join("\n");
   return [`Расчёт ТО: ${vehicle}`, `Моторное масло: ${specification}; объём замены ${litres} л.`, ...groupQuoteOils(oils).flatMap((variant, index) => {
