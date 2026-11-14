@@ -871,8 +871,6 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
 
   const changeTab = (next: LookupTab) => {
     if (next === tab && !(combinedIdentifier && next === "manual")) {
-    setLoading(false);
-    setResolving(false);
       if (next !== "manual") inputRef.current?.focus();
       return;
     }
@@ -883,6 +881,8 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
     resolutionControllerRef.current?.abort();
     technicalProfileControllerRef.current?.abort();
     setTab(next);
+    setLoading(false);
+    setResolving(false);
     setFluidResearch(null);
     setLookup(null);
     setResolution(null);
