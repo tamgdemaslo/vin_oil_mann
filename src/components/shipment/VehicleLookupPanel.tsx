@@ -622,6 +622,16 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
         const research = await responseJson<MannFluidResearchResult>(researchResponse);
           return researchResponse.ok && research ? research : { status: "unavailable", items: [], message: "Запрос группы не выполнен. Остальные результаты сохранены." };
         },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return;
+      if (requestId !== technicalProfileRequestIdRef.current) return;
+      setTechnicalProfileError("Технический профиль временно недоступен. Подбор фильтров продолжает работать.");
+    } finally {
+      if (requestId === technicalProfileRequestIdRef.current) setTechnicalProfileLoading(false);
+    }
+  };
+
   const applyManualSelection = useEffectEvent((selection: MannManualSelection) => {
     lookupRequestIdRef.current += 1;
     resolutionRequestIdRef.current += 1;
@@ -656,16 +666,6 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
     resolutionControllerRef.current?.abort();
     technicalProfileControllerRef.current?.abort();
   }, []);
-
-      });
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") return;
-      if (requestId !== technicalProfileRequestIdRef.current) return;
-      setTechnicalProfileError("Технический профиль временно недоступен. Подбор фильтров продолжает работать.");
-    } finally {
-      if (requestId === technicalProfileRequestIdRef.current) setTechnicalProfileLoading(false);
-    }
-  };
 
   const handleResolution = async (vehicle: NormalizedVehicleIdentity, fromCache?: boolean) => {
     confirmedTechnicalCandidateRef.current = undefined;
@@ -911,16 +911,6 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
   const chooseAnotherVehicle = () => {
     lookupRequestIdRef.current += 1;
     resolutionRequestIdRef.current += 1;
-  const manuallySelected = appliedVehicle?.sourceMethods.includes("mann_manual");
-  const changeAppliedVehicle = () => {
-    if (!combinedIdentifier) {
-      openManualMode({ reason: "manual", vehicle: appliedVehicle });
-      return;
-    }
-    chooseAnotherVehicle();
-    if (manuallySelected) openManualMode({ reason: "manual" });
-  };
-
     lookupControllerRef.current?.abort();
     resolutionControllerRef.current?.abort();
     technicalProfileControllerRef.current?.abort();
@@ -929,6 +919,16 @@ export function VehicleLookupPanel({ combinedIdentifier = false, manualSelection
     lastAutomaticLookupRef.current = "";
     onLookupStart();
     window.requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const manuallySelected = appliedVehicle?.sourceMethods.includes("mann_manual");
+  const changeAppliedVehicle = () => {
+    if (!combinedIdentifier) {
+      openManualMode({ reason: "manual", vehicle: appliedVehicle });
+      return;
+    }
+    chooseAnotherVehicle();
+    if (manuallySelected) openManualMode({ reason: "manual" });
   };
 
   const TechnicalDetails = combinedIdentifier ? "details" : "div";
