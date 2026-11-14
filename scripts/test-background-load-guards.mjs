@@ -40,11 +40,18 @@ const platformShellSource = read("src/components/platform/PlatformShell.tsx");
 const deadlineLoader = platformShellSource.slice(platformShellSource.indexOf("const loadDeadlineNotifications"), platformShellSource.indexOf("  useEffect(() => {", platformShellSource.indexOf("const loadDeadlineNotifications")));
 if (/document\.visibilityState/.test(deadlineLoader)) failures.push("Фоновая вкладка должна получать сигналы заявок");
 if (!/setInterval\(refresh, 30_000\)/.test(platformShellSource)) failures.push("Сигналы заявок проверяются каждые 30 секунд");
-const shellLinks = platformShellSource.match(/<Link\b[\s\S]*?>/g) ?? [];
-const shellLinksWithoutPrefetchGuard = shellLinks.filter((link) => !/prefetch=\{false\}/.test(link));
-if (shellLinks.length === 0 || shellLinksWithoutPrefetchGuard.length > 0) {
-  failures.push("src/components/platform/PlatformShell.tsx: все Link должны отключать массовый RSC prefetch");
+// CRM document links must work even while the proxy rejects RSC requests.
+for (const file of [
+  "src/components/platform/PlatformShell.tsx",
+  "src/components/platform/ClientCaseAttention.tsx",
+  "src/components/products/KitTabs.tsx",
+  "src/components/products/ProductKitsWorkspace.tsx",
+  "src/app/inventory/products/ProductsClient.tsx",
+]) {
+  expect(file, [/<a\b[\s\S]*?href=/]);
+  reject(file, [/from "next\/link"/, /\brouter\.push\(/]);
 }
+expect("src/components/platform/PlatformShell.tsx", [/window\.location\.assign\(result\.href\)/]);
 
 expect("src/lib/product-oem-worker.ts", [
   /inProcessBackgroundWorkersEnabled\(\)/,
@@ -84,4 +91,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Background load guard checks passed (single-flight CRM, background case signals, guarded shell prefetch, adaptive OEM backoff). ");
+console.log("Background load guard checks passed (single-flight CRM, background case signals, document navigation, adaptive OEM backoff). ");

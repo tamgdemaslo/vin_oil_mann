@@ -4,10 +4,9 @@ import KitTabs from "@/components/products/KitTabs";
 import BulkOilBarrelManager from "@/components/receipts/BulkOilBarrelManager";
 
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
 import {
   AlertCircle,
@@ -520,18 +519,6 @@ type ProductFieldRenderOptions = {
   readOnly?: boolean;
 };
 
-type ProductEditorBufferedInputProps = {
-  id: string;
-  value: string;
-  className: string;
-  placeholder?: string;
-  type?: "text" | "number";
-  step?: string;
-  rows?: number;
-  onCommit: (value: string) => void;
-  disabled?: boolean;
-};
-
 type ProductEditorSectionId = "main" | "pricing" | "site" | "marking" | "codes" | "oil" | "extra" | "technical";
 
 const emptyForm: ProductForm = {
@@ -776,145 +763,6 @@ const FILTER_MOBILE_QUERY = "(max-width: 1180px)";
 const ACTION_MENU_GAP = 8;
 const ACTION_MENU_VIEWPORT_PADDING = 12;
 const ACTION_MENU_ARROW_SIZE = 10;
-const PRODUCT_EDITOR_INPUT_COMMIT_DELAY_MS = 120;
-
-function ProductEditorBufferedInput({
-  id,
-  value,
-  className,
-  placeholder,
-  type = "text",
-  step,
-  rows,
-  onCommit,
-  disabled,
-}: ProductEditorBufferedInputProps) {
-  const [draft, setDraft] = useState(value);
-  const focusedRef = useRef(false);
-  const pendingValueRef = useRef(value);
-  const committedValueRef = useRef(value);
-  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    committedValueRef.current = value;
-    pendingValueRef.current = value;
-    if (!focusedRef.current) setDraft(value);
-  }, [value]);
-
-  useEffect(() => () => {
-    if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-  }, []);
-
-  function commitNow(nextValue = pendingValueRef.current) {
-    if (commitTimerRef.current) {
-      clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = null;
-    }
-    if (committedValueRef.current === nextValue) return;
-    committedValueRef.current = nextValue;
-    onCommit(nextValue);
-  }
-
-  function scheduleCommit(nextValue: string) {
-    pendingValueRef.current = nextValue;
-    if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-    commitTimerRef.current = setTimeout(() => commitNow(nextValue), PRODUCT_EDITOR_INPUT_COMMIT_DELAY_MS);
-  }
-
-  const commonProps = {
-    id,
-    value: draft,
-    placeholder,
-    className,
-    disabled,
-    onFocus: () => {
-      focusedRef.current = true;
-    },
-    onBlur: () => {
-      focusedRef.current = false;
-      commitNow();
-    },
-    onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const nextValue = event.target.value;
-      setDraft(nextValue);
-      scheduleCommit(nextValue);
-    },
-  };
-
-  if (rows) {
-    return <textarea {...commonProps} rows={rows} />;
-  }
-
-  return (
-    <input
-      {...commonProps}
-      type={type}
-      step={step}
-    />
-  );
-}
-
-function ProductEditorBufferedMoneyInput({
-  id,
-  value,
-  className,
-  placeholder,
-  onCommit,
-  disabled,
-}: Omit<ProductEditorBufferedInputProps, "type" | "step" | "rows">) {
-  const [draft, setDraft] = useState(value);
-  const focusedRef = useRef(false);
-  const pendingValueRef = useRef(value);
-  const committedValueRef = useRef(value);
-  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    committedValueRef.current = value;
-    pendingValueRef.current = value;
-    if (!focusedRef.current) setDraft(value);
-  }, [value]);
-
-  useEffect(() => () => {
-    if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-  }, []);
-
-  function commitNow(nextValue = pendingValueRef.current) {
-    if (commitTimerRef.current) {
-      clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = null;
-    }
-    if (committedValueRef.current === nextValue) return;
-    committedValueRef.current = nextValue;
-    onCommit(nextValue);
-  }
-
-  function scheduleCommit(nextValue: string) {
-    pendingValueRef.current = nextValue;
-    if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-    commitTimerRef.current = setTimeout(() => commitNow(nextValue), PRODUCT_EDITOR_INPUT_COMMIT_DELAY_MS);
-  }
-
-  return (
-    <MoneyInput
-      id={id}
-      value={draft}
-      placeholder={placeholder}
-      className={className}
-      disabled={disabled}
-      onFocus={() => {
-        focusedRef.current = true;
-      }}
-      onBlur={() => {
-        focusedRef.current = false;
-        commitNow();
-      }}
-      onValueChange={(_value, nextDraft) => {
-        setDraft(nextDraft);
-        scheduleCommit(nextDraft);
-      }}
-    />
-  );
-}
 
 async function readJson<T>(res: Response): Promise<T | null> {
   try {
@@ -2324,6 +2172,16 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     () => isProductFormDirty(form, formBaseline) || Boolean(storefrontStatus && storefrontPublicationDraft !== storefrontStatus.state),
     [form, formBaseline, storefrontPublicationDraft, storefrontStatus]
   );
+  useEffect(() => {
+    if (!formOpen || (!formDirty && !saving)) return;
+    function protectUnsavedChanges(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = true;
+    }
+    window.addEventListener("beforeunload", protectUnsavedChanges);
+    return () => window.removeEventListener("beforeunload", protectUnsavedChanges);
+  }, [formOpen, formDirty, saving]);
+
   const changedCriticalFields = useMemo(
     () => Object.entries(criticalFieldLabels)
       .filter(([key]) => form[key as keyof ProductForm] !== formBaseline[key as keyof ProductForm])
@@ -4274,10 +4132,14 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
 
   async function submit(closeAfter = false) {
     if (rosskoLinkLoading || productSaveInFlightRef.current) return;
+    if (closeAfter && editingId && !formDirty) {
+      resetForm();
+      return;
+    }
     const validation = validateProductForm(form);
     if (Object.keys(validation).length) {
       setFormErrors(validation);
-      setFormError("Проверьте обязательные поля перед сохранением.");
+      setFormError(Object.values(validation).join(". "));
       return;
     }
 
@@ -4577,32 +4439,32 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
           </span>
         </span>
         {options.type === "textarea" ? (
-          <ProductEditorBufferedInput
+          <textarea
             id={inputId}
             value={form[key]}
             rows={options.rows ?? 3}
             placeholder={options.placeholder}
             className={inputClass}
             disabled={options.readOnly}
-            onCommit={(value) => {
+            onChange={(event) => {
               if (String(key).startsWith("marking")) setMarkingTouched(true);
-              updateForm({ [key]: value } as Partial<ProductForm>);
+              updateForm({ [key]: event.target.value });
             }}
           />
         ) : options.type === "money" ? (
-          <ProductEditorBufferedMoneyInput
+          <MoneyInput
             id={inputId}
             value={form[key]}
             placeholder={options.placeholder}
             className={inputClass}
             disabled={options.readOnly}
-            onCommit={(value) => {
+            onValueChange={(_value, draft) => {
               if (String(key).startsWith("marking")) setMarkingTouched(true);
-              updateForm({ [key]: value } as Partial<ProductForm>);
+              updateForm({ [key]: draft });
             }}
           />
         ) : (
-          <ProductEditorBufferedInput
+          <input
             id={inputId}
             type={options.type === "number" ? "number" : "text"}
             step={options.step ?? (options.type === "number" ? "0.001" : undefined)}
@@ -4610,9 +4472,9 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
             placeholder={options.placeholder}
             className={inputClass}
             disabled={options.readOnly}
-            onCommit={(value) => {
+            onChange={(event) => {
               if (String(key).startsWith("marking")) setMarkingTouched(true);
-              updateForm({ [key]: value } as Partial<ProductForm>);
+              updateForm({ [key]: event.target.value });
             }}
           />
         )}
@@ -4678,12 +4540,12 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
           <option value={NEW_GROUP_VALUE}>Новая группа...</option>
         </select>
         {newGroupMode ? (
-          <ProductEditorBufferedInput
+          <input
             id="product-field-new-group"
             value={form.groupPath}
             placeholder="Название новой группы"
             className="eco-input product-editor-input"
-            onCommit={(value) => updateForm({ groupPath: value })}
+            onChange={(event) => updateForm({ groupPath: event.target.value })}
           />
         ) : null}
         {editorGroupsLoading ? <span className="product-editor-hint">Загружаем полный список групп...</span> : null}
@@ -5109,7 +4971,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
               {editorCellWarning ? <div className="product-editor-alert"><span>{editorCellWarning}</span></div> : null}
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="eco-btn eco-btn--primary eco-btn--sm" onClick={() => void saveProductStorageAssignment()} disabled={!changed || editorCellSaving}>{editorCellSaving ? "Сохранение…" : "Сохранить ячейку"}</button>
-                <Link href="/inventory/cells" className="eco-btn eco-btn--sm">Открыть справочник</Link>
+                <a href="/inventory/cells" className="eco-btn eco-btn--sm">Открыть справочник</a>
               </div>
             </div>
           </div>
@@ -5278,7 +5140,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     const className = placement === "side" ? "product-editor-action-stack" : "product-editor-footer-actions";
     return (
       <div className={className}>
-        <button type="button" className="eco-btn" onClick={closeForm}>
+        <button type="button" className="eco-btn" onClick={closeForm} disabled={saving}>
           <RotateCcw aria-hidden className="eco-icon" />
           Отмена
         </button>
@@ -5294,7 +5156,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
         <button
           type="button"
           onClick={() => void submit(true)}
-          disabled={saving || rosskoLinkLoading || !formDirty}
+          disabled={saving || rosskoLinkLoading}
           className="eco-btn"
         >
           Сохранить и закрыть
@@ -5723,7 +5585,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                   {saving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : formDirty ? <AlertCircle aria-hidden className="eco-icon" /> : <CheckCircle2 aria-hidden className="eco-icon" />}
                   {saving ? "Сохраняем..." : formDirty ? "Есть изменения" : "Сохранено"}
                 </span>
-                <button type="button" className="product-editor-icon-button" onClick={closeForm} aria-label="Закрыть">
+                <button type="button" className="product-editor-icon-button" onClick={closeForm} disabled={saving} aria-label="Закрыть">
                   <X aria-hidden className="eco-icon" />
                 </button>
               </div>
@@ -5764,7 +5626,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
               </button>
             </div>
 
-            <div className={`product-editor-scroll is-${mobileEditorView}-view`}>
+            <div className={`product-editor-scroll is-${mobileEditorView}-view`} inert={saving}>
               <div className="product-editor-search">
                 <Search aria-hidden className="eco-icon" />
                 <input
@@ -5784,13 +5646,6 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                   </button>
                 ) : null}
               </div>
-
-              {formError ? (
-                <div className="product-editor-alert is-error">
-                  <AlertCircle aria-hidden className="eco-icon" />
-                  <span>{formError}</span>
-                </div>
-              ) : null}
 
               {changedCriticalFields.length > 0 ? (
                 <div className="product-editor-alert is-warning">
@@ -6235,9 +6090,13 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
             </div>
 
             <footer className="product-editor-footer">
-              <div className="product-editor-footer-note">
-                {saving ? "Сохраняем карточку..." : formDirty ? "Есть несохранённые изменения" : "Изменений нет"}
-              </div>
+              {formError ? (
+                <div className="product-editor-footer-note is-error" role="alert">{formError}</div>
+              ) : (
+                <div className="product-editor-footer-note" role="status">
+                  {saving ? "Сохраняем карточку..." : formDirty ? "Есть несохранённые изменения" : "Изменений нет"}
+                </div>
+              )}
               {renderEditorActionButtons("footer")}
             </footer>
           </section>

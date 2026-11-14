@@ -41359,6 +41359,10 @@ textarea.product-editor-input {
   font-weight: 750;
 }
 
+.product-editor-footer-note.is-error {
+  color: var(--eco-danger);
+}
+
 .product-editor-footer-actions {
   display: flex;
   flex-wrap: wrap;
