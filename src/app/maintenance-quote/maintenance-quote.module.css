@@ -34,3 +34,16 @@
 .lookup :global(.eco-vehicle-lookup__controls) { min-width: 0; }
 .lookup :global(.eco-vehicle-lookup__field) { min-width: 0; }
 @media (max-width: 540px) { .title h1 { font-size: 27px; } }
+.lookup :global(.eco-vehicle-lookup__controls) {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  max-width: 740px;
+}
+.lookup :global(.eco-vehicle-lookup__controls .eco-btn) { white-space: nowrap; }
+.manualCatalog { margin-top: 12px; padding: 12px; border: 1px solid var(--eco-line); border-radius: 6px; }
+.manualCatalog[hidden] { display: none; }
+.manualHeader { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.manualHeader h3 { margin: 0; font-size: 15px; }
+@media (max-width: 570px) {
+  .lookup :global(.eco-vehicle-lookup__controls) { grid-template-columns: minmax(0, 1fr) auto; }
+  .lookup :global(.eco-vehicle-lookup__controls > button:last-child) { grid-column: 1 / -1; justify-self: start; }
+}
