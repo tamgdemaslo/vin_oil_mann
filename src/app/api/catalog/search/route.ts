@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { searchCatalog, type CatalogSearchParams } from "@/lib/catalog-search";
 
@@ -11,9 +10,9 @@ function readValues(request: NextRequest, key: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const startedAt = performance.now();
   const branch = await requireBranchApi({ allowAll: false, requireActive: true });
+  const accessMs = performance.now() - startedAt;
   if (!branch.ok) return branch.response;
 
   const sp = request.nextUrl.searchParams;
@@ -71,5 +70,31 @@ export async function GET(request: NextRequest) {
     strictNameOem: sp.get("strictNameOem") === "1" || sp.get("strictNameOem") === "true",
   };
 
-  return runWithBranchApiContext(branch.context, async () => NextResponse.json(await searchCatalog(params)));
+  return runWithBranchApiContext(branch.context, async () => {
+    const searchStartedAt = performance.now();
+    const result = await searchCatalog(params);
+    const searchMs = performance.now() - searchStartedAt;
+    const response = sp.get("view") === "inventory" && params.context === "products"
+      ? NextResponse.json({
+          products: result.products,
+          meta: result.meta,
+          matchedOutsideFilters: result.matchedOutsideFilters,
+        })
+      : NextResponse.json(result);
+    const totalMs = performance.now() - startedAt;
+    response.headers.set("Server-Timing", `access;dur=${accessMs.toFixed(1)}, catalog;dur=${searchMs.toFixed(1)}, app;dur=${totalMs.toFixed(1)}`);
+    if (totalMs >= 2_000) {
+      console.warn("[catalog.search] slow response", {
+        branchId: branch.context.branchId,
+        context: params.context,
+        hasQuery: Boolean(result.normalizedQuery),
+        offset: result.meta.offset,
+        count: result.products.length,
+        accessMs: Math.round(accessMs),
+        searchMs: Math.round(searchMs),
+        totalMs: Math.round(totalMs),
+      });
+    }
+    return response;
+  });
 }
