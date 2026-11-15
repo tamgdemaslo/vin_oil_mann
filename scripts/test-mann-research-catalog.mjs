@@ -42,6 +42,11 @@ try {
  assert.equal((await read({...input,transmissionType:'automatic'})).items.length,0,'different transmission must not reuse fluid scope');
  const verified={...loaded.items[0],researchResult:undefined,researchVolumeText:undefined,sourceStatus:'primary_source',specifications:['Verified'],viscosityGrades:['5W-30'],capacities:[{nominalLiters:4}],automaticSelectionEligible:true};
  assert.deepEqual((await read({...input,profile:{...profile,status:'active',items:[verified]}})).items,[verified],'AI cannot overwrite complete catalog data');
+ const withOnlyTotal = {...profile,items:[{...verified,capacities:[{nominalLiters:8,serviceContext:'TOTAL'}]}]};
+ assert.equal(missingMannFluids(withOnlyTotal).find(row=>row.systemCode==='ENGINE_OIL').volume,true);
+ const withSavedServiceVolume = await read({...input,profile:withOnlyTotal});
+ assert.equal(withSavedServiceVolume.items[1].researchVolumeText,item.volumeText);
+ assert.equal(missingMannFluids(withSavedServiceVolume).some(row=>row.systemCode==='ENGINE_OIL'),false);
  const withoutViscosity={...verified,specifications:['VW 504.00'],viscosityGrades:[]};
  assert.equal(missingMannFluids({...profile,items:[withoutViscosity]}).find(row=>row.systemCode==='ENGINE_OIL').viscosity,true);
  const enriched=await read({...input,profile:{...profile,items:[withoutViscosity]}});
