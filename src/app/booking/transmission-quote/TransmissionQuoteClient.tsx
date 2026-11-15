@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, Check, LoaderCircle } from "lucide-react";
+import { trackClientGoal } from "@/lib/client-site-analytics";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import PublicBookingHeader from "../PublicBookingHeader";
 import styles from "../booking.module.css";
@@ -15,30 +16,41 @@ export default function TransmissionQuoteClient() {
   const [comment, setComment] = useState("");
   const [website, setWebsite] = useState("");
   const [sourcePage, setSourcePage] = useState("/booking/transmission-quote");
+  const [help, setHelp] = useState(false);
+  const successRef = useRef<HTMLHeadingElement>(null);
   const [utm, setUtm] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const sending = useRef(false);
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const [phoneError, setPhoneError] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const caseId = params.get("case");
+    if (params.get("source") === "akpp") setSourcePage("/services/zamena-masla-akpp");
+    setHelp(params.get("mode") === "help");
     if (caseId && /^[a-z0-9-]{1,120}$/i.test(caseId)) setSourcePage(`/case/${caseId}`);
     setUtm(Object.fromEntries([...params.entries()].filter(([key]) => /^utm_(source|medium|campaign|content|term)$/.test(key))));
   }, []);
   useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
 
+  useEffect(() => { if (sent) successRef.current?.focus(); }, [sent]);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (sending.current) return;
     setError("");
+    setPhoneError("");
     if (name.trim().length < 2 || !vehicle.trim()) {
       setError("Укажите имя и автомобиль для расчёта."); return;
     }
     if (!normalizePhoneKey(phone)) {
-      setError("Проверьте телефон: укажите номер с кодом страны."); return;
+      setPhoneError("Проверьте номер телефона. Пример: +7 999 123-45-67.");
+      phoneRef.current?.focus();
+      return;
     }
     sending.current = true;
     setBusy(true);
@@ -51,6 +63,7 @@ export default function TransmissionQuoteClient() {
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.ok) throw new Error(data?.error || "Не удалось отправить заявку. Попробуйте позже.");
       setSent(true);
+      trackClientGoal("akpp_quote_success", { source: sourcePage });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось отправить заявку. Проверьте соединение.");
     } finally {
@@ -63,14 +76,14 @@ export default function TransmissionQuoteClient() {
     <PublicBookingHeader quote />
     {sent ? <main className={styles.successPanel}>
       <div className={styles.successIcon}><Check aria-hidden /></div>
-      <h1>Заявка на расчёт отправлена</h1>
+      <h1 ref={successRef} tabIndex={-1}>Заявка на расчёт принята</h1>
       <p>Рассчитаем стоимость масла, расходников и работ для вашего автомобиля и свяжемся с вами по указанному телефону.</p>
-      <div className={styles.successActions}><a className={styles.secondaryButton} href={sourcePage === "/booking/transmission-quote" ? "/client-site/cases" : `/client-site${sourcePage}`}><ArrowLeft aria-hidden /> Вернуться к кейсам</a></div>
+      <div className={styles.successActions}><a className={styles.secondaryButton} href={sourcePage === "/booking/transmission-quote" ? "/client-site/cases" : `/client-site${sourcePage}`}><ArrowLeft aria-hidden /> {sourcePage.startsWith("/services/") ? "Вернуться к услуге" : "Вернуться к кейсам"}</a></div>
     </main> : <main className={`${styles.bookingShell} ${quoteStyles.shell}`}>
       <div className={styles.intro}><div>
         <span className={styles.bookingKicker}>Масло в АКПП</span>
-        <h1>Рассчитать стоимость замены</h1>
-        <p>Укажите автомобиль и контакты. Подберём масло и расходники, рассчитаем работы и сообщим стоимость. Дату визита согласуем отдельно.</p>
+        <h1>{help ? "Подбор способа замены масла в АКПП" : "Расчёт стоимости замены масла в АКПП"}</h1>
+        <p>{help ? "Укажите автомобиль и телефон. Уточним данные по коробке, подскажем подходящий способ замены и рассчитаем стоимость." : "Укажите автомобиль и телефон. Подберём масло и расходники, рассчитаем работу и сообщим итоговую стоимость. Дату визита согласуем отдельно."}</p>
       </div></div>
       <form className={quoteStyles.panel} onSubmit={submit} aria-busy={busy}>
         <div className={styles.stageBody}>
@@ -79,7 +92,7 @@ export default function TransmissionQuoteClient() {
             <legend className={quoteStyles.honeypot}>Данные для расчёта</legend>
             <div className={styles.formGrid}>
               <label><span>Имя</span><input required minLength={2} maxLength={120} autoComplete="given-name" value={name} onChange={e => setName(e.target.value)} /></label>
-              <label><span>Телефон</span><input required type="tel" autoComplete="tel" inputMode="tel" maxLength={30} placeholder="+7 (999) 123-45-67" value={phone} onChange={e => setPhone(e.target.value)} /></label>
+              <label><span>Телефон</span><input ref={phoneRef} required type="tel" autoComplete="tel" inputMode="tel" maxLength={30} placeholder="+7 (999) 123-45-67" aria-invalid={Boolean(phoneError)} aria-describedby={phoneError ? "quote-phone-error" : undefined} value={phone} onChange={e => { setPhone(e.target.value); setPhoneError(""); }} />{phoneError && <small id="quote-phone-error" className={styles.fieldError} role="alert">{phoneError}</small>}</label>
               <label className={styles.wideField}><span>Марка, модель и год</span><input required maxLength={200} placeholder="Например, Toyota Camry, 2019" value={vehicle} onChange={e => setVehicle(e.target.value)} /></label>
               <label className={styles.wideField}><span>VIN · необязательно</span><input maxLength={17} minLength={17} pattern="[A-HJ-NPR-Za-hj-npr-z0-9]{17}" title="17 латинских букв и цифр, без I, O и Q" autoCapitalize="characters" spellCheck={false} value={vin} onChange={e => setVin(e.target.value.toUpperCase())} /><small>Если VIN нет под рукой, оставьте поле пустым — уточним при связи.</small></label>
               <label className={styles.wideField}><span>Комментарий · необязательно</span><textarea rows={3} maxLength={1500} placeholder="Пробег, когда меняли масло, вопросы по замене" value={comment} onChange={e => setComment(e.target.value)} /></label>

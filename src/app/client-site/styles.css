@@ -1768,3 +1768,33 @@ button:disabled {
   .service-detail th, .service-detail td { padding: 12px 8px; }
   .service-detail .btn { width: 100%; }
 }
+
+/* АКПП service landing */
+.akpp-detail .service-detail__hero { padding-top: clamp(24px, 4vw, 52px); }
+.akpp-detail h3 { margin: 0; }
+.akpp-detail__prices { display: grid; gap: 6px; padding: 0; list-style: none; }
+.akpp-detail__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 16px; }
+.akpp-detail__actions a { min-height: 44px; display: inline-flex; align-items: center; }
+.akpp-detail .btn { min-height: 44px; white-space: normal; text-align: center; }
+.akpp-detail a:not(.btn) { text-decoration: underline; text-underline-offset: .2em; }
+.akpp-detail a:focus-visible, .akpp-detail summary:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
+.akpp-detail summary { display: list-item; min-height: 44px; padding-block: 10px; }
+.akpp-detail [id] { scroll-margin-top: 80px; }
+.akpp-detail__grid { display: grid; gap: 16px; }
+.akpp-detail__grid > div { min-width: 0; padding: 16px; border: 1px solid var(--line); }
+.akpp-detail__case { margin-bottom: 16px; }
+.akpp-detail__case img { width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
+.akpp-detail__tariffs { margin: 16px 0 24px; }
+.akpp-detail__tariffs > div { display: grid; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.akpp-detail__tariffs dt { font-weight: 700; }
+.akpp-detail__tariffs dd { display: flex; justify-content: space-between; gap: 12px; margin: 0; }
+.akpp-detail__tariffs strong { white-space: nowrap; }
+@media (max-width: 599px) {
+  .akpp-detail__actions { flex-direction: column; align-items: stretch; }
+  .akpp-detail__actions .btn { justify-content: center; }
+}
+@media (min-width: 740px) {
+  .akpp-detail__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .akpp-detail__tariffs > div { grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .akpp-detail__tariffs dd { flex-direction: column; gap: 4px; }
+}

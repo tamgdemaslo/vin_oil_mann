@@ -25,4 +25,9 @@ assert.deepEqual(toggle(selected, "level"), ["filter", "level"], "Standalone lev
 assert.deepEqual(normalizeBookingServiceSelection(["obsolete", "partial-shop", "level", "filter", "hardware", "hardware"], services), ["filter", "hardware"], "Existing browser drafts are cleaned on load");
 assert.equal(isTransmissionOilVariant("Диагностика АКПП"), false);
 assert.equal(isTransmissionOilVariant("Замена масла в DSG"), false);
+const legacyServices = [
+  { id: "partial", name: "Замена трансмиссионного масла, частичная" },
+  { id: "hardware", name: "Замена трансмиссионного масла, полная/аппаратная" },
+];
+assert.deepEqual(toggleBookingServiceSelection(["partial"], "hardware", legacyServices), ["hardware"]);
 console.log("Transmission booking: exclusive tariffs, included level, independent services and draft restoration passed");

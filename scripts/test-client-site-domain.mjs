@@ -94,7 +94,18 @@ try {
       const html = renderToString(React.createElement(App, { initialPath: path, basePath }));
       assert.ok(html.includes(service.title), `Service content rendered for ${path}`);
       assert.ok(html.includes(`href="${basePath}/services"`));
-      assert.ok(html.includes(`/booking?service=${encodeURIComponent(service.title)}`));
+      if (service.slug === "zamena-masla-akpp") {
+        assert.ok(html.includes('href="/booking/transmission-quote?source=akpp"'));
+        assert.ok(html.includes('href="/booking?context=akpp&amp;location=dachnaya"'));
+        assert.ok(html.includes('id="akpp-branches"'));
+        assert.ok(html.includes('id="akpp-symptoms"'));
+        for (const [, shop, customer] of service.prices) {
+          assert.ok(html.includes(shop));
+          assert.ok(html.includes(customer));
+        }
+      } else {
+        assert.ok(html.includes(`/booking?service=${encodeURIComponent(service.title)}`));
+      }
       for (const id of service.cases) assert.ok(html.includes(`href="${basePath}/case/${id}"`));
     }
   }

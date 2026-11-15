@@ -1,7 +1,7 @@
 const COUNTER_ID = 113656120;
 const reportedBookings = new Set<string>();
 
-type ClientGoal = "phone_click" | "messenger_click" | "booking_start";
+type ClientGoal = "phone_click" | "messenger_click" | "booking_start" | "akpp_cta_click" | "akpp_quote_success";
 
 export function trackClientGoal(goal: ClientGoal, params?: Record<string, string>) {
   if (typeof window === "undefined" || window.location.hostname !== "tamgdemaslo.ru") return false;

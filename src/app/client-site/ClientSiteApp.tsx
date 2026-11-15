@@ -4,7 +4,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useId } from "react";
 import servicePages from "@/lib/client-service-pages.json";
 import { Phone, X } from "lucide-react";
-import { trackClientContactClick } from "@/lib/client-site-analytics";
+import { trackClientContactClick, trackClientGoal } from "@/lib/client-site-analytics";
 import type { ClientOil } from "@/lib/client-site-api";
 import TransmissionPriceTables from "./TransmissionPriceTables";
 
@@ -1176,7 +1176,7 @@ function TopBar() {
         </nav>
         <div className="client-topbar__actions" style={{display: 'flex', alignItems: 'center', gap: 12}}>
           <BranchCallButton />
-          <a href="/booking" className="btn sm rust client-topbar__cta">Записаться <span className="arr">→</span></a>
+          <a href={path === AKPP_PATH ? AKPP_BOOKING : "/booking"} onClick={path === AKPP_PATH ? () => trackClientGoal('akpp_cta_click', { action: 'book', placement: 'header' }) : undefined} className="btn sm rust client-topbar__cta">Записаться <span className="arr">→</span></a>
         </div>
       </div>
     </header>
@@ -1222,11 +1222,11 @@ function BranchCallButton() {
   );
 }
 
-function Footer() {
+function Footer({ compact = false }) {
   return (
     <footer style={{background: '#0a0a0a', color: '#F5F2ED', borderTop: '1px solid var(--line)'}}>
       {/* Map + hours block */}
-      <div className="container client-footer__grid" style={{padding: '64px 24px 32px', display: 'grid', gridTemplateColumns: '1.2fr 1fr 0.9fr', gap: 48}}>
+      {!compact && <div className="container client-footer__grid" style={{padding: '64px 24px 32px', display: 'grid', gridTemplateColumns: '1.2fr 1fr 0.9fr', gap: 48}}>
         {/* Real Yandex map */}
         <div className="client-footer__map">
           <div className="t-eyebrow" style={{marginBottom: 14}}>Как найти</div>
@@ -1279,7 +1279,7 @@ function Footer() {
           </div>
           <a href="/booking" className="btn rust" style={{width: '100%'}}>Записаться сейчас <span className="arr">→</span></a>
         </div>
-      </div>
+      </div>}
 
       {/* Chequered separator */}
       <div className="chequered" />
@@ -3236,6 +3236,106 @@ function MasterCard({ m, idx }) {
 //  pages/services.jsx — услуги и публичный прайс
 // ====================================================================
 
+const AKPP_PATH = '/services/zamena-masla-akpp';
+const AKPP_BOOKING = '/booking?context=akpp';
+
+function AkppServicePage({ service }) {
+  const quote = '/booking/transmission-quote?source=akpp';
+  const symptomQuestion = useRef(null);
+  const featured = CASES.find(item => item.id === service.cases[0]);
+  const relatedCases = CASES.filter(item => item.id !== featured?.id && service.cases.includes(item.id));
+  function openSymptoms(event) {
+    if (!symptomQuestion.current) return;
+    event.preventDefault();
+    symptomQuestion.current.open = true;
+    const summary = symptomQuestion.current.querySelector('summary');
+    summary?.focus({ preventScroll: true });
+    symptomQuestion.current.scrollIntoView({ block: 'start' });
+  }
+  function quoteClick(event, placement) {
+    const url = new URL(event.currentTarget.href);
+    for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']) {
+      const value = new URLSearchParams(window.location.search).get(key);
+      if (value) url.searchParams.set(key, value);
+    }
+    event.currentTarget.href = url.href;
+    trackClientGoal('akpp_cta_click', { action: 'quote', placement });
+  }
+
+  return <main className="service-detail akpp-detail"><div className="container">
+    <nav className="service-detail__breadcrumbs" aria-label="Хлебные крошки"><Link to="/">Главная</Link><span aria-hidden="true">/</span><Link to="/services">Услуги</Link><span aria-hidden="true">/</span><span aria-current="page">АКПП</span></nav>
+    <header className="service-detail__hero">
+      <h1>{service.title}</h1>
+      <p>Подберём масло и расходники под вашу коробку. Согласуем полную стоимость до начала работ.</p>
+      <ul className="akpp-detail__prices">
+        <li>Частичная замена — работа от <strong>{service.prices[0][1]}</strong></li>
+        <li>Аппаратная замена — работа от <strong>{service.prices[3][1]}</strong></li>
+      </ul>
+      <p className="service-detail__branches">Стартовые цены указаны за работу с материалами сервиса без замены фильтра. Масло и фильтры оплачиваются отдельно.</p>
+      <div className="akpp-detail__actions">
+        <a className="btn rust lg" href={quote} onClick={e => quoteClick(e, 'hero')}>Запросить расчёт для моего авто</a>
+        <a className="btn lg" href={AKPP_BOOKING} onClick={() => trackClientGoal('akpp_cta_click', { action: 'book', placement: 'hero' })}>Выбрать филиал и время</a>
+        <a href="#akpp-branches">Адреса и часы</a>
+      </div>
+    </header>
+    <section className="service-detail__section">
+      <h2>Частичная или аппаратная замена?</h2>
+      <div className="akpp-detail__grid">
+        <div><h3>Частичная замена</h3><p>Обновляем объём масла, доступный при сливе.</p></div>
+        <div><h3>Аппаратная замена</h3><p>Возможность аппаратной замены определяем по коробке, её состоянию и требованиям производителя.</p></div>
+      </div>
+      <div className="akpp-detail__actions">
+        <a href={quote + '&mode=help'} onClick={e => quoteClick(e, 'methods')}>Помогите выбрать способ</a>
+        <a href="#akpp-symptoms" onClick={openSymptoms}>Уже есть рывки, шум или течь?</a>
+      </div>
+    </section>
+    <section className="service-detail__section">
+      <h2>Что проверяем при замене</h2>
+      <ol><li><strong>Уточняем коробку.</strong> Учитываем автомобиль и историю обслуживания.</li>
+        <li><strong>Согласуем смету.</strong> До начала работ согласуем способ замены, материалы и итоговую стоимость.</li>
+        <li><strong>Проверяем результат.</strong> Выставляем уровень масла и проверяем герметичность в местах, где выполняли работы.</li></ol>
+    </section>
+    {featured && <section className="service-detail__section">
+      <h2>Примеры работ с АКПП</h2>
+      <div className="akpp-detail__grid akpp-detail__case">
+        {featured.heroImage && <img src={featured.heroImage} alt="Skoda Karoq в сервисе «Там где масло»" width="640" height="360" loading="lazy" decoding="async" />}
+        <div><h3>Skoda Karoq · Aisin AQ300</h3><p>Выполнили аппаратную замену масла. Уровень выставили по температуре.</p><Link to={`/case/${featured.id}`}>Посмотреть кейс Skoda Karoq</Link></div>
+      </div>
+      <div className="service-detail__case-links">{relatedCases.map(item => <Link key={item.id} to={`/case/${item.id}`}>{item.title} →</Link>)}</div>
+    </section>}
+    <section className="service-detail__section">
+      <h2>Стоимость работ по замене масла в АКПП</h2>
+      <p>Выставление уровня входит в стоимость замены. Масло, фильтры и другие расходники оплачиваются отдельно.</p>
+      <dl className="akpp-detail__tariffs">{service.prices.map(([label, shop, customer]) => <div key={label}>
+        <dt>{label}</dt><dd>Работа с материалами сервиса <strong>{shop}</strong></dd><dd>Работа с вашими материалами <strong>{customer}</strong></dd>
+      </div>)}</dl>
+      <a className="btn rust lg" href={quote} onClick={e => quoteClick(e, 'prices')}>Запросить расчёт с расходниками</a>
+    </section>
+    <section className="service-detail__section">
+      <h2>Вопросы перед заменой масла</h2>
+      <details id="akpp-symptoms" ref={symptomQuestion}><summary>Что делать, если есть рывки, шум или течь?</summary><p>Сообщите о симптомах до записи. Сначала нужно выяснить причину, затем согласовать работы.</p></details>
+      <details><summary>Когда менять масло в АКПП?</summary><p>Периодичность зависит от автомобиля и условий эксплуатации. Для уточнения сообщите пробег и дату предыдущей замены.</p></details>
+      <details><summary>Сколько масла потребуется?</summary><p>Объём зависит от коробки и способа замены. Уточним количество при расчёте.</p><a href={quote} onClick={e => quoteClick(e, 'faq')}>Запросить расчёт</a></details>
+    </section>
+    <section className="service-detail__section" id="akpp-branches">
+      <h2>Филиалы и онлайн-запись</h2>
+      <div className="akpp-detail__grid">{BRANCHES.map(branch => <div key={branch.id}>
+        <h3>{branch.label}</h3>
+        <p>{branch.hours}<br />{branch.daysOff}</p>
+        <p>{branch.id === 'dachnaya' ? 'Частичная и аппаратная замена' : 'Частичная замена. Доступность онлайн-записи уточнит администратор.'}</p>
+        <a href={branch.phoneHref}>{branch.phone}</a>
+        <div className="akpp-detail__actions">
+          {branch.id === 'dachnaya' ? <a href={AKPP_BOOKING + '&location=dachnaya'} className="btn rust" onClick={() => trackClientGoal('akpp_cta_click', { action: 'book', placement: 'branches' })}>Выбрать время на Дачной</a> : <a href={branch.phoneHref} className="btn">Позвонить и записаться</a>}
+          <a href={branch.mapUrl} target="_blank" rel="noreferrer">Открыть в Яндекс Картах</a>
+        </div>
+      </div>)}</div>
+    </section>
+    <nav className="service-detail__section" aria-label="Другие услуги">
+      <h2>Другие услуги</h2><div className="service-detail__case-links">{servicePages.filter(item => item.slug !== service.slug).map(item => <Link key={item.slug} to={`/services/${item.slug}`}>{item.title.replace(/ в Калининграде$/u, '')} →</Link>)}</div>
+    </nav>
+  </div></main>;
+}
+
 function ServiceDetailPage({ service }) {
   const relatedCases = CASES.filter(item => service.cases.includes(item.id));
   return <main className="service-detail"><div className="container">
@@ -4078,7 +4178,7 @@ function App({
   else if (seg[0] === 'team') page = <TeamPage />;
   else if (seg[0] === 'services' && seg[1]) {
     const service = servicePages.find(item => item.slug === seg[1]);
-    page = service ? <ServiceDetailPage service={service} /> : <ServicesPage />;
+    page = seg[1] === 'zamena-masla-akpp' && service ? <AkppServicePage service={service} /> : service ? <ServiceDetailPage service={service} /> : <ServicesPage />;
   }
   else if (seg[0] === 'services') page = <ServicesPage />;
   else if (seg[0] === 'contacts') page = <ContactsPage />;
@@ -4094,7 +4194,7 @@ function App({
     <CatalogCtx.Provider value={OILS}><RouterCtx.Provider value={{ ...router, catalogVersion, catalogTotal, catalogLoadingMore }}>
       <TopBar />
       {page}
-      <Footer />
+      <Footer compact={router.path === AKPP_PATH} />
     </RouterCtx.Provider></CatalogCtx.Provider>
   );
 }

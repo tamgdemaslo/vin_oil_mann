@@ -161,6 +161,7 @@ function errorCopy(error: unknown) {
 
 export default function BookingClient() {
   const bookingStarted = useRef(false);
+  const [akppContext, setAkppContext] = useState(false);
   const [step, setStep] = useState(1), [enteredByBranchLink, setEnteredByBranchLink] = useState(false);
   const [branchLinkError, setBranchLinkError] = useState(""), [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState(""), [services, setServices] = useState<Service[]>([]);
@@ -208,13 +209,15 @@ export default function BookingClient() {
   const availabilityKey = useMemo(() => JSON.stringify({ branchId, serviceIds: [...serviceIds].sort(), localDate, totalDuration, timezone: branch?.timezone ?? "" }), [branch?.timezone, branchId, localDate, serviceIds, totalDuration]);
 
   useEffect(() => {
+    const akpp = new URLSearchParams(window.location.search).get("context") === "akpp";
+    setAkppContext(akpp);
     try {
       const raw = sessionStorage.getItem(DRAFT_KEY);
       if (raw) {
         const draft = JSON.parse(raw) as Draft;
         if (Date.now() - draft.savedAt <= DRAFT_TTL_MS) {
-          setStep(Math.max(1, Math.min(4, Number(draft.step) || 1))); setBranchId(draft.branchId || "");
-          setServiceIds(Array.isArray(draft.serviceIds) ? draft.serviceIds : []); setLocalDate(draft.localDate || "");
+          setStep(akpp && !draft.submissionUnknown ? (draft.branchId ? 2 : 1) : Math.max(1, Math.min(4, Number(draft.step) || 1))); setBranchId(draft.branchId || "");
+          setServiceIds((!akpp || draft.submissionUnknown) && Array.isArray(draft.serviceIds) ? draft.serviceIds : []); setLocalDate(draft.localDate || "");
           setName(draft.name || ""); setPhone(draft.phone || ""); setEmail(draft.email || ""); setMake(draft.make || "");
           setModel(draft.model || ""); setYear(draft.year || ""); setPlate(draft.plate || ""); setVin(draft.vin || "");
           setComment(draft.comment || ""); setNeedsVinHelp(Boolean(draft.needsVinHelp));
@@ -241,12 +244,16 @@ export default function BookingClient() {
     const controller = new AbortController();
     fetch("/api/public/booking/branches", { signal: controller.signal }).then((response) => readJson<{ branches: Branch[] }>(response)).then((data) => {
       setBranches(data.branches);
-      const requestedId = publicBookingBranchFromSearch(window.location.search), requested = requestedId ? data.branches.find((item) => item.id === requestedId) : null;
+      const requestedId = publicBookingBranchFromSearch(window.location.search);
+      const params = new URLSearchParams(window.location.search);
+      const dachnayaRequested = params.get("context") === "akpp" && params.get("location") === "dachnaya";
+      const requested = requestedId ? data.branches.find(item => item.id === requestedId)
+        : dachnayaRequested ? data.branches.find(item => /дачная/iu.test([item.name, item.address].join(" "))) : null;
       if (requested) {
         setEnteredByBranchLink(true); setBranchLinkError("");
         setBranchId((current) => { if (current && current !== requested.id) setServiceIds([]); return requested.id; });
         setLocalDate(branchToday(requested.timezone)); setStep(2);
-      } else if (requestedId) {
+      } else if (requestedId || dachnayaRequested) {
         setEnteredByBranchLink(false); setBranchId(""); setStep(1);
         setBranchLinkError("Филиал по этой ссылке не найден или сейчас недоступен для онлайн-записи. Выберите другую точку.");
       } else { setEnteredByBranchLink(false); setBranchId((current) => data.branches.some((item) => item.id === current) ? current : ""); }
@@ -264,12 +271,15 @@ export default function BookingClient() {
     const controller = new AbortController(); servicesAbortRef.current = controller; setServicesLoading(true); setServices([]);
     fetch(`/api/public/booking/services?branchId=${encodeURIComponent(branchId)}`, { signal: controller.signal })
       .then((response) => readJson<{ services: Service[] }>(response)).then((data) => {
-        setServices(data.services);
-        setServiceIds((current) => normalizeBookingServiceSelection(current, data.services));
+        const availableServices = akppContext && !submissionUnknown
+          ? data.services.filter(service => isTransmissionOilVariant(service.name))
+          : data.services;
+        setServices(availableServices);
+        setServiceIds(current => normalizeBookingServiceSelection(current, availableServices));
       }).catch((error) => { if (!(error instanceof DOMException && error.name === "AbortError")) setFormError(errorCopy(error)); })
       .finally(() => { if (!controller.signal.aborted) setServicesLoading(false); });
     return () => controller.abort();
-  }, [branchId]);
+  }, [akppContext, branchId, submissionUnknown]);
 
   const loadAvailability = useCallback(async () => {
     if (!branchId || !localDate || !serviceIds.length || !branch) return;
@@ -338,7 +348,7 @@ export default function BookingClient() {
     const errors: Record<string, string> = {};
     if (!make.trim()) errors.make = "Укажите марку автомобиля.";
     if (!model.trim()) errors.model = "Укажите модель автомобиля.";
-    if (requiredFields.has("vin") && !needsVinHelp && vin.trim().length !== 17) errors.vin = "Введите VIN из 17 символов или выберите помощь с подбором.";
+    if (requiredFields.has("vin") && !needsVinHelp && !/^[A-HJ-NPR-Z0-9]{17}$/iu.test(vin.trim())) errors.vin = "Введите VIN из 17 символов или выберите помощь с подбором.";
     if (requiredFields.has("plate") && !plate.trim()) errors.plate = "Укажите госномер автомобиля.";
     if (requiredFields.has("year") && !year.trim()) errors.year = "Укажите год выпуска автомобиля.";
     if (!isValidBookingCustomerName(name)) errors.name = "Укажите, как к вам обращаться";
@@ -409,7 +419,7 @@ export default function BookingClient() {
       const requirements = requirementLabels(service), selected = serviceIds.includes(service.id);
       const includedLevel = transmissionOilSelected && isStandaloneTransmissionLevel(service.name);
       return <label key={service.id} className={selected ? styles.selectedChoice : ""}>
-        <input type="checkbox" checked={selected} disabled={includedLevel} onChange={() => toggleService(service.id)} />
+        <input type={akppContext && isTransmissionOilVariant(service.name) ? "radio" : "checkbox"} name={akppContext && isTransmissionOilVariant(service.name) ? "akpp-service" : undefined} checked={selected} disabled={includedLevel} onChange={() => toggleService(service.id)} />
         <span><strong>{service.customerName}</strong>{service.customerDescription && <small>{service.customerDescription}</small>}
           <small>{durationLabel(service.durationMinutes)}{requirements.length ? ` · Понадобится: ${requirements.join(", ")}` : ""}</small>
           <small className={styles.priceLine}>{includedLevel ? "Включено в выбранную замену масла в АКПП" : pricingLabel(service)}</small>
@@ -418,7 +428,7 @@ export default function BookingClient() {
     });
   }
 
-  if (created) return <main className={styles.publicRoot}><PublicBookingHeader secureLink /><section className={styles.recordShell}><BookingRecordCard booking={created.booking} managementUrl={created.managementUrl} title="Вы записаны" /></section></main>;
+  if (created) return <main className={styles.publicRoot}><PublicBookingHeader secureLink /><section className={styles.recordShell}><BookingRecordCard booking={created.booking} managementUrl={created.managementUrl} title={created.booking.status === "confirmed" ? "Вы записаны" : "Заявка на запись принята"} /></section></main>;
 
   return <main className={styles.publicRoot}>
     <PublicBookingHeader />
@@ -429,7 +439,7 @@ export default function BookingClient() {
         {step > 1 && branch && <details className={styles.mobileSummary}><summary><span><strong>Ваша запись</strong><small>{selectedServices.length ? `${selectedServices.length} ${selectedServices.length === 1 ? "услуга" : "услуги"} · ${durationLabel(totalDuration)}` : branch.name}</small></span><ChevronDown aria-hidden /></summary><div><p><b>Филиал</b><span>{branch.name}{branch.address ? ` · ${branch.address}` : ""}</span></p>{selectedServices.length > 0 && <p><b>Услуги</b><span>{selectedServices.map((service) => service.customerName).join(", ")}</span></p>}{selectedSlot && <p><b>Время</b><span>{dateLabel(localDate)}, {selectedSlot.localTime} · {selectedSlot.master.name}</span></p>}{(make || model) && <p><b>Автомобиль</b><span>{[make, model].filter(Boolean).join(" ")}</span></p>}{selectedServices.length > 0 && <CostSummary compact />}</div></details>}
         {loading ? <div className={styles.skeleton}><i /><i /><i /></div> : <div className={styles.stageBody}>
           {step === 1 && <><div className={styles.stageHeading}><MapPin aria-hidden /><div><h2>Куда вы хотите приехать?</h2><p>У каждого филиала свой график и свободные окна.</p></div></div>{branchLinkError && <div className={styles.warning} role="alert">{branchLinkError}</div>}<div className={styles.choiceList}>{branches.map((item) => <label key={item.id} className={item.id === branchId ? styles.selectedChoice : ""}><input type="radio" name="branch" checked={item.id === branchId} onChange={() => chooseBranch(item.id)} /><span><strong>{item.name}</strong>{item.address && <small>{item.address}</small>}<small>{branchHoursLabel(item.workingHours)}</small></span><Check aria-hidden /></label>)}{!branches.length && <div className={styles.empty}>Онлайн-запись пока не открыта ни в одном филиале.</div>}</div></>}
-          {step === 2 && <><div className={styles.stageHeading}><Wrench aria-hidden /><div><h2>Что нужно сделать?</h2><p>Можно выбрать несколько услуг</p></div></div><div className={styles.serviceCatalog}>{SERVICE_GROUPS.map((group) => { const count = services.filter((service) => service.group === group.key).length; if (!count) return null; return <section className={styles.serviceGroup} key={group.key}><div className={styles.groupHeading}><strong>{group.title}</strong>{count > 1 && <span>{group.intro}</span>}</div><div className={styles.serviceList}>{serviceRows(group.key)}</div></section>; })}{servicesLoading ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : !services.length && <div className={styles.empty}>Для этого филиала пока нет опубликованных услуг с настроенной длительностью.{branch?.phone ? <> Позвоните: <a href={`tel:${branch.phone.replace(/[^+\d]/g, "")}`}>{branch.phone}</a>.</> : null}</div>}</div>{serviceIds.length > 0 && <div className={styles.selectionTotals}><div><Clock3 aria-hidden /><span><strong>{selectedServices.length} {selectedServices.length === 1 ? "услуга" : "услуги"} · {durationLabel(totalDuration)}</strong><small>{requiresConfirmation ? "После отправки потребуется подтверждение." : "Время закрепится после отправки формы."}</small></span></div><CostSummary compact /></div>}</>}
+          {step === 2 && <><div className={styles.stageHeading}><Wrench aria-hidden /><div><h2>{akppContext ? "Выберите способ замены масла в АКПП" : "Что нужно сделать?"}</h2>{akppContext ? <a href="/booking/transmission-quote?source=akpp&mode=help">Помогите выбрать способ</a> : <p>Можно выбрать несколько услуг</p>}</div></div><div className={styles.serviceCatalog}>{SERVICE_GROUPS.map((group) => { const count = services.filter((service) => service.group === group.key).length; if (!count) return null; return <section className={styles.serviceGroup} key={group.key}><div className={styles.groupHeading}><strong>{group.title}</strong>{count > 1 && <span>{group.intro}</span>}</div><div className={styles.serviceList}>{serviceRows(group.key)}</div></section>; })}{servicesLoading ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : !services.length && <div className={styles.empty}>{akppContext ? "Онлайн-запись на замену масла в АКПП в этом филиале сейчас недоступна." : "Для этого филиала пока нет опубликованных услуг с настроенной длительностью."}{branch?.phone ? <> Позвоните: <a href={`tel:${branch.phone.replace(/[^+\d]/g, "")}`}>{branch.phone}</a>.</> : null}</div>}</div>{serviceIds.length > 0 && <div className={styles.selectionTotals}><div><Clock3 aria-hidden /><span><strong>{selectedServices.length} {selectedServices.length === 1 ? "услуга" : "услуги"} · {durationLabel(totalDuration)}</strong><small>{requiresConfirmation ? "После отправки потребуется подтверждение." : "Время закрепится после отправки формы."}</small></span></div><CostSummary compact /></div>}</>}
           {step === 3 && <><div className={styles.stageHeading}><CalendarDays aria-hidden /><div><h2 ref={timeHeadingRef} tabIndex={-1}>Когда вам удобно?</h2><p>{branch ? timezoneLabel(branch.timezone) : "Время филиала"}</p></div></div>{branch && localDate && <BookingCalendar value={localDate} today={branchToday(branch.timezone)} max={maxBookingDate(branch)} onChange={chooseDate} />}{slotNotice && <div className={styles.warning} role="status">{slotNotice}</div>}{availabilityError && <div className={styles.errorInline} role="alert"><strong>Не удалось загрузить расписание</strong><span>{availabilityError}</span><button type="button" onClick={() => void loadAvailability()}>Повторить</button></div>}{availabilityLoading ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : availability?.slots.length ? <><div className={styles.slotGroups}>{[
                 { title: "Утро", from: 0, to: 12 },
                 { title: "День", from: 12, to: 18 },
@@ -437,7 +447,7 @@ export default function BookingClient() {
               ].map((group) => {
                 const slots = availability.slots.filter((slot) => { const hour = Number(slot.localTime.split(":")[0]); return hour >= group.from && hour < group.to; });
                 return slots.length > 0 && <details className={styles.slotGroup} key={group.title} open><summary>{group.title}<ChevronDown aria-hidden /></summary><div className={styles.slotGrid}>{slots.map((slot) => <button type="button" key={`${slot.startsAt}-${slot.master.membershipId}`} aria-pressed={selectedSlot?.startsAt === slot.startsAt && selectedSlot.master.membershipId === slot.master.membershipId} className={selectedSlot?.startsAt === slot.startsAt && selectedSlot.master.membershipId === slot.master.membershipId ? styles.selectedSlot : ""} onClick={() => chooseSlot(slot)}><strong>{slot.localTime}</strong>{visibleMasterNames.size > 1 && <span>{slot.master.name}</span>}</button>)}</div></details>;
-              })}</div>{selectedSlot && <p className={styles.selectedSlotNote}>Выбрано: <strong>{selectedSlot.localTime}</strong> · {selectedSlot.master.name}</p>}</> : availability ? <div className={styles.empty}>{availabilityMessage(availability)}</div> : null}{!availabilityLoading && nearestDays.length > 0 && <div className={styles.nearestDays}><strong>Ближайшие даты со свободным временем</strong><div>{nearestDays.map((day) => <button type="button" key={day.localDate} onClick={() => chooseDate(day.localDate)}><CalendarDays aria-hidden /><span>{dateLabel(day.localDate)}<small>с {day.slots[0]?.localTime} · {day.slots.length} вариант(а)</small></span></button>)}</div></div>}{nearestLoading && <div className={styles.neutralNotice}><LoaderCircle className={styles.searchSpinner} aria-hidden /> Ищем ближайшие даты…</div>}{!availabilityLoading && availability && !availability.slots.length && <button className={styles.textButton} type="button" onClick={openBranchChooser}>Выбрать другой филиал</button>}</>}
+              })}</div>{selectedSlot && <p className={styles.selectedSlotNote}>Выбрано: <strong>{selectedSlot.localTime}</strong> · {selectedSlot.master.name}</p>}</> : availability ? <div className={styles.empty}>{availabilityMessage(availability)}</div> : null}{!availabilityLoading && nearestDays.length > 0 && <div className={styles.nearestDays}><strong>Ближайшие даты со свободным временем</strong><div>{nearestDays.map((day) => <button type="button" key={day.localDate} onClick={() => chooseDate(day.localDate)}><CalendarDays aria-hidden /><span>{dateLabel(day.localDate)}<small>с {day.slots[0]?.localTime}</small></span></button>)}</div></div>}{nearestLoading && <div className={styles.neutralNotice}><LoaderCircle className={styles.searchSpinner} aria-hidden /> Ищем ближайшие даты…</div>}{!availabilityLoading && availability && !availability.slots.length && <button className={styles.textButton} type="button" onClick={openBranchChooser}>Выбрать другой филиал</button>}</>}
           {step === 4 && <><div className={styles.stageHeading}><Car aria-hidden /><div><h2 ref={detailsHeadingRef} tabIndex={-1}>Автомобиль и контакты</h2></div></div>{selectedSlot && <section className={styles.chosenVisit} aria-label="Выбранные дата и время"><div><span>Дата и время визита</span><strong>{dateLabel(localDate)}, {selectedSlot.localTime}</strong></div><button className={styles.secondaryButton} type="button" onClick={changeTime}>Изменить время</button></section>}<div className={styles.sectionLead}><strong>Автомобиль</strong></div>
             <div className={styles.formGrid}><label><span>Марка *</span><input value={make} aria-invalid={Boolean(fieldErrors.make)} onChange={(event) => { setMake(event.target.value); clearFieldError("make"); }} autoComplete="organization" placeholder="BMW" />{fieldErrors.make && <small className={styles.fieldError}>{fieldErrors.make}</small>}</label><label><span>Модель *</span><input value={model} aria-invalid={Boolean(fieldErrors.model)} onChange={(event) => { setModel(event.target.value); clearFieldError("model"); }} placeholder="X5" />{fieldErrors.model && <small className={styles.fieldError}>{fieldErrors.model}</small>}</label>{(requiredFields.has("year") || year) && <label><span>Год {requiredFields.has("year") ? "*" : ""}</span><input value={year} aria-invalid={Boolean(fieldErrors.year)} onChange={(event) => { setYear(event.target.value.replace(/\D/g, "").slice(0, 4)); clearFieldError("year"); }} inputMode="numeric" placeholder="2020" />{fieldErrors.year && <small className={styles.fieldError}>{fieldErrors.year}</small>}</label>}{(requiredFields.has("plate") || plate) && <label><span>Госномер {requiredFields.has("plate") ? "*" : ""}</span><input value={plate} aria-invalid={Boolean(fieldErrors.plate)} onChange={(event) => { setPlate(event.target.value.toUpperCase()); clearFieldError("plate"); }} placeholder="А123АА39" />{fieldErrors.plate && <small className={styles.fieldError}>{fieldErrors.plate}</small>}</label>}{(requiredFields.has("vin") || vin) && <label className={styles.wideField}><span>VIN {requiredFields.has("vin") && !needsVinHelp ? "*" : ""}</span><input value={vin} disabled={needsVinHelp} aria-invalid={Boolean(fieldErrors.vin)} onChange={(event) => { setVin(event.target.value.toUpperCase().replace(/\s/g, "").slice(0, 17)); clearFieldError("vin"); }} autoCapitalize="characters" autoComplete="off" placeholder="17 символов" /><small>VIN нужен, чтобы точно подобрать масло, фильтры и уточнить состав работ.</small>{fieldErrors.vin && <small className={styles.fieldError}>{fieldErrors.vin}</small>}</label>}</div>
             {requiresVin && <label className={needsVinHelp ? `${styles.helpChoice} ${styles.helpChoiceSelected}` : styles.helpChoice}><input type="checkbox" checked={needsVinHelp} onChange={(event) => { setNeedsVinHelp(event.target.checked); clearFieldError("vin"); }} /><span><strong>Не знаю VIN / нужна помощь с подбором</strong><small>Создадим заявку на уточнение. Администратор свяжется с вами, а время будет подтверждено после уточнения.</small></span></label>}
@@ -446,7 +456,7 @@ export default function BookingClient() {
             <section className={styles.finalReview}><div className={styles.sectionLead}><strong>Проверьте запись</strong><span>Измените нужный раздел — остальные данные сохранятся.</span></div><dl><div><dt>Филиал</dt><dd>{branch?.name}<small>{branch?.address}</small></dd><button type="button" onClick={openBranchChooser}>Изменить</button></div><div><dt>Работы</dt><dd>{selectedServices.map((service) => service.customerName).join(", ")}<small>{durationLabel(totalDuration)}</small></dd><button type="button" onClick={() => setStep(2)}>Изменить</button></div><div><dt>Время</dt><dd>{selectedSlot ? `${dateLabel(localDate)}, ${selectedSlot.localTime}` : "Не выбрано"}<small>{selectedSlot ? `Мастер ${selectedSlot.master.name}` : ""}</small></dd><button type="button" onClick={() => setStep(3)}>Изменить</button></div><div><dt>Стоимость</dt><dd><CostSummary compact /></dd></div><div><dt>Автомобиль</dt><dd>{[make, model, year].filter(Boolean).join(" ") || "Не указан"}{needsVinHelp && <small>Нужна помощь с VIN</small>}</dd></div><div><dt>Контакт</dt><dd>{name || "Имя не указан"}<small>{phone || "Телефон не указан"}</small></dd></div></dl></section>
             {requiresConfirmation && <div className={styles.pendingNotice}><Info aria-hidden /><span>{needsVinHelp ? "Будет создана заявка на уточнение. Время подтвердит администратор после подбора." : "Заявка будет создана со статусом «ожидает подтверждения». Выбранное время предварительное."}</span></div>}
             {submissionUnknown && <div className={styles.unknownResult}><strong>Результат нужно проверить</strong><p>Не отправляйте форму повторно вслепую.</p><button type="button" className={styles.secondaryButton} disabled={submitBusy} onClick={() => void checkOriginalOperation()}>{submitBusy ? <LoaderCircle className={styles.searchSpinner} aria-hidden /> : <ShieldCheck aria-hidden />} Проверить исходную операцию</button></div>}
-            <p className={styles.privacyNote}>Нажимая «Записаться», вы разрешаете использовать контакты для этой записи. <a href="/client-site/privacy" target="_blank" rel="noreferrer">Политика конфиденциальности</a>.</p></>}
+            <p className={styles.privacyNote}>Нажимая «{needsVinHelp ? "Отправить заявку" : "Записаться"}», вы разрешаете использовать контакты для этой записи. <a href="/client-site/privacy" target="_blank" rel="noreferrer">Политика конфиденциальности</a>.</p></>}
         </div>}
         {formError && <div className={styles.error} role="alert">{formError}</div>}
         {!loading && <div className={styles.footerSpacer} aria-hidden />}

@@ -1,7 +1,9 @@
 type NamedService = { id: string; name: string };
 
 export function isTransmissionOilVariant(name: string) {
-  return /^(?:Частичная|Аппаратная) замена масла в АКПП:/iu.test(name);
+  const label = name.trim();
+  return /^(?:частичная|аппаратная) замена масла в АКПП(?::|$)/iu.test(label)
+    || /^замена трансмиссионного масла,\s*(?:частичная|полная\s*\/\s*аппаратная)$/iu.test(label);
 }
 
 export function isStandaloneTransmissionLevel(name: string) {
