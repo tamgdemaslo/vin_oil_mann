@@ -65,6 +65,7 @@ import {
 } from "@/lib/product-marking";
 import { parseStoredAttributeValues } from "@/lib/product-attribute-values";
 import { resolveProductFluidAttributeProfile, type ProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
+import type { InventoryCatalogPreview } from "@/lib/inventory-catalog-preview";
 
 type StockRow = {
   storeId: string;
@@ -749,6 +750,7 @@ const qualityIssueOptions: Array<{ value: QualityIssueFilter; label: string }> =
   { value: "name_review", label: "Название требует проверки" },
 ];
 const PRODUCT_PAGE_LIMIT = 50;
+const INVENTORY_PREVIEW_MAX_AGE_MS = 90_000;
 const PRODUCT_STORE_TIMEOUT_MS = 15_000;
 const PRODUCT_LIST_TIMEOUT_MS = 35_000;
 const PRODUCT_LIST_SLOW_MS = 5_000;
@@ -1711,7 +1713,10 @@ function ProductAverageCostEditor({
   );
 }
 
-export default function ProductsClient({ canSetAverageCost = false }: { canSetAverageCost?: boolean }) {
+export default function ProductsClient({ canSetAverageCost = false, catalogScope }: {
+  canSetAverageCost?: boolean;
+  catalogScope: string | null;
+}) {
   const searchParams = useSearchParams();
   const initialProductId = searchParams.get("product")?.trim() ?? "";
   const initialSearch = searchParams.get("search")?.trim() ?? "";
@@ -1732,6 +1737,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     : null;
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [meta, setMeta] = useState<ProductListMeta | null>(null);
+  const [catalogPreview, setCatalogPreview] = useState<InventoryCatalogPreview | null>(null);
   const [matchedOutsideFilters, setMatchedOutsideFilters] = useState(0);
   const [search, setSearch] = useState(initialSearch);
   const [filters, setFilters] = useState<ProductFilters>({ ...emptyFilters, oemParts: initialOemParts, articleMissing: searchParams.get("articleMissing") === "1" });
@@ -2020,10 +2026,16 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     [filters, storageCellFilter]
   );
   const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0 || originFilter !== "all" || Boolean(copyBatchId) || Boolean(oemEnrichmentResult) || rosskoLastImportVisible;
+  const canShowPreview = Boolean(catalogScope) && !hasActiveSearchOrFilters && sort === "name" && direction === "asc";
+  const previewCacheKey = `inventory-catalog-preview:v1:${catalogScope}`;
+  const visiblePreview = canShowPreview && (loading || (error === PRODUCT_LIST_ERROR && !rows.length))
+    && catalogPreview?.scope === catalogScope && catalogPreview.products.length > 0 ? catalogPreview : null;
   const selectedProductsCount = allFilteredProductsSelected ? (meta?.total ?? rows.length) : selectedProductIds.length;
   const allVisibleProductsSelected = rows.length > 0 && (allFilteredProductsSelected || rows.every((row) => selectedProductIds.includes(row.id)));
-  const totalProductsLabel = (meta?.total ?? rows.length).toLocaleString("ru-RU");
-  const visibleProductsLabel = `${rows.length.toLocaleString("ru-RU")}${meta?.hasMore ? "+" : ""}`;
+  const totalProductsLabel = (visiblePreview?.total ?? meta?.total ?? rows.length).toLocaleString("ru-RU");
+  const visibleProductCount = visiblePreview?.products.length ?? rows.length;
+  const hasMoreVisibleProducts = visiblePreview ? visibleProductCount < visiblePreview.total : meta?.hasMore;
+  const visibleProductsLabel = `${visibleProductCount.toLocaleString("ru-RU")}${hasMoreVisibleProducts ? "+" : ""}`;
   const filtersLayoutClass = [
     "eco-inventory-layout",
     filtersCollapsed ? "is-filter-collapsed" : "",
@@ -2047,6 +2059,36 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
   }, []);
 
   useEffect(() => { void loadKnownOemBatch(); }, [loadKnownOemBatch]);
+
+  useEffect(() => {
+    if (!canShowPreview) return;
+    const controller = new AbortController();
+    try {
+      const raw = window.sessionStorage.getItem(previewCacheKey);
+      if (raw) {
+        const cached = JSON.parse(raw) as { savedAt: number; preview: InventoryCatalogPreview };
+        if (cached.preview.scope === catalogScope && Date.now() - cached.savedAt < INVENTORY_PREVIEW_MAX_AGE_MS) {
+          setCatalogPreview(cached.preview);
+        }
+      }
+    } catch {
+      // Safari private browsing can restrict storage. The server preview still works.
+    }
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/catalog/inventory-preview", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) return;
+        const preview = await readJson<InventoryCatalogPreview>(response);
+        if (!preview || preview.scope !== catalogScope || controller.signal.aborted) return;
+        setCatalogPreview(preview);
+        window.sessionStorage.setItem(previewCacheKey, JSON.stringify({ savedAt: Date.now(), preview }));
+      } catch {
+        // The main request owns errors and recovery for the inventory list.
+      }
+    })();
+    return () => controller.abort();
+  }, [canShowPreview, catalogScope, previewCacheKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2340,6 +2382,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       });
       const data = await readJson<ProductListResponse>(res);
       controller.signal.throwIfAborted();
+      if (res.status === 401 || res.status === 403 || res.status === 423) setCatalogPreview(null);
       if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить товары");
       setRows(Array.isArray(data?.products) ? data.products : []);
       setMeta(data?.meta ?? null);
@@ -6672,7 +6715,11 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                     <span className={`eco-check ${filters.stock === option.value ? "is-checked" : ""}`} />
                     {option.label}
                   </span>
-                  <span className="ct">{(facets.stock[option.value] ?? 0).toLocaleString("ru-RU")}</span>
+                  <span className="ct">
+                    {visiblePreview
+                      ? (option.value === "all" ? totalProductsLabel : "—")
+                      : (facets.stock[option.value] ?? 0).toLocaleString("ru-RU")}
+                  </span>
                 </button>
               ))}
             </div>
@@ -6900,8 +6947,15 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                 </button>
               ) : null}
               <span className="eco-products-visible-count" role="status">
-                {loading ? (searchTakingLonger ? "Ответ сервера задерживается…" : "Ищем товары…") : error === PRODUCT_LIST_ERROR && !rows.length ? "Поиск не завершён" : `${visibleProductsLabel} из ${totalProductsLabel}`}
+                {visiblePreview
+                  ? (loading ? "Загружаем остатки…" : "Не удалось загрузить остатки")
+                  : loading ? (searchTakingLonger ? "Ответ сервера задерживается…" : "Ищем товары…") : error === PRODUCT_LIST_ERROR && !rows.length ? "Поиск не завершён" : `${visibleProductsLabel} из ${totalProductsLabel}`}
               </span>
+              {visiblePreview && !loading ? (
+                <button type="button" className="eco-btn eco-btn--sm" onClick={() => void load()}>
+                  Повторить
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -6924,6 +6978,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                 <th style={{ width: 42 }}>
                   <input
                     type="checkbox"
+                    disabled={Boolean(visiblePreview)}
                     checked={allVisibleProductsSelected}
                     onChange={toggleVisibleProductsSelection}
                     aria-label="Выбрать видимые товары"
@@ -6942,10 +6997,30 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
               </tr>
             </thead>
             <tbody>
-              {loading && (
+              {visiblePreview?.products.map((product) => (
+                <tr key={product.id}>
+                  <td />
+                  <td className="eco-product-name-cell">
+                    <div className="eco-product-title">{product.name}</div>
+                    <div className="eco-product-meta">
+                      {[shortGroupLabel(product.groupPath ?? ""), displayBrandLabel(product.brand ?? "")].filter(Boolean).join(" · ")}
+                    </div>
+                  </td>
+                  <td colSpan={3} />
+                  <td className="eco-product-number is-muted">—</td>
+                  <td className="eco-product-number is-muted">—</td>
+                  <td />
+                  <td className="eco-product-price">
+                    <strong>{formatMoneyWhole(product.salePriceCents / 100)}</strong>
+                    <span>₽</span>
+                  </td>
+                  <td colSpan={2} />
+                </tr>
+              ))}
+              {loading && !visiblePreview && (
                 renderSkeletonRows()
               )}
-              {!loading && error === PRODUCT_LIST_ERROR && rows.length === 0 && (
+              {!visiblePreview && !loading && error === PRODUCT_LIST_ERROR && rows.length === 0 && (
                 <tr>
                   <td colSpan={11}>
                     <div className="eco-products-empty is-error">
