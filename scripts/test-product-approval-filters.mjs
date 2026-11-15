@@ -18,14 +18,18 @@ const state = globalThis.__catalogCacheTest;
 const branch = () => state.branches[state.currentBranch];
 exports.prisma = {
   $queryRaw: async (query, branchId) => Array.isArray(query) ? [{ version: state.branches[branchId].version }] : [],
+  localStockBalance: {
+    findMany: async ({ where }) => {
+      const source = state.branches[where.branchId];
+      source.stockReads++;
+      return source.rows.filter(({id}) => where.productId.in.includes(id)).flatMap(({id, stockBalances}) =>
+        structuredClone(stockBalances).map(balance => ({ ...balance, productId: id })));
+    },
+  },
   localProduct: {
     count: async () => branch().rows.length,
     findMany: async ({ include, select, where }) => {
-      if (select?.stockBalances) {
-        const source = state.branches[where.branchId];
-        source.stockReads++;
-        return source.rows.map(({id, stockBalances}) => ({id, stockBalances: structuredClone(stockBalances)}));
-      }
+      if (select?.id) return state.branches[where.branchId].rows.map(({id}) => ({id}));
       if (!include.stockBalances) {
         const source = state.branches[where.branchId];
         source.cardReads++;
