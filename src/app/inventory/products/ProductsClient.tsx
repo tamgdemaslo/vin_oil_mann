@@ -749,7 +749,9 @@ const qualityIssueOptions: Array<{ value: QualityIssueFilter; label: string }> =
   { value: "name_review", label: "Название требует проверки" },
 ];
 const PRODUCT_PAGE_LIMIT = 50;
-const PRODUCT_LIST_TIMEOUT_MS = 15_000;
+const PRODUCT_STORE_TIMEOUT_MS = 15_000;
+const PRODUCT_LIST_TIMEOUT_MS = 35_000;
+const PRODUCT_LIST_SLOW_MS = 5_000;
 const PRODUCT_LIST_ERROR = "Не удалось выполнить поиск";
 const NEW_GROUP_VALUE = "__new_group__";
 const PRODUCT_UOM_OPTIONS = [
@@ -1751,6 +1753,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
   const [sort, setSort] = useState<ProductSortKey>("name");
   const [direction, setDirection] = useState<SortDirection>("asc");
   const [loading, setLoading] = useState(true);
+  const [searchTakingLonger, setSearchTakingLonger] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [saving, setSaving] = useState(false);
   const productSaveInFlightRef = useRef(false);
@@ -2050,7 +2053,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       try {
         const response = await fetch("/api/local-inventory/stores", {
           cache: "no-store",
-          signal: AbortSignal.timeout(PRODUCT_LIST_TIMEOUT_MS),
+          signal: AbortSignal.timeout(PRODUCT_STORE_TIMEOUT_MS),
         });
         const data = await readJson<{ stores?: ProductStoreOption[]; error?: string }>(response);
         if (!response.ok || !data) throw new Error(data?.error || "Не удалось загрузить склады");
@@ -2314,9 +2317,13 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     const controller = new AbortController();
     listAbortRef.current = controller;
     setLoading(true);
+    setSearchTakingLonger(false);
     setLoadingMore(false);
     loadingMoreRef.current = false;
     setError(null);
+    const slow = window.setTimeout(() => {
+      if (listAbortRef.current === controller) setSearchTakingLonger(true);
+    }, PRODUCT_LIST_SLOW_MS);
     let timedOut = false;
     const timeout = window.setTimeout(() => {
       timedOut = true;
@@ -2325,6 +2332,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     try {
       const params = buildListParams(nextSearch, nextSort, nextDirection, nextFilters);
       params.set("context", "products");
+      params.set("view", "inventory");
       const res = await fetch(`/api/catalog/search?${params.toString()}`, {
         cache: "no-store",
         signal: controller.signal,
@@ -2336,13 +2344,14 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       setMeta(data?.meta ?? null);
       setMatchedOutsideFilters(data?.matchedOutsideFilters ?? 0);
     } catch (e) {
-      if (controller.signal.aborted && !timedOut) return;
+      if (listAbortRef.current !== controller || (controller.signal.aborted && !timedOut)) return;
       console.error("[inventory-products] list load failed:", e);
       setError(PRODUCT_LIST_ERROR);
       setRows([]);
       setMeta(null);
       setMatchedOutsideFilters(0);
     } finally {
+      window.clearTimeout(slow);
       window.clearTimeout(timeout);
       if (listAbortRef.current === controller) {
         listAbortRef.current = null;
@@ -2367,6 +2376,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
       const nextOffset = meta.offset + meta.limit;
       const params = buildListParams(search, sort, direction, filters, nextOffset);
       params.set("context", "products");
+      params.set("view", "inventory");
       const res = await fetch(`/api/catalog/search?${params.toString()}`, {
         cache: "no-store",
         signal: controller.signal,
@@ -2625,6 +2635,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     listAbortRef.current = null;
     loadMoreAbortRef.current?.abort();
     setLoading(true);
+    setSearchTakingLonger(false);
     const delay = initialLoadStartedRef.current && search !== lastScheduledSearchRef.current ? 280 : 0;
     lastScheduledSearchRef.current = search;
     initialLoadStartedRef.current = true;
@@ -6889,7 +6900,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
                 </button>
               ) : null}
               <span className="eco-products-visible-count" role="status">
-                {loading ? "Ищем товары…" : error === PRODUCT_LIST_ERROR && !rows.length ? "Поиск не завершён" : `${visibleProductsLabel} из ${totalProductsLabel}`}
+                {loading ? (searchTakingLonger ? "Ответ сервера задерживается…" : "Ищем товары…") : error === PRODUCT_LIST_ERROR && !rows.length ? "Поиск не завершён" : `${visibleProductsLabel} из ${totalProductsLabel}`}
               </span>
             </div>
           </div>
