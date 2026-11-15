@@ -14,9 +14,9 @@ import { parseStoredAttributeValues } from "@/lib/product-attribute-values";
 import { resolveProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 import { inventoryCategoryFacet, isInventoryCategoryFacet } from "@/lib/inventory-product-category";
 import {
-  loadInventoryCatalogCards,
-  readInventoryCatalogCards,
-  type InventoryCatalogCard,
+  inventoryCatalogCards,
+  inventorySearchCards,
+  type InventorySearchCard,
   type InventoryCatalogPreview,
 } from "@/lib/inventory-catalog-preview";
 import { storefrontPublicationReadiness } from "@/lib/storefront-product-identity";
@@ -669,7 +669,7 @@ function getCellFromAttributes(input: unknown): string | undefined {
   return attributeValueText(found?.value) || undefined;
 }
 
-type CatalogSearchCard = Omit<InventoryCatalogCard, "supplierName" | "salePriceCents">;
+type CatalogSearchCard = Omit<InventorySearchCard, "supplierName" | "salePriceCents">;
 
 function fieldsForProduct(product: CatalogSearchCard): SearchField[] {
   const supplierName = product.supplierCounterparty?.displayName ?? product.supplierCounterparty?.name ?? product.legacySupplierName ?? "";
@@ -1266,7 +1266,7 @@ function filterAndCountFacets<T extends CatalogFacetProduct>(
 }
 
 function rankInventoryCards(
-  cards: InventoryCatalogCard[],
+  cards: InventorySearchCard[],
   tokens: CatalogSearchToken[],
   normalizedQuery: string,
   params: CatalogSearchParams,
@@ -1303,10 +1303,11 @@ function rankInventoryCards(
 
 export async function getInventoryCatalogPreview(branchId: string, params: URLSearchParams): Promise<Omit<InventoryCatalogPreview, "scope">> {
   const filters = Object.fromEntries(facetKeys.map((key) => [key, cleanFilterValues(params.getAll(key))]));
-  const cards = await loadInventoryCatalogCards(branchId);
   const q = params.get("q")?.trim() ?? "";
-  const matches = q ? rankInventoryCards(cards, tokenize(q), normalizeSearchText(q), { q }, normalizeSort(params.get("sort") ?? undefined))
-    .map(({ card }) => card) : cards;
+  const matches = q
+    ? rankInventoryCards(await inventorySearchCards.cached(branchId), tokenize(q), normalizeSearchText(q), { q }, normalizeSort(params.get("sort") ?? undefined))
+      .map(({ card }) => card)
+    : await inventoryCatalogCards.cached(branchId);
   const { filtered, facets: { stock: _stock, ...facets } } = filterAndCountFacets(matches, filters, { inventoryCategories: true });
   return {
     total: filtered.length,
@@ -1591,16 +1592,15 @@ async function readInventoryCatalogPage(
 ) {
   const branchId = getScopedBranchId();
   const stockRelation = catalogStockRelation(storeId);
-  const cardsPromise = readInventoryCatalogCards(branchId);
   const ranked = search.normalizedQuery
-    ? rankInventoryCards(await cardsPromise, search.tokens, search.normalizedQuery, search.params, search.sort)
+    ? rankInventoryCards(await inventorySearchCards.read(branchId), search.tokens, search.normalizedQuery, search.params, search.sort)
     : null;
   const [cards, stock] = ranked
     ? [
         ranked.map(({ card }) => card),
         ranked.length ? await loadCatalogStock(branchId, stockRelation, ranked.map(({ card }) => card.id)) : new Map<string, LiveCatalogStock[]>(),
       ]
-    : await Promise.all([cardsPromise, loadCatalogStock(branchId, stockRelation)]);
+    : await Promise.all([inventoryCatalogCards.read(branchId), loadCatalogStock(branchId, stockRelation)]);
   const { filtered, facets } = filterAndCountFacets(cards, filters, {
     inventoryCategories: true,
     available: ({ id }) => stock.get(id)?.reduce((sum, balance) => sum + decimalToNumber(balance.available), 0) ?? 0,

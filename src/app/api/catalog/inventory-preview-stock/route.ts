@@ -10,13 +10,14 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const storeId = params.get("storeId")?.trim();
   const productIds = [...new Set(params.getAll("id").filter((id) => id && id.length <= 128))];
-  if (!branchId || !storeId || storeId.length > 128 || !productIds.length || productIds.length > 50) {
-    return NextResponse.json({ error: "Укажите склад и товары для загрузки остатков" }, { status: 400 });
+  if (!branchId || (storeId && storeId.length > 128) || !productIds.length || productIds.length > 50) {
+    return NextResponse.json({ error: "Укажите товары для загрузки остатков" }, { status: 400 });
   }
 
   return runWithBranchApiContext(access.context, async () => {
     const store = await prisma.localStore.findFirst({
-      where: { branchId, id: storeId },
+      where: { branchId, ...(storeId ? { id: storeId } : { archived: false }) },
+      orderBy: [{ isMain: "desc" }, { name: "asc" }],
       select: { stockBalances: {
         where: { branchId, productId: { in: productIds } },
         select: { productId: true, quantity: true, available: true },
