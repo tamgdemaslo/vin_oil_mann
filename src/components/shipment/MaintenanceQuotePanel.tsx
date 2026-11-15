@@ -1,10 +1,10 @@
 "use client";
 
 import { Check, Plus, ArrowRight, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
 import type { MannFluidResearchResult } from "@/lib/mann-fluid-research";
-import { groupQuoteOils, sortQuoteFilterOffers, quoteVariantAmount, quoteRequirementChoices, quoteClientText, quoteExtraCents, quoteRub, quoteServiceGroups, quoteSupplierDeliveryAt, type QuoteService, type QuoteFilterGroup, type QuoteExtra, type QuoteStockProduct } from "@/lib/maintenance-quote";
+import { groupQuoteOils, quoteVariantAmount, quoteRequirementChoices, quoteClientText, quoteExtraCents, quoteRub, quoteServiceGroups, quoteSupplierDeliveryAt, type QuoteService, type QuoteFilterGroup, type QuoteExtra, type QuoteStockProduct } from "@/lib/maintenance-quote";
 import { getProductAttributeDictionary } from "@/lib/product-attribute-values";
 import { QuoteFilterOffers } from "./QuoteFilterOffers";
 import { QuoteSearchField } from "./QuoteSearchField";
@@ -21,41 +21,80 @@ export type MaintenanceQuoteSnapshot = {
   volume?: string;
   filterSelection?: Record<string, string>;
 };
-type Props = { initialState?: MaintenanceQuoteSnapshot; vehicleSetup?: ReactNode; quoteContextKey?: string; vehicleTitle: string; warehouseId?: string | null; organizationId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; requirements?: ReturnType<typeof quoteRequirementChoices>; filters?: QuoteFilterGroup[]; filtersLoading?: boolean; services?: QuoteService[]; timeZone?: string };
+type Props = { initialState?: MaintenanceQuoteSnapshot; vehicleSetup?: ReactNode; quoteContextKey?: string; vehicleTitle: string; filterVehicleContext?: string; filterStockError?: string; warehouseId?: string | null; organizationId?: string | null; profile: MannUnifiedTechnicalProfile | null; research: MannFluidResearchResult | null; requirements?: ReturnType<typeof quoteRequirementChoices>; filters?: QuoteFilterGroup[]; filtersLoading?: boolean; services?: QuoteService[]; timeZone?: string };
 const isFilter = (row: QuoteExtra) => Boolean(row.filterLabel) || /^(?:масляный|воздушный|салонный|топливный)\s+фильтр/i.test(row.name);
 const number = (value: string) => Number(value.replace(",", "."));
 
-export function MaintenanceQuotePanel({ initialState, vehicleSetup, quoteContextKey, vehicleTitle, warehouseId, organizationId, profile, research, requirements, filters: vehicleFilters = [], filtersLoading = false, services, timeZone }: Props) {
+const filterTypes = { oil: "Масляный фильтр", air: "Воздушный фильтр", cabin: "Салонный фильтр", fuel: "Топливный фильтр" } as const;
+const articleKey = (article: string) => article.replace(/[^a-z0-9]/gi, "").toUpperCase();
+
+export function MaintenanceQuotePanel({ initialState, vehicleSetup, quoteContextKey, vehicleTitle, filterVehicleContext, filterStockError, warehouseId, organizationId, profile, research, requirements, filters: vehicleFilters = [], filtersLoading = false, services, timeZone }: Props) {
   const choices = useMemo(() => profile || research ? quoteRequirementChoices(profile, research, { prefillResearchVolume: true }) : requirements ?? quoteRequirementChoices(null, null), [profile, research, requirements]);
   const [activeSection, setActiveSection] = useState<"oil" | "filters" | "work">("oil");
-  const [manualFilters, setManualFilters] = useState<QuoteFilterGroup[]>([]);
-  const [articleStock, setArticleStock] = useState<Record<string, QuoteFilterGroup["products"]>>({});
-  const [articleStockError, setArticleStockError] = useState(false);
-  const manualArticles = JSON.stringify(manualFilters.map(group => group.article));
-  useEffect(() => {
-    setArticleStock({});
-    setArticleStockError(false);
-    const articles = JSON.parse(manualArticles) as string[];
-    if (!warehouseId || !articles.length) return;
-    const controller = new AbortController();
-    void fetch("/api/mann-catalog/match-local-products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ organizationId, warehouseId, mannArticles: articles }),
-      signal: controller.signal,
-    }).then(async response => {
-      if (!response.ok) throw new Error("Ошибка проверки склада");
-      const data = await response.json() as { matches: Array<{ mannArticle: string; compatibleProducts: QuoteFilterGroup["products"] }> };
-      if (!controller.signal.aborted) setArticleStock(Object.fromEntries(data.matches.map(match => [match.mannArticle, match.compatibleProducts])));
-    }).catch(() => {
-      if (!controller.signal.aborted) setArticleStockError(true);
-    });
-    return () => controller.abort();
-  }, [manualArticles, organizationId, warehouseId]);
-  const [articleNotice, setArticleNotice] = useState("");
+  const [manualQuery, setManualQuery] = useState<{ article: string; type: keyof typeof filterTypes; revision: number } | null>(null);
   const [manualArticle, setManualArticle] = useState("");
-  const [manualFilterType, setManualFilterType] = useState("Масляный фильтр");
-  const filters = useMemo(() => [...vehicleFilters, ...manualFilters.filter(group => !vehicleFilters.some(item => item.article.replace(/[^a-z0-9]/gi, "").toUpperCase() === group.article.replace(/[^a-z0-9]/gi, "").toUpperCase()))], [vehicleFilters, manualFilters]);
+  const [manualFilterType, setManualFilterType] = useState<keyof typeof filterTypes>("oil");
+  const [editingArticle, setEditingArticle] = useState(false);
+  const articleInput = useRef<HTMLInputElement>(null);
+  const [manualStock, setManualStock] = useState<{
+    query: typeof manualQuery; warehouseId: typeof warehouseId; products: QuoteFilterGroup["products"]; error?: string;
+  } | null>(null);
+  const matchingVehicleGroup = manualQuery && vehicleFilters.find(group =>
+    group.label === filterTypes[manualQuery.type] && articleKey(group.article) === articleKey(manualQuery.article));
+  const stockResult = manualStock?.query === manualQuery && manualStock?.warehouseId === warehouseId ? manualStock : null;
+  const manualGroup: QuoteFilterGroup | null = manualQuery && {
+    key: matchingVehicleGroup?.key ?? `manual:${articleKey(manualQuery.article)}`,
+    label: filterTypes[manualQuery.type],
+    article: manualQuery.article,
+    condition: matchingVehicleGroup?.condition ?? "Артикул указан вручную. Сверьте применяемость с автомобилем.",
+    products: stockResult?.products ?? [],
+  };
+  const filters = manualGroup ? [manualGroup, ...vehicleFilters.filter(group => group.key !== manualGroup.key)] : vehicleFilters;
+  const showArticleForm = editingArticle || (!manualQuery && !filterVehicleContext);
+  const searchContext = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!manualQuery || !warehouseId) return;
+    const controller = new AbortController();
+    const query = manualQuery;
+    async function loadStock() {
+      try {
+        const response = await fetch("/api/mann-catalog/match-local-products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            organizationId, warehouseId,
+            mannArticles: [{ mannArticle: query.article, filterType: query.type }],
+          }),
+        });
+        if (!response.ok) throw new Error("Не удалось проверить наличие на складе.");
+        const { matches = [] } = await response.json() as { matches?: { compatibleProducts?: QuoteFilterGroup["products"]; localMatches?: QuoteFilterGroup["products"] }[] };
+        const match = matches[0];
+        if (!controller.signal.aborted) setManualStock({
+          query, warehouseId, products: match?.compatibleProducts ?? match?.localMatches ?? [],
+        });
+      } catch {
+        if (!controller.signal.aborted) setManualStock({ query, warehouseId, products: [], error: "Не удалось проверить наличие на складе." });
+      }
+    }
+    void loadStock();
+    return () => controller.abort();
+  }, [manualQuery, warehouseId, organizationId]);
+
+  useEffect(() => {
+    if (editingArticle) articleInput.current?.focus();
+  }, [editingArticle]);
+
+  function submitArticle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const article = manualArticle.trim().toUpperCase();
+    if (article.length < 2 || !articleKey(article)) return;
+    setManualArticle(article);
+    setManualQuery(previous => ({ article, type: manualFilterType, revision: (previous?.revision ?? 0) + 1 }));
+    setEditingArticle(false);
+    requestAnimationFrame(() => searchContext.current?.focus());
+  }
   const [specificationDraft, setSpecification] = useState<string | null>(initialState?.specification ?? null);
   const [viscosityDraft, setViscosity] = useState<string | null>(initialState?.viscosity ?? null);
   const [volumeDraft, setVolume] = useState<string | null>(initialState?.volume ?? null);
@@ -85,25 +124,6 @@ export function MaintenanceQuotePanel({ initialState, vehicleSetup, quoteContext
   const [extraLoading, setExtraLoading] = useState(false);
   const [extraError, setExtraError] = useState("");
   const [extraSearchCompleted, setExtraSearchCompleted] = useState(false);
-  const [supplierRefresh, setSupplierRefresh] = useState(0);
-  const [supplierResults, setSupplierResults] = useState<Record<string, { products: QuoteFilterGroup["products"]; error?: string }>>({});
-  const filterArticlesKey = JSON.stringify([...new Set(filters.map(group => group.article))].sort());
-  useEffect(() => {
-    const controller = new AbortController();
-    setSupplierResults({});
-    const articles = JSON.parse(filterArticlesKey) as string[];
-    void Promise.all(articles.map(async article => {
-      try {
-        const response = await fetch(`/api/maintenance-quote/rossko?${new URLSearchParams({article})}`, {signal: controller.signal});
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Не удалось проверить Роско");
-        if (!controller.signal.aborted) setSupplierResults(rows => ({...rows, [article]: {products: data.products}}));
-      } catch (error) {
-        if (!controller.signal.aborted) setSupplierResults(rows => ({...rows, [article]: {products: [], error: error instanceof Error ? error.message : "Ошибка Роско"}}));
-      }
-    }));
-    return () => controller.abort();
-  }, [filterArticlesKey, supplierRefresh, warehouseId]);
   const [pendingReview, setPendingReview] = useState<Array<{ id: string; name: string; amount?: number }>>([]);
   const previousVehicle = useRef(quoteContextKey);
   useEffect(() => {
@@ -115,7 +135,7 @@ export function MaintenanceQuotePanel({ initialState, vehicleSetup, quoteContext
     }));
     const parts = extras.filter(isFilter).map(row => ({ id: row.id, name: row.name, amount: Number.isFinite(row.price) ? quoteExtraCents([row]) : undefined }));
     setPendingReview(rows => [...new Map([...rows, ...oils, ...parts].map(row => [row.id, row])).values()]);
-    setSelected([]); setProducts([]); setExtras(rows => rows.filter(row => !isFilter(row))); setManualFilters([]); setArticleNotice(""); setFilterSelection({});
+    setSelected([]); setProducts([]); setExtras(rows => rows.filter(row => !isFilter(row))); setManualQuery(null); setEditingArticle(false); setManualArticle(""); setFilterSelection({});
     setSpecification(null); setViscosity(null); setVolume(null); setSearched(false); setError(""); setLoading(false);
     setSearch(""); setExtraProducts([]); setExtraError(""); setExtraLoading(false);
   }, [quoteContextKey]);
@@ -268,65 +288,60 @@ export function MaintenanceQuotePanel({ initialState, vehicleSetup, quoteContext
       })}</div> : null}
       {vehicleSetup && <div className={styles.nextStep}><span /><button type="button" className="eco-btn" onClick={() => goToSection("filters")}>К фильтрам <ArrowRight size={16} aria-hidden="true" /></button></div>}
       </section>
-      <section id="quote-filters" tabIndex={-1} data-quote-section="filters" className={styles.step} aria-labelledby="quote-parts-title">
-      <header className={styles.stepHeader}><div><h2 id="quote-parts-title">Фильтры</h2></div></header>
-      <div className={styles.filterPicker} aria-label="Фильтры из подбора MANN">
-        <div className={styles.filterHeading}>{filters.length ? <button type="button" className="eco-btn" onClick={() => setSupplierRefresh(value => value + 1)}>Обновить Роско</button> : null}</div>
-        {filtersLoading ? <p role="status">Загружаем подбор MANN…</p> : !filters.length ? <p className={styles.note}>Выберите автомобиль для подбора фильтров или укажите известный артикул MANN ниже.</p> : null}
-        <details className={styles.articleDisclosure} open={!filters.length}>
-          <summary>Найти по артикулу</summary>
-          <div className={styles.filterArticleEntry}>
-          <label>Тип фильтра<select value={manualFilterType} onChange={event => setManualFilterType(event.target.value)}>{["Масляный фильтр", "Воздушный фильтр", "Салонный фильтр", "Топливный фильтр"].map(label => <option key={label}>{label}</option>)}</select></label>
-          <label>Артикул MANN<input value={manualArticle} onChange={event => { setManualArticle(event.target.value); setArticleNotice(""); }} placeholder="Например: CU 3172/1" maxLength={64} /></label>
-          <button type="button" className="eco-btn" disabled={!/[a-z0-9]/i.test(manualArticle)} onClick={() => {
-            const article = manualArticle.trim().toUpperCase();
-            const key = `manual:${article.replace(/[^A-Z0-9]/g, "")}`;
-            if (!key.slice(7)) return;
-            const existingGroup = vehicleFilters.find(group => group.article.replace(/[^a-z0-9]/gi, "").toUpperCase() === key.slice(7));
-            if (existingGroup) {
-              setArticleNotice(`${existingGroup.article} уже в подборе по автомобилю. Наш склад проверен по тому же артикулу и его аналогам.`);
-              return;
-            }
-            setManualFilters(rows => rows.some(row => row.key === key) ? rows : [...rows, {key, label: manualFilterType, article, condition: "Артикул указан вручную — сверьте применяемость с автомобилем.", products: []}]);
-            setManualArticle("");
-            setSupplierRefresh(value => value + 1);
-          }}>Найти предложения</button>
-        </div>
-        </details>
-        {articleNotice && <p className={styles.note} role="status">{articleNotice}</p>}
-        {filters.map((group, index) => {
-          const supplier = supplierResults[group.article];
-          const manualGroup = group.key.startsWith("manual:");
-          const localProducts = warehouseId ? (manualGroup ? articleStock[group.article] ?? [] : group.products) : [];
-          const warehouseProducts = [...localProducts].sort((a, b) =>
-            Number(b.available > 0) - Number(a.available > 0) || a.price - b.price);
-          const supplierProducts = sortQuoteFilterOffers(supplier?.products ?? [], "delivery");
-          const filterProducts = [...warehouseProducts, ...supplierProducts];
+      <section id="quote-filters" tabIndex={-1} data-quote-section="filters" className={`${styles.step} ${styles.filterStep}`} aria-labelledby="quote-parts-title">
+      <header className={styles.stepHeader}><h2 id="quote-parts-title">Фильтры</h2></header>
+      <div className={styles.filterPicker}>
+        {manualGroup ? <div className={styles.filterGroupHeading}>
+          <h3 className={styles.filterGroupTitle}>{manualGroup.label} · {manualGroup.article}</h3>
+          <button ref={searchContext} type="button" className="eco-btn" aria-expanded={showArticleForm} aria-controls="quote-filter-search"
+            onClick={() => { setManualArticle(manualQuery?.article ?? ""); setManualFilterType(manualQuery?.type ?? "oil"); setEditingArticle(true); articleInput.current?.focus(); }}>Изменить</button>
+        </div> : filterVehicleContext ? <div className={styles.filterGroupHeading}>
+          <h3 className={styles.filterGroupTitle}>Подбор для {filterVehicleContext}</h3>
+          <button type="button" className="eco-btn" aria-expanded={showArticleForm} aria-controls="quote-filter-search"
+            onClick={() => { setEditingArticle(!editingArticle); }}>Найти по артикулу</button>
+        </div> : <p className={styles.filterHint}>Выберите <a href="#quote-setup-title">автомобиль</a> или найдите фильтр по известному артикулу MANN.</p>}
+        <form id="quote-filter-search" className={styles.filterArticleEntry} hidden={!showArticleForm} onSubmit={submitArticle}>
+          <label>Тип фильтра<select value={manualFilterType} onChange={event => setManualFilterType(event.target.value as keyof typeof filterTypes)}>
+            {Object.entries(filterTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select></label>
+          <label>Артикул MANN<input ref={articleInput} value={manualArticle} onChange={event => setManualArticle(event.target.value)}
+            placeholder="Например, CU 3172/1" maxLength={64} /></label>
+          <button type="submit" className="eco-btn eco-btn--primary" disabled={manualArticle.trim().length < 2 || !articleKey(manualArticle)}>Найти предложения</button>
+        </form>
+        {filterStockError && !vehicleFilters.length && <p className={styles.filterHint} role="status">{filterStockError}</p>}
+        {filtersLoading && <p className={styles.filterHint} role="status">Загружаем подбор MANN…</p>}
+        {filterVehicleContext && !filtersLoading && !vehicleFilters.length && !filterStockError && !manualGroup &&
+          <p className={styles.filterHint}>В каталоге MANN нет фильтров для этого автомобиля. Можно искать по артикулу.</p>}
+        {filters.map(group => {
+          const manual = group === manualGroup;
           const rowId = `mann:${group.key}`;
           const existingRow = extras.find(row => row.id === rowId);
-          const selectedId = filterSelection[group.key] ?? existingRow?.supplierProductId ?? (existingRow && !existingRow.stockStoreId ? "reference" : "");
-          function chooseFilter(value: string) {
-              setFilterSelection(values => ({...values, [group.key]: value}));
-              const chosen=filterProducts.find(item=>item.id===value);
-              if (chosen) setPendingReview(rows => rows.filter(row => row.id !== rowId));
-              const supplierDeliveryAt = chosen?.source === "rossko" ? quoteSupplierDeliveryAt(chosen) : undefined;
-              setExtras(rows => {
-                const others=rows.filter(row=>row.id!==rowId);
-                if (!value || (value!=="reference" && !chosen)) return others;
-                return [...others,{id:rowId,filterLabel:group.label,brand:chosen ? chosen.brand : "MANN",name:chosen ? `${chosen.name}${chosen.source === "rossko" ? ` (${chosen.relation === "analogue" ? `аналог Росско для MANN ${group.article}` : "Росско"})` : chosen.available<1 ? " (под заказ)" : ""}` : `${group.label} MANN ${group.article}`,quantity:1,price:chosen && chosen.price>0 ? chosen.price : NaN,...(chosen?.source === "rossko" ? {supplierProductId:chosen.id, supplierDeliveryAt, supplierDeliveryLabel: chosen.deliveryLabel} : {}),...(chosen && warehouseId && chosen.source !== "rossko" ? {stockStoreId:warehouseId} : {})}];
-              });
+          const selectedId = filterSelection[group.key] ?? existingRow?.supplierProductId ?? "";
+          const warehouse = warehouseId ? [...group.products].sort((a, b) =>
+            Number(b.available > 0) - Number(a.available > 0) || a.price - b.price) : [];
+          const warehouseStatus = !warehouseId ? "Выберите склад в блоке «Автомобиль»."
+            : manual ? stockResult?.error ?? (!stockResult ? "Проверяем наличие на складе…" : undefined)
+            : filtersLoading ? "Проверяем наличие на складе…" : filterStockError;
+          function chooseFilter(chosen?: QuoteFilterGroup["products"][number]) {
+            setFilterSelection(values => ({ ...values, [group.key]: chosen?.id ?? "reference" }));
+            const fromSupplier = chosen?.source === "rossko";
+            const name = !chosen ? `${group.label} MANN ${group.article}`
+              : fromSupplier ? `${chosen.name} (${chosen.relation === "analogue" ? `аналог Росско для MANN ${group.article}` : "Росско"})`
+              : chosen.available < 1 ? `${chosen.name} (под заказ)` : chosen.name;
+            setExtras(rows => [...rows.filter(row => row.id !== rowId), {
+              id: rowId, filterLabel: group.label, brand: chosen ? chosen.brand : "MANN",
+              name, quantity: 1, price: chosen && chosen.price > 0 ? chosen.price : NaN,
+              ...(fromSupplier && chosen ? { supplierProductId: chosen.id, supplierDeliveryAt: quoteSupplierDeliveryAt(chosen), supplierDeliveryLabel: chosen.deliveryLabel } : {}),
+              ...(chosen && warehouseId && !fromSupplier ? { stockStoreId: warehouseId } : {}),
+            }]);
           }
           return <div key={group.key} className={styles.filterRow}>
-            <div className={styles.filterGroupHeading}>
-              <strong>{group.label}</strong>
-              {!existingRow && <button type="button" className={styles.manualFilterPrice} disabled={filtersLoading} onClick={() => chooseFilter("reference")}>Указать цену вручную</button>}
-            </div>
-            {manualGroup && warehouseId && !articleStock[group.article] && <p role="status" className={styles.note}>{articleStockError ? "Не удалось проверить наш склад." : "Проверяем точный артикул и проверенные аналоги на нашем складе…"}</p>}
-            {warehouseId && !filtersLoading && (!manualGroup || articleStock[group.article]) && !warehouseProducts.some(product => product.available > 0) && <p className={styles.note}>Наш склад: точный артикул и проверенные аналоги в наличии не найдены.</p>}
-            {filterProducts.length > 0 && <QuoteFilterOffers products={filterProducts} selectedId={selectedId} compact={Boolean(vehicleSetup)} stockPending={filtersLoading || (manualGroup && !articleStock[group.article] && !articleStockError)} initiallyExpanded={Boolean(vehicleSetup) || index === 0} label={`${group.label} MANN ${group.article}`} disabled={filtersLoading} onSelect={chooseFilter} />}
-            {existingRow ? <details className={styles.filterEditor} open={!Number.isFinite(existingRow.price) || undefined}><summary>В расчёте · изменить количество или цену</summary><div><label className={styles.filterPrice}>Цена фильтра, ₽<input aria-label={`Цена ${group.label} MANN ${group.article}, ₽`} type="number" min="0" step="0.01" placeholder="Укажите цену" value={Number.isFinite(existingRow.price) ? existingRow.price : ""} onChange={event=>updateExtra(rowId,{price:event.target.value ? Number(event.target.value) : NaN})} /></label><label className={styles.filterPrice}>Количество<input aria-label={`Количество ${group.label} MANN ${group.article}`} type="number" min="0.001" step="0.001" value={Number.isFinite(existingRow.quantity) ? existingRow.quantity : ""} onChange={event => updateExtra(rowId, {quantity: event.target.value ? Number(event.target.value) : NaN})} /></label><button type="button" className="eco-btn" onClick={()=>{setExtras(rows=>rows.filter(row=>row.id!==rowId));setFilterSelection(values=>({...values,[group.key]:""}));}}>Убрать фильтр</button><small className={styles.filterAdded}>{existingRow.name} · в расчёте{existingRow.supplierProductId ? " · Роско" : existingRow.stockStoreId ? " · Наш склад" : ""}{!Number.isFinite(existingRow.price) ? " — укажите цену рядом" : ""}</small></div></details> : null}
-            {!supplier ? <p className={styles.note} role="status">Проверяем цену и доставку в Роско…</p> : supplier.error ? <p className={styles.note} role="status">Роско: {supplier.error}</p> : !supplier.products.length ? <p className={styles.note}>В Роско нет доступных предложений MANN {group.article} и его аналогов.</p> : null}
-            {group.condition ? <p className={styles.note}>Условие MANN: {group.condition}</p> : null}
+            {!manual && <h3 className={styles.filterGroupTitle}>{group.label} · {group.article}</h3>}
+            {group.condition && <p className={styles.filterHint}>Условие MANN: {group.condition}</p>}
+            <QuoteFilterOffers key={manual ? manualQuery?.revision : undefined} warehouse={warehouse} article={group.article} selectedId={selectedId}
+              label={`${group.label} ${group.article}`} warehouseStatus={warehouseStatus} onSelect={chooseFilter} />
+            {!existingRow && <button type="button" className={`eco-btn ${styles.filterSecondary}`} onClick={() => chooseFilter()}>Указать цену вручную</button>}
+            {existingRow ? <details className={styles.filterEditor} open={!Number.isFinite(existingRow.price) || undefined}><summary>В расчёте · изменить количество или цену</summary><div><label className={styles.filterPrice}>Цена фильтра, ₽<input aria-label={`Цена ${group.label} MANN ${group.article}, ₽`} type="number" min="0" step="0.01" placeholder="Укажите цену" value={Number.isFinite(existingRow.price) ? existingRow.price : ""} onChange={event=>updateExtra(rowId,{price:event.target.value ? Number(event.target.value) : NaN})} /></label><label className={styles.filterPrice}>Количество<input aria-label={`Количество ${group.label} MANN ${group.article}`} type="number" min="0.001" step="0.001" value={Number.isFinite(existingRow.quantity) ? existingRow.quantity : ""} onChange={event => updateExtra(rowId, {quantity: event.target.value ? Number(event.target.value) : NaN})} /></label><button type="button" className="eco-btn" onClick={()=>{setExtras(rows=>rows.filter(row=>row.id!==rowId));setFilterSelection(values=>({...values,[group.key]:""}));}}>Убрать фильтр</button><small className={styles.filterAdded}>{existingRow.name} · в расчёте{existingRow.supplierProductId ? " · Росско" : existingRow.stockStoreId ? " · Наш склад" : ""}{!Number.isFinite(existingRow.price) ? " — укажите цену рядом" : ""}</small></div></details> : null}
           </div>;
         })}
         {filterRows.filter(row => !filters.some(group => row.id === `mann:${group.key}`)).map(row => <div key={row.id} className={styles.extra}>

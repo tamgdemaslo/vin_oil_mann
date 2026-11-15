@@ -11,7 +11,7 @@ import styles from "./maintenance-quote.module.css";
 
 type Store = { id: string; name: string; organizationId: string | null };
 type Props = { branchName?: string; organizationId: string | null; stores: Store[]; services: QuoteService[]; timeZone?: string | null };
-type FilterSelection = Pick<MannManualSelection, "variantId" | "make" | "model"> & { variantIds?: string[]; year?: number | null };
+type FilterSelection = Pick<MannManualSelection, "variantId" | "make" | "model"> & { variantIds?: string[]; year?: number | null; modification?: string | null; engineCode?: string | null };
 type Match = {
   mannArticleNormalized: string;
   compatibleProducts?: QuoteFilterGroup["products"];
@@ -223,8 +223,9 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores, 
         {draftEditor === null && (manualSelection || (manualCatalogOpen && !vehicle)) && <label className={styles.manual}>Название для предложения <span>Необязательно</span>
           <input id="quote-vehicle-name" value={vehicleName} onChange={(event) => setVehicleName(event.target.value)} placeholder="Например, Kia K5 2.0, 2021" />
         </label>}
-        {filterState.error && <p role="status" className={styles.error}>{filterState.error} Можно указать артикул вручную.</p>}
       </section>} quoteContextKey={String(activeEditor)} vehicleTitle={vehicleTitle} warehouseId={storeId} organizationId={storeOrganizationId}
+        filterVehicleContext={selection ? [`${selection.make} ${selection.model}`, selection.modification, selection.engineCode, selection.year].filter(Boolean).join(" · ") : undefined}
+        filterStockError={filterState.error || undefined}
         profile={vehicle?.profile ?? null} research={vehicle?.research ?? null} filters={filters} filtersLoading={filterState.loading} services={services} timeZone={timeZone ?? undefined} />
     </>}
   </div>;

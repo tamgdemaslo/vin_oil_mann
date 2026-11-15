@@ -28,11 +28,6 @@
   .totals label { flex: 1; max-width: 180px; }
   .totals strong { white-space: nowrap; padding-bottom: 10px; }
 }
-.filterPicker { padding: 12px 0; border-bottom: 1px solid var(--eco-line, #e5e5e5); }
-.filterRow { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 10px 0; }
-.filterRow label { flex: 1; min-width: min(100%, 240px); }
-.filterRow p { flex-basis: 100%; margin: 0; }
-@media (max-width: 700px) { .filterRow label { flex-basis: 100%; } }
 .panel { font-size: 13px; font-weight: 400; line-height: 1.45; }
 .panel strong { font-size: 14px; font-weight: 600; }
 .panel button { font-size: 13px; font-weight: 500; }
@@ -44,7 +39,6 @@
 .searchPopup p { margin: 0; padding: 8px 10px; border-top: 1px solid var(--eco-line, #e5e2da); color: #525252; font-size: 12px; }
 
 .warehousePrompt { margin: 0 0 12px; padding: 10px; background: var(--eco-hover, #f4f1ea); border-radius: 4px; }
-.filterRow .filterPrice { flex: 0 1 150px; min-width: 120px; }
 .filterAdded { flex-basis: 100%; font-size: 12px; color: #525252; }
 .variantTotal { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 12px 0; }
 .variantTotal > span, .variantTotal > small { flex-basis: 100%; }
@@ -61,34 +55,9 @@
 .searchCategories button[aria-pressed="true"] { background: var(--eco-ink, #0a0a0a); color: var(--eco-surface, #fff); }
 .searchPopup > p { flex-shrink: 0; }
 .searchPopup button:focus-visible { outline: 2px solid var(--eco-rust, #c2410c); outline-offset: -2px; }
-.filterPicker > strong { display: block; margin-bottom: 4px; }
-.filterRow + .filterRow { border-top: 1px solid var(--eco-line, #e5e5e5); }
 
-.filterHeading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 
-.supplierComparison { flex-basis: 100%; min-width: 0; border: 1px solid var(--eco-line, #e5e5e5); border-radius: 4px; }
-.supplierComparison summary { padding: 7px 10px; cursor: pointer; font-weight: 500; }
-.supplierComparison summary:focus-visible { outline: 2px solid var(--eco-rust, #c2410c); outline-offset: 2px; }
-.supplierToolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px 10px; color: #525252; font-size: 12px; }
-.supplierSort { display: flex; gap: 4px; }
-.supplierSort button { border: 1px solid var(--eco-line-strong, #d4d4d4); border-radius: 4px; padding: 6px 10px; background: var(--eco-surface, #fff); color: var(--eco-ink, #0a0a0a); cursor: pointer; }
-.supplierSort button[aria-pressed="true"] { background: var(--eco-ink, #0a0a0a); color: var(--eco-surface, #fff); }
-.supplierOfferList { max-height: 340px; overflow-y: auto; overscroll-behavior: contain; }
-.supplierOffer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 10px; border-top: 1px solid var(--eco-line, #e5e5e5); }
-.supplierOffer[data-selected="true"] { background: var(--eco-hover, #f4f1ea); }
-.supplierOffer > div { min-width: 0; overflow-wrap: anywhere; }
-.supplierOfferInfo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; }
-.supplierOffer small { color: #525252; font-size: 12px; }
-.supplierOffer p { font-size: 12px; color: #525252; }
-.supplierOfferAction { display: flex; align-items: center; gap: 8px; flex-shrink: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.supplierOfferAction .offerAdd { display: grid; place-items: center; min-width: 32px; min-height: 32px; padding: 0; }
-.filterGroupHeading { display: flex; flex: 1 0 100%; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
-.manualFilterPrice { border: 0; background: transparent; color: var(--eco-ink); cursor: pointer; font: inherit; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
-.supplierComparison > p { padding: 10px; }
-@media (max-width: 480px) { .supplierOffer { gap: 6px; } .supplierOfferAction { gap: 5px; } }
 
-.filterArticleEntry { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr) auto; align-items: end; gap: 10px; margin: 12px 0; }
-@media (max-width: 700px) { .filterArticleEntry { grid-template-columns: 1fr; } }
 
 .panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .52fr); gap: 16px; align-items: start; }
 .body { display: grid; min-width: 0; gap: 16px; padding: 0; }
@@ -116,9 +85,6 @@
 .oilColumns[data-selected="true"] { background: var(--eco-hover); }
 .oilColumns p { margin: 4px 0 0; color: var(--eco-muted); font-size: 12px; }
 .oilPrice { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.supplierOfferList section + section { border-top: 1px solid var(--eco-line); }
-.supplierToolbar { padding-top: 10px; }
-.offerEmpty { padding: 0 10px 10px; margin: 0; color: var(--eco-muted); }
 .breakdown { margin: 12px 0; }
 .breakdown div { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
 .breakdown dd { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -139,27 +105,9 @@
 .summaryLine strong { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mobileBar { display: none; }
 .priceEditor { margin: 12px 0; }
-.priceEditor > summary, .articleDisclosure > summary { display: flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 500; cursor: pointer; color: #586474; gap: 8px; }
-.priceEditor > summary::after, .articleDisclosure > summary::after { content: "+"; }
-.priceEditor[open] > summary::after, .articleDisclosure[open] > summary::after { content: "−"; }
-.moreOffers { min-height: 44px; padding: 8px 12px; border: 0; background: transparent; color: var(--eco-rust); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
-.compactOffers { border: 0; border-radius: 0; }
-.compactOffers > summary { font-size: 12px; color: #586474; padding: 8px 0; min-height: 44px; }
-.compactOffers .supplierOfferList { max-height: none; overflow: visible; }
-.compactOffers .supplierToolbar { padding: 8px 0; }
-.compactOffers .supplierToolbar > strong { color: #586474; font-size: 12px; font-weight: 500; }
-.compactOffers .supplierOffer { padding: 12px 0; gap: 16px; }
-.compactOffers .supplierOfferInfo { display: grid; gap: 4px; }
-.compactOffers .supplierOfferInfo > strong { font-size: 14px; font-weight: 550; }
-.compactOffers .supplierOfferInfo > small { font-size: 12px; line-height: 1.5; }
-.compactOffers .supplierOfferAction { gap: 16px; }
-.compactOffers .supplierOfferAction > strong { font-size: 14px; }
-.compactOffers .offerAdd { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; min-height: 44px; min-width: 112px; font-size: 12px; }
-.compactOffers .supplierSort { gap: 4px; }
-.compactOffers .supplierSort button { min-height: 36px; padding: 4px 8px; border: 0; background: transparent; color: #586474; font-size: 12px; }
-.compactOffers .supplierSort button[aria-pressed="true"] { background: #e9edf2; color: #1e2630; }
-.compactOffers .supplierOffer[data-selected="true"] { background: #f5f8f6; }
-.compactOffers .offerEmpty { padding: 8px 0; font-size: 13px; }
+.priceEditor > summary { display: flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 500; cursor: pointer; color: #586474; gap: 8px; }
+.priceEditor > summary::after { content: "+"; }
+.priceEditor[open] > summary::after { content: "−"; }
 .workspace { display: grid; grid-template-columns: minmax(0,1fr) 336px; gap: 24px; margin-top: 0; font-size: 16px; line-height: 1.5; align-items: start; }
 .workspace .body { display: grid; gap: 0; min-width: 0; background: #fff; padding: 24px; border-radius: 8px; }
 .workspace .step { padding: 24px 0; border: 0; border-bottom: 1px solid var(--eco-line); border-radius: 0; background: transparent; }
@@ -189,15 +137,6 @@
 .workspace .oilPrice { font-size: 14px; }
 .workspace .oilColumns > button { font-size: 12px; min-width: 112px; }
 .workspace .oilColumns[data-selected="true"] { background: #f5f8f6; }
-.workspace .filterPicker { padding: 0; border: 0; }
-.workspace .filterHeading { justify-content: flex-end; margin: 0; }
-.workspace .filterHeading > button { padding: 4px 0; min-height: 36px; border: 0; background: transparent; color: #586474; font-size: 12px; }
-.workspace .filterArticleEntry { grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; gap: 8px; margin-top: 8px; }
-.workspace .filterArticleEntry > button { font-size: 12px; }
-.workspace .filterGroupHeading > strong { font-size: 15px; }
-.workspace .filterGroupHeading { gap: 8px; }
-.workspace .filterRow { padding: 16px 0; gap: 8px; }
-.workspace .manualFilterPrice { color: #586474; font-size: 12px; }
 .workspace .filterAdded { overflow-wrap: anywhere; font-size: 12px; }
 .workspace .extra { grid-template-columns: minmax(0,1fr) 80px 104px auto; gap: 8px; margin-top: 16px; }
 .workspace .extra > button { font-size: 12px; padding-inline: 8px; }
@@ -210,8 +149,6 @@
   .workspace { grid-template-columns: minmax(0,1fr) 304px; }
   .workspace .oilColumns { grid-template-columns: minmax(0,1fr) auto; }
   .workspace .oilColumns > div { grid-column: 1/-1; }
-  .workspace .filterArticleEntry { grid-template-columns: 1fr 1fr; }
-  .workspace .filterArticleEntry button { grid-column: 1/-1; justify-self: start; }
   .workspace .extra { grid-template-columns: 1fr 1fr auto; }
   .workspace .extra > label:first-child { grid-column: 1/-1; }
 }
@@ -231,14 +168,8 @@
   .workspace .oilColumns { grid-template-columns: minmax(0,1fr) auto; gap: 12px; }
   .workspace .oilColumns > div { grid-column: 1/-1; }
   .workspace .oilColumns > button { grid-column: 2; }
-  .workspace .filterArticleEntry { grid-template-columns: 1fr; }
-  .workspace .filterArticleEntry button { justify-self: start; }
   .workspace .extra { grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; }
   .workspace .extra > label:first-child { grid-column: 1/-1; }
-  .compactOffers .supplierOffer { flex-wrap: wrap; gap: 8px; }
-  .compactOffers .supplierOfferInfo { flex-basis: 100%; }
-  .compactOffers .supplierOfferAction { width: 100%; justify-content: space-between; }
-  .compactOffers .supplierOfferAction > strong { margin-right: auto; }
   .summaryLine { flex-wrap: wrap; gap: 4px 12px; }
   .summaryLine > span { flex: 1 1 160px; }
 }
@@ -291,11 +222,6 @@
 .workspace .summary > .preview { order: 2; }
 .workspace .summary > button { min-height: 48px; }
 .workspace .priceEditor > summary { min-height: 36px; font-size: 12px; }
-.workspace .filterHeading { display: flex; justify-content: flex-end; }
-.workspace .articleDisclosure { margin-bottom: 8px; }
-.workspace .filterGroupHeading { align-items: center; }
-.workspace .filterGroupHeading > strong { font-size: 15px; }
-.workspace .filterRow .filterPrice { min-width: 120px; }
 .workspace .extra { padding: 16px 0; margin: 0; border-bottom: 1px solid var(--eco-line); }
 .workspace .extra:last-child { border-bottom: 0; }
 @media(min-width:901px) {
@@ -326,38 +252,9 @@
   .workspace .oilColumns .oilPrice { text-align: left; }
   .workspace .summary { padding: 20px 16px; }
   .workspace .singleTotal > strong { font-size: 28px; }
-  .workspace .filterHeading { justify-content: flex-end; }
 }
 
 /* Compact, source-separated stock tables. */
-.supplierComparison { --offer-columns: minmax(160px,1fr) 128px 96px 64px 36px; --offer-zebra: #f5f7f9; }
-.supplierComparison .supplierOffer, .supplierComparison .offerColumns { display: grid; grid-template-columns: var(--offer-columns); align-items: center; gap: 8px; padding: 8px 10px; }
-.supplierComparison .supplierOffer { border: 0; font-size: 13px; }
-.offerColumns { color: #566373; font-size: 11px; }
-.offerColumns > :nth-child(3) { text-align: right; }
-.offerRows > .supplierOffer:nth-of-type(even) { background: var(--offer-zebra); }
-.supplierComparison .supplierOfferInfo { display: block; min-width: 0; }
-.supplierComparison .supplierOfferInfo > strong { font-size: 13px; font-weight: 500; line-height: 1.45; }
-.offerStock, .offerDelivery { font-size: 12px; color: #566373; }
-.offerDelivery { overflow-wrap: anywhere; }
-.offerPrice { white-space: nowrap; text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.supplierComparison .supplierOfferAction { display: flex; width: auto; justify-content: flex-end; gap: 0; }
-.supplierComparison .offerAdd { width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; border: 0; background: transparent; }
-.supplierComparison .supplierOffer[data-selected="true"] .offerAdd { color: #315b40; background: #e6f0e8; }
-.supplierComparison .supplierOffer[data-unavailable="true"] { color: #737e89; }
-.supplierComparison .supplierOffer[data-unavailable="true"] :is(.offerStock,.offerDelivery,.offerPrice) { color: #737e89; }
-.supplierComparison .supplierOffer[data-unavailable="true"] .offerAdd { background: transparent; color: #a1aab4; }
-.supplierComparison .warehouseOffers > .supplierToolbar { background: #edf4ef; }
-.supplierComparison .rosskoOffers > .supplierToolbar { background: #edf1f7; }
-.supplierComparison .supplierToolbar { padding: 6px 10px; margin-top: 8px; min-height: 32px; }
-.supplierComparison .supplierToolbar > strong { color: #344756; font-size: 12px; font-weight: 650; }
-.workspace .compactOffers { flex-basis: 100%; }
-.workspace .compactOffers > summary { min-height: 32px; font-size: 12px; }
-.workspace .compactOffers .supplierOffer { display: grid; grid-template-columns: var(--offer-columns); align-items: center; gap: 8px; padding: 8px 10px; }
-.workspace .compactOffers .supplierOfferInfo { display: block; flex-basis: auto; }
-.workspace .compactOffers .supplierOfferInfo > strong { font-size: 13px; font-weight: 500; }
-.workspace .compactOffers .supplierOfferAction { width: auto; justify-content: flex-end; }
-.workspace .compactOffers .offerAdd { width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; }
 .workspace .step { min-height: 0; padding: 16px; }
 .workspace .stepHeader { margin-bottom: 16px; }
 .workspace .stepHeader h2 { font-size: 16px; }
@@ -376,10 +273,6 @@
 .workspace .oilColumns > button { width: 32px; height: 32px; min-height: 32px; min-width: 32px; padding: 0; border: 0; justify-self: end; }
 .workspace .oilColumns[data-selected="true"] > button { background: #e6f0e8; }
 .workspace .oilPrice { font-size: 13px; }
-.workspace .filterRow { padding: 12px 0; }
-.workspace .filterGroupHeading > strong { font-size: 14px; }
-.workspace .filterArticleEntry { grid-template-columns: minmax(120px,1fr) minmax(140px,1fr) auto; }
-.workspace .filterArticleEntry :is(input,select), .workspace .extra input { min-height: 32px; padding: 4px 8px; font-size: 14px; }
 .workspace .nextStep { margin-top: 16px; padding-top: 12px; }
 .workspace .nextStep > span:empty { display: none; }
 .workspace .nextStep > button { margin-left: auto; min-height: 36px; }
@@ -389,32 +282,18 @@
 .workspace .summaryGroupTitle { margin-top: 12px; }
 .workspace .singleTotal > strong { font-size: 28px; }
 @media(max-width:1150px) {
-  .supplierComparison .supplierOffer, .workspace .compactOffers .supplierOffer { grid-template-columns: minmax(0,1fr) auto 36px; grid-template-areas: "name name name" "delivery price action" "stock price action"; gap: 4px 8px; }
-  .supplierComparison .offerColumns { display: none; }
-  .supplierOfferInfo { grid-area: name; }
-  .offerStock { grid-area: stock; }
-  .offerDelivery { grid-area: delivery; }
-  .offerPrice { grid-area: price; }
-  .supplierOfferAction { grid-area: action; }
-  .offerStock::before { content: "Остаток "; }
-  .offerDelivery::before { content: "Поставка "; }
   .workspace .fields { grid-template-columns: minmax(0,1fr) 104px 112px; }
-  .workspace .filterArticleEntry { grid-template-columns: 1fr 1fr; }
-  .workspace .filterArticleEntry > button { grid-column: 1/-1; justify-self: start; }
 }
 @media(max-width:600px) {
   .workspace .fields { grid-template-columns: 1fr 1fr; }
   .workspace .fields > :first-child { grid-column: 1/-1; }
-  .workspace .fields :is(input,select), .workspace .filterArticleEntry :is(input,select), .workspace .extra input { height: 44px; min-height: 44px; font-size: 16px; }
+  .workspace .fields :is(input,select), .workspace .extra input { height: 44px; min-height: 44px; font-size: 16px; }
   .workspace .searchToggle { min-height: 42px; height: 42px; width: 36px; }
-  .workspace .compactOffers .offerAdd, .workspace .oilColumns > button { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
-  .supplierComparison .supplierOffer, .workspace .compactOffers .supplierOffer { grid-template-columns: minmax(0,1fr) auto 44px; }
   .workspace .oilColumns { grid-template-columns: minmax(0,1fr) 44px; padding: 10px 8px; }
   .workspace .oilColumns > div { grid-column: 1/-1; }
   .workspace .oilColumns .oilPrice { text-align: left; }
   .workspace .oilColumns > button { grid-column: 2; }
   .workspace .oilColumns:first-child { display: none; }
-  .workspace .filterArticleEntry { grid-template-columns: 1fr; }
 }
 
 .inlineOilPrice { min-width: 0; text-align: right; }
@@ -494,4 +373,59 @@
 @media (max-width: 600px) {
   .workspace .searchControl input { min-height: 44px; padding-right: 50px; }
   .workspace .searchControl .searchToggle { min-height: 44px; height: 44px; width: 44px; bottom: 0; }
+}
+
+.workspace .filterStep { padding-block: 16px; background: var(--eco-surface, #fff); }
+.workspace .extra input { min-height: 32px; padding: 4px 8px; font-size: 14px; }
+@media (max-width: 600px) { .workspace .extra input { min-height: 44px; padding: 4px 8px; font-size: 16px; } }
+
+.workspace .filterArticleEntry :is(input,select) { min-height: 44px; }
+
+.filterPicker { display: grid; gap: 12px; min-width: 0; }
+.filterHint, .offerEmpty { margin: 0; color: var(--eco-muted); font-size: 13px; line-height: 1.5; }
+.filterHint a { color: var(--eco-rust); text-decoration: underline; text-underline-offset: 2px; }
+.filterArticleEntry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+}
+.filterArticleEntry[hidden] { display: none; }
+.supplierToolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
+.filterGroupHeading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.filterGroupHeading > button { padding-inline: 8px; }
+.filterRow { display: grid; gap: 8px; min-width: 0; }
+.filterRow + .filterRow { padding-top: 16px; border-top: 1px solid var(--eco-line); }
+.filterGroupTitle { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.supplierOfferList { min-width: 0; }
+.offerSource { padding-block: 12px; border-top: 1px solid var(--eco-line); }
+.offerSource h4 { margin: 0; color: var(--eco-ink); font-size: 14px; font-weight: 600; }
+.offerEmpty { margin-top: 6px; }
+.supplierSort { display: flex; flex-wrap: wrap; gap: 4px; }
+.supplierSort button { padding-inline: 8px; }
+.supplierSort button[aria-pressed="true"] { background: var(--eco-hover); border-color: var(--eco-line-strong); }
+.supplierSort button[aria-disabled="true"] { opacity: .65; cursor: default; }
+.supplierOffer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding-block: 10px;
+  margin-top: 6px;
+  border-top: 1px solid var(--eco-line);
+}
+.supplierOffer[data-selected="true"] { background: #f5f8f6; }
+.supplierOfferInfo { display: grid; min-width: 0; gap: 4px; }
+.offerHeadline { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 8px; }
+.offerHeadline > :first-child { overflow-wrap: anywhere; }
+.offerPrice { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.supplierOfferInfo small { color: var(--eco-muted); font-size: 12px; overflow-wrap: anywhere; }
+.supplierOfferInfo .offerSelected { color: #356244; font-weight: 600; }
+.panel .offerAdd { display: grid; place-items: center; width: 44px; height: 44px; min-width: 44px; padding: 0; }
+.offerAdd[aria-disabled="true"] { color: #356244; cursor: default; }
+.panel .filterSecondary { justify-self: start; min-height: 44px; }
+.filterRow .filterPrice { flex: 0 1 150px; min-width: min(120px, 100%); }
+@media (max-width: 700px) {
+  .filterArticleEntry { grid-template-columns: minmax(0, 1fr); }
 }
