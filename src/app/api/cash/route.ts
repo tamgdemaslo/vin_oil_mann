@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import {
   addExpense,
   addWithdrawal,
@@ -80,6 +81,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
+  return runWithBranchApiContext(access.context, () => mutateCash(request));
+}
+
+async function mutateCash(request: NextRequest) {
   try {
     const body = await request.json();
     const action = String(body.action || "").trim();
