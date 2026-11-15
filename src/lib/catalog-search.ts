@@ -120,9 +120,22 @@ type CachedCatalogCard = {
   mapped?: ReturnType<typeof mapCatalogCard>;
 };
 
+const liveCatalogStockSelect = {
+  productId: true,
+  storeId: true,
+  quantity: true,
+  reserve: true,
+  available: true,
+  buyPriceCents: true,
+  slotName: true,
+  store: { select: { name: true } },
+} satisfies Prisma.LocalStockBalanceSelect;
+
+type LiveCatalogStock = Prisma.LocalStockBalanceGetPayload<{ select: typeof liveCatalogStockSelect }>;
+
 type CatalogProduct = CatalogCard & {
   cachedCard?: CachedCatalogCard;
-  stockBalances: Prisma.LocalStockBalanceGetPayload<ReturnType<typeof catalogStockRelation>>[];
+  stockBalances: LiveCatalogStock[];
 };
 
 const MAX_CACHED_BRANCHES = 4;
@@ -1448,23 +1461,40 @@ async function loadCatalogProducts(
 ): Promise<CatalogProduct[]> {
   if (useCache) {
     const branchId = getScopedBranchId();
-    const [cards, live] = await Promise.all([
+    const [cards, candidates] = await Promise.all([
       loadCatalogCards(branchId),
       prisma.localProduct.findMany({
         ...page,
         where: { ...page.where, branchId },
-        select: { id: true, stockBalances },
+        select: { id: true },
       }),
     ]);
-    if (cards) {
-      const products: CatalogProduct[] = [];
-      for (const row of live) {
-        const cachedCard = cards.get(row.id);
-        // A product may have been created between the two reads.
-        if (!cachedCard) break;
-        products.push({ ...cachedCard.card, cachedCard, stockBalances: row.stockBalances });
+    // A product may have been created between the two reads. Fall back if
+    // even one of the current candidates is missing from the snapshot.
+    if (cards && candidates.every(({ id }) => cards.has(id))) {
+      if (!candidates.length) return [];
+      // Loading a nested, limited relation for thousands of products makes
+      // Prisma build a composite key condition for each product. Stock is
+      // already scoped to one branch; fetch it as one flat batch instead.
+      const stock = await prisma.localStockBalance.findMany({
+        where: {
+          branchId,
+          productId: { in: candidates.map(({ id }) => id) },
+          ...stockBalances.where,
+        },
+        select: liveCatalogStockSelect,
+        orderBy: stockBalances.orderBy,
+      });
+      const byProduct = new Map<string, LiveCatalogStock[]>();
+      for (const row of stock) {
+        const balances = byProduct.get(row.productId);
+        if (!balances) byProduct.set(row.productId, [row]);
+        else if (balances.length < stockBalances.take) balances.push(row);
       }
-      if (products.length === live.length) return products;
+      return candidates.map(({ id }) => {
+        const cachedCard = cards.get(id)!;
+        return { ...cachedCard.card, cachedCard, stockBalances: byProduct.get(id) ?? [] };
+      });
     }
   }
   return prisma.localProduct.findMany({
