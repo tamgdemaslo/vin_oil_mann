@@ -1,103 +1,108 @@
 "use client";
 
 import { Check, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { quoteRub, sortQuoteFilterOffers, type QuoteFilterGroup } from "@/lib/maintenance-quote";
 import styles from "./MaintenanceQuotePanel.module.css";
 
 type Offer = QuoteFilterGroup["products"][number];
 type Props = {
-  products: Offer[];
-  selectedId: string;
+  warehouse: Offer[];
+  article: string;
   label: string;
-  onSelect: (id: string) => void;
+  selectedId: string;
+  onSelect: (offer: Offer) => void;
   disabled?: boolean;
-  initiallyExpanded?: boolean;
-  stockPending?: boolean;
-  compact?: boolean;
+  warehouseStatus?: string;
 };
 
-export function QuoteFilterOffers({ products, selectedId, label, onSelect, disabled, initiallyExpanded = false, compact = false, stockPending = false }: Props) {
-  const [expanded, setExpanded] = useState(initiallyExpanded);
+export function QuoteFilterOffers({ warehouse, article, label, selectedId, onSelect, disabled, warehouseStatus }: Props) {
   const [priority, setPriority] = useState<"price" | "delivery">("delivery");
   const [warehouseLimit, setWarehouseLimit] = useState(3);
   const [supplierLimit, setSupplierLimit] = useState(3);
-  const warehouse = products.filter(item => item.source !== "rossko");
-  const supplier = useMemo(
-    () => sortQuoteFilterOffers(products.filter(item => item.source === "rossko"), priority),
-    [products, priority],
-  );
+  const [revision, setRevision] = useState(0);
+  const [result, setResult] = useState<{ article: string; revision: number; products: Offer[]; error?: string } | null>(null);
+  const current = result?.article === article && result.revision === revision ? result : null;
+  const supplier = sortQuoteFilterOffers(current?.products ?? [], priority);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const response = await fetch(`/api/maintenance-quote/rossko?${new URLSearchParams({ article })}`, { signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Не удалось получить предложения.");
+        if (!controller.signal.aborted) setResult({ article, revision, products: data.products });
+      } catch (error) {
+        if (!controller.signal.aborted) setResult({
+          article, revision, products: [], error: error instanceof Error ? error.message : "Не удалось получить предложения.",
+        });
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [article, revision]);
 
   function renderOffer(item: Offer) {
     const selected = selectedId === item.id;
-    const unavailable = !(item.available > 0);
-    const priceMissing = !Number.isFinite(item.price) || item.price <= 0;
-    const price = priceMissing ? "—" : quoteRub(Math.round(item.price * 100));
-    const source = item.source === "rossko" ? "Росско" : "Наш склад";
-    const stock = unavailable ? "Нет" : `${item.available} шт.`;
-    const delivery = item.source === "rossko"
-      ? item.deliveryLabel?.replace(/^доставка\s*:\s*/i, "") || "Не указан"
-      : "—";
-    return <div key={item.id} className={styles.supplierOffer} role="row"
-      data-selected={selected} data-unavailable={unavailable} aria-disabled={unavailable || undefined}>
-      <div className={styles.supplierOfferInfo} role="cell"><strong>{item.name}</strong>{item.source !== "rossko" && item.matchType && <small>{item.matchType === "EXACT_PRODUCT_BRAND_ARTICLE" ? "Точный артикул" : "Проверенный аналог"}</small>}</div>
-      <div className={styles.offerDelivery} role="cell" aria-label={`Поставка ${delivery}`}>{delivery}</div>
-      <div className={styles.offerPrice} role="cell">{price}</div>
-      <div className={styles.offerStock} role="cell" aria-label={unavailable ? "Нет в наличии" : `Остаток ${stock}`}>{stock}</div>
-      <div className={styles.supplierOfferAction} role="cell">
-        <button type="button" className={`eco-btn ${styles.offerAdd}`}
-          aria-label={`${selected ? "Добавлено" : "Добавить"} ${item.name}, ${price}, ${source}`}
-          aria-pressed={selected} title={unavailable ? "Нет в наличии" : selected ? "В расчёте" : "Добавить в расчёт"}
-          disabled={disabled || selected || unavailable || priceMissing}
-          onClick={() => onSelect(item.id)}>
-          {selected ? <Check size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
-        </button>
+    const price = quoteRub(Math.round(item.price * 100));
+    const articleLabel = item.article || "Артикул не указан";
+    const availability = item.available > 0 ? `Остаток: ${item.available} шт.` : item.orderable ? "Под заказ" : "Нет в наличии";
+    const delivery = item.source === "rossko" ? item.deliveryLabel : item.available > 0 ? "Со склада" : null;
+    return <div key={item.id} className={styles.supplierOffer} data-selected={selected}>
+      <div className={styles.supplierOfferInfo}>
+        <div className={styles.offerHeadline}>
+          <strong>{[item.brand, articleLabel].filter(Boolean).join(" ")}</strong>
+          <strong className={styles.offerPrice}>{price}</strong>
+        </div>
+        <small>{[item.relation === "analogue" ? "Аналог" : null, delivery, availability].filter(Boolean).join(" · ")}</small>
+        {selected && <small className={styles.offerSelected}>В расчёте</small>}
       </div>
+      <button type="button" className={`eco-btn ${selected ? "" : "eco-btn--primary"} ${styles.offerAdd}`}
+        aria-label={`${selected ? "В расчёте" : "Добавить в расчёт"}: ${item.name}, ${articleLabel}, ${price}`}
+        aria-disabled={selected || undefined}
+        disabled={disabled || (item.available < 1 && !item.orderable)}
+        onClick={() => { if (!selected) onSelect(item); }}>
+        {selected ? <Check size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />}
+      </button>
     </div>;
   }
 
   function renderOffers(offers: Offer[], limit: number, setLimit: (limit: number) => void) {
-    const visible = compact ? offers.slice(0, limit) : offers;
+    const visible = offers.slice(0, limit);
     const selected = offers.find(item => item.id === selectedId);
-    const pinned = selected && !visible.some(item => item.id === selected.id) ? selected : null;
     return <>
-      <div role="table" aria-label={`Товары для ${label}`}>
-        <div className={styles.offerColumns} role="row">
-          <span role="columnheader">Наименование</span><span role="columnheader">Поставка</span>
-          <span role="columnheader">Цена</span><span role="columnheader">Остаток</span><span role="columnheader" aria-label="Добавить" />
-        </div>
-        <div className={styles.offerRows} role="rowgroup">
-          {pinned && renderOffer(pinned)}
-          {visible.map(renderOffer)}
-        </div>
-      </div>
-      {compact && offers.length > limit && <button type="button" className={styles.moreOffers}
+      {selected && !visible.includes(selected) && renderOffer(selected)}
+      {visible.map(renderOffer)}
+      {offers.length > limit && <button type="button" className={`eco-btn ${styles.filterSecondary}`}
         onClick={() => setLimit(limit + 10)}>Показать ещё · {offers.length - limit}</button>}
-      {compact && limit > 3 && offers.length > 3 && <button type="button" className={styles.moreOffers}
-        onClick={() => setLimit(3)}>Свернуть</button>}
+      {limit > 3 && offers.length > 3 && <button type="button" className={`eco-btn ${styles.filterSecondary}`}
+        onClick={() => setLimit(3)}>Свернуть список</button>}
     </>;
   }
 
-  return <details className={`${styles.supplierComparison} ${compact ? styles.compactOffers : ""}`}
-    open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
-    <summary>Предложения · {products.length}</summary>
-    <div className={styles.supplierOfferList} aria-label={`Предложения для ${label}`}>
-      <section className={styles.warehouseOffers} aria-label="Наш склад">
-        <div className={styles.supplierToolbar}><strong>Наш склад</strong></div>
-        {warehouse.length ? renderOffers(warehouse, warehouseLimit, setWarehouseLimit)
-          : <p className={styles.offerEmpty}>{stockPending ? "Проверяем наличие…" : "Точный артикул и проверенные аналоги не найдены"}</p>}
-      </section>
-      <section className={styles.rosskoOffers} aria-label="Росско">
-        <div className={styles.supplierToolbar}>
-          <strong>Росско</strong>
-          {supplier.length > 1 && <div className={styles.supplierSort} role="group" aria-label={`Сортировка Росско для ${label}`}>
-            <button type="button" aria-pressed={priority === "price"} onClick={() => { setPriority("price"); setSupplierLimit(3); }}>Дешевле</button>
-            <button type="button" aria-pressed={priority === "delivery"} onClick={() => { setPriority("delivery"); setSupplierLimit(3); }}>Быстрее</button>
-          </div>}
+  return <div className={styles.supplierOfferList} aria-label={`Предложения для ${label}`}>
+    <section aria-label="Наш склад" className={styles.offerSource}>
+      <h4>Наш склад</h4>
+      {warehouseStatus ? <p className={styles.offerEmpty} role="status">{warehouseStatus}</p>
+        : warehouse.length ? renderOffers(warehouse, warehouseLimit, setWarehouseLimit)
+        : <p className={styles.offerEmpty}>На выбранном складе нет совпадений.</p>}
+    </section>
+    <section aria-label="Росско" className={styles.offerSource}>
+      <div className={styles.supplierToolbar}>
+        <h4>Росско</h4>
+        <div className={styles.supplierSort} role="group" aria-label="Предложения Росско">
+          {supplier.length > 1 && <>
+            <button type="button" className="eco-btn" aria-pressed={priority === "price"} onClick={() => { setPriority("price"); setSupplierLimit(3); }}>Дешевле</button>
+            <button type="button" className="eco-btn" aria-pressed={priority === "delivery"} onClick={() => { setPriority("delivery"); setSupplierLimit(3); }}>Быстрее</button>
+          </>}
+          <button type="button" className="eco-btn" aria-disabled={!current} onClick={() => { if (current) setRevision(value => value + 1); }}>Обновить</button>
         </div>
-        {supplier.length ? renderOffers(supplier, supplierLimit, setSupplierLimit)
-          : <p className={styles.offerEmpty}>Нет предложений</p>}
-      </section>
-    </div>
-  </details>;
+      </div>
+      {!current ? <p className={styles.offerEmpty} role="status">Проверяем цену и доставку…</p>
+        : current.error ? <p className={styles.offerEmpty} role="status">{current.error}</p>
+        : supplier.length ? renderOffers(supplier, supplierLimit, setSupplierLimit)
+        : <p className={styles.offerEmpty}>Доступных предложений нет.</p>}
+    </section>
+  </div>;
 }
