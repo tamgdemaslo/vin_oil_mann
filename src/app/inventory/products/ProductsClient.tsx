@@ -66,6 +66,7 @@ import {
 import { parseStoredAttributeValues } from "@/lib/product-attribute-values";
 import { resolveProductFluidAttributeProfile, type ProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 import type { InventoryCatalogPreview } from "@/lib/inventory-catalog-preview";
+import { inventoryCategoryFacet, inventoryCategoryLabel, isInventoryCategoryFacet } from "@/lib/inventory-product-category";
 
 type StockRow = {
   storeId: string;
@@ -819,6 +820,7 @@ function formatQty(value: number) {
 }
 
 function shortGroupLabel(value: string) {
+  if (isInventoryCategoryFacet(value)) return inventoryCategoryLabel(value);
   const label = value.split("/").filter(Boolean).at(-1)?.trim() || value.trim();
   const cleaned = label
     .replace(/^Фильтры\s+/i, "Фильтр ")
@@ -827,11 +829,12 @@ function shortGroupLabel(value: string) {
     .replace(/\s+/g, " ");
   const normalized = cleaned.toLowerCase().replace(/ё/g, "е");
   if (normalized === "моторное") return "Моторное масло";
-  if (normalized === "масляные фильтры" || normalized === "масляные фильтры акпп") return "Фильтр масляный";
-  if (normalized === "трансмисионное" || normalized === "трансмиссионное") return "Трансмиссионное";
-  if (normalized === "моторное в бочках на розлив") return "Моторное в бочках на розлив";
+  if (normalized === "масляные фильтры акпп") return "Фильтры АКПП и трансмиссии";
+  if (normalized === "масляные фильтры") return "Масляные фильтры ДВС";
+  if (normalized === "трансмисионное" || normalized === "трансмиссионное") return "Трансмиссионное масло";
+  if (normalized === "моторное в бочках на розлив") return "Моторное масло на разлив";
   if (normalized === "трансмисионное в бочках на розлив" || normalized === "трансмиссионное в бочках на розлив") {
-    return "Трансмиссионное в бочках на розлив";
+    return "Трансмиссионное масло на разлив";
   }
   return cleaned;
 }
@@ -871,9 +874,12 @@ function normalizedGroupLabel(value: string) {
 function categoryPriority(value: string) {
   const label = normalizedGroupLabel(value);
   if (label === "моторное масло") return 0;
-  if (label === "фильтр масляный") return 1;
-  if (label === "трансмиссионное") return 2;
-  if (label === "расходник") return 3;
+  if (label === "трансмиссионное масло") return 1;
+  if (label === "масляные фильтры двс") return 2;
+  if (label === "фильтры акпп и трансмиссии") return 3;
+  if (label === "воздушные фильтры") return 4;
+  if (label === "салонные фильтры") return 5;
+  if (label === "топливные фильтры") return 6;
   return 20;
 }
 
@@ -919,7 +925,7 @@ const facetLabels: Record<FacetKey, { title: string; search: string; all: string
   entityType: { title: "Тип", search: "Найти тип", all: "Показать все типы" },
 };
 
-function facetOptionsKey(key: FacetKey): keyof ProductFacets {
+function facetOptionsKey(key: FacetKey): keyof Omit<ProductFacets, "stock"> {
   if (key === "group") return "groups";
   if (key === "brand") return "brands";
   if (key === "supplier") return "suppliers";
@@ -1003,7 +1009,7 @@ function selectedFilterValues(filters: ProductFilters, key: FacetKey) {
 }
 
 function usefulProductMetaLines(row: ProductRow) {
-  const compactMeta = [shortGroupLabel(row.groupPath), displayBrandLabel(row.brand), row.packageVolume]
+  const compactMeta = [shortGroupLabel(inventoryCategoryFacet(row)), displayBrandLabel(row.brand), row.packageVolume]
     .filter((value) => value && value !== "-")
     .join(" · ");
   const specifications = [row.sae, [...new Set([...parseStoredAttributeValues(row.acea, "acea"), ...parseStoredAttributeValues(row.aceaExtra, "acea")])].join("; "), row.apiSpec ? `API ${row.apiSpec}` : "", row.ilsac ? `ILSAC ${row.ilsac}` : "", row.atf].filter(Boolean).join(" · ");
@@ -1737,7 +1743,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
     : null;
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [meta, setMeta] = useState<ProductListMeta | null>(null);
-  const [catalogPreview, setCatalogPreview] = useState<InventoryCatalogPreview | null>(null);
+  const [catalogPreview, setCatalogPreview] = useState<{ query: string; data: InventoryCatalogPreview } | null>(null);
   const [matchedOutsideFilters, setMatchedOutsideFilters] = useState(0);
   const [search, setSearch] = useState(initialSearch);
   const [filters, setFilters] = useState<ProductFilters>({ ...emptyFilters, oemParts: initialOemParts, articleMissing: searchParams.get("articleMissing") === "1" });
@@ -2026,10 +2032,23 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
     [filters, storageCellFilter]
   );
   const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0 || originFilter !== "all" || Boolean(copyBatchId) || Boolean(oemEnrichmentResult) || rosskoLastImportVisible;
-  const canShowPreview = Boolean(catalogScope) && !hasActiveSearchOrFilters && sort === "name" && direction === "asc";
-  const previewCacheKey = `inventory-catalog-preview:v1:${catalogScope}`;
-  const visiblePreview = canShowPreview && (loading || (error === PRODUCT_LIST_ERROR && !rows.length))
-    && catalogPreview?.scope === catalogScope && catalogPreview.products.length > 0 ? catalogPreview : null;
+  const canShowPreview = Boolean(catalogScope) && !search.trim() && sort === "name" && direction === "asc"
+    && originFilter === "all" && !copyBatchId && !oemEnrichmentResult && !rosskoLastImportVisible && storageCellFilter === "all"
+    && filters.stock === "all" && filters.oemParts === "all" && filters.publication === "all" && filters.qualityIssue === "all"
+    && !filters.markingProblems && !filters.priceMissing && !filters.articleMissing;
+  const previewQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    for (const key of Object.keys(facetLabels) as FacetKey[]) {
+      for (const value of filters[key]) params.append(key, value);
+    }
+    return params.toString();
+  }, [filters]);
+  const previewCacheKey = `inventory-catalog-preview:v2:${catalogScope}`;
+  const scopedPreview = catalogPreview?.data.scope === catalogScope ? catalogPreview : null;
+  const previewIsCurrent = canShowPreview && scopedPreview?.query === previewQuery;
+  const previewFacets = (loading || !meta) ? scopedPreview?.data.facets : undefined;
+  const visiblePreview = previewIsCurrent && (loading || (error === PRODUCT_LIST_ERROR && !rows.length))
+    && scopedPreview?.data.products.length ? scopedPreview.data : null;
   const selectedProductsCount = allFilteredProductsSelected ? (meta?.total ?? rows.length) : selectedProductIds.length;
   const allVisibleProductsSelected = rows.length > 0 && (allFilteredProductsSelected || rows.every((row) => selectedProductIds.includes(row.id)));
   const totalProductsLabel = (visiblePreview?.total ?? meta?.total ?? rows.length).toLocaleString("ru-RU");
@@ -2061,14 +2080,15 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
   useEffect(() => { void loadKnownOemBatch(); }, [loadKnownOemBatch]);
 
   useEffect(() => {
-    if (!canShowPreview) return;
+    if (!catalogScope) return;
     const controller = new AbortController();
+    const query = canShowPreview ? previewQuery : "";
     try {
-      const raw = window.sessionStorage.getItem(previewCacheKey);
+      const raw = query ? null : window.sessionStorage.getItem(previewCacheKey);
       if (raw) {
         const cached = JSON.parse(raw) as { savedAt: number; preview: InventoryCatalogPreview };
         if (cached.preview.scope === catalogScope && Date.now() - cached.savedAt < INVENTORY_PREVIEW_MAX_AGE_MS) {
-          setCatalogPreview(cached.preview);
+          setCatalogPreview({ query, data: cached.preview });
         }
       }
     } catch {
@@ -2077,18 +2097,20 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
 
     void (async () => {
       try {
-        const response = await fetch("/api/catalog/inventory-preview", { cache: "no-store", signal: controller.signal });
+        const response = await fetch(query ? `/api/catalog/inventory-preview?${query}` : "/api/catalog/inventory-preview", {
+          cache: "no-store", signal: controller.signal,
+        });
         if (!response.ok) return;
         const preview = await readJson<InventoryCatalogPreview>(response);
         if (!preview || preview.scope !== catalogScope || controller.signal.aborted) return;
-        setCatalogPreview(preview);
-        window.sessionStorage.setItem(previewCacheKey, JSON.stringify({ savedAt: Date.now(), preview }));
+        setCatalogPreview({ query, data: preview });
+        if (!query) window.sessionStorage.setItem(previewCacheKey, JSON.stringify({ savedAt: Date.now(), preview }));
       } catch {
         // The main request owns errors and recovery for the inventory list.
       }
     })();
     return () => controller.abort();
-  }, [canShowPreview, catalogScope, previewCacheKey]);
+  }, [canShowPreview, catalogScope, previewCacheKey, previewQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3683,9 +3705,9 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
   function getFacetOptions(key: FacetKey) {
     const facetKey = facetOptionsKey(key);
     const fromFacets = facets[facetKey];
-    const rawOptions = Array.isArray(fromFacets) && fromFacets.length
+    const rawOptions = previewFacets?.[facetKey] ?? (Array.isArray(fromFacets) && fromFacets.length
       ? fromFacets
-      : (filterOptions[fallbackFilterOptionsKey(key)] as string[]).map((value) => ({ value, count: 0 }));
+      : filterOptions[fallbackFilterOptionsKey(key)].map((value) => ({ value, count: 0 })));
     const options = key === "group"
       ? uniqueGroupsByLabel(rawOptions.map((option) => option.value)).map((value) => {
           const matching = rawOptions.find((option) => normalizedGroupLabel(option.value) === normalizedGroupLabel(value));
@@ -3750,13 +3772,13 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
                     <span className={`eco-check ${active ? "is-checked" : ""}`} />
                     {filterLabel(key, option.value)}
                   </span>
-                  <span className="ct">{option.count.toLocaleString("ru-RU")}</span>
+                  <span className="ct">{previewFacets && !previewIsCurrent ? "—" : option.count.toLocaleString("ru-RU")}</span>
                 </button>
               );
             })}
           </div>
         ) : (
-          <div className="eco-filter-empty">{needle ? (key === "brand" ? "Бренд не найден" : "Допуск не найден") : loading ? "Загружаем варианты…" : "Нет значений для текущих условий"}</div>
+          <div className="eco-filter-empty">{needle ? (key === "brand" ? "Бренд не найден" : "Допуск не найден") : loading && !previewFacets ? "Загружаем варианты…" : "Нет значений для текущих условий"}</div>
         )}
         {matchingOptions.length > preview.length ? (
           <button type="button" className="eco-filter-more" onClick={() => openFacetDialog(key)}>
@@ -6196,7 +6218,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
                         <span className={`eco-check ${active ? "is-checked" : ""}`} />
                         {filterLabel(facetDialog, option.value)}
                       </span>
-                      <span className="ct">{option.count.toLocaleString("ru-RU")}</span>
+                      <span className="ct">{previewFacets && !previewIsCurrent ? "—" : option.count.toLocaleString("ru-RU")}</span>
                     </button>
                   );
                 })}
@@ -6716,8 +6738,8 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
                     {option.label}
                   </span>
                   <span className="ct">
-                    {visiblePreview
-                      ? (option.value === "all" ? totalProductsLabel : "—")
+                    {loading || !meta
+                      ? (visiblePreview && option.value === "all" ? totalProductsLabel : "—")
                       : (facets.stock[option.value] ?? 0).toLocaleString("ru-RU")}
                   </span>
                 </button>
@@ -7003,7 +7025,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
                   <td className="eco-product-name-cell">
                     <div className="eco-product-title">{product.name}</div>
                     <div className="eco-product-meta">
-                      {[shortGroupLabel(product.groupPath ?? ""), displayBrandLabel(product.brand ?? "")].filter(Boolean).join(" · ")}
+                      {[shortGroupLabel(inventoryCategoryFacet(product)), displayBrandLabel(product.brand ?? "")].filter(Boolean).join(" · ")}
                     </div>
                   </td>
                   <td colSpan={3} />

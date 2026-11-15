@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { buildCatalogSearchText } from "@/lib/catalog-search";
+import { inventoryCategoryFacet, isInventoryCategoryFacet } from "@/lib/inventory-product-category";
 import { prisma } from "@/lib/db";
 import { invalidateProductFilterOptions } from "@/lib/local-inventory-admin";
 import { mergeProductCrossReferences } from "@/lib/product-cross-references";
@@ -393,7 +394,10 @@ async function loadProductsForExport(params: URLSearchParams) {
     const exact = (values: string[], current: unknown) => !values.length || values.some((value) => normalizeText(value) === normalizeText(current));
     if (!exact(filters.brand, snapshot.brand)) return false;
     if (!exact(filters.supplier, snapshot.supplier)) return false;
-    if (!exact(filters.group, snapshot.category)) return false;
+    if (filters.group.length && !filters.group.some((group) => {
+      const value = isInventoryCategoryFacet(group) ? inventoryCategoryFacet(product) : snapshot.category;
+      return normalizeText(group) === normalizeText(value);
+    })) return false;
     if (!exact(filters.sae, snapshot.sae)) return false;
     if (!exact(filters.apiSpec, snapshot.api)) return false;
     if (!exact(filters.acea, snapshot.acea)) return false;
