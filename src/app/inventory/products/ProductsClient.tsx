@@ -752,7 +752,7 @@ const qualityIssueOptions: Array<{ value: QualityIssueFilter; label: string }> =
   { value: "name_review", label: "Название требует проверки" },
 ];
 const PRODUCT_PAGE_LIMIT = 50;
-const INVENTORY_PREVIEW_MAX_AGE_MS = 90_000;
+const INVENTORY_PREVIEW_MAX_AGE_MS = 300_000;
 const PRODUCT_STORE_TIMEOUT_MS = 15_000;
 const PRODUCT_LIST_TIMEOUT_MS = 35_000;
 const PRODUCT_LIST_SLOW_MS = 5_000;
@@ -2058,8 +2058,9 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
   const visiblePreview = previewIsCurrent && (loading || (error === PRODUCT_LIST_ERROR && !rows.length))
     && scopedPreview?.data.products.length ? scopedPreview.data : null;
   const previewStockQuery = useMemo(() => {
-    if (!visiblePreview || !storageStoreId) return "";
-    const params = new URLSearchParams({ storeId: storageStoreId });
+    if (!visiblePreview) return "";
+    const params = new URLSearchParams();
+    if (storageStoreId) params.set("storeId", storageStoreId);
     for (const { id } of visiblePreview.products) params.append("id", id);
     return params.toString();
   }, [visiblePreview, storageStoreId]);

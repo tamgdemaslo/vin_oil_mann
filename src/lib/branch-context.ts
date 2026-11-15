@@ -280,12 +280,22 @@ async function resolveAccess(authUser: AuthUser) {
   if (cached && cached.expiresAt > now) return cached.promise;
 
   pruneAccessCache(now);
-  const promise: Promise<AccessResolution> = resolveAccessUncached(authUser).catch((error) => {
-    if (accessCache.get(key)?.promise === promise) accessCache.delete(key);
-    throw error;
-  });
-  accessCache.set(key, { expiresAt: now + ACCESS_CACHE_TTL_MS, promise });
-  return promise;
+  // Slow lookups are still shared. Once a lookup settles, the original
+  // freshness deadline applies to its result.
+  const entry = {
+    expiresAt: Infinity,
+    promise: resolveAccessUncached(authUser)
+      .then((access) => {
+        entry.expiresAt = now + ACCESS_CACHE_TTL_MS;
+        return access;
+      })
+      .catch((error) => {
+        if (accessCache.get(key) === entry) accessCache.delete(key);
+        throw error;
+      }),
+  };
+  accessCache.set(key, entry);
+  return entry.promise;
 }
 
 export async function getBranchContext(options: { allowAll?: boolean; requireActive?: boolean } = {}): Promise<BranchContext | null> {
