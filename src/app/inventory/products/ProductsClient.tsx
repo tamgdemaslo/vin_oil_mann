@@ -2034,17 +2034,23 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
     [filters, storageCellFilter]
   );
   const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0 || originFilter !== "all" || Boolean(copyBatchId) || Boolean(oemEnrichmentResult) || rosskoLastImportVisible;
-  const canShowPreview = Boolean(catalogScope) && !search.trim() && sort === "name" && direction === "asc"
+  const canShowPreview = Boolean(catalogScope) && (sort === "relevance" || (sort === "name" && direction === "asc"))
     && originFilter === "all" && !copyBatchId && !oemEnrichmentResult && !rosskoLastImportVisible && storageCellFilter === "all"
     && filters.stock === "all" && filters.oemParts === "all" && filters.publication === "all" && filters.qualityIssue === "all"
     && !filters.markingProblems && !filters.priceMissing && !filters.articleMissing;
   const previewQuery = useMemo(() => {
+    if (!canShowPreview) return "";
     const params = new URLSearchParams();
+    const q = search.trim();
+    if (q) {
+      params.set("q", q);
+      params.set("sort", sort);
+    }
     for (const key of Object.keys(facetLabels) as FacetKey[]) {
       for (const value of filters[key]) params.append(key, value);
     }
     return params.toString();
-  }, [filters]);
+  }, [canShowPreview, filters, search, sort]);
   const previewCacheKey = `inventory-catalog-preview:v2:${catalogScope}`;
   const scopedPreview = catalogPreview?.data.scope === catalogScope ? catalogPreview : null;
   const previewIsCurrent = canShowPreview && scopedPreview?.query === previewQuery;
@@ -2093,7 +2099,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
   useEffect(() => {
     if (!catalogScope) return;
     const controller = new AbortController();
-    const query = canShowPreview ? previewQuery : "";
+    const query = previewQuery;
     try {
       const raw = query ? null : window.sessionStorage.getItem(previewCacheKey);
       if (raw) {
@@ -2106,7 +2112,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
       // Safari private browsing can restrict storage. The server preview still works.
     }
 
-    void (async () => {
+    const timer = window.setTimeout(async () => {
       try {
         const response = await fetch(query ? `/api/catalog/inventory-preview?${query}` : "/api/catalog/inventory-preview", {
           cache: "no-store", signal: controller.signal,
@@ -2119,9 +2125,12 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
       } catch {
         // The main request owns errors and recovery for the inventory list.
       }
-    })();
-    return () => controller.abort();
-  }, [canShowPreview, catalogScope, previewCacheKey, previewQuery]);
+    }, query.startsWith("q=") ? 280 : 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [catalogScope, previewCacheKey, previewQuery]);
 
   useEffect(() => {
     if (!previewStockQuery) {

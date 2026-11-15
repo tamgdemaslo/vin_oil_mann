@@ -13,7 +13,12 @@ import { normalizePartNumberForCrossMatch, parseOemParts } from "@/lib/part-numb
 import { parseStoredAttributeValues } from "@/lib/product-attribute-values";
 import { resolveProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 import { inventoryCategoryFacet, isInventoryCategoryFacet } from "@/lib/inventory-product-category";
-import { loadInventoryCatalogCards, readInventoryCatalogCards, type InventoryCatalogPreview } from "@/lib/inventory-catalog-preview";
+import {
+  loadInventoryCatalogCards,
+  readInventoryCatalogCards,
+  type InventoryCatalogCard,
+  type InventoryCatalogPreview,
+} from "@/lib/inventory-catalog-preview";
 import { storefrontPublicationReadiness } from "@/lib/storefront-product-identity";
 
 type LocalEntityMeta = {
@@ -664,7 +669,9 @@ function getCellFromAttributes(input: unknown): string | undefined {
   return attributeValueText(found?.value) || undefined;
 }
 
-function fieldsForProduct(product: CatalogProduct): SearchField[] {
+type CatalogSearchCard = Omit<InventoryCatalogCard, "supplierName" | "salePriceCents">;
+
+function fieldsForProduct(product: CatalogSearchCard): SearchField[] {
   const supplierName = product.supplierCounterparty?.displayName ?? product.supplierCounterparty?.name ?? product.legacySupplierName ?? "";
   return [
     { key: "barcodeEan13", label: "EAN", value: product.barcodeEan13 ?? "", weight: 100, exact: true, identifier: true },
@@ -759,7 +766,7 @@ function prepareSearchQuery(tokens: CatalogSearchToken[], normalized: string) {
   };
 }
 
-function scoreProduct(product: CatalogProduct, query: ReturnType<typeof prepareSearchQuery>) {
+function scoreProduct(product: CatalogSearchCard, query: ReturnType<typeof prepareSearchQuery>) {
   const matched: CatalogMatchedField[] = [];
   let score = 0;
 
@@ -817,13 +824,13 @@ function dedupeMatchedFields(fields: CatalogMatchedField[]) {
   return result;
 }
 
-function searchCandidateWhere(tokens: CatalogSearchToken[], params: CatalogSearchParams): Prisma.LocalProductWhereInput {
-  const OR: Prisma.LocalProductWhereInput[] = [];
+function catalogCandidateConditions(tokens: CatalogSearchToken[], params: CatalogSearchParams) {
+  const conditions: Array<{ term: string; fields: ReadonlyArray<keyof CatalogSearchCard> }> = [];
   const rawTerms = [params.q, params.oem, params.mannName, params.params].map((item) => item?.trim()).filter((item): item is string => Boolean(item));
   for (const raw of rawTerms) {
     if (raw.length >= 2) {
-      OR.push({ searchText: { contains: normalizeSearchText(raw), mode: "insensitive" } });
-      OR.push({ name: { contains: raw, mode: "insensitive" } });
+      conditions.push({ term: normalizeSearchText(raw), fields: ["searchText"] });
+      conditions.push({ term: raw, fields: ["name"] });
     }
   }
   const brandSeriesQuery = tokens.length === 2 && tokens.some((token) => token.kind === "word" && token.compact.length >= 3);
@@ -833,24 +840,22 @@ function searchCandidateWhere(tokens: CatalogSearchToken[], params: CatalogSearc
     if (brandSeriesQuery && /^\d$/.test(token.compact)) continue;
     const candidates = [...new Set([token.normalized, token.compact, ...token.variants].filter((item) => item.length >= 2 || /\d/.test(item)))].slice(0, 5);
     for (const candidate of candidates) {
-      OR.push({ searchText: { contains: candidate, mode: "insensitive" } });
+      conditions.push({ term: candidate, fields: ["searchText"] });
       if (candidate.length >= 2) {
-        OR.push({ name: { contains: candidate, mode: "insensitive" } });
-        OR.push({ brand: { contains: candidate, mode: "insensitive" } });
-        OR.push({ sae: { contains: candidate, mode: "insensitive" } });
-        OR.push({ article: { contains: candidate, mode: "insensitive" } });
-        OR.push({ code: { contains: candidate, mode: "insensitive" } });
+        conditions.push({ term: candidate, fields: ["name", "brand", "sae", "article", "code"] });
       }
       if (token.kind === "ean" || token.kind === "oem" || token.kind === "article" || token.kind === "numeric") {
-        OR.push({ barcodeEan13: { contains: candidate, mode: "insensitive" } });
-        OR.push({ barcodeEan8: { contains: candidate, mode: "insensitive" } });
-        OR.push({ barcodeCode128: { contains: candidate, mode: "insensitive" } });
-        OR.push({ oem: { contains: candidate, mode: "insensitive" } });
-        OR.push({ oemParts: { contains: candidate, mode: "insensitive" } });
-        OR.push({ rosskoPartNumber: { contains: candidate, mode: "insensitive" } });
+        conditions.push({ term: candidate, fields: ["barcodeEan13", "barcodeEan8", "barcodeCode128", "oem", "oemParts", "rosskoPartNumber"] });
       }
     }
   }
+  return conditions;
+}
+
+function searchCandidateWhere(tokens: CatalogSearchToken[], params: CatalogSearchParams): Prisma.LocalProductWhereInput {
+  const OR = catalogCandidateConditions(tokens, params).flatMap(({ term, fields }) =>
+    fields.map((field) => ({ [field]: { contains: term, mode: "insensitive" } })),
+  );
   return OR.length ? { OR } : {};
 }
 
@@ -1260,10 +1265,49 @@ function filterAndCountFacets<T extends CatalogFacetProduct>(
   return { filtered, facets: { ...collections, stock } };
 }
 
+function rankInventoryCards(
+  cards: InventoryCatalogCard[],
+  tokens: CatalogSearchToken[],
+  normalizedQuery: string,
+  params: CatalogSearchParams,
+  sort: SortKey,
+) {
+  const query = prepareSearchQuery(tokens, normalizedQuery);
+  const conditions = catalogCandidateConditions(tokens, params).map(({ term, fields }) => ({
+    term: term.toLowerCase(), fields,
+  }));
+  const compactTerms = normalizedCatalogLookupTerms(tokens, params);
+  const directMatch = sort === "relevance" && tokens.some((token) => token.kind === "word");
+  const matched = cards.flatMap((card) => {
+    const literal = !conditions.length || conditions.some(({ term, fields }) => fields.some((field) => {
+      const value = card[field];
+      return typeof value === "string" && value.toLowerCase().includes(term);
+    }));
+    if (!literal && ![card.name, card.oemParts].some((value) => {
+      if (!value || !compactTerms.length) return false;
+      const compact = value.toLowerCase().replace(/ё/g, "е").replace(/[^0-9a-zа-я]/g, "");
+      return compactTerms.some((term) => compact.includes(term));
+    })) return [];
+    const score = scoreProduct(card, query);
+    if (!score.ok) return [];
+    const direct = directMatch && (normalizeSearchText(card.brand) === normalizedQuery
+      || ` ${normalizeSearchText(card.name)} `.includes(` ${normalizedQuery} `));
+    return [{ card, score, direct }];
+  });
+  if (sort === "relevance") {
+    // The input is already ordered by name and id. Stable sort preserves ties.
+    matched.sort((a, b) => Number(b.direct) - Number(a.direct) || b.score.score - a.score.score);
+  }
+  return matched;
+}
+
 export async function getInventoryCatalogPreview(branchId: string, params: URLSearchParams): Promise<Omit<InventoryCatalogPreview, "scope">> {
   const filters = Object.fromEntries(facetKeys.map((key) => [key, cleanFilterValues(params.getAll(key))]));
   const cards = await loadInventoryCatalogCards(branchId);
-  const { filtered, facets: { stock: _stock, ...facets } } = filterAndCountFacets(cards, filters, { inventoryCategories: true });
+  const q = params.get("q")?.trim() ?? "";
+  const matches = q ? rankInventoryCards(cards, tokenize(q), normalizeSearchText(q), { q }, normalizeSort(params.get("sort") ?? undefined))
+    .map(({ card }) => card) : cards;
+  const { filtered, facets: { stock: _stock, ...facets } } = filterAndCountFacets(matches, filters, { inventoryCategories: true });
   return {
     total: filtered.length,
     facets,
@@ -1543,14 +1587,20 @@ async function readInventoryCatalogPage(
   storeId: string | null,
   offset: number,
   limit: number,
+  search: { tokens: CatalogSearchToken[]; normalizedQuery: string; params: CatalogSearchParams; sort: SortKey },
 ) {
   const branchId = getScopedBranchId();
-  // Read current stock and the fields used by the sidebar in parallel. The
-  // detailed card relations are needed for visible rows only.
-  const [cards, stock] = await Promise.all([
-    readInventoryCatalogCards(branchId),
-    loadCatalogStock(branchId, catalogStockRelation(storeId)),
-  ]);
+  const stockRelation = catalogStockRelation(storeId);
+  const cardsPromise = readInventoryCatalogCards(branchId);
+  const ranked = search.normalizedQuery
+    ? rankInventoryCards(await cardsPromise, search.tokens, search.normalizedQuery, search.params, search.sort)
+    : null;
+  const [cards, stock] = ranked
+    ? [
+        ranked.map(({ card }) => card),
+        ranked.length ? await loadCatalogStock(branchId, stockRelation, ranked.map(({ card }) => card.id)) : new Map<string, LiveCatalogStock[]>(),
+      ]
+    : await Promise.all([cardsPromise, loadCatalogStock(branchId, stockRelation)]);
   const { filtered, facets } = filterAndCountFacets(cards, filters, {
     inventoryCategories: true,
     available: ({ id }) => stock.get(id)?.reduce((sum, balance) => sum + decimalToNumber(balance.available), 0) ?? 0,
@@ -1564,7 +1614,11 @@ async function readInventoryCatalogPage(
   });
   if (visible.length !== ids.length) return null;
   const byId = new Map(visible.map((card) => [card.id, card]));
-  const items = ids.map((id) => mapProduct({ ...byId.get(id)!, stockBalances: stock.get(id) ?? [] }, 0, []));
+  const scores = new Map(ranked?.map(({ card, score }) => [card.id, score]));
+  const items = ids.map((id) => {
+    const score = scores.get(id);
+    return mapProduct({ ...byId.get(id)!, stockBalances: stock.get(id) ?? [] }, score?.score ?? 0, score?.matchedFields ?? []);
+  });
   return { facets, items, total: filtered.length, matchedOutsideFilters: cards.length - filtered.length };
 }
 
@@ -1711,12 +1765,14 @@ export async function searchCatalog(
     };
   }
   const canReadInventoryPage = options.cacheInventoryCards === true && context === "products"
-    && !normalizedQuery && type === "all" && sort === "name" && direction === "asc" && !params.includeArchived
+    && type === "all" && ((normalizedQuery && sort === "relevance") || (sort === "name" && direction === "asc")) && !params.includeArchived
     && !params.internalLimit && !params.copyBatchId && (!params.origin || params.origin === "all")
     && (!storageCell || storageCell === "all") && normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult) === "all"
     && !filters.markingProblems && !filters.priceMissing && !filters.articleMissing
     && filters.qualityIssue === "all" && filters.publication === "all" && filters.oemParts === "all";
-  const inventoryPage = canReadInventoryPage ? await readInventoryCatalogPage(filters, storeId, offset, limit) : null;
+  const inventoryPage = canReadInventoryPage
+    ? await readInventoryCatalogPage(filters, storeId, offset, limit, { tokens, normalizedQuery, params, sort })
+    : null;
   const { facets, items, total, matchedOutsideFilters } = inventoryPage ?? await (async () => {
     const normalizedCandidateIds = await findNormalizedCatalogCandidateIds(tokens, params);
     const where: Prisma.LocalProductWhereInput = {
