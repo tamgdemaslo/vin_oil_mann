@@ -1750,8 +1750,9 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
   const [editorNewCellName, setEditorNewCellName] = useState("");
   const [originFilter, setOriginFilter] = useState<ProductOriginFilter>(initialOrigin);
   const [copyBatchId, setCopyBatchId] = useState(initialCopyBatchId);
-  const [sort, setSort] = useState<ProductSortKey>("name");
-  const [direction, setDirection] = useState<SortDirection>("asc");
+  const [sortOverride, setSortOverride] = useState<{ key: ProductSortKey; direction: SortDirection } | null>(null);
+  const sort = sortOverride?.key ?? (search.trim() ? "relevance" : "name");
+  const direction = sortOverride?.direction ?? (sort === "relevance" ? "desc" : "asc");
   const [loading, setLoading] = useState(true);
   const [searchTakingLonger, setSearchTakingLonger] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -2943,8 +2944,7 @@ export default function ProductsClient({ canSetAverageCost = false }: { canSetAv
     const nextDirection = sort === key
       ? direction === "asc" ? "desc" : "asc"
       : option?.defaultDirection ?? "asc";
-    setSort(key);
-    setDirection(nextDirection);
+    setSortOverride({ key, direction: nextDirection });
   }
 
   function closeFilterDrawerOnMobile() {

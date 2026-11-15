@@ -1563,7 +1563,18 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
   });
   const { facets, filtered } = filterAndCountFacets(scored, filters, storeId);
   const matchedOutsideFilters = Math.max(0, scored.length - filtered.length);
-  const sorted = filtered.sort((a, b) => compareItems(a, b, sort, direction, context));
+  const directMatches = new Set<string>();
+  if (context === "products" && sort === "relevance" && tokens.some((token) => token.kind === "word")) {
+    const phrase = ` ${normalizedQuery} `;
+    for (const item of filtered) {
+      if (normalizeSearchText(item.brand) === normalizedQuery || ` ${normalizeSearchText(item.name)} `.includes(phrase)) {
+        directMatches.add(item.id);
+      }
+    }
+  }
+  const sorted = filtered.sort((a, b) =>
+    Number(directMatches.has(b.id)) - Number(directMatches.has(a.id)) || compareItems(a, b, sort, direction, context)
+  );
   const items = sorted.slice(offset, offset + limit);
   const suggestions = !items.length && normalizedQuery ? [`Проверьте артикул, OEM или бренд: ${normalizedQuery}`] : [];
   return {
