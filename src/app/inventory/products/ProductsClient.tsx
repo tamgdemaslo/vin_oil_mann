@@ -281,6 +281,7 @@ type ProductListMeta = {
   facets?: ProductFacets;
 };
 type ProductListResponse = { meta?: ProductListMeta; products?: ProductRow[]; matchedOutsideFilters?: number; error?: string };
+type PreviewStock = Record<string, { quantity: number; available: number }>;
 type ProductGroupsResponse = { groups?: string[]; error?: string };
 type ProductToast = {
   message: string;
@@ -1744,6 +1745,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [meta, setMeta] = useState<ProductListMeta | null>(null);
   const [catalogPreview, setCatalogPreview] = useState<{ query: string; data: InventoryCatalogPreview } | null>(null);
+  const [catalogPreviewStock, setCatalogPreviewStock] = useState<{ key: string; balances: PreviewStock } | null>(null);
   const [matchedOutsideFilters, setMatchedOutsideFilters] = useState(0);
   const [search, setSearch] = useState(initialSearch);
   const [filters, setFilters] = useState<ProductFilters>({ ...emptyFilters, oemParts: initialOemParts, articleMissing: searchParams.get("articleMissing") === "1" });
@@ -2049,6 +2051,15 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
   const previewFacets = (loading || !meta) ? scopedPreview?.data.facets : undefined;
   const visiblePreview = previewIsCurrent && (loading || (error === PRODUCT_LIST_ERROR && !rows.length))
     && scopedPreview?.data.products.length ? scopedPreview.data : null;
+  const previewStockQuery = useMemo(() => {
+    if (!visiblePreview || !storageStoreId) return "";
+    const params = new URLSearchParams({ storeId: storageStoreId });
+    for (const { id } of visiblePreview.products) params.append("id", id);
+    return params.toString();
+  }, [visiblePreview, storageStoreId]);
+  const previewStockKey = `${catalogScope}:${previewStockQuery}`;
+  const visiblePreviewStock = previewStockQuery && catalogPreviewStock?.key === previewStockKey
+    ? catalogPreviewStock.balances : null;
   const selectedProductsCount = allFilteredProductsSelected ? (meta?.total ?? rows.length) : selectedProductIds.length;
   const allVisibleProductsSelected = rows.length > 0 && (allFilteredProductsSelected || rows.every((row) => selectedProductIds.includes(row.id)));
   const totalProductsLabel = (visiblePreview?.total ?? meta?.total ?? rows.length).toLocaleString("ru-RU");
@@ -2111,6 +2122,30 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
     })();
     return () => controller.abort();
   }, [canShowPreview, catalogScope, previewCacheKey, previewQuery]);
+
+  useEffect(() => {
+    if (!previewStockQuery) {
+      setCatalogPreviewStock(null);
+      return;
+    }
+    setCatalogPreviewStock(null);
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/catalog/inventory-preview-stock?${previewStockQuery}`, {
+          cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const stock = await readJson<{ scope: string; balances: PreviewStock }>(response);
+        if (stock?.scope === catalogScope && !controller.signal.aborted) {
+          setCatalogPreviewStock({ key: previewStockKey, balances: stock.balances });
+        }
+      } catch {
+        // The regular list request can still provide current stock.
+      }
+    })();
+    return () => controller.abort();
+  }, [catalogScope, previewStockKey, previewStockQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -6970,7 +7005,9 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
               ) : null}
               <span className="eco-products-visible-count" role="status">
                 {visiblePreview
-                  ? (loading ? "Загружаем остатки…" : "Не удалось загрузить остатки")
+                  ? visiblePreviewStock
+                    ? (loading ? "Обновляем список…" : "Не удалось загрузить детали списка")
+                    : (loading ? "Загружаем остатки…" : "Не удалось загрузить остатки")
                   : loading ? (searchTakingLonger ? "Ответ сервера задерживается…" : "Ищем товары…") : error === PRODUCT_LIST_ERROR && !rows.length ? "Поиск не завершён" : `${visibleProductsLabel} из ${totalProductsLabel}`}
               </span>
               {visiblePreview && !loading ? (
@@ -7029,8 +7066,16 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
                     </div>
                   </td>
                   <td colSpan={3} />
-                  <td className="eco-product-number is-muted">—</td>
-                  <td className="eco-product-number is-muted">—</td>
+                  <td className="eco-product-number">
+                    {visiblePreviewStock ? (
+                      <span className={`eco-stock-badge ${(visiblePreviewStock[product.id]?.quantity ?? 0) > 0 ? "is-positive" : "is-empty"}`}>
+                        {formatQty(visiblePreviewStock[product.id]?.quantity ?? 0)}
+                      </span>
+                    ) : <span className="is-muted">—</span>}
+                  </td>
+                  <td className="eco-product-number">
+                    {visiblePreviewStock ? formatQty(visiblePreviewStock[product.id]?.available ?? 0) : <span className="is-muted">—</span>}
+                  </td>
                   <td />
                   <td className="eco-product-price">
                     <strong>{formatMoneyWhole(product.salePriceCents / 100)}</strong>
