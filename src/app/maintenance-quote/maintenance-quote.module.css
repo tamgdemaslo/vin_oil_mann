@@ -146,3 +146,11 @@
 .vehicleConfirm button + button { margin-inline-start: 8px; }
 .lookup :global([aria-invalid="true"]) { border-color: var(--eco-rust); }
 .lookup :global(.eco-vehicle-lookup__field [role="alert"]) { display: block; color: var(--eco-rust); margin-top: 4px; }
+
+.lookup :global(.eco-vehicle-lookup__result) { min-width: 0; margin-top: 12px; }
+.lookup :global(.eco-vehicle-lookup__actions > button:focus-visible) { outline: 2px solid var(--quote-accent); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .lookup :global(.eco-vehicle-lookup__selected) { flex-wrap: wrap; gap: 8px; }
+  .lookup :global(.eco-vehicle-lookup__selected > .eco-vehicle-lookup__identity) { flex-basis: 100%; }
+  .lookup :global(.eco-vehicle-lookup__selected .eco-vehicle-lookup__actions > button) { min-height: 44px; }
+}

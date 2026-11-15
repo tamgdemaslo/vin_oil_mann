@@ -12,6 +12,7 @@ import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehic
 import { canConfirmVehicleDestinationMarket, unsupportedVehicleMarketLabels, mannTechnicalContextFromVehicle, type MannTechnicalContextDetails } from "@/lib/mann-technical-request-context";
 import { isVehicleDestinationMarket, type VehicleDestinationMarket } from "@/lib/vehicle-market";
 import type { MaintenanceQuoteVehicleContext } from "./MaintenanceQuotePanel";
+import { QuoteVehicleCandidates, quoteCandidateEngine, quoteCandidateName } from "./QuoteVehicleCandidates";
 import { mannEquipmentChoiceKey } from "@/lib/mann-equipment-scope";
 
 
@@ -489,6 +490,9 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [lookup, setLookup] = useState<LookupResponse | null>(null);
+  const [editingModification, setEditingModification] = useState(false);
+  const modificationHeadingId = useId();
+  const modificationEditButton = useRef<HTMLButtonElement>(null);
   const [resolution, setResolution] = useState<MannVehicleResolution | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<LookupFeedback | null>(null);
@@ -556,6 +560,7 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
     technicalProfileRequestIdRef.current += 1;
     technicalProfileControllerRef.current?.abort();
     setLookup(null);
+    setEditingModification(false);
     setResolution(null);
     setSelectedKey(null);
     setFeedback(null);
@@ -708,7 +713,7 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
 
       setResolution(data);
 
-      onUseVehicle(vehicle, data);
+      onUseVehicle(vehicle, combinedIdentifier && data.status === "candidates" ? { ...data, selectedApplication: null } : data);
       if (data.status === "resolved") {
         setAppliedVehicle(vehicle);
         setAppliedFromCache(Boolean(fromCache));
@@ -786,6 +791,7 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
     setLoading(true);
     setResolving(false);
     setLookup(null);
+    setEditingModification(false);
     setResolution(null);
     setSelectedKey(null);
     setFeedback(null);
@@ -884,6 +890,8 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
 
   const confirmMannCandidate = (vehicle: NormalizedVehicleIdentity, candidate: MannVehicleCandidate) => {
     confirmedTechnicalCandidateRef.current = candidate;
+    setEditingModification(false);
+    if (combinedIdentifier) requestAnimationFrame(() => modificationEditButton.current?.focus());
     setResolution(current => current ? { ...current, selectedApplication: candidate } : current);
     setAppliedVehicle(vehicle);
     setAppliedFromCache(Boolean(lookup?.fromCache));
@@ -909,6 +917,7 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
     setResolving(false);
     setFluidResearch(null);
     setLookup(null);
+    setEditingModification(false);
     setResolution(null);
     setFeedback(null);
     setAppliedVehicle(null);
@@ -955,6 +964,16 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
     if (manuallySelected) openManualMode({ reason: "manual" });
   };
 
+  const quoteCandidates = combinedIdentifier && resolution?.status === "candidates" ? resolution.candidates : null;
+  const confirmedModification = quoteCandidates && appliedVehicle ? resolution?.selectedApplication : null;
+  const renderQuoteCandidates = (vehicle: NormalizedVehicleIdentity) => quoteCandidates && <QuoteVehicleCandidates
+    candidates={quoteCandidates}
+    selectedId={confirmedModification?.applicationId}
+    headingId={modificationHeadingId}
+    onChoose={candidate => confirmMannCandidate(vehicle, candidate)}
+    onManual={confirmedModification ? undefined : () => openManualMode({ reason: "partial", vehicle })}
+  />;
+
   const TechnicalDetails = combinedIdentifier ? "details" : "div";
 
   if (appliedVehicle) {
@@ -973,16 +992,17 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
         <div className="eco-vehicle-lookup__selected">
           <div className="eco-vehicle-lookup__identity">
             <div className="eco-vehicle-lookup__identity-head">
-              <span className="eco-vehicle-lookup__status is-ready">{manuallySelected ? "Выбран из каталога" : "Автомобиль найден"}</span>
+              <span className="eco-vehicle-lookup__status is-ready">{confirmedModification ? "Модификация подтверждена" : manuallySelected ? "Выбран из каталога" : "Автомобиль найден"}</span>
               {appliedFromCache && !combinedIdentifier ? <em>Из карточки</em> : null}
             </div>
             <strong>{vehicleTitle(appliedVehicle)}</strong>
-            {vehicleDetails(appliedVehicle) && <span>{vehicleDetails(appliedVehicle)}</span>}
+            {confirmedModification ? <span>{quoteCandidateName(confirmedModification)} · Двигатель: {quoteCandidateEngine(confirmedModification)}</span>
+              : vehicleDetails(appliedVehicle) && <span>{vehicleDetails(appliedVehicle)}</span>}
           </div>
           <div className="eco-vehicle-lookup__actions">
-            <button type="button" onClick={onEditVehicle ?? changeAppliedVehicle}>
-              Изменить
-            </button>
+            {confirmedModification ? <button ref={modificationEditButton} type="button" aria-expanded={editingModification}
+              onClick={() => setEditingModification(open => !open)}>{editingModification ? "Свернуть" : "Изменить"}</button>
+              : <button type="button" onClick={onEditVehicle ?? changeAppliedVehicle}>Изменить</button>}
             <details className="eco-vehicle-lookup__more">
               <summary aria-label="Другие действия с автомобилем" title="Другие действия">⋯</summary>
               <div>
@@ -996,6 +1016,7 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
             </details>
           </div>
         </div>
+        {editingModification && renderQuoteCandidates(appliedVehicle)}
         {!appliedVehicle.engineCode && (confirmedTechnicalCandidateRef.current?.technicalIdentity?.engineOptions?.length ?? 0) > 1 ? (
           <fieldset className="eco-vehicle-lookup__transmission-choice eco-vehicle-lookup__engine-choice">
             <legend>Уточнение двигателя</legend>
@@ -1351,7 +1372,7 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
         <article className="eco-vehicle-lookup__result">
           <div className="eco-vehicle-lookup__identity">
             <div className="eco-vehicle-lookup__identity-head">
-              <span className="eco-vehicle-lookup__status">Автомобиль найден</span>
+              <span className="eco-vehicle-lookup__status">{quoteCandidates ? "Модель распознана" : "Автомобиль найден"}</span>
               {lookup?.fromCache ? <em>Из карточки</em> : null}
             </div>
             <strong>{vehicleTitle(selectedVehicle)}</strong>
@@ -1375,16 +1396,16 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
               </div>
             </details>
           </div>
-          <div className="eco-vehicle-lookup__actions">
+          {!quoteCandidates && <div className="eco-vehicle-lookup__actions">
             <button type="button" onClick={() => openManualMode({ reason: "manual", vehicle: selectedVehicle })}>Изменить</button>
-          </div>
+          </div>}
           {(resolving || (resolution && resolution.status !== "candidates")) ? (
             <div className={`eco-vehicle-lookup__mann is-${resolution?.status ?? "loading"}`}>
               {mannStatusCopy(resolution, resolving)}
               {resolution?.selectedApplication ? <CandidateConditions candidate={resolution.selectedApplication} /> : null}
             </div>
           ) : null}
-          {resolution?.status === "candidates" ? (
+          {quoteCandidates ? renderQuoteCandidates(selectedVehicle) : resolution?.status === "candidates" ? (
             <div className="eco-vehicle-lookup__mann-candidates">
               <div className="eco-vehicle-lookup__mann-candidates-head">
                 <strong>Уточните модификацию автомобиля</strong>
