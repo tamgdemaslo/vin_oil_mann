@@ -21,17 +21,22 @@ const previews = new Map<string, {
   expiresAt: number;
   value: Promise<InventoryCatalogCard[]>;
 }>();
+const pendingReads = new Map<string, Promise<InventoryCatalogCard[]>>();
 
 const inventoryCardSelect = {
   id: true, name: true, groupPath: true, brand: true, salePriceCents: true,
   entityType: true, sae: true, apiSpec: true, acea: true, aceaExtra: true, ilsac: true,
   oem: true, atf: true, oemAtf: true, packageVolume: true, legacySupplierName: true,
+  article: true, code: true, externalCode: true, barcodeEan13: true, barcodeEan8: true,
+  barcodeCode128: true, oemParts: true, rosskoPartNumber: true, rosskoBrand: true,
+  description: true, searchText: true, tnvedCode: true, rosskoMin: true, supplierAttribute: true,
+  cell: true, mannCharacteristicName: true, currencyName: true, uomName: true, attributes: true,
   supplierCounterparty: { select: { name: true, displayName: true } },
 } satisfies Prisma.LocalProductSelect;
 
-type InventoryCatalogCard = Prisma.LocalProductGetPayload<{ select: typeof inventoryCardSelect }> & { supplierName: string };
+export type InventoryCatalogCard = Prisma.LocalProductGetPayload<{ select: typeof inventoryCardSelect }> & { supplierName: string };
 
-export async function readInventoryCatalogCards(branchId: string): Promise<InventoryCatalogCard[]> {
+async function queryInventoryCatalogCards(branchId: string): Promise<InventoryCatalogCard[]> {
   const products = await prisma.localProduct.findMany({
     where: { branchId, archived: false },
     select: inventoryCardSelect,
@@ -40,6 +45,14 @@ export async function readInventoryCatalogCards(branchId: string): Promise<Inven
     ...product,
     supplierName: product.supplierCounterparty?.displayName ?? product.supplierCounterparty?.name ?? product.legacySupplierName ?? "",
   })).sort((a, b) => collator.compare(a.name, b.name) || a.id.localeCompare(b.id));
+}
+
+export function readInventoryCatalogCards(branchId: string) {
+  const pending = pendingReads.get(branchId);
+  if (pending) return pending;
+  const value = queryInventoryCatalogCards(branchId).finally(() => pendingReads.delete(branchId));
+  pendingReads.set(branchId, value);
+  return value;
 }
 
 export function inventoryPreviewScope(context: BranchContext | null) {
