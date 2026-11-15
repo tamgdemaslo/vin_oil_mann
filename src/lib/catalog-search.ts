@@ -12,6 +12,8 @@ import { splitProductCrossReferences } from "@/lib/product-cross-references";
 import { normalizePartNumberForCrossMatch, parseOemParts } from "@/lib/part-number-cross-reference";
 import { parseStoredAttributeValues } from "@/lib/product-attribute-values";
 import { resolveProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
+import { inventoryCategoryFacet, isInventoryCategoryFacet } from "@/lib/inventory-product-category";
+import { loadInventoryCatalogCards, readInventoryCatalogCards, type InventoryCatalogPreview } from "@/lib/inventory-catalog-preview";
 import { storefrontPublicationReadiness } from "@/lib/storefront-product-identity";
 
 type LocalEntityMeta = {
@@ -1138,11 +1140,18 @@ function normalizeType(value?: string): CatalogSearchType {
 
 type CatalogFacetKey = "brand" | "sae" | "supplier" | "group" | "entityType" | "apiSpec" | "acea" | "ilsac" | "engineOem" | "atf" | "oemAtf" | "packageVolume";
 
-function productFacetValues(item: CatalogSearchItem, key: CatalogFacetKey): string[] {
+type CatalogFacetProduct = { name: string } & {
+  [K in "brand" | "sae" | "supplierName" | "groupPath" | "entityType" | "apiSpec" | "acea" | "aceaExtra" | "ilsac" | "oem" | "atf" | "oemAtf" | "packageVolume"]: string | null;
+};
+
+function productFacetValues(item: CatalogFacetProduct, key: CatalogFacetKey, inventoryCategories: boolean): string[] {
   if (key === "brand") return item.brand ? [item.brand] : [];
   if (key === "sae") return item.sae ? [item.sae] : [];
   if (key === "supplier") return item.supplierName ? [item.supplierName] : [];
-  if (key === "group") return item.groupPath ? [item.groupPath] : [];
+  if (key === "group") {
+    const value = inventoryCategories ? inventoryCategoryFacet(item) : item.groupPath;
+    return value ? [value] : [];
+  }
   if (key === "entityType") return item.entityType ? [item.entityType] : [];
   if (key === "packageVolume") return item.packageVolume ? [item.packageVolume] : [];
   if (key === "acea") return [...new Set([...parseStoredAttributeValues(item.acea, "acea"), ...parseStoredAttributeValues(item.aceaExtra, "acea")])];
@@ -1185,23 +1194,31 @@ const facetCollections = {
 } as const satisfies Record<CatalogFacetKey, string>;
 const facetKeys = Object.keys(facetCollections) as CatalogFacetKey[];
 
-function filterAndCountFacets(items: CatalogSearchItem[], filters: CatalogFilters, storeId?: string | null) {
-  const filtered: CatalogSearchItem[] = [];
+function filterAndCountFacets<T extends CatalogFacetProduct>(
+  items: T[],
+  filters: Partial<Pick<CatalogFilters, CatalogFacetKey | "stock">>,
+  { inventoryCategories = false, matches, available }: {
+    inventoryCategories?: boolean;
+    matches?: (item: T) => boolean;
+    available?: (item: T) => number;
+  },
+) {
+  const filtered: T[] = [];
   const stock = { all: 0, inStock: 0, outOfStock: 0 };
   const counts = new Map(facetKeys.map((key) => [key, new Map<string, FacetOption>()]));
-  const active = facetKeys.filter((key) => filters[key].length).map((key) => ({
+  const active = facetKeys.filter((key) => filters[key]?.length).map((key) => ({
     key,
-    selected: new Set(filters[key].map(normalizeSearchText)),
+    selected: new Set(filters[key]?.map(normalizeSearchText)),
   }));
   for (const item of items) {
-    if (!matchesFixedFilters(item, filters, storeId)) continue;
-    const stockKey = item.totalAvailable > 0 ? "inStock" : "outOfStock";
-    const stockMatches = filters.stock === "all" || filters.stock === stockKey;
+    if (matches && !matches(item)) continue;
+    const stockKey = available && available(item) > 0 ? "inStock" : "outOfStock";
+    const stockMatches = !filters.stock || filters.stock === "all" || filters.stock === stockKey;
     const values = new Map<CatalogFacetKey, Map<string, string>>();
     const valuesFor = (key: CatalogFacetKey) => {
       const existing = values.get(key);
       if (existing) return existing;
-      const normalized = new Map(productFacetValues(item, key).map((value) => [normalizeSearchText(value), value]));
+      const normalized = new Map(productFacetValues(item, key, inventoryCategories).map((value) => [normalizeSearchText(value), value]));
       normalized.delete("");
       values.set(key, normalized);
       return normalized;
@@ -1212,6 +1229,7 @@ function filterAndCountFacets(items: CatalogSearchItem[], filters: CatalogFilter
     let multipleMismatches = false;
     for (const { key, selected } of active) {
       if ([...valuesFor(key).keys()].some((value) => selected.has(value))) continue;
+      if (key === "group" && inventoryCategories && selected.has(normalizeSearchText(item.groupPath))) continue;
       if (mismatch) {
         multipleMismatches = true;
         break;
@@ -1240,6 +1258,17 @@ function filterAndCountFacets(items: CatalogSearchItem[], filters: CatalogFilter
     [...counts.get(key)!.values()].sort((a, b) => b.count - a.count || ruCollator.compare(a.value, b.value)),
   ])) as Record<(typeof facetCollections)[CatalogFacetKey], FacetOption[]>;
   return { filtered, facets: { ...collections, stock } };
+}
+
+export async function getInventoryCatalogPreview(branchId: string, params: URLSearchParams): Promise<Omit<InventoryCatalogPreview, "scope">> {
+  const filters = Object.fromEntries(facetKeys.map((key) => [key, cleanFilterValues(params.getAll(key))]));
+  const cards = await loadInventoryCatalogCards(branchId);
+  const { filtered, facets: { stock: _stock, ...facets } } = filterAndCountFacets(cards, filters, { inventoryCategories: true });
+  return {
+    total: filtered.length,
+    facets,
+    products: filtered.slice(0, 50).map(({ id, name, groupPath, brand, salePriceCents }) => ({ id, name, groupPath, brand, salePriceCents })),
+  };
 }
 
 function normalizeSort(value?: string): SortKey {
@@ -1454,6 +1483,25 @@ export function catalogCandidateTake(tokenCount: number, limit: number): number 
   return Math.min(2000, Math.max(limit * 30, 300));
 }
 
+async function loadCatalogStock(
+  branchId: string,
+  stockBalances: ReturnType<typeof catalogStockRelation>,
+  productIds?: string[],
+) {
+  const stock = await prisma.localStockBalance.findMany({
+    where: { branchId, ...stockBalances.where, ...(productIds ? { productId: { in: productIds } } : {}) },
+    select: liveCatalogStockSelect,
+    orderBy: stockBalances.orderBy,
+  });
+  const byProduct = new Map<string, LiveCatalogStock[]>();
+  for (const row of stock) {
+    const balances = byProduct.get(row.productId);
+    if (!balances) byProduct.set(row.productId, [row]);
+    else if (balances.length < stockBalances.take) balances.push(row);
+  }
+  return byProduct;
+}
+
 async function loadCatalogProducts(
   page: Pick<Prisma.LocalProductFindManyArgs, "where" | "orderBy" | "take">,
   stockBalances: ReturnType<typeof catalogStockRelation>,
@@ -1476,21 +1524,7 @@ async function loadCatalogProducts(
       // Loading a nested, limited relation for thousands of products makes
       // Prisma build a composite key condition for each product. Stock is
       // already scoped to one branch; fetch it as one flat batch instead.
-      const stock = await prisma.localStockBalance.findMany({
-        where: {
-          branchId,
-          productId: { in: candidates.map(({ id }) => id) },
-          ...stockBalances.where,
-        },
-        select: liveCatalogStockSelect,
-        orderBy: stockBalances.orderBy,
-      });
-      const byProduct = new Map<string, LiveCatalogStock[]>();
-      for (const row of stock) {
-        const balances = byProduct.get(row.productId);
-        if (!balances) byProduct.set(row.productId, [row]);
-        else if (balances.length < stockBalances.take) balances.push(row);
-      }
+      const byProduct = await loadCatalogStock(branchId, stockBalances, candidates.map(({ id }) => id));
       return candidates.map(({ id }) => {
         const cachedCard = cards.get(id)!;
         return { ...cachedCard.card, cachedCard, stockBalances: byProduct.get(id) ?? [] };
@@ -1502,6 +1536,36 @@ async function loadCatalogProducts(
     omit: { raw: true },
     include: { ...catalogCardRelations, stockBalances },
   });
+}
+
+async function readInventoryCatalogPage(
+  filters: CatalogFilters,
+  storeId: string | null,
+  offset: number,
+  limit: number,
+) {
+  const branchId = getScopedBranchId();
+  // Read current stock and the fields used by the sidebar in parallel. The
+  // detailed card relations are needed for visible rows only.
+  const [cards, stock] = await Promise.all([
+    readInventoryCatalogCards(branchId),
+    loadCatalogStock(branchId, catalogStockRelation(storeId)),
+  ]);
+  const { filtered, facets } = filterAndCountFacets(cards, filters, {
+    inventoryCategories: true,
+    available: ({ id }) => stock.get(id)?.reduce((sum, balance) => sum + decimalToNumber(balance.available), 0) ?? 0,
+  });
+  const ids = filtered.slice(offset, offset + limit).map(({ id }) => id);
+  if (!ids.length) return { facets, items: [], total: filtered.length, matchedOutsideFilters: cards.length - filtered.length };
+  const visible = await prisma.localProduct.findMany({
+    where: { branchId, id: { in: ids }, archived: false },
+    omit: { raw: true },
+    include: catalogCardRelations,
+  });
+  if (visible.length !== ids.length) return null;
+  const byId = new Map(visible.map((card) => [card.id, card]));
+  const items = ids.map((id) => mapProduct({ ...byId.get(id)!, stockBalances: stock.get(id) ?? [] }, 0, []));
+  return { facets, items, total: filtered.length, matchedOutsideFilters: cards.length - filtered.length };
 }
 
 export async function searchCatalog(
@@ -1543,6 +1607,7 @@ export async function searchCatalog(
       : "all",
     oemParts: normalizeOemPartsFilter(params.oemParts),
   };
+  const inventoryCategories = options.cacheInventoryCards === true || filters.group.some(isInventoryCategoryFacet);
   const storeId = await resolveStoreId(params);
   const storageCell = params.storageCell?.trim() ?? "";
   const storageAssignmentFilter: Prisma.LocalProductWhereInput = !storageCell || storageCell === "all"
@@ -1599,7 +1664,11 @@ export async function searchCatalog(
       const score = matchedFields.reduce((sum, field) => sum + (field.field === "oemParts" ? 100 : 90), 0);
       return [mapProduct(product, score, matchedFields)];
     });
-    const { facets, filtered } = filterAndCountFacets(scored, filters, storeId);
+    const { facets, filtered } = filterAndCountFacets(scored, filters, {
+      inventoryCategories,
+      matches: (item) => matchesFixedFilters(item, filters, storeId),
+      available: (item) => item.totalAvailable,
+    });
     const sorted = filtered.sort((a, b) => compareItems(a, b, sort, direction, context));
     const items = sorted.slice(offset, offset + limit);
     return {
@@ -1641,68 +1710,81 @@ export async function searchCatalog(
       },
     };
   }
-  const normalizedCandidateIds = await findNormalizedCatalogCandidateIds(tokens, params);
-  const where: Prisma.LocalProductWhereInput = {
-    ...(params.includeArchived ? {} : { archived: false }),
-    ...(type !== "all" ? { entityType: type } : {}),
-    ...(params.origin && params.origin !== "all" ? { origin: params.origin } : {}),
-    ...(params.copyBatchId ? { copyBatchId: params.copyBatchId } : {}),
-    ...(params.priceMissing ? { priceNeedsSetup: true } : {}),
-    ...storageAssignmentFilter,
-    ...oemEnrichmentStatusFilter(params),
-    ...mergeSearchCandidateWhere(searchCandidateWhere(tokens, params), normalizedCandidateIds),
-  };
-  // Without a search query, facets and totals must be calculated across the
-  // whole branch catalog. Limiting candidates before applying filters makes
-  // exact totals depend on the first alphabetical page (often exactly 100).
-  const needsCompleteOemResult = filters.oemParts !== "all" || filters.qualityIssue !== "all" || filters.publication !== "all" || normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult) !== "all" || params.internalLimit != null;
-  const candidateTake = needsCompleteOemResult ? undefined : catalogCandidateTake(tokens.length, limit);
-  const productPage = {
-    where,
-    orderBy: [{ name: "asc" }, { id: "asc" }],
-    ...(candidateTake === undefined ? {} : { take: candidateTake }),
-  } satisfies Prisma.LocalProductFindManyArgs;
-  const stockBalances = catalogStockRelation(storeId);
-  const products = await loadCatalogProducts(
-    productPage,
-    stockBalances,
-    context === "products" && options.cacheInventoryCards === true && !params.includeArchived,
-  );
+  const canReadInventoryPage = options.cacheInventoryCards === true && context === "products"
+    && !normalizedQuery && type === "all" && sort === "name" && direction === "asc" && !params.includeArchived
+    && !params.internalLimit && !params.copyBatchId && (!params.origin || params.origin === "all")
+    && (!storageCell || storageCell === "all") && normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult) === "all"
+    && !filters.markingProblems && !filters.priceMissing && !filters.articleMissing
+    && filters.qualityIssue === "all" && filters.publication === "all" && filters.oemParts === "all";
+  const inventoryPage = canReadInventoryPage ? await readInventoryCatalogPage(filters, storeId, offset, limit) : null;
+  const { facets, items, total, matchedOutsideFilters } = inventoryPage ?? await (async () => {
+    const normalizedCandidateIds = await findNormalizedCatalogCandidateIds(tokens, params);
+    const where: Prisma.LocalProductWhereInput = {
+      ...(params.includeArchived ? {} : { archived: false }),
+      ...(type !== "all" ? { entityType: type } : {}),
+      ...(params.origin && params.origin !== "all" ? { origin: params.origin } : {}),
+      ...(params.copyBatchId ? { copyBatchId: params.copyBatchId } : {}),
+      ...(params.priceMissing ? { priceNeedsSetup: true } : {}),
+      ...storageAssignmentFilter,
+      ...oemEnrichmentStatusFilter(params),
+      ...mergeSearchCandidateWhere(searchCandidateWhere(tokens, params), normalizedCandidateIds),
+    };
+    // Without a search query, facets and totals must be calculated across the
+    // whole branch catalog. Limiting candidates before applying filters makes
+    // exact totals depend on the first alphabetical page (often exactly 100).
+    const needsCompleteOemResult = filters.oemParts !== "all" || filters.qualityIssue !== "all" || filters.publication !== "all" || normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult) !== "all" || params.internalLimit != null;
+    const candidateTake = needsCompleteOemResult ? undefined : catalogCandidateTake(tokens.length, limit);
+    const productPage = {
+      where,
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      ...(candidateTake === undefined ? {} : { take: candidateTake }),
+    } satisfies Prisma.LocalProductFindManyArgs;
+    const stockBalances = catalogStockRelation(storeId);
+    const products = await loadCatalogProducts(
+      productPage,
+      stockBalances,
+      context === "products" && options.cacheInventoryCards === true && !params.includeArchived,
+    );
 
-  const query = prepareSearchQuery(tokens, normalizedQuery);
-  const scored = products.flatMap((product) => {
-    const score = scoreProduct(product, query);
-    if (!score.ok) return [];
-    return [mapProduct(product, score.score, score.matchedFields)];
-  });
-  const { facets, filtered } = filterAndCountFacets(scored, filters, storeId);
-  const matchedOutsideFilters = Math.max(0, scored.length - filtered.length);
-  const directMatches = new Set<string>();
-  if (context === "products" && sort === "relevance" && tokens.some((token) => token.kind === "word")) {
-    const phrase = ` ${normalizedQuery} `;
-    for (const item of filtered) {
-      if (normalizeSearchText(item.brand) === normalizedQuery || ` ${normalizeSearchText(item.name)} `.includes(phrase)) {
-        directMatches.add(item.id);
+    const query = prepareSearchQuery(tokens, normalizedQuery);
+    const scored = products.flatMap((product) => {
+      const score = scoreProduct(product, query);
+      if (!score.ok) return [];
+      return [mapProduct(product, score.score, score.matchedFields)];
+    });
+    const { facets, filtered } = filterAndCountFacets(scored, filters, {
+      inventoryCategories,
+      matches: (item) => matchesFixedFilters(item, filters, storeId),
+      available: (item) => item.totalAvailable,
+    });
+    const matchedOutsideFilters = Math.max(0, scored.length - filtered.length);
+    const directMatches = new Set<string>();
+    if (context === "products" && sort === "relevance" && tokens.some((token) => token.kind === "word")) {
+      const phrase = ` ${normalizedQuery} `;
+      for (const item of filtered) {
+        if (normalizeSearchText(item.brand) === normalizedQuery || ` ${normalizeSearchText(item.name)} `.includes(phrase)) {
+          directMatches.add(item.id);
+        }
       }
     }
-  }
-  const sorted = filtered.sort((a, b) =>
-    Number(directMatches.has(b.id)) - Number(directMatches.has(a.id)) || compareItems(a, b, sort, direction, context)
-  );
-  const items = sorted.slice(offset, offset + limit);
+    const sorted = filtered.sort((a, b) =>
+      Number(directMatches.has(b.id)) - Number(directMatches.has(a.id)) || compareItems(a, b, sort, direction, context)
+    );
+    return { facets, items: sorted.slice(offset, offset + limit), total: filtered.length, matchedOutsideFilters };
+  })();
   const suggestions = !items.length && normalizedQuery ? [`Проверьте артикул, OEM или бренд: ${normalizedQuery}`] : [];
   return {
     items,
     products: items,
-    total: filtered.length,
+    total,
     normalizedQuery,
     tokens,
     matchedOutsideFilters,
     suggestions,
     searchMode: "text",
     meta: {
-      total: filtered.length,
-      hasMore: offset + limit < filtered.length,
+      total,
+      hasMore: offset + limit < total,
       limit,
       offset,
       sort,
