@@ -1,3 +1,4 @@
+import { isEngineOilServiceCapacity } from "@/lib/maintenance-quote";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
@@ -130,7 +131,10 @@ export async function addMannResearchCatalogToProfile(input: {
     const viscosityGrades = row.systemCode === "ENGINE_OIL" && !existing.some(item =>
       normalizeSAE([...(item.viscosityGrades ?? []), ...item.specifications].join("; ")).length)
       ? normalizeSAE(row.specificationText ?? "") : [];
-    const volumeText = existing.some(item => item.capacities.length || item.researchVolumeText) ? undefined : row.fillVolumeText ?? undefined;
+    const hasVolume = existing.some(item => (row.systemCode === "ENGINE_OIL"
+      ? item.capacities.some(isEngineOilServiceCapacity)
+      : item.capacities.length > 0) || item.researchVolumeText);
+    const volumeText = hasVolume ? undefined : row.fillVolumeText ?? undefined;
     if (!specifications.length && !viscosityGrades.length && !volumeText) continue;
     items.push({ revisionId: row.id, systemCode: row.systemCode, systemLabel: row.systemNameRaw,
       capacities: [], specifications, viscosityGrades, evidence: [{ title: row.sourceRow.pageTitle ?? undefined, url: row.sourceUrl }],

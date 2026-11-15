@@ -7,6 +7,7 @@ import { APIConnectionTimeoutError, APIConnectionError } from "openai";
 import { mannSelectionMatchesMake } from "./client-vehicle-mann-selection";
 import type { MannUnifiedTechnicalProfile, MannTransmissionType } from "@/lib/mann-unified-technical-profile";
 import type { MannTechnicalVehicleContext } from "@/lib/mann-technical-applicability";
+import { isEngineOilServiceCapacity } from "@/lib/maintenance-quote";
 import { normalizeSAE } from "@/lib/oil-normalizer";
 import { MANN_FLUID_SYSTEMS as systems, MANN_FLUID_GROUPS, type MannFluidGroup } from "@/lib/mann-fluid-systems";
 
@@ -53,7 +54,9 @@ export function missingMannFluids(profile: MannUnifiedTechnicalProfile, _transmi
   return systems.flatMap(systemCode => {
     const items = profile.items.filter(i => i.systemCode === systemCode);
     const specification = !items.some(i => i.specifications.some(s => s.trim()));
-    const volume = !items.some(i => i.capacities.length > 0 || i.researchVolumeText?.trim());
+    const volume = !items.some(i => (systemCode === "ENGINE_OIL"
+      ? i.capacities.some(isEngineOilServiceCapacity)
+      : i.capacities.length > 0) || i.researchVolumeText?.trim());
     const viscosity = systemCode === "ENGINE_OIL" && !specification
       && !items.some(item => normalizeSAE([...(item.viscosityGrades ?? []), ...item.specifications].join("; ")).length);
     return specification || volume || viscosity ? [{ systemCode, specification, volume, ...(viscosity ? { viscosity } : {}) }] : [];

@@ -1017,6 +1017,8 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
         ) : null}
         {resolution?.selectedApplication ? <div className="eco-vehicle-selected-conditions"><CandidateConditions candidate={resolution.selectedApplication} /></div> : null}
         {combinedIdentifier && technicalProfileLoading && <p className="eco-quote-technical-status" role="status">Уточняем требования к маслу…</p>}
+        {combinedIdentifier && fluidResearch?.groups?.basic?.status === "searching" && <p className="eco-quote-technical-status" role="status">Ищем недостающие данные по маслу, антифризу и тормозной жидкости…</p>}
+        {combinedIdentifier && fluidResearch?.groups?.basic?.status === "failed" && <p className="eco-quote-technical-error" role="status">{fluidResearch.groups.basic.message}</p>}
         {combinedIdentifier && technicalProfileError && <p className="eco-quote-technical-error" role="alert">{technicalProfileError}</p>}
         {(!combinedIdentifier || technicalProfileVariantKeys.length > 0 || Boolean(technicalProfile?.items.length) || Boolean(fluidResearch?.items.length)) && <TechnicalDetails open={manuallySelected ? true : undefined} className={combinedIdentifier ? "eco-quote-technical-details" : undefined}>
         {combinedIdentifier && <summary onClick={() => setClarificationStep(

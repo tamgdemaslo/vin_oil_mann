@@ -175,6 +175,11 @@ export type QuoteFilterGroup = {
   products: { id: string; name: string; article?: string | null; price: number; available: number; orderable: boolean; source?: "rossko"; deliveryLabel?: string; brand?: string | null; relation?: "mann" | "analogue"; referenceArticle?: string; matchType?: string; deliveryAt?: string | null; deliveryDays?: number | null }[];
 };
 
+export function isEngineOilServiceCapacity(capacity: { serviceContext?: string | null; filterContext?: string | null }) {
+  return !["TOTAL", "DRY_FILL", "WITHOUT_FILTER", "PARTIAL"].includes(capacity.serviceContext ?? "")
+    && capacity.filterContext !== "WITHOUT_FILTER";
+}
+
 export function quoteRequirementChoices(profile: import("@/lib/mann-unified-technical-profile").MannUnifiedTechnicalProfile | null, research: import("@/lib/mann-fluid-research").MannFluidResearchResult | null, options?: { prefillResearchVolume?: boolean }) {
   const engines = profile?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
   const discoveries = research?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
@@ -184,7 +189,7 @@ export function quoteRequirementChoices(profile: import("@/lib/mann-unified-tech
   const specifications = [...new Set(oem.length ? oem : [...norm.acea, ...norm.api, ...norm.ilsac])];
   const viscosities = [...new Set(norm.sae)];
   const catalogCapacities = engines.flatMap(item => item.capacities
-    .filter(capacity => !["TOTAL", "DRY_FILL", "WITHOUT_FILTER", "PARTIAL"].includes(capacity.serviceContext ?? ""))
+    .filter(isEngineOilServiceCapacity)
     .map(capacity => ({
       capacity,
       trusted: !item.requiresReview && item.sourceStatus === "primary_source" && (!capacity.qualifier || capacity.qualifier === "EXACT"),
@@ -202,8 +207,7 @@ export function quoteRequirementChoices(profile: import("@/lib/mann-unified-tech
     const parsed = parseFluidCapacities(volumeText, "ENGINE_OIL");
     if (parsed.needsReview) return [];
     return parsed.capacities.filter(capacity =>
-      !["TOTAL", "DRY_FILL", "PARTIAL"].includes(capacity.serviceContext)
-      && capacity.filterContext !== "WITHOUT_FILTER"
+      isEngineOilServiceCapacity(capacity)
       && !/(?:полн[а-яё]*|общ[а-яё]*)\s+объ[её]м|сух[а-яё]*\s+заправ|dry fill/i.test(capacity.context));
   });
   const values = (capacities: readonly { nominalLiters?: number | null; minLiters?: number | null; maxLiters?: number | null }[]) =>
