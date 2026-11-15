@@ -70,11 +70,13 @@ export async function GET(request: NextRequest) {
     strictNameOem: sp.get("strictNameOem") === "1" || sp.get("strictNameOem") === "true",
   };
 
+  const inventoryView = sp.get("view") === "inventory" && params.context === "products";
+
   return runWithBranchApiContext(branch.context, async () => {
     const searchStartedAt = performance.now();
-    const result = await searchCatalog(params);
+    const result = await searchCatalog(params, { cacheInventoryCards: inventoryView });
     const searchMs = performance.now() - searchStartedAt;
-    const response = sp.get("view") === "inventory" && params.context === "products"
+    const response = inventoryView
       ? NextResponse.json({
           products: result.products,
           meta: result.meta,

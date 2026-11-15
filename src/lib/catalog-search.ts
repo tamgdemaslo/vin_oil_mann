@@ -87,36 +87,107 @@ export type CatalogSearchParams = {
   internalLimit?: number;
 };
 
-type CatalogProduct = Prisma.LocalProductGetPayload<{
+const catalogCardRelations = {
+  photos: {
+    select: { id: true, purpose: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  },
+  supplierCounterparty: { select: { name: true, displayName: true } },
+  storageAssignments: {
+    include: { cell: true, store: { select: { id: true, name: true, isMain: true, archived: true } } },
+  },
+  storefrontBindings: {
+    include: { storefrontProduct: { select: { id: true, publicationState: true, contentSourceProductId: true } } },
+  },
+} satisfies Prisma.LocalProductInclude;
+
+function catalogStockRelation(storeId: string | null) {
+  return {
+    where: storeId ? { storeId } : undefined,
+    include: { store: { select: { name: true } } },
+    orderBy: { store: { name: "asc" } },
+    take: storeId ? 1 : 20,
+  } satisfies Prisma.LocalProduct$stockBalancesArgs;
+}
+
+type CatalogCard = Prisma.LocalProductGetPayload<{
   omit: { raw: true };
-  include: {
-    stockBalances: {
-      include: { store: true };
-    };
-    photos: {
-      select: {
-        id: true;
-        purpose: true;
-        fileName: true;
-        contentType: true;
-        sizeBytes: true;
-        createdAt: true;
-      };
-    };
-    supplierCounterparty: {
-      select: { name: true; displayName: true };
-    };
-    storageAssignments: {
-      include: {
-        cell: true;
-        store: { select: { id: true; name: true; isMain: true; archived: true } };
-      };
-    };
-    storefrontBindings: {
-      include: { storefrontProduct: { select: { id: true; publicationState: true; contentSourceProductId: true } } };
-    };
-  };
+  include: typeof catalogCardRelations;
 }>;
+
+type CachedCatalogCard = {
+  card: CatalogCard;
+  mapped?: ReturnType<typeof mapCatalogCard>;
+};
+
+type CatalogProduct = CatalogCard & {
+  cachedCard?: CachedCatalogCard;
+  stockBalances: Prisma.LocalStockBalanceGetPayload<ReturnType<typeof catalogStockRelation>>[];
+};
+
+const MAX_CACHED_BRANCHES = 4;
+const MAX_CACHED_CARDS_PER_BRANCH = 5_000;
+const catalogCards = new Map<string, {
+  version: string;
+  cards: Promise<ReadonlyMap<string, CachedCatalogCard> | null>;
+}>();
+
+async function readCatalogCardVersion(branchId: string) {
+  // PostgreSQL changes xmin on writes. Include related rows so edits, deletes
+  // and changes from other app instances invalidate the snapshot after commit.
+  // Stock and reserves are read separately and do not invalidate card data.
+  const [result] = await prisma.$queryRaw<Array<{ version: string }>>`
+    SELECT md5(COALESCE(string_agg(
+      json_build_array(source, id, revision)::text, ',' ORDER BY source, id
+    ), '')) AS version
+    FROM (
+      SELECT 1 AS source, id, xmin::text AS revision FROM local_products
+        WHERE branch_id = ${branchId} AND NOT archived
+      UNION ALL SELECT 2, id, xmin::text FROM local_product_photos WHERE branch_id = ${branchId}
+      UNION ALL SELECT 3, id, xmin::text FROM local_counterparties WHERE branch_id = ${branchId}
+      UNION ALL SELECT 4, id, xmin::text FROM product_storage_assignments WHERE branch_id = ${branchId}
+      UNION ALL SELECT 5, id, xmin::text FROM storage_cells WHERE branch_id = ${branchId}
+      UNION ALL SELECT 6, id, xmin::text FROM local_stores WHERE branch_id = ${branchId}
+      UNION ALL SELECT 7, id, xmin::text FROM storefront_product_bindings WHERE branch_id = ${branchId}
+      UNION ALL SELECT 8, product.id, product.xmin::text
+        FROM storefront_products product
+        JOIN storefront_product_bindings binding ON binding.storefront_product_id = product.id
+        WHERE binding.branch_id = ${branchId}
+    ) AS card_rows
+  `;
+  return result?.version;
+}
+
+async function loadCatalogCards(branchId: string) {
+  const version = await readCatalogCardVersion(branchId);
+  if (!version) return null;
+  const cached = catalogCards.get(branchId);
+  if (cached?.version === version) return cached.cards;
+
+  const cards = (async () => {
+    const count = await prisma.localProduct.count({ where: { branchId, archived: false } });
+    if (count > MAX_CACHED_CARDS_PER_BRANCH) return null;
+    const rows = await prisma.localProduct.findMany({
+      where: { branchId, archived: false },
+      omit: { raw: true },
+      include: catalogCardRelations,
+      take: MAX_CACHED_CARDS_PER_BRANCH + 1,
+    });
+    return rows.length > MAX_CACHED_CARDS_PER_BRANCH ? null : new Map(rows.map((card) => [card.id, { card }]));
+  })();
+  if (!cached && catalogCards.size >= MAX_CACHED_BRANCHES) {
+    const oldestBranch = catalogCards.keys().next().value;
+    if (oldestBranch) catalogCards.delete(oldestBranch);
+  }
+  const entry = { version, cards };
+  catalogCards.set(branchId, entry);
+  try {
+    return await cards;
+  } catch (error) {
+    if (catalogCards.get(branchId) === entry) catalogCards.delete(branchId);
+    throw error;
+  }
+}
 
 type StockRow = {
   storeId: string;
@@ -1212,28 +1283,10 @@ function compareItems(a: CatalogSearchItem, b: CatalogSearchItem, sort: SortKey,
   return result || ruCollator.compare(a.name, b.name) || a.id.localeCompare(b.id);
 }
 
-function mapProduct(product: CatalogProduct, relevance: number, matchedFields: CatalogMatchedField[]): CatalogSearchItem {
+function mapCatalogCard(product: CatalogCard) {
   const storefrontBinding = product.storefrontBindings.find((binding) => binding.status === "CONFIRMED") ?? null;
   const storefrontPublicationProblems = storefrontPublicationReadiness(product);
   const normalizedOemParts = splitProductCrossReferences(product.oemParts);
-  const stock = product.stockBalances.map((balance) => ({
-    storeId: balance.storeId,
-    storeName: balance.store?.name ?? "",
-    quantity: decimalToNumber(balance.quantity),
-    reserve: decimalToNumber(balance.reserve),
-    available: decimalToNumber(balance.available),
-    slotName: balance.slotName ?? "",
-    buyPriceCents: balance.buyPriceCents,
-  }));
-  const firstStock = stock[0];
-  const highlights: Record<string, string[]> = {};
-  for (const match of matchedFields) {
-    highlights[match.field] ??= [];
-    if (match.token) highlights[match.field].push(match.token);
-  }
-  const matchSummary = matchedFields.length
-    ? `Совпадение: ${matchedFields.slice(0, 3).map((field) => field.label).join(" + ")}`
-    : "";
   return {
     id: product.id,
     name: product.name,
@@ -1282,7 +1335,7 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     oemParts: product.oemParts ?? "",
     oemPartsCount: normalizedOemParts.length,
     oemPartsPreview: normalizedOemParts.slice(0, 8),
-    cell: firstStock?.slotName || product.cell || getCellFromAttributes(product.attributes) || "",
+    cell: product.cell || getCellFromAttributes(product.attributes) || "",
     storageAssignments: product.storageAssignments.map((assignment) => ({
       storeId: assignment.storeId,
       storeName: assignment.store.name,
@@ -1298,10 +1351,6 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     imageHref: product.imageHref ?? "",
     archived: product.archived,
     updatedAt: product.updatedAt.toISOString(),
-    stock,
-    totalQuantity: stock.reduce((sum, row) => sum + row.quantity, 0),
-    totalAvailable: stock.reduce((sum, row) => sum + row.available, 0),
-    totalReserve: stock.reduce((sum, row) => sum + row.reserve, 0),
     markingEnabled: product.markingEnabled,
     markingMode: normalizeProductMarkingMode(product.markingMode),
     markingStatus: product.markingStatus,
@@ -1317,21 +1366,11 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     copyBatchId: product.copyBatchId,
     copiedAt: product.copiedAt?.toISOString() ?? null,
     priceNeedsSetup: product.priceNeedsSetup,
-    storefrontPublicationState: storefrontBinding?.storefrontProduct.publicationState === "PUBLISHED" ? "PUBLISHED" : "HIDDEN",
+    storefrontPublicationState: storefrontBinding?.storefrontProduct.publicationState === "PUBLISHED" ? "PUBLISHED" as const : "HIDDEN" as const,
     storefrontProductId: storefrontBinding?.storefrontProduct.id ?? null,
     storefrontContentSourceProductId: storefrontBinding?.storefrontProduct.contentSourceProductId ?? null,
     storefrontPublicationProblems,
-    stockQuantity: firstStock?.quantity ?? 0,
-    reserveQuantity: firstStock?.reserve ?? 0,
-    availableQuantity: firstStock?.available ?? 0,
-    slotName: firstStock?.slotName || undefined,
-    buyPriceCents: firstStock?.buyPriceCents ?? undefined,
-    cost: firstStock?.buyPriceCents != null ? firstStock.buyPriceCents / 100 : undefined,
     meta: entityMeta(product.entityType, product.id, null, product.id),
-    relevance,
-    matchedFields,
-    highlights,
-    matchSummary,
     photos: product.photos.map((photo) => ({
       id: photo.id,
       purpose: photo.purpose,
@@ -1341,6 +1380,47 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
       createdAt: photo.createdAt.toISOString(),
       url: `/api/local-inventory/products/${product.id}/photos/${photo.id}`,
     })),
+  };
+}
+
+function mapProduct(product: CatalogProduct, relevance: number, matchedFields: CatalogMatchedField[]): CatalogSearchItem {
+  const cached = product.cachedCard;
+  const card = cached ? (cached.mapped ??= mapCatalogCard(cached.card)) : mapCatalogCard(product);
+  const stock = product.stockBalances.map((balance) => ({
+    storeId: balance.storeId,
+    storeName: balance.store?.name ?? "",
+    quantity: decimalToNumber(balance.quantity),
+    reserve: decimalToNumber(balance.reserve),
+    available: decimalToNumber(balance.available),
+    slotName: balance.slotName ?? "",
+    buyPriceCents: balance.buyPriceCents,
+  }));
+  const firstStock = stock[0];
+  const highlights: Record<string, string[]> = {};
+  for (const match of matchedFields) {
+    highlights[match.field] ??= [];
+    if (match.token) highlights[match.field].push(match.token);
+  }
+  const matchSummary = matchedFields.length
+    ? `Совпадение: ${matchedFields.slice(0, 3).map((field) => field.label).join(" + ")}`
+    : "";
+  return {
+    ...card,
+    cell: firstStock?.slotName || card.cell,
+    stock,
+    totalQuantity: stock.reduce((sum, row) => sum + row.quantity, 0),
+    totalAvailable: stock.reduce((sum, row) => sum + row.available, 0),
+    totalReserve: stock.reduce((sum, row) => sum + row.reserve, 0),
+    stockQuantity: firstStock?.quantity ?? 0,
+    reserveQuantity: firstStock?.reserve ?? 0,
+    availableQuantity: firstStock?.available ?? 0,
+    slotName: firstStock?.slotName || undefined,
+    buyPriceCents: firstStock?.buyPriceCents ?? undefined,
+    cost: firstStock?.buyPriceCents != null ? firstStock.buyPriceCents / 100 : undefined,
+    relevance,
+    matchedFields,
+    highlights,
+    matchSummary,
   };
 }
 
@@ -1361,7 +1441,43 @@ export function catalogCandidateTake(tokenCount: number, limit: number): number 
   return Math.min(2000, Math.max(limit * 30, 300));
 }
 
-export async function searchCatalog(params: CatalogSearchParams): Promise<CatalogSearchResult> {
+async function loadCatalogProducts(
+  page: Pick<Prisma.LocalProductFindManyArgs, "where" | "orderBy" | "take">,
+  stockBalances: ReturnType<typeof catalogStockRelation>,
+  useCache: boolean,
+): Promise<CatalogProduct[]> {
+  if (useCache) {
+    const branchId = getScopedBranchId();
+    const [cards, live] = await Promise.all([
+      loadCatalogCards(branchId),
+      prisma.localProduct.findMany({
+        ...page,
+        where: { ...page.where, branchId },
+        select: { id: true, stockBalances },
+      }),
+    ]);
+    if (cards) {
+      const products: CatalogProduct[] = [];
+      for (const row of live) {
+        const cachedCard = cards.get(row.id);
+        // A product may have been created between the two reads.
+        if (!cachedCard) break;
+        products.push({ ...cachedCard.card, cachedCard, stockBalances: row.stockBalances });
+      }
+      if (products.length === live.length) return products;
+    }
+  }
+  return prisma.localProduct.findMany({
+    ...page,
+    omit: { raw: true },
+    include: { ...catalogCardRelations, stockBalances },
+  });
+}
+
+export async function searchCatalog(
+  params: CatalogSearchParams,
+  options: { cacheInventoryCards?: boolean } = {},
+): Promise<CatalogSearchResult> {
   const context = params.context === "shipment" ? "shipment" : "products";
   const q = [params.q, params.oem, params.mannName, params.params].filter(Boolean).join(" ");
   const normalizedQuery = normalizeSearchText(q);
@@ -1431,25 +1547,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
             id: { in: strictCandidateIds },
           },
           omit: { raw: true },
-          include: {
-            stockBalances: {
-              where: storeId ? { storeId } : undefined,
-              include: { store: true },
-              orderBy: { store: { name: "asc" } },
-              take: storeId ? 1 : 20,
-            },
-            photos: {
-              select: { id: true, purpose: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
-              orderBy: { createdAt: "asc" },
-            },
-            supplierCounterparty: { select: { name: true, displayName: true } },
-            storageAssignments: {
-              include: { cell: true, store: { select: { id: true, name: true, isMain: true, archived: true } } },
-            },
-            storefrontBindings: {
-              include: { storefrontProduct: { select: { id: true, publicationState: true, contentSourceProductId: true } } },
-            },
-          },
+          include: { ...catalogCardRelations, stockBalances: catalogStockRelation(storeId) },
           orderBy: [{ name: "asc" }, { id: "asc" }],
           take: params.internalLimit != null || filters.oemParts !== "all" || filters.qualityIssue !== "all"
             ? 5001
@@ -1529,31 +1627,17 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
   // exact totals depend on the first alphabetical page (often exactly 100).
   const needsCompleteOemResult = filters.oemParts !== "all" || filters.qualityIssue !== "all" || filters.publication !== "all" || normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult) !== "all" || params.internalLimit != null;
   const candidateTake = needsCompleteOemResult ? undefined : catalogCandidateTake(tokens.length, limit);
-  const products = await prisma.localProduct.findMany({
+  const productPage = {
     where,
-    omit: { raw: true },
-    include: {
-      stockBalances: {
-        where: storeId ? { storeId } : undefined,
-        include: { store: true },
-        orderBy: { store: { name: "asc" } },
-        take: storeId ? 1 : 20,
-      },
-      photos: {
-        select: { id: true, purpose: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
-        orderBy: { createdAt: "asc" },
-      },
-      supplierCounterparty: { select: { name: true, displayName: true } },
-      storageAssignments: {
-        include: { cell: true, store: { select: { id: true, name: true, isMain: true, archived: true } } },
-      },
-      storefrontBindings: {
-        include: { storefrontProduct: { select: { id: true, publicationState: true, contentSourceProductId: true } } },
-      },
-    },
     orderBy: [{ name: "asc" }, { id: "asc" }],
     ...(candidateTake === undefined ? {} : { take: candidateTake }),
-  });
+  } satisfies Prisma.LocalProductFindManyArgs;
+  const stockBalances = catalogStockRelation(storeId);
+  const products = await loadCatalogProducts(
+    productPage,
+    stockBalances,
+    context === "products" && options.cacheInventoryCards === true && !params.includeArchived,
+  );
 
   const query = prepareSearchQuery(tokens, normalizedQuery);
   const scored = products.flatMap((product) => {
