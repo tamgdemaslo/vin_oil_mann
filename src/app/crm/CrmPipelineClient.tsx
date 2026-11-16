@@ -138,8 +138,8 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
   }, [bookingMenuId]);
   useEffect(() => {
-    const timer = window.setInterval(() => { setNow(new Date()); if (!document.hidden) void load(); }, 60_000);
-    const refresh = () => { setNow(new Date()); if (!document.hidden) void load(); };
+    const refresh = () => { setNow(new Date()); if (!document.hidden && !mutationPending.current) void load(); };
+    const timer = window.setInterval(refresh, 60_000);
     document.addEventListener("visibilitychange", refresh);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
   }, [load]);
@@ -202,6 +202,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     if (mutationPending.current) return false;
     if (action === "waiting_parts" && !partsConfirmed) { openPartsOrder(row); return false; }
     mutationPending.current = true;
+    ++loadVersion.current;
     setBusy(row.id); setActionError(null); setNotice("");
     try {
       const id = encodeURIComponent(row.id);
@@ -228,6 +229,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     if (!edit.title.trim()) { setActionError("Укажите запрос клиента"); return; }
     if (edit.phone.trim() && !normalizePhoneKey(edit.phone)) { setActionError("Проверьте телефон клиента"); return; }
     mutationPending.current = true;
+    ++loadVersion.current;
     setBusy(row.id); setActionError(null);
     try {
       const res = await fetch(`/api/crm/deals/${encodeURIComponent(row.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(edit) });
@@ -241,12 +243,14 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   async function patchCard(row: Case, body: Record<string, unknown>, message: string) {
     if (mutationPending.current) return false;
     mutationPending.current = true;
+    ++loadVersion.current;
     setBusy(row.id); setQuickError(null); setNotice("");
     try {
       const res = await fetch(`/api/crm/deals/${encodeURIComponent(row.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await res.json();
       if (!res.ok) { if (res.status === 409) await load(); throw new Error(data.error || "Не удалось сохранить изменения"); }
       setCases(current => current.map(item => item.id === row.id ? { ...item, ...data, stage: item.stage } : item));
+      setNow(new Date());
       await load(); setNotice(message);
       return true;
     } catch (error) {
