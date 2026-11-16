@@ -466,6 +466,7 @@ export async function listClientCaseNotificationsForUser(userId: string, branchI
       AND l.channel = 'in_app'
       AND l.status = 'sent'
       AND (l.acknowledged_at IS NULL OR COALESCE(d.next_action_at, d.next_contact_at) < ${now})
+      AND (l.type <> 'overdue_repeat' OR COALESCE(d.next_action_at, d.next_contact_at) < ${now})
       AND d.status = 'open'
       AND d.case_status NOT IN ('calculation_sent', 'check_response', 'client_replied', 'waiting_parts', 'closed', 'cancelled', 'duplicate')
       AND (d.snooze_until IS NULL OR d.snooze_until <= ${now})
