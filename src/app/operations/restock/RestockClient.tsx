@@ -245,7 +245,8 @@ function supplierName(it: RestockItem): string {
 
 function isRosskoSupplierName(name: string): boolean {
   const normalized = name.toLowerCase().replace(/ё/g, "е").replace(/[«»"]/g, "").trim();
-  return normalized.includes("гринлайт") || normalized === "rossko";
+  const compact = normalized.replace(/[\s-]+/g, "");
+  return compact.includes("гринлайт") || compact.includes("greenlight") || normalized === "rossko";
 }
 
 function toNum(x: unknown): number | null {
@@ -677,18 +678,21 @@ function procurementRouteFor(it: RestockItem): ProcurementRoute {
   const isWithoutSupplier = supplier === "Без поставщика";
   const isRosskoSupplier = isRosskoSupplierName(supplier);
   const isFilter = hasAny(text, ["фильтр", "filter"]);
-  const isOil = !isFilter && hasAny(text, ["масло", "oil", "5w", "0w", "10w", "15w", "atf", "трансмиссион"]);
+  const name = (it.name ?? "").toLowerCase();
+  const isSealRing = name.includes("кольц") && hasAny(name, ["уплотн", "уплотин"]);
+  const usesFilterRoute = isFilter || (isSealRing && isRosskoSupplier);
+  const isOil = !usesFilterRoute && hasAny(text, ["масло", "oil", "5w", "0w", "10w", "15w", "atf", "трансмиссион"]);
   const setupReasons: string[] = [];
 
   if (!hasCode) setupReasons.push("нет кода / артикула");
-  if (!hasGroup && !isFilter && !isOil) setupReasons.push("не определена категория");
+  if (!hasGroup && !usesFilterRoute && !isOil) setupReasons.push("не определена категория");
 
-  if (isFilter) {
+  if (usesFilterRoute) {
     return {
       category: setupReasons.length ? "setup" : "filters",
       mode: setupReasons.length ? "needs_setup" : "rossko_only",
       channel: setupReasons.length ? "Требует настройки" : "ROSSKO",
-      subcategory: filterSubcategory(text),
+      subcategory: isSealRing ? "Уплотнительные кольца" : filterSubcategory(text),
       setupReasons,
     };
   }
@@ -850,7 +854,7 @@ export default function RestockClient() {
     try {
       const params = new URLSearchParams({ mode });
       if (refresh) params.set("refresh", "1");
-      const res = await fetch(`/api/local-inventory/restock?${params}`, { signal: controller.signal });
+      const res = await fetch(`/api/local-inventory/restock?${params}`, { signal: controller.signal, cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Ошибка загрузки");
       if (controller.signal.aborted) return;
