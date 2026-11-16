@@ -22,6 +22,7 @@ try {
  for(const caseStatus of ['cancelled','duplicate','closed']) assert.equal(simpleCaseStatus({caseStatus,status:'open'}),'closed');
  const pending={caseStatus:'calculation_needed',status:'open',createdAt:'2026-10-21T10:00:00Z'};
  assert.equal(simpleCaseDeadline(pending).toISOString(),'2026-10-21T21:59:59.000Z','Old requests without deadlines remain overdue');
+ assert.equal(simpleCaseDeadline({...pending,nextActionAt:'2026-10-29T13:18:00Z'}).toISOString(),'2026-10-29T13:18:00.000Z','A rescheduled calculation keeps its exact time');
  assert.equal(simpleCaseDeadline({...pending,caseStatus:'waiting_parts',suppliesExpectedAt:'2026-10-29T13:18:00Z'}).toISOString(),'2026-10-29T13:18:00.000Z','Supply deadlines use the delivery date, including its exact time');
  assert.equal(simpleCaseDeadline({...pending,caseStatus:'waiting_parts',suppliesExpectedAt:'invalid'}),null);
  assert.equal(simpleCaseDeadline({...pending,caseStatus:'calculation_sent',suppliesExpectedAt:'2026-10-01T10:00:00Z'}),null,'An old delivery date must not affect other stages');
