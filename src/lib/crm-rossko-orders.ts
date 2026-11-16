@@ -71,8 +71,13 @@ async function saveOrder(
   const supplier = input.source === "rossko" ? "РОССКО" : input.supplier;
   const arrived = snapshot?.arrived ?? false;
   const caseStatus = arrived ? "parts_arrived" : "waiting_parts";
-  const expectedAt = input.source === "manual" ? input.expectedAt : snapshot?.expectedAt
-    ?? (parseRosskoOrderNumber(caseRosskoOrder(deal.suppliesNote)) === orderNumber ? deal.suppliesExpectedAt : null);
+  const sameOrder = parseRosskoOrderNumber(caseRosskoOrder(deal.suppliesNote)) === orderNumber;
+  const existingExpectedAt = sameOrder ? deal.suppliesExpectedAt : null;
+  // A background status refresh may fill an empty ETA, but an existing date
+  // can be a staff override. Explicitly linking an order uses its supplier ETA.
+  const expectedAt = input.source === "manual" ? input.expectedAt
+    : actorLogin ? snapshot?.expectedAt ?? existingExpectedAt
+    : existingExpectedAt ?? snapshot?.expectedAt ?? null;
   const previous = deal.events[0];
   const previousOrderNumber = (previous?.metadata as { orderNumber?: unknown } | null)?.orderNumber;
   const statusChanged = snapshot != null && (
