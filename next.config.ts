@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
   skipProxyUrlNormalize: true,
   outputFileTracingIncludes: {
     "/*": ["./assets/price-label-fonts/**/*"],
+    "/client-site/services/zamena-masla-akpp": ["./assets/akpp-service.html"],
   },
   // Keep Node-only integration clients out of the instrumentation bundle.
   // Their transitive dependencies use core modules such as crypto and stream.
