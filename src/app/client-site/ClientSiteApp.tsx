@@ -1226,11 +1226,11 @@ function BranchCallButton() {
   );
 }
 
-function Footer({ compact = false, showCatalogRoutes = false }) {
+function Footer({ showCatalogRoutes = false }) {
   return (
     <footer style={{background: '#0a0a0a', color: '#F5F2ED', borderTop: '1px solid var(--line)'}}>
       {/* Map + hours block */}
-      {!compact && <div className="container client-footer__grid" style={{padding: '64px 24px 32px', display: 'grid', gridTemplateColumns: '1.2fr 1fr 0.9fr', gap: 48}}>
+      <div className="container client-footer__grid" style={{padding: '64px 24px 32px', display: 'grid', gridTemplateColumns: '1.2fr 1fr 0.9fr', gap: 48}}>
         {/* Real Yandex map */}
         <div className="client-footer__map">
           <div className="t-eyebrow" style={{marginBottom: 14}}>Как найти</div>
@@ -1300,7 +1300,7 @@ function Footer({ compact = false, showCatalogRoutes = false }) {
           </div>
           <a href="/booking" className="btn rust" style={{width: '100%'}}>Записаться сейчас <span className="arr">→</span></a>
         </div>
-      </div>}
+      </div>
 
       {/* Chequered separator */}
       <div className="chequered" />
@@ -4221,7 +4221,7 @@ function App({
     <CatalogCtx.Provider value={OILS}><RouterCtx.Provider value={{ ...router, catalogVersion, catalogTotal, catalogLoadingMore }}>
       <TopBar />
       {page}
-      <Footer compact={router.path === AKPP_PATH} showCatalogRoutes={seg[0] === 'shop'} />
+      <Footer showCatalogRoutes={seg[0] === 'shop'} />
     </RouterCtx.Provider></CatalogCtx.Provider>
   );
 }
