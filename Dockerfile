@@ -101,7 +101,7 @@ RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \
       | cut -d ' ' -f 1)"; \
   fi; \
   echo "Building Next.js deployment ${deployment_id}"; \
-  NEXT_DEPLOYMENT_ID="$deployment_id" ./node_modules/.bin/next build --webpack
+  NODE_OPTIONS=--max-old-space-size=4096 NEXT_DEPLOYMENT_ID="$deployment_id" ./node_modules/.bin/next build --webpack
 
 FROM node:20-bookworm AS app
 
