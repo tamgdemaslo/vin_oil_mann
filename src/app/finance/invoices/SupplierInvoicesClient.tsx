@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput, EcoKpi, EcoSelect, EcoTable } from "@/components/platform/EcoUI";
+import { SupplierPaymentMethodSelect } from "@/components/platform/SupplierPaymentMethodSelect";
 import { formatServiceDate, toServiceDateInput } from "@/lib/date-time";
 
 type InvoiceStatus =
@@ -351,7 +352,7 @@ function hasActiveFilters(filters: Filters) {
   );
 }
 
-export default function SupplierInvoicesClient() {
+export default function SupplierInvoicesClient({ canManageInvoices }: { canManageInvoices: boolean }) {
   const searchParams = useSearchParams();
   const requestedInvoiceId = searchParams.get("invoice");
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([]);
@@ -369,6 +370,9 @@ export default function SupplierInvoicesClient() {
   const [notice, setNotice] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(todayInput());
+  const [invoiceEdit, setInvoiceEdit] = useState<{ number: string; invoiceDate: string; dueDate: string; comment: string } | null>(null);
+  const [invoiceSaving, setInvoiceSaving] = useState(false);
+  const [paymentEdit, setPaymentEdit] = useState<{ id?: string; method: string; date: string } | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>("cash");
   const [paymentComment, setPaymentComment] = useState("");
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
@@ -382,6 +386,8 @@ export default function SupplierInvoicesClient() {
     () => invoices.find((invoice) => invoice.id === openId) ?? null,
     [invoices, openId]
   );
+
+  const editedPayment = activeInvoice?.payments.find((payment) => payment.id === paymentEdit?.id);
 
   const summary = useMemo(() => {
     const payable = invoices.filter((invoice) => invoice.remainingAmountCents > 0 && invoice.status !== "cancelled");
@@ -492,6 +498,8 @@ export default function SupplierInvoicesClient() {
       setNotice("В режиме «Все филиалы» счета доступны только для просмотра. Выберите конкретный филиал для действий.");
       return;
     }
+    setInvoiceEdit(null);
+    setPaymentEdit(null);
     setOpenId(invoice.id);
     setPaymentAmount(paymentMode === "partial" ? "" : paymentAmountInput(invoice.remaining));
     setPaymentDate(todayInput());
@@ -537,25 +545,76 @@ export default function SupplierInvoicesClient() {
     }
   }
 
-  async function correctCashPayment(invoice: SupplierInvoice, payment: SupplierInvoicePayment) {
-    if (!window.confirm(`Исправить оплату ${formatMoney(payment.amount)} на перевод? Связанный расходный ордер будет отменён.`)) return;
+  async function savePaymentMethod(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeInvoice || !paymentEdit?.method) return;
+    const order = editedPayment?.cashExpenseOrder;
+    if (paymentEdit.method !== "cash" && order && order.status !== "cancelled" &&
+        !window.confirm("Связанный РКО будет отменён. Сохранить способ оплаты?")) return;
     setPaymentSubmitting(true);
     setActionError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/local-inventory/supplier-invoices/${encodeURIComponent(invoice.id)}/payments`, {
+      const response = await fetch(`/api/local-inventory/supplier-invoices/${encodeURIComponent(activeInvoice.id)}/payments`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentId: payment.id, paymentType: "bank_transfer" }),
+        body: JSON.stringify({ paymentId: paymentEdit.id, paymentType: paymentEdit.method, paymentDate: !paymentEdit.id || paymentEdit.method === "cash" ? paymentEdit.date : undefined }),
       });
       const data = await readJson<SupplierInvoice & { error?: string }>(response);
       if (!response.ok || !data?.id) throw new Error(data?.error ?? "Не удалось исправить оплату.");
       setInvoices((current) => current.map((row) => row.id === data.id ? data : row));
-      setNotice("Способ оплаты изменён на перевод.");
+      setPaymentEdit(null);
+      setNotice("Способ оплаты сохранён.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Не удалось исправить оплату.");
     } finally {
       setPaymentSubmitting(false);
+    }
+  }
+
+  async function saveInvoice(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeInvoice || !invoiceEdit) return;
+    setInvoiceSaving(true);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/local-inventory/supplier-invoices/${encodeURIComponent(activeInvoice.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(invoiceEdit),
+      });
+      const data = await readJson<SupplierInvoice & { error?: string }>(response);
+      if (!response.ok || !data?.id) throw new Error(data?.error ?? "Не удалось сохранить счёт.");
+      setInvoices((current) => current.map((row) => row.id === data.id ? data : row));
+      setInvoiceEdit(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Не удалось сохранить счёт.");
+    } finally {
+      setInvoiceSaving(false);
+    }
+  }
+
+  async function deleteInvoice(invoice: SupplierInvoice) {
+    const cashOrders = invoice.payments.some((payment) => payment.cashExpenseOrder && payment.cashExpenseOrder.status !== "cancelled");
+    if (!window.confirm(`Удалить счёт ${invoice.number || "без номера"}?${cashOrders ? " Связанные РКО будут отменены." : ""}`)) return;
+    setInvoiceSaving(true);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/local-inventory/supplier-invoices/${encodeURIComponent(invoice.id)}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = await readJson<{ error?: string }>(response);
+        throw new Error(data?.error ?? "Не удалось удалить счёт.");
+      }
+      setInvoices((current) => current.filter((row) => row.id !== invoice.id));
+      setSelectedIds((current) => current.filter((id) => id !== invoice.id));
+      setOpenId(null);
+      setNotice("Счёт удалён.");
+      if (invoices.length === 1 && offset > 0) setOffset(Math.max(0, offset - limit));
+      else await load();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Не удалось удалить счёт.");
+    } finally {
+      setInvoiceSaving(false);
     }
   }
 
@@ -1172,7 +1231,7 @@ export default function SupplierInvoicesClient() {
 
       {activeInvoice && (
         <>
-          <button type="button" className="eco-invoices-drawer-backdrop" onClick={() => setOpenId(null)} aria-label="Закрыть детали" />
+          <button type="button" className="eco-invoices-drawer-backdrop" onClick={() => { setOpenId(null); setInvoiceEdit(null); setPaymentEdit(null); }} aria-label="Закрыть детали" />
           <aside className="eco-invoices-drawer" aria-label={`Детали счёта ${activeInvoice.number || activeInvoice.id}`}>
             <div className="eco-invoices-drawer__head">
               <div>
@@ -1182,7 +1241,7 @@ export default function SupplierInvoicesClient() {
               </div>
               <div className="eco-invoices-drawer__head-actions">
                 <EcoBadge tone={statusMeta(activeInvoice.status).tone}>{statusMeta(activeInvoice.status).label}</EcoBadge>
-                <button type="button" className="eco-icon-btn" onClick={() => setOpenId(null)} aria-label="Закрыть">
+                <button type="button" className="eco-icon-btn" onClick={() => { setOpenId(null); setInvoiceEdit(null); setPaymentEdit(null); }} aria-label="Закрыть">
                   <X aria-hidden className="eco-icon" />
                 </button>
               </div>
@@ -1197,6 +1256,36 @@ export default function SupplierInvoicesClient() {
             </div>
 
             <div className="eco-invoices-drawer__body">
+              {canManageInvoices && !allBranchesMode && (
+                <section className="eco-invoices-detail-block">
+                  {invoiceEdit ? (
+                    <form onSubmit={(event) => void saveInvoice(event)}>
+                      <div className="eco-invoices-payment-grid">
+                        <label>Номер счёта <EcoInput value={invoiceEdit.number} onChange={(event) => setInvoiceEdit({ ...invoiceEdit, number: event.target.value })} /></label>
+                        <label>Дата счёта <EcoInput type="date" required value={invoiceEdit.invoiceDate} onChange={(event) => setInvoiceEdit({ ...invoiceEdit, invoiceDate: event.target.value })} /></label>
+                        <label>Оплатить до <EcoInput type="date" value={invoiceEdit.dueDate} onChange={(event) => setInvoiceEdit({ ...invoiceEdit, dueDate: event.target.value })} /></label>
+                        <label>Комментарий <EcoInput value={invoiceEdit.comment} onChange={(event) => setInvoiceEdit({ ...invoiceEdit, comment: event.target.value })} /></label>
+                      </div>
+                      <div className="eco-tbank-actions">
+                        <EcoButton type="submit" variant="primary" disabled={invoiceSaving}>Сохранить счёт</EcoButton>
+                        <EcoButton type="button" disabled={invoiceSaving} onClick={() => setInvoiceEdit(null)}>Отмена</EcoButton>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="eco-tbank-actions">
+                      <EcoButton type="button" disabled={invoiceSaving} onClick={() => setInvoiceEdit({
+                        number: activeInvoice.number, invoiceDate: activeInvoice.invoiceDate,
+                        dueDate: activeInvoice.dueDate, comment: activeInvoice.comment,
+                      })}>Редактировать счёт</EcoButton>
+                      {!latestTBankPayment(activeInvoice) && activeInvoice.status !== "paid_manually" && (
+                        <EcoButton type="button" variant="danger" disabled={invoiceSaving || paymentSubmitting || tbankWorking !== null}
+                          onClick={() => void deleteInvoice(activeInvoice)}>Удалить счёт</EcoButton>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
+
               <section className="eco-invoices-detail-block">
                 <h3>Основная информация</h3>
                 <div className="eco-invoices-definition-grid">
@@ -1212,6 +1301,7 @@ export default function SupplierInvoicesClient() {
                 <p>{activeInvoice.counterpartyName || "Поставщик не указан"}</p>
               </section>
 
+              {(activeInvoice.remainingAmountCents > 0 || latestTBankPayment(activeInvoice)) && (
               <section className="eco-invoices-detail-block eco-tbank-block">
                 <div className="eco-tbank-block__head">
                   <div>
@@ -1358,6 +1448,7 @@ export default function SupplierInvoicesClient() {
                   </EcoButton>
                 </div>
               </section>
+              )}
 
               <section className="eco-invoices-detail-block">
                 <h3>Связанный складской документ</h3>
@@ -1418,19 +1509,48 @@ export default function SupplierInvoicesClient() {
                             {payment.cashExpenseOrder.status === "cancelled" ? "РКО отменён" : "РКО"}
                           </EcoBadge>
                         )}
-                        {!allBranchesMode && (
-                          payment.paymentType === "cash" ||
-                          (payment.paymentType === "bank_transfer" && payment.cashExpenseOrder && payment.cashExpenseOrder.status !== "cancelled")
-                        ) && (
-                          <EcoButton type="button" size="sm" disabled={paymentSubmitting} onClick={() => void correctCashPayment(activeInvoice, payment)}>
-                            {payment.paymentType === "cash" ? "Исправить на перевод" : "Отменить связанный РКО"}
+                        {canManageInvoices && !allBranchesMode && !latestTBankPayment(activeInvoice) && activeInvoice.status !== "paid_manually" && (
+                          <EcoButton type="button" size="sm" disabled={paymentSubmitting}
+                            onClick={() => setPaymentEdit({ id: payment.id, method: payment.paymentType, date: payment.paymentDate })}>
+                            Изменить способ оплаты
                           </EcoButton>
                         )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p>Оплат по счёту пока нет.</p>
+                  (activeInvoice.storedStatus ?? activeInvoice.status) === "paid" &&
+                  activeInvoice.source === "receipt" && activeInvoice.paidAmountCents > 0 && !latestTBankPayment(activeInvoice) ? (
+                    <>
+                      <p>Способ оплаты не указан.</p>
+                      {canManageInvoices && !allBranchesMode && !paymentEdit && (
+                        <EcoButton type="button" onClick={() => setPaymentEdit({ method: "", date: activeInvoice.invoiceDate })}>
+                          Указать способ оплаты
+                        </EcoButton>
+                      )}
+                    </>
+                  ) : <p>Оплат по счёту пока нет.</p>
+                )}
+                {paymentEdit && (
+                  <form onSubmit={(event) => void savePaymentMethod(event)}>
+                    {editedPayment && <p>{formatDate(editedPayment.paymentDate)} · {formatMoney(editedPayment.amount)}</p>}
+                    <div className="eco-invoices-payment-grid">
+                      <label>
+                        <span>Способ оплаты</span>
+                        <SupplierPaymentMethodSelect value={paymentEdit.method}
+                          onChange={(method) => setPaymentEdit({ ...paymentEdit, method })} disabled={paymentSubmitting} />
+                      </label>
+                      {(!paymentEdit.id || paymentEdit.method === "cash") && (
+                        <label>Дата оплаты <EcoInput type="date" required value={paymentEdit.date}
+                          onChange={(event) => setPaymentEdit({ ...paymentEdit, date: event.target.value })} disabled={paymentSubmitting} /></label>
+                      )}
+                    </div>
+                    {paymentEdit.method === "cash" && <p>РКО проводится в открытой кассовой смене.</p>}
+                    <div className="eco-tbank-actions">
+                      <EcoButton type="submit" variant="primary" disabled={paymentSubmitting || !paymentEdit.method}>Сохранить способ оплаты</EcoButton>
+                      <EcoButton type="button" disabled={paymentSubmitting} onClick={() => setPaymentEdit(null)}>Отмена</EcoButton>
+                    </div>
+                  </form>
                 )}
               </section>
 

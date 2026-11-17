@@ -499,34 +499,59 @@ export async function addWithdrawal(params: {
   amount: number;
   reason: string;
   comment?: string;
+  requestId?: string;
 }): Promise<CashWithdrawal> {
   const user = await requireSessionUser();
   assertOwner(user);
   const shift = await findShiftRowById(params.shiftId);
-  if (!shift || shift.status !== "open") {
-    throw new Error("Открытая смена не найдена");
-  }
+  if (!shift) throw new Error("Кассовая смена не найдена");
   if (!Number.isFinite(params.amount) || params.amount <= 0) {
     throw new Error("Сумма должна быть положительным числом");
   }
-  const op = await prisma.$transaction(async (tx) => {
-    await assertCashAvailable(tx, shift.branchId, shift.id, centsFromRub(params.amount));
-    return tx.cashWithdrawal.create({
+
+  const id = params.requestId ? `op_withdrawal_${params.requestId}` : generateId("op");
+  const amountCents = centsFromRub(params.amount);
+  const reason = params.reason.trim();
+  const comment = params.comment?.trim() || null;
+  async function findExisting() {
+    if (!params.requestId || !shift) return null;
+    const existing = await prisma.cashWithdrawal.findFirst({
+      where: { id, branchId: shift.branchId, shiftId: shift.id, createdBy: user.login },
+    });
+    if (existing && (existing.amountCents !== amountCents || existing.reason !== reason || existing.comment !== comment)) {
+      throw new Error("Нельзя повторить изъятие с изменёнными данными.");
+    }
+    return existing ? withdrawalRowToOperation(existing) : null;
+  }
+
+  const existing = await findExisting();
+  if (existing) return existing;
+  if (shift.status !== "open") throw new Error("Открытая смена не найдена");
+  try {
+    const op = await prisma.$transaction(async (tx) => {
+      await assertCashAvailable(tx, shift.branchId, shift.id, amountCents);
+      return tx.cashWithdrawal.create({
         data: {
-          id: generateId("op"),
+          id,
           branchId: shift.branchId,
           shiftId: shift.id,
-          amountCents: centsFromRub(params.amount),
-          reason: params.reason.trim(),
-          comment: params.comment?.trim() || null,
+          amountCents,
+          reason,
+          comment,
           createdBy: user.login,
           createdByName: user.name,
           createdByRole: user.role,
           source: "local",
-      },
-    });
-  }, { timeout: 25_000 });
-  return withdrawalRowToOperation(op);
+        },
+      });
+    }, { timeout: 25_000 });
+    return withdrawalRowToOperation(op);
+  } catch (error) {
+    // A concurrent attempt may have committed while this one waited for the cash shift lock.
+    const committed = await findExisting();
+    if (committed) return committed;
+    throw error;
+  }
 }
 
 export async function addExpense(params: {

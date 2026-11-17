@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   Check,
@@ -188,6 +188,21 @@ async function safeJson<T = unknown>(response: Response): Promise<T | null> {
   }
 }
 
+async function fetchCashWithRetry(url: string, options: RequestInit) {
+  const attempt = async () => {
+    const response = await fetch(url, options);
+    if ([502, 503, 504].includes(response.status)) throw new Error("Сервис кассы временно недоступен.");
+    return response;
+  };
+  try {
+    return await attempt();
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return attempt();
+  }
+}
+
 function errorFromJson(data: unknown, fallback: string): string {
   if (data && typeof data === "object") {
     const error = (data as { error?: unknown }).error;
@@ -289,6 +304,11 @@ export default function CashPage() {
 
   const [openingCashInput, setOpeningCashInput] = useState("");
 
+  const [cashReload, setCashReload] = useState(0);
+  const pendingWithdrawal = useRef<{ payload: string; requestId: string } | null>(null);
+  const withdrawalSending = useRef(false);
+  const [withdrawalSaved, setWithdrawalSaved] = useState(false);
+  const [withdrawalError, setWithdrawalError] = useState<string | null>(null);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawReason, setWithdrawReason] = useState("");
   const [withdrawComment, setWithdrawComment] = useState("");
@@ -439,59 +459,51 @@ export default function CashPage() {
   useEffect(() => {
     if (!hasCashAccess || checkingAuth) return;
     let cancelled = false;
+    const controller = new AbortController();
+
     async function loadCashState() {
       setLoading(true);
       setError(null);
       try {
-        const [currentResult, historyResult] = await Promise.allSettled([
-          fetch("/api/cash", { cache: "no-store" }),
-          fetch("/api/cash?mode=history", { cache: "no-store" }),
-        ]);
+        const response = await fetchCashWithRetry("/api/cash", { cache: "no-store", signal: controller.signal });
+        const data = await safeJson<{ shift?: CashShift | null; operations?: CashOperation[]; error?: string }>(response);
         if (cancelled) return;
-
-        if (currentResult.status === "fulfilled") {
-          const currentRes = currentResult.value;
-          const currentJson = await safeJson<{
-            shift?: CashShift | null;
-            operations?: CashOperation[];
-            error?: string;
-          }>(currentRes);
-          if (cancelled) return;
-          if (!currentRes.ok) {
-            setError(errorFromJson(currentJson, "Ошибка загрузки кассы"));
-          } else {
-            setShift(currentJson?.shift ?? null);
-            if (currentJson?.shift?.timezone) {
-              setExpenseDate(getServiceDateForTimezone(currentJson.shift.timezone));
-            }
-            setOperations(Array.isArray(currentJson?.operations) ? currentJson.operations : []);
-          }
-        } else {
-          setError(
-            currentResult.reason instanceof Error
-              ? currentResult.reason.message
-              : "Ошибка загрузки кассы"
-          );
+        if (!response.ok || !data || !("shift" in data) || !Array.isArray(data.operations)) {
+          setError(errorFromJson(data, "Ошибка загрузки кассы."));
+          return;
         }
-
-        if (historyResult.status === "fulfilled") {
-          const historyRes = historyResult.value;
-          const historyJson = await safeJson<{ shifts?: CashShift[] }>(historyRes);
-          if (!cancelled && historyRes.ok) {
-            setHistoryShifts(Array.isArray(historyJson?.shifts) ? historyJson.shifts : []);
-          }
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Ошибка загрузки кассы");
-        }
+        setShift(data.shift ?? null);
+        if (cashReload === 0 && data.shift?.timezone) setExpenseDate(getServiceDateForTimezone(data.shift.timezone));
+        setOperations(data.operations);
+      } catch {
+        if (!cancelled) setError("Связь с сервером прервалась. Повторите загрузку.");
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
+    async function loadHistory() {
+      try {
+        const response = await fetchCashWithRetry("/api/cash?mode=history", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) return;
+        const data = await safeJson<{ shifts?: CashShift[] }>(response);
+        if (!cancelled && Array.isArray(data?.shifts)) setHistoryShifts(data.shifts);
+      } catch {
+        // Current shift actions are available independently of the history.
+      }
+    }
+
+    void loadCashState();
+    void loadHistory();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [checkingAuth, hasCashAccess, cashReload]);
+
+  useEffect(() => {
+    if (!hasCashAccess || checkingAuth) return;
+    let cancelled = false;
     async function loadExpenseRefs() {
       setExpenseRefsLoading(true);
       setExpenseRefsError(null);
@@ -555,7 +567,6 @@ export default function CashPage() {
       }
     }
 
-    void loadCashState();
     void loadExpenseRefs();
     return () => {
       cancelled = true;
@@ -665,44 +676,78 @@ export default function CashPage() {
   }
 
   async function handleAddWithdrawal() {
-    if (!shift) return;
-    setError(null);
+    if (!shift || loading || withdrawalSending.current) return;
+    setWithdrawalError(null);
+    setWithdrawalSaved(false);
     const amount = parseMoneyInput(withdrawAmount);
+    const reason = withdrawReason.trim();
     if (amount <= 0) {
-      setError("Сумма изъятия должна быть больше нуля");
+      setWithdrawalError("Сумма изъятия должна быть больше нуля");
       return;
     }
-    if (!withdrawReason.trim()) {
-      setError("Укажите причину изъятия");
+    if (!reason) {
+      setWithdrawalError("Укажите причину изъятия");
       return;
     }
+
+    const withdrawal = {
+      action: "addWithdrawal",
+      shiftId: shift.id,
+      amount,
+      reason,
+      comment: withdrawComment.trim() || undefined,
+    };
+    const payload = JSON.stringify(withdrawal);
+    const storageKey = `cash-withdrawal:${user?.login}:${shift.id}`;
+    withdrawalSending.current = true;
     setLoading(true);
     try {
-      const res = await fetch("/api/cash", {
+      let previous = pendingWithdrawal.current;
+      try {
+        const stored = sessionStorage.getItem(storageKey);
+        if (stored) previous = JSON.parse(stored);
+      } catch {
+        // The in-memory request still protects retries in this form.
+      }
+      const requestId = previous?.payload === payload ? previous.requestId : crypto.randomUUID();
+      pendingWithdrawal.current = { payload, requestId };
+      try {
+        sessionStorage.setItem(storageKey, JSON.stringify(pendingWithdrawal.current));
+      } catch {
+        // Session storage is optional.
+      }
+
+      const response = await fetchCashWithRetry("/api/cash", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "addWithdrawal",
-          shiftId: shift.id,
-          amount,
-          reason: withdrawReason.trim(),
-          comment: withdrawComment.trim() || undefined,
-        }),
+        body: JSON.stringify({ ...withdrawal, requestId }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Ошибка изъятия наличных");
+      const data = await safeJson<{ operation?: CashOperation; error?: string }>(response);
+      if (!response.ok) {
+        setWithdrawalError(errorFromJson(data, "Не удалось подтвердить изъятие. Повторите с теми же данными."));
         return;
       }
-      if (data.operation) {
-        setOperations((prev) => [...prev, data.operation]);
+
+      const operation = data?.operation;
+      if (!operation || operation.type !== "withdrawal" || operation.shiftId !== shift.id) {
+        throw new Error("Не получено подтверждение изъятия.");
+      }
+      setOperations((current) => current.some((item) => item.id === operation.id) ? current : [...current, operation]);
+      pendingWithdrawal.current = null;
+      try {
+        sessionStorage.removeItem(storageKey);
+      } catch {
+        // The operation is already confirmed.
       }
       setWithdrawAmount("");
       setWithdrawReason("");
       setWithdrawComment("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка сети при изъятии");
+      setWithdrawalSaved(true);
+      setCashReload((current) => current + 1);
+    } catch {
+      setWithdrawalError("Связь прервалась. Повторите изъятие с теми же данными. Система проверит, было ли оно уже сохранено.");
     } finally {
+      withdrawalSending.current = false;
       setLoading(false);
     }
   }
@@ -1702,17 +1747,19 @@ export default function CashPage() {
               <div className="eco-cash-form-grid eco-cash-form-grid--compact">
                 <label className="eco-cash-field">
                   <span>Сумма</span>
-                  <MoneyInput value={withdrawAmount} onValueChange={(_, draft) => setWithdrawAmount(draft)} placeholder="0,00" className="eco-input l-money eco-cash-money-input" />
+                  <MoneyInput value={withdrawAmount} disabled={loading} onValueChange={(_, draft) => setWithdrawAmount(draft)} placeholder="0,00" className="eco-input l-money eco-cash-money-input" />
                 </label>
                 <label className="eco-cash-field">
                   <span>Причина</span>
-                  <input value={withdrawReason} onChange={(event) => setWithdrawReason(event.target.value)} className="eco-input" placeholder="Например: инкассация" />
+                  <input value={withdrawReason} disabled={loading} onChange={(event) => setWithdrawReason(event.target.value)} className="eco-input" placeholder="Например: инкассация" />
                 </label>
                 <label className="eco-cash-field eco-cash-field--wide">
                   <span>Комментарий</span>
-                  <input value={withdrawComment} onChange={(event) => setWithdrawComment(event.target.value)} className="eco-input" />
+                  <input value={withdrawComment} disabled={loading} onChange={(event) => setWithdrawComment(event.target.value)} className="eco-input" />
                 </label>
               </div>
+              {withdrawalSaved && <p role="status">Изъятие сохранено.</p>}
+              {withdrawalError && <div role="alert" className="eco-cash-error">{withdrawalError}</div>}
               <div className="eco-cash-action-row eco-cash-action-row--end">
                 <button type="button" onClick={handleAddWithdrawal} disabled={loading || user?.role !== "owner"} className="eco-btn eco-btn--primary">
                   <Plus aria-hidden className="eco-icon" />
@@ -2066,7 +2113,7 @@ export default function CashPage() {
       {error && (
         <div className="eco-cash-error eco-cash-error--page">
           <span>Не удалось загрузить кассу: {error}</span>
-          <button type="button" className="eco-btn eco-btn--sm" onClick={() => window.location.reload()}>
+          <button type="button" className="eco-btn eco-btn--sm" disabled={loading} onClick={() => setCashReload((current) => current + 1)}>
             Повторить
           </button>
         </div>

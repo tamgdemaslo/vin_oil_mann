@@ -1,5 +1,7 @@
 "use client";
 
+import { SupplierPaymentMethodSelect } from "@/components/platform/SupplierPaymentMethodSelect";
+
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -247,6 +249,7 @@ type ExistingInvoiceDraft = {
   invoiceDate: string;
   dueDate: string;
   status: string;
+  paymentType: string;
 };
 
 const emptySupplierDraft = {
@@ -430,6 +433,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [invoiceDate, setInvoiceDate] = useState(todayInput());
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState("unpaid");
+  const [invoicePaymentType, setInvoicePaymentType] = useState("");
   const [description, setDescription] = useState("");
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("expense");
   const [adjustmentReason, setAdjustmentReason] = useState("");
@@ -446,6 +450,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<FormMode>("new");
   const [editingDocument, setEditingDocument] = useState<MovementRow | null>(null);
+  const needsInvoicePaymentMethod = invoiceStatus === "paid" && !(editingDocument?.invoice &&
+    ["paid", "partial", "paid_manually", "requires_review"].includes(editingDocument.invoice.status));
   const [savingAction, setSavingAction] = useState<SaveAction | null>(null);
   const [receiptDialog, setReceiptDialog] = useState<ReceiptDialogState | null>(null);
   const [priceLabelDocument, setPriceLabelDocument] = useState<MovementRow | null>(null);
@@ -556,6 +562,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setInvoiceDate(today);
     setInvoiceDueDate("");
     setInvoiceStatus("unpaid");
+    setInvoicePaymentType("");
     setAdjustmentType("expense");
     setAdjustmentReason("");
     setEditingDocument(null);
@@ -644,6 +651,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setInvoiceDate(document.invoice?.invoiceDate || document.documentDate || today);
     setInvoiceDueDate(document.invoice?.dueDate ?? "");
     setInvoiceStatus(document.invoice?.status ?? "unpaid");
+    setInvoicePaymentType("");
     setFormError(null);
     setInfo(null);
     setFormOpen(true);
@@ -1425,6 +1433,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       return;
     }
 
+    if (isReceipt && createInvoice && needsInvoicePaymentMethod && !invoicePaymentType) {
+      setFormError("Выберите способ оплаты счёта");
+      return;
+    }
+
     const action: SaveAction = nextApplicable ? "conduct" : "draft";
     const moment = `${documentDate} ${documentTime || "00:00"}:00`;
     setSavingAction(action);
@@ -1455,6 +1468,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                   invoiceDate,
                   dueDate: invoiceDueDate || undefined,
                   status: invoiceStatus,
+                  paymentType: invoicePaymentType || undefined,
                 }
               : undefined,
             positions: positions.map((position) => ({
@@ -1517,6 +1531,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       invoiceDate: document.documentDate,
       dueDate: "",
       status: "unpaid",
+      paymentType: "",
     });
     setFormError(null);
     setInfo(null);
@@ -1524,6 +1539,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
 
   async function createInvoiceForExistingReceipt(document: MovementRow) {
     if (!invoiceDraft || invoiceDraft.documentId !== document.id) return;
+    if (invoiceDraft.status === "paid" && !invoiceDraft.paymentType) {
+      setFormError("Выберите способ оплаты счёта");
+      return;
+    }
     setInvoiceSaving(true);
     setFormError(null);
     setInfo(null);
@@ -1537,6 +1556,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           invoiceDate: invoiceDraft.invoiceDate || document.documentDate,
           dueDate: invoiceDraft.dueDate || undefined,
           status: invoiceDraft.status,
+          paymentType: invoiceDraft.paymentType || undefined,
         }),
       });
       const data = await readJson<{ number?: string; error?: string }>(res);
@@ -2262,6 +2282,12 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                           <option value="paid">Оплачен</option>
                         </EcoSelect>
                       </label>
+                      {needsInvoicePaymentMethod && (
+                        <label className="eco-receipt-field">
+                          <span>Способ оплаты</span>
+                          <SupplierPaymentMethodSelect value={invoicePaymentType} onChange={setInvoicePaymentType} disabled={readOnly} />
+                        </label>
+                      )}
                     </div>
                   )}
 
@@ -3143,9 +3169,13 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                       <EcoInput type="date" value={invoiceDraft.dueDate} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, dueDate: event.target.value })} />
                                       <EcoSelect value={invoiceDraft.status} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, status: event.target.value })}>
                                         <option value="unpaid">Не оплачен</option>
-                                        <option value="partial">Частично</option>
+                                                      <option value="partial">Частично</option>
                                         <option value="paid">Оплачен</option>
                                       </EcoSelect>
+                                      {invoiceDraft.status === "paid" && (
+                                        <SupplierPaymentMethodSelect value={invoiceDraft.paymentType}
+                                          onChange={(paymentType) => setInvoiceDraft({ ...invoiceDraft, paymentType })} disabled={invoiceSaving} />
+                                      )}
                                       <EcoButton type="button" variant="primary" onClick={() => void createInvoiceForExistingReceipt(document)} disabled={invoiceSaving}>
                                         {invoiceSaving ? <Loader2 size={14} /> : <Save size={14} />}
                                         Сохранить счёт

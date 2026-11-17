@@ -109,7 +109,12 @@ async function mutateCash(request: NextRequest) {
         if (!reason) {
           return NextResponse.json({ error: "Укажите причину изъятия" }, { status: 400 });
         }
-        const op = await addWithdrawal({ shiftId, amount, reason, comment });
+        const requestId: unknown = body.requestId;
+        if (requestId !== undefined && (typeof requestId !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId))) {
+          return NextResponse.json({ error: "Некорректный идентификатор изъятия" }, { status: 400 });
+        }
+        const op = await addWithdrawal({ shiftId, amount, reason, comment, requestId });
         return NextResponse.json({ operation: op });
       }
       case "addExpense": {
