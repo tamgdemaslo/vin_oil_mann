@@ -32,6 +32,20 @@ export default function TransmissionQuoteClient() {
     const caseId = params.get("case");
     if (params.get("source") === "akpp") setSourcePage("/services/zamena-masla-akpp");
     setHelp(params.get("mode") === "help");
+    if (params.get("source") === "akpp" && params.get("mode") === "help") {
+      const maintenance = params.get("maintenance");
+      const distance = params.get("distance") ?? "";
+      if (maintenance === "yes") {
+        const mileage = /^\d{1,7}$/.test(distance)
+          ? ` После последней замены прошло ${new Intl.NumberFormat("ru-RU").format(Number(distance))} км.`
+          : distance === "unknown" ? " Пробег после замены неизвестен." : "";
+        setComment(`Жалоб на работу АКПП нет. Масло меняли.${mileage}`);
+      } else if (maintenance === "no") {
+        setComment("Жалоб на работу АКПП нет. Масло ещё не меняли.");
+      } else if (maintenance === "unknown") {
+        setComment("Жалоб на работу АКПП нет. История замены масла неизвестна.");
+      }
+    }
     if (caseId && /^[a-z0-9-]{1,120}$/i.test(caseId)) setSourcePage(`/case/${caseId}`);
     setUtm(Object.fromEntries([...params.entries()].filter(([key]) => /^utm_(source|medium|campaign|content|term)$/.test(key))));
   }, []);
