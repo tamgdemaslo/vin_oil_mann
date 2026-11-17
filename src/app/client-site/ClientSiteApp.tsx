@@ -455,6 +455,7 @@ const BRANCHES = [
     phoneHref: 'tel:+79950545859',
     hours: 'Вт–пт 09:00–19:00 · сб 10:00–17:00',
     daysOff: 'Пн и вс — выходные',
+    routeUrl: 'https://yandex.ru/maps/?rtext=~54.711374%2C20.547534&rtt=auto',
     mapUrl: 'https://yandex.ru/maps/org/tam_gde_maslo/120778290333/',
     mapEmbed: 'https://yandex.ru/map-widget/v1/?ll=20.547534%2C54.711374&mode=search&oid=120778290333&ol=biz&z=16',
   },
@@ -466,6 +467,7 @@ const BRANCHES = [
     phoneHref: 'tel:+79650545858',
     hours: 'Пн, чт–вс 09:00–19:00',
     daysOff: 'Вт и ср — выходные',
+    routeUrl: 'https://yandex.ru/maps/?rtext=~54.736088%2C20.573936&rtt=auto',
     mapUrl: 'https://yandex.ru/maps/org/tam_gde_maslo/76115472266/',
     mapEmbed: 'https://yandex.ru/map-widget/v1/?ll=20.573936%2C54.736088&mode=search&oid=76115472266&ol=biz&z=16',
   },
@@ -1222,7 +1224,7 @@ function BranchCallButton() {
   );
 }
 
-function Footer({ compact = false }) {
+function Footer({ compact = false, showCatalogRoutes = false }) {
   return (
     <footer style={{background: '#0a0a0a', color: '#F5F2ED', borderTop: '1px solid var(--line)'}}>
       {/* Map + hours block */}
@@ -1246,11 +1248,28 @@ function Footer({ compact = false }) {
           <div className="t-eyebrow" style={{marginBottom: 14}}>Адреса и часы</div>
           <div className="client-footer__branch-list">
             {BRANCHES.map(branch => (
-              <a key={branch.id} href={branch.mapUrl} target="_blank" rel="noreferrer" className="client-footer__branch">
-                <strong>{branch.label}</strong>
-                <span>{branch.hours}</span>
-                <small>{branch.daysOff} · открыть в Яндекс Картах ↗</small>
-              </a>
+              <div key={branch.id}>
+                <a href={branch.mapUrl} target="_blank" rel="noreferrer" className="client-footer__branch">
+                  <strong>{branch.label}</strong>
+                  <span>{branch.hours}</span>
+                  <small>{branch.daysOff} · открыть в Яндекс Картах ↗</small>
+                </a>
+                {showCatalogRoutes && (
+                  <a
+                    className="btn ghost"
+                    style={{ marginTop: 8 }}
+                    href={branch.routeUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Построить маршрут — ${branch.label}`}
+                    onClick={() => trackClientGoal(branch.id === 'dachnaya'
+                      ? 'oil_catalog_route_dachnaya'
+                      : 'oil_catalog_route_gagarina')}
+                  >
+                    Построить маршрут ↗
+                  </a>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -4194,7 +4213,7 @@ function App({
     <CatalogCtx.Provider value={OILS}><RouterCtx.Provider value={{ ...router, catalogVersion, catalogTotal, catalogLoadingMore }}>
       <TopBar />
       {page}
-      <Footer compact={router.path === AKPP_PATH} />
+      <Footer compact={router.path === AKPP_PATH} showCatalogRoutes={seg[0] === 'shop'} />
     </RouterCtx.Provider></CatalogCtx.Provider>
   );
 }
