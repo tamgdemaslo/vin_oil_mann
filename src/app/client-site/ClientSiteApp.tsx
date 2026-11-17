@@ -148,8 +148,8 @@ const CASES = [
     mileage: 'без жалоб',
     fluid: 'AW-2 · G 053 001',
     duration: 'около 3 ч',
-    cost: 4990,
-    costLabel: 'Только работы',
+    cost: 7990,
+    costLabel: 'Работа со своим маслом',
     summary: 'Проверили электронику АКПП, оценили слитое масло и обновили жидкость аппаратным методом. Использовали 12 л ATF с допуском AW-2; уровень выставили при 35–45 °C.',
     hero: 'skoda',
     heroImage: '/cases/skoda-karoq-aq300/hero.webp',
@@ -199,8 +199,8 @@ const CASES = [
       {k: 'Уровень ATF', v: 'при 35–45 °C'},
       {k: 'Моменты', v: '40 / 9 / 50 Н·м'},
       {k: 'Время работы', v: 'около 3 часов'},
-      {k: 'Работа с маслом клиента', v: '4 990 ₽'},
-      {k: 'При покупке масла у нас', v: '2 490 ₽ за работу'},
+      {k: 'Работа со своим маслом', v: '7 990 ₽'},
+      {k: 'Работа с маслом сервиса', v: '5 990 ₽'},
     ],
   },
   {
@@ -210,8 +210,8 @@ const CASES = [
     mileage: 'без жалоб',
     fluid: '12 л ATF',
     duration: 'около 3 ч',
-    cost: 4990,
-    costLabel: 'Со своим маслом',
+    cost: 28990,
+    costLabel: 'Итого с маслом сервиса',
     summary: 'Входная диагностика не выявила ошибок и течей, но слитое масло оказалось тёмным и с запахом гари. Проверили поддон и обновили 12 л жидкости аппаратным методом.',
     hero: 'toyota',
     heroImage: '/cases/toyota-camry-u760/hero.webp',
@@ -256,8 +256,10 @@ const CASES = [
       {k: 'Аппаратная замена', v: '12 л ATF'},
       {k: 'Температура уровня', v: '35–45 °C'},
       {k: 'Время работы', v: 'около 3 часов'},
-      {k: 'Работа со своим маслом', v: '4 990 ₽'},
-      {k: 'При покупке масла у нас', v: '2 490 ₽ за работу'},
+      {k: 'Работа со своим маслом', v: '7 990 ₽'},
+      {k: 'Работа с маслом сервиса', v: '4 990 ₽'},
+      {k: 'Масло сервиса · 12 л', v: '24 000 ₽'},
+      {k: 'Итого с маслом сервиса', v: '28 990 ₽'},
     ],
   },
   {
@@ -326,8 +328,8 @@ const CASES = [
     mileage: '110 000 км',
     fluid: '4 агрегата',
     duration: 'регламентный сервис',
-    cost: null,
-    costLabel: 'Стоимость',
+    cost: 31204,
+    costLabel: 'Под ключ по заказ-наряду',
     summary: 'Обслужили всю трансмиссию: заменили масло и фильтр в DSG DQ250, очистили сетку насоса Haldex 5 и обновили масло в заднем редукторе и раздатке.',
     hero: 'volkswagen',
     heroImage: '/cases/volkswagen-tiguan-dq250/hero.webp',
@@ -385,7 +387,7 @@ const CASES = [
     mileage: 'сервис 07/24',
     fluid: 'DOT 4 · 1 л',
     duration: '1 нормо-час',
-    cost: 2000,
+    cost: 3500,
     costLabel: 'Работа',
     summary: 'Заменили тормозную жидкость под давлением, прокачали четыре контура и активировали насос ABS диагностическим сканером. После обслуживания сбросили напоминание и проверили педаль на тест-драйве.',
     hero: 'bmw',
@@ -431,7 +433,7 @@ const CASES = [
       {k: 'Порядок прокачки', v: 'RR → RL → FR → FL'},
       {k: 'Момент штуцера', v: '12 Н·м'},
       {k: 'Диагностика', v: 'Launch · ABS bleed'},
-      {k: 'Работа', v: '1 нормо-час · 2 000 ₽'},
+      {k: 'Работа', v: '1 нормо-час · 3 500 ₽'},
     ],
   },
 ];
@@ -2969,6 +2971,12 @@ function CasesPage() {
                 <div style={{textAlign: 'right'}}>
                   <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.12em', marginBottom: 6}}>{c.costLabel || 'Сумма работы'}</div>
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: c.cost == null ? 24 : 38, color: '#F5F2ED', lineHeight: 1}}>{c.cost == null ? 'ПО СОГЛАСОВАНИЮ' : fmtMoney(c.cost)}</div>
+                  {c.spec.filter(row =>
+                    row.k !== c.costLabel &&
+                    ['Работа со своим маслом', 'Работа с маслом сервиса', 'Масло сервиса · 12 л'].includes(row.k)
+                  ).map(row => (
+                    <div key={row.k} style={{marginTop: 6, color: '#BDBDBD', fontSize: 13}}>{row.k} · {row.v}</div>
+                  ))}
                   <div style={{marginTop: 14, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em'}}>ОТКРЫТЬ →</div>
                 </div>
               </div>
