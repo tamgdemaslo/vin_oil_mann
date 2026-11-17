@@ -101,6 +101,8 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Next.js production build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run build
 
       - name: Verify price-label font assets in standalone build

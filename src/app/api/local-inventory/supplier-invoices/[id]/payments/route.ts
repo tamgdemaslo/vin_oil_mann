@@ -43,13 +43,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: "Недостаточно прав для изменения оплаты." }, { status: 403 });
   }
   const body = await request.json().catch(() => null);
-  if (typeof body?.paymentId !== "string" || typeof body?.paymentType !== "string") {
+  if (typeof body?.paymentType !== "string" ||
+      (body.paymentId !== undefined && (typeof body.paymentId !== "string" || !body.paymentId)) ||
+      (body.paymentDate !== undefined && typeof body.paymentDate !== "string")) {
     return NextResponse.json({ error: "Укажите оплату и новый способ оплаты." }, { status: 400 });
   }
   return runWithBranchApiContext(access.context, async () => {
     try {
       const { id } = await params;
-      return NextResponse.json(await correctSupplierCashPayment(id, body.paymentId, body.paymentType, access.context.user));
+      return NextResponse.json(await correctSupplierCashPayment(id, body.paymentId, body.paymentType, access.context.user, body.paymentDate));
     } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : "Не удалось исправить оплату." }, { status: 400 });
     }
