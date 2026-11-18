@@ -11,7 +11,7 @@ import styles from "./maintenance-quote.module.css";
 
 type Store = { id: string; name: string; organizationId: string | null };
 type Props = { branchName?: string; organizationId: string | null; stores: Store[]; services: QuoteService[]; timeZone?: string | null };
-type FilterSelection = Pick<MannManualSelection, "variantId" | "make" | "model"> & { variantIds?: string[]; year?: number | null; modification?: string | null; engineCode?: string | null };
+type FilterSelection = Pick<MannManualSelection, "variantId" | "make" | "model"> & { applicationId?: string; variantIds?: string[]; year?: number | null; modification?: string | null; engineCode?: string | null };
 type Match = {
   mannArticleNormalized: string;
   compatibleProducts?: QuoteFilterGroup["products"];
@@ -32,6 +32,7 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores, 
   const storeOrganizationId = store?.organizationId ?? organizationId;
   const [vehicle, setVehicle] = useState<MaintenanceQuoteVehicleContext | null>(null);
   const [activeEditor, setActiveEditor] = useState(0);
+  const [modificationRevision, setModificationRevision] = useState(0);
   const nextEditor = useRef(0);
   const [draftEditor, setDraftEditor] = useState<number | null>(null);
   const [draftVehicle, setDraftVehicle] = useState<MaintenanceQuoteVehicleContext | null>(null);
@@ -192,7 +193,12 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores, 
                 onEditVehicle={draft ? undefined : editVehicle}
                 onQuoteContextChange={setVehicleContext}
                 onUseVehicle={(identity, resolution) => setLookup(resolution?.selectedApplication ? { ...resolution.selectedApplication, year: identity.year } : null)}
-                onConfirmMannCandidate={(identity, candidate) => setLookup({ ...candidate, year: identity.year })}
+                onConfirmMannCandidate={(identity, candidate) => {
+                  if (!draft && lookupSelection?.applicationId && lookupSelection.applicationId !== candidate.applicationId) {
+                    setModificationRevision(revision => revision + 1);
+                  }
+                  setLookup({ ...candidate, year: identity.year });
+                }}
                 onLookupStart={() => resetVehicle(false)}
                 onManualMode={() => resetVehicle(true)}
               />
@@ -223,7 +229,7 @@ export function MaintenanceQuoteWorkspace({ branchName, organizationId, stores, 
         {draftEditor === null && (manualSelection || (manualCatalogOpen && !vehicle)) && <label className={styles.manual}>Название для предложения <span>Необязательно</span>
           <input id="quote-vehicle-name" value={vehicleName} onChange={(event) => setVehicleName(event.target.value)} placeholder="Например, Kia K5 2.0, 2021" />
         </label>}
-      </section>} quoteContextKey={String(activeEditor)} vehicleTitle={vehicleTitle} warehouseId={storeId} organizationId={storeOrganizationId}
+      </section>} quoteContextKey={`${activeEditor}:${modificationRevision}`} vehicleTitle={vehicleTitle} warehouseId={storeId} organizationId={storeOrganizationId}
         filterVehicleContext={selection ? [`${selection.make} ${selection.model}`, selection.modification, selection.engineCode, selection.year].filter(Boolean).join(" · ") : undefined}
         filterStockError={filterState.error || undefined}
         profile={vehicle?.profile ?? null} research={vehicle?.research ?? null} filters={filters} filtersLoading={filterState.loading} services={services} timeZone={timeZone ?? undefined} />
