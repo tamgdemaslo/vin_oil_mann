@@ -159,8 +159,14 @@ function errorCopy(error: unknown) {
   return error.message;
 }
 
+const diagnosticServiceNamesByBranch: Readonly<Partial<Record<string, string>>> = {
+  cmsd9o02w006qmu01u4ij1lhz: "Диагностика АКПП",
+  "branch-main": "Компьютерная диагностика",
+};
+
 export default function BookingClient() {
   const bookingStarted = useRef(false);
+  const diagnosticSelectedForBranch = useRef<string | null>(null);
   const [akppContext, setAkppContext] = useState(false);
   const [step, setStep] = useState(1), [enteredByBranchLink, setEnteredByBranchLink] = useState(false);
   const [branchLinkError, setBranchLinkError] = useState(""), [branches, setBranches] = useState<Branch[]>([]);
@@ -271,10 +277,21 @@ export default function BookingClient() {
     const controller = new AbortController(); servicesAbortRef.current = controller; setServicesLoading(true); setServices([]);
     fetch(`/api/public/booking/services?branchId=${encodeURIComponent(branchId)}`, { signal: controller.signal })
       .then((response) => readJson<{ services: Service[] }>(response)).then((data) => {
+        if (controller.signal.aborted) return;
         const availableServices = akppContext && !submissionUnknown
           ? data.services.filter(service => isTransmissionOilVariant(service.name))
           : data.services;
         setServices(availableServices);
+        const requestedService = new URLSearchParams(window.location.search).get("service");
+        if (requestedService === "Диагностика АКПП" && !submissionUnknown && diagnosticSelectedForBranch.current !== branchId) {
+          diagnosticSelectedForBranch.current = branchId;
+          const name = diagnosticServiceNamesByBranch[branchId];
+          const diagnostic = availableServices.find(service => service.name === name);
+          if (diagnostic) {
+            setServiceIds([diagnostic.id]);
+            return;
+          }
+        }
         setServiceIds(current => normalizeBookingServiceSelection(current, availableServices));
       }).catch((error) => { if (!(error instanceof DOMException && error.name === "AbortError")) setFormError(errorCopy(error)); })
       .finally(() => { if (!controller.signal.aborted) setServicesLoading(false); });
@@ -310,7 +327,12 @@ export default function BookingClient() {
   function chooseBranch(nextId: string) {
     const next = branches.find((item) => item.id === nextId), changed = Boolean(branchId && branchId !== nextId);
     if (next) trackBookingStart(next.id);
-    setBranchId(nextId); if (changed) { setServiceIds([]); setServices([]); }
+    setBranchId(nextId);
+    if (changed) {
+      diagnosticSelectedForBranch.current = null;
+      setServiceIds([]);
+      setServices([]);
+    }
     setLocalDate(next ? branchToday(next.timezone) : ""); setAvailability(null); setAvailabilityError("");
     setNearestDays([]); setSelectedSlot(null); setSlotNotice(changed ? "Филиал изменён. Услуги и время будут рассчитаны заново." : "");
     setBranchLinkError(""); setFormError(""); setSubmissionUnknown(false);
