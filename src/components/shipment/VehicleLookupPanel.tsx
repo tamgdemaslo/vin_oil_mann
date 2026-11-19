@@ -1,6 +1,7 @@
 "use client";
 
 import lookupStyles from "./VehicleLookupCandidates.module.css";
+import { withMannEngineOilReference } from "@/lib/mann-engine-oil-reference";
 
 import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, CircleStop, Cog, Droplet, Gauge, GitBranch, Info, Link2, RefreshCw, Settings, Snowflake, type LucideIcon } from "lucide-react";
@@ -605,23 +606,26 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
     setTechnicalProfileError("");
     setTechnicalProfileLoading(true);
     if (!retryFailed) setFluidResearch(null);
+    const candidate = confirmedTechnicalCandidateRef.current;
+    const vehicleContext = mannTechnicalContextFromVehicle(vehicle, details,
+      candidate?.variantIds.length === variantKeys.length && variantKeys.every(key => candidate.variantIds.includes(key))
+        ? candidate : undefined);
+    const referenceProfile = withMannEngineOilReference(null, vehicleContext);
     try {
       const response = await fetch("/api/mann-catalog/technical-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variantKeys, transmissionType, vehicleContext: mannTechnicalContextFromVehicle(vehicle, details,
-          confirmedTechnicalCandidateRef.current?.variantIds.length === variantKeys.length
-            && variantKeys.every(key => confirmedTechnicalCandidateRef.current?.variantIds.includes(key))
-            ? confirmedTechnicalCandidateRef.current : undefined) }),
+        body: JSON.stringify({ variantKeys, transmissionType, vehicleContext }),
         signal: controller.signal,
       });
       const data = await responseJson<MannUnifiedTechnicalProfile & { error?: string }>(response);
       if (requestId !== technicalProfileRequestIdRef.current) return;
       if (!response.ok || !data) {
-        setTechnicalProfileError(data?.error ?? "Не удалось загрузить технический профиль.");
+        if (referenceProfile) setTechnicalProfile(referenceProfile);
+        else setTechnicalProfileError(data?.error ?? "Не удалось загрузить технический профиль.");
         return;
       }
-      setTechnicalProfile(data);
+      setTechnicalProfile(withMannEngineOilReference(data, vehicleContext));
       setTechnicalProfileLoading(false);
       await runFluidResearchGroups({
         signal: controller.signal, initial: retryFailed ? fluidResearch ?? undefined : undefined,
@@ -629,8 +633,7 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
         request: async researchGroup => {
           const researchResponse = await fetch("/api/mann-catalog/technical-profile", {
           method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
-          body: JSON.stringify({ researchMissing: true, researchGroup, retryFailed, variantKeys, transmissionType, vehicleContext: mannTechnicalContextFromVehicle(vehicle, details,
-            confirmedTechnicalCandidateRef.current?.variantIds.length === variantKeys.length && variantKeys.every(key => confirmedTechnicalCandidateRef.current?.variantIds.includes(key)) ? confirmedTechnicalCandidateRef.current : undefined) }),
+          body: JSON.stringify({ researchMissing: true, researchGroup, retryFailed, variantKeys, transmissionType, vehicleContext }),
         });
         const research = await responseJson<MannFluidResearchResult>(researchResponse);
           return researchResponse.ok && research ? research : { status: "unavailable", items: [], message: "Запрос группы не выполнен. Остальные результаты сохранены." };
@@ -639,7 +642,8 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return;
       if (requestId !== technicalProfileRequestIdRef.current) return;
-      setTechnicalProfileError("Технический профиль временно недоступен. Подбор фильтров продолжает работать.");
+      if (referenceProfile) setTechnicalProfile(current => current ?? referenceProfile);
+      else setTechnicalProfileError("Технический профиль временно недоступен. Подбор фильтров продолжает работать.");
     } finally {
       if (requestId === technicalProfileRequestIdRef.current) setTechnicalProfileLoading(false);
     }

@@ -1,3 +1,4 @@
+import { withMannEngineOilReference } from "@/lib/mann-engine-oil-reference";
 import { addMannResearchCatalogToProfile } from "@/lib/mann-research-catalog";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -46,9 +47,17 @@ export async function POST(request: NextRequest) {
 
   try {
     const profile = await runWithBranchApiContext(branch.context, async () => {
-      const profile = await getMannUnifiedTechnicalProfile(parsed.data.variantKeys, parsed.data.transmissionType, parsed.data.vehicleContext);
-      if (!branch.context.organizationId) return profile;
-      return addMannResearchCatalogToProfile({ organizationId: branch.context.organizationId, variantKeys: parsed.data.variantKeys, transmissionType: parsed.data.transmissionType, engineCode: parsed.data.vehicleContext?.engineCode, profile });
+      const { variantKeys, transmissionType, vehicleContext = {} } = parsed.data;
+      const { organizationId } = branch.context;
+      let profile = await getMannUnifiedTechnicalProfile(variantKeys, transmissionType, vehicleContext);
+      if (organizationId) {
+        try {
+          profile = await addMannResearchCatalogToProfile({ organizationId, variantKeys, transmissionType, engineCode: vehicleContext.engineCode, profile });
+        } catch (error) {
+          console.warn("[mann-technical-profile] research catalog unavailable", error instanceof Error ? error.message : String(error));
+        }
+      }
+      return withMannEngineOilReference(profile, vehicleContext) ?? profile;
     });
     if (parsed.data.researchMissing) {
       const organizationId = branch.context.organizationId;
