@@ -803,3 +803,30 @@ export function vehicleFieldValues(vehicle: NormalizedVehicleIdentity): Partial<
     "владельцев": vehicle.ownersCount != null ? { value: String(Math.round(vehicle.ownersCount)), source } : undefined,
   };
 }
+
+
+// Owner diagnostics expose only technical values from saved provider responses.
+export async function savedVinLookupDiagnostics(vin: string) {
+  const rows = await prisma.vehicleLookupCache.findMany({
+    where: { inputType: "vin", normalizedInputHash: inputHash(normalizeVinInput(vin)) },
+    orderBy: { completedAt: "desc" }, take: 8,
+  });
+  const technical = /vin|model|make|brand|engine|motor|year|date|volume|capacity|power|fuel|transmission|gear|drive|body|chassis|модель|марка|двиг|год|мощн|объ[её]м/i;
+  const forbidden = /key|token|secret|password|owner|address|phone|email|name.*person/i;
+  function fields(value: unknown, path = "", depth = 0): Record<string, unknown> {
+    if (!value || typeof value !== "object" || depth > 8) return {};
+    return Object.fromEntries(Object.entries(value).slice(0, 100).flatMap(([key, child]) => {
+      if (forbidden.test(key)) return [];
+      const next = path ? path + "." + key : key;
+      if (child && typeof child === "object") return Object.entries(fields(child, next, depth + 1));
+      return technical.test(next) && (typeof child === "string" || typeof child === "number")
+        ? [[next, typeof child === "string" ? child.slice(0, 300) : child]] : [];
+    }));
+  }
+  return rows.map(row => {
+    const raw = decryptRaw(row.rawResponseEncrypted);
+    return { method: row.method, status: row.status, completedAt: row.completedAt,
+      errorCode: row.errorCode, errorMessage: row.errorMessage?.replace(/key=[^&\s]+/gi, "key=[redacted]"), fields: fields(raw),
+      rootKeys: raw ? Object.keys(raw) : [], resultKeys: raw?.result && typeof raw.result === "object" ? Object.keys(raw.result) : [] };
+  });
+}
