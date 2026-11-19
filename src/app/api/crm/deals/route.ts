@@ -280,7 +280,7 @@ async function loadStagesWithLegacyDeals(): Promise<CrmStageWithDeals> {
   return stages.map((stage) => ({ ...stage, deals: (dealsByStage.get(stage.id) ?? []) as never[] })) as CrmStageWithDeals;
 }
 
-export async function GET(request?: NextRequest) {
+export async function GET(request: NextRequest) {
   return withSaveTrace(request, async () => {
     const access = await requireCrmSession();
     if (access.response) return access.response;
