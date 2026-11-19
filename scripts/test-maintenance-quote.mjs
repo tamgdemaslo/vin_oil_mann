@@ -193,3 +193,8 @@ assert.equal(quoteRequirementChoices(decodedM111, null).automaticVolume, '7');
 assert.deepEqual(quoteRequirementChoices(decodedM111, null).specifications, ['MB 229.5']);
 assert.equal(decodedEngineOilReference({ makeRaw: 'MERCEDES-BENZ', modelRaw: 'C-Klasse', generationRaw: 'III', engineCode: 'M111.955' }), null);
 console.log('Decoded generation III retains W203 chassis for oil prefill passed');
+
+assert.deepEqual(quoteRequirementChoices(decodedM111, null).viscosities, [], 'MB 229.5 must not become SAE 5');
+assert.deepEqual(quoteRequirementChoices({ ...decodedM111, items: [{ ...decodedM111.items[0], viscosityGrades: ['5W-40'] }] }, null).viscosities, ['5W-40']);
+assert.deepEqual(quoteRequirementChoices(null, { items: [{ systemCode: 'ENGINE_OIL', specification: 'MB 229.5; SAE 5W-40', volumeText: '' }] }).viscosities, ['5W-40']);
+console.log('OEM approval decimals do not become viscosity grades passed');
