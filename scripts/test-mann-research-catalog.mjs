@@ -62,5 +62,13 @@ try {
  const failed=await run(input);assert.equal(failed.errorCode,'storage');
  assert.equal(s.sources,undefined);assert.equal(s.requirements,undefined);assert.equal(s.links,undefined,'failed links roll back source and requirement writes');
  assert.equal(s.rows[0].status,'failed');
+ s=reset();
+ s.failCatalogRead=true;
+ const w203Response=await POST(new Request("http://localhost/api/mann-catalog/technical-profile", {
+   method:"POST", headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({variantKeys:["key"],vehicleContext:{model:"C-Klasse III (W203)",engineCode:"M271.940"}}),
+ }));
+ assert.equal(w203Response.status,200);
+ assert.equal((await w203Response.json()).items[0].capacities[0].nominalLiters,5.5);
  console.log('PASS linked catalog persistence, repeat read without AI, legacy promotion, deduplication, scope, verified precedence, transaction rollback');
 }finally{if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;}

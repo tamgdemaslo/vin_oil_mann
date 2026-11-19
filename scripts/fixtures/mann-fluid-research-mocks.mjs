@@ -18,6 +18,7 @@ export const prisma = {
   fluidSourceRow: {upsert:catalogUpsert('sources')},
   vehicleFluidRequirement: {upsert:catalogUpsert('requirements')},
   mannFluidRequirementLink: {upsert:catalogUpsert('links'),findMany:async ({where})=>{
+    if (globalThis.fluidResearchTest.failCatalogRead) throw new Error('Research catalog read failed');
     const s=globalThis.fluidResearchTest;
     return (s.links??[]).filter(row=>where.mannVariantKey.in.includes(row.mannVariantKey)&&row.matchMethod===where.matchMethod&&where.status.in.includes(row.status)&&row.evidenceJson.organizationId===where.evidenceJson.equals).map(row=>{
       const requirement=s.requirements.find(r=>r.id===row.requirementId);
