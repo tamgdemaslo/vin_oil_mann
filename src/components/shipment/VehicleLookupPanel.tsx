@@ -1,7 +1,7 @@
 "use client";
 
 import lookupStyles from "./VehicleLookupCandidates.module.css";
-import { withMannEngineOilReference } from "@/lib/mann-engine-oil-reference";
+import { withMannEngineOilReference, decodedEngineOilReference } from "@/lib/mann-engine-oil-reference";
 
 import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, CircleStop, Cog, Droplet, Gauge, GitBranch, Info, Link2, RefreshCw, Settings, Snowflake, type LucideIcon } from "lucide-react";
@@ -716,9 +716,7 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
 
       // Oil requirements belong to the decoded engine. A gap in the local
       // filter catalogue must not erase an independently verified oil profile.
-      const referenceProfile = withMannEngineOilReference(null, mannTechnicalContextFromVehicle({
-        ...vehicle, generationRaw: vehicle.generationRaw ?? vehicle.bodyName,
-      }));
+      const referenceProfile = decodedEngineOilReference(vehicle);
       if (referenceProfile && data.status !== "resolved") {
         setAppliedVehicle(vehicle);
         setAppliedFromCache(Boolean(fromCache));
