@@ -176,3 +176,12 @@ const serviceGroups = quoteServiceGroups(services);
 assert.deepEqual(serviceGroups.popular.map(service => service.id), ['2', '4', '1']);
 assert.deepEqual(serviceGroups.other.map(service => service.id), ['0', '3']);
 console.log('Rossko calendar-day delivery and branch service shortcuts: ok');
+
+const m111 = withMannEngineOilReference(null, { make: 'MERCEDES-BENZ', model: 'C-Klasse', generation: 'W203', engineCode: 'M111955' });
+assert.equal(m111.items[0].capacities[0].nominalLiters, 7);
+assert.equal(m111.items[0].capacities[0].serviceContext, 'WITH_FILTER');
+assert.deepEqual(quoteRequirementChoices(m111, null).specifications, ['MB 229.5']);
+assert.equal(quoteRequirementChoices(m111, null).automaticVolume, '7');
+assert.equal(withMannEngineOilReference(null, { make: 'MERCEDES-BENZ', model: 'W204', engineCode: 'M111955' }), null);
+assert.equal(withMannEngineOilReference(null, { make: 'BMW', model: 'W203', engineCode: 'M111955' }), null);
+console.log('M111.955 oil profile without MANN catalogue entry passed');

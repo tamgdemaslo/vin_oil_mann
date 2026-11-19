@@ -1,3 +1,4 @@
+import { selectMercedesVinType } from "@/lib/mercedes-vin-type";
 import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -44,6 +45,8 @@ export type NormalizedVehicleIdentity = {
   productionMonth?: string;
   modelYearFrom?: number;
   modelYearTo?: number;
+  modificationName?: string;
+  identificationNote?: string;
   engineName?: string;
   engineCode?: string;
   engineSeries?: string;
@@ -271,6 +274,7 @@ export function toVehicle(input: RecordValue, method: VehicleSourceMethod, ident
     productionMonth: consistentVehicleProductionMonth([data.ProduceDate, data.produce_date], year),
     modelYearFrom: firstYear(data, [["ModelYearFrom"], ["model_year_from"], ["StartYear"], ["super_gen", "year_from"]]),
     modelYearTo: firstYear(data, [["ModelYearTo"], ["model_year_to"], ["FinishYear"], ["super_gen", "year_to"]]),
+    modificationName: firstText(data, [["Modification"], ["modificationName"]]),
     engineName: firstText(data, [["EngineName"], ["engine_name"], ["EngineDescription"], ["engine_description"], ["Modification"], ["engine", "name"], ["tech_param", "human_name"]]),
     engineCode: normalizeEngineCode(firstText(data, [["EngineCode"], ["engine_code"], ["engine", "code"]])),
     engineSeries: normalizeEngineCode(firstText(data, [["EngineSeries"], ["engine_series"], ["engine", "series"]])),
@@ -762,6 +766,7 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
       }
     }
   }
+  mergedVehicles = selectMercedesVinType(normalizedVin, mergedVehicles);
   const best = bestVehicleByQuality(mergedVehicles);
   if (!best || assessVehicleDecodeQuality(best).status === "insufficient") {
     const anyUnavailable = attempts.some((attempt) => attempt.method !== "partsapi_vindecode" && attempt.failureCode === "PROVIDER_UNAVAILABLE");
@@ -804,29 +809,3 @@ export function vehicleFieldValues(vehicle: NormalizedVehicleIdentity): Partial<
   };
 }
 
-
-// Owner diagnostics expose only technical values from saved provider responses.
-export async function savedVinLookupDiagnostics(vin: string) {
-  const rows = await prisma.vehicleLookupCache.findMany({
-    where: { inputType: "vin", normalizedInputHash: inputHash(normalizeVinInput(vin)) },
-    orderBy: { completedAt: "desc" }, take: 8,
-  });
-  const technical = /vin|model|make|brand|engine|motor|year|date|volume|capacity|power|fuel|transmission|gear|drive|body|chassis|модель|марка|двиг|год|мощн|объ[её]м/i;
-  const forbidden = /key|token|secret|password|owner|address|phone|email|name.*person/i;
-  function fields(value: unknown, path = "", depth = 0): Record<string, unknown> {
-    if (!value || typeof value !== "object" || depth > 8) return {};
-    return Object.fromEntries(Object.entries(value).slice(0, 100).flatMap(([key, child]) => {
-      if (forbidden.test(key)) return [];
-      const next = path ? path + "." + key : key;
-      if (child && typeof child === "object") return Object.entries(fields(child, next, depth + 1));
-      return technical.test(next) && (typeof child === "string" || typeof child === "number")
-        ? [[next, typeof child === "string" ? child.slice(0, 300) : child]] : [];
-    }));
-  }
-  return rows.map(row => {
-    const raw = decryptRaw(row.rawResponseEncrypted);
-    return { method: row.method, status: row.status, completedAt: row.completedAt,
-      errorCode: row.errorCode, errorMessage: row.errorMessage?.replace(/key=[^&\s]+/gi, "key=[redacted]"), fields: fields(raw),
-      rootKeys: raw ? Object.keys(raw) : [], resultKeys: raw?.result && typeof raw.result === "object" ? Object.keys(raw.result) : [] };
-  });
-}
