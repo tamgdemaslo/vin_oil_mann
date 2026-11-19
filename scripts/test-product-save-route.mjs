@@ -24,6 +24,8 @@ try {
     };
   `);
   const jiti = createJiti(import.meta.url, { alias: {
+    "@/lib/save-trace": resolve("src/lib/save-trace.ts"),
+    "@/lib/save-trace-server": resolve("src/lib/save-trace-server.ts"),
     "@/lib/auth": mock,
     "@/lib/branch-api": mock,
     "@/lib/local-inventory-admin": mock,

@@ -1,3 +1,5 @@
+import { withSaveTrace } from "@/lib/save-trace-server";
+import { saveErrorCode } from "@/lib/save-trace";
 import { journalId } from "@/lib/booking/journal-id";
 import { journalContactSources, journalContactUrl, readJournalContact, writeJournalContact } from "@/lib/booking/journal-contact";
 import { snapshotVehicleDto } from "@/lib/booking/dto";
@@ -276,276 +278,290 @@ function managementUrl(request: NextRequest, booking: BookingWithDetails) {
 }
 
 export async function GET(request: NextRequest) {
-  const access = await requireBranchApi({ allowAll: false, requireActive: false });
-  if (!access.ok) return access.response;
-  try {
-    requireBookingCapability(canViewBookings(access.context));
-    return await runWithBranchApiContext(access.context, async () => {
-      const branchId = access.context.branchId!;
-      const branch = access.context.branch!;
-      const ownMembership = bookingViewIsSelfOnly(access.context)
-        ? await prisma.branchMembership.findFirst({ where: { branchId, userId: access.context.userId, status: "active" }, select: { id: true } })
-        : null;
-      const action = request.nextUrl.searchParams.get("action");
-      if (action === "config") {
-        const [settings, savedWorkingHours] = await Promise.all([
-          prisma.branchBookingSettings.findUnique({
-            where: { branchId },
-            select: { bookingStepMinutes: true },
-          }),
-          prisma.branchBookingWorkingHour.findMany({
-            where: { branchId },
-            select: { weekday: true, isWorking: true, startTime: true, endTime: true },
-            orderBy: { weekday: "asc" },
-          }),
-        ]);
-        return NextResponse.json({ success: true, data: {
-          company_id: journalId(branchId),
-          branch_id: branchId,
-          company_title: branch.displayName || branch.shortName || branch.name,
-          branch_timezone: branch.timezone,
-          can_manage: canManageBookings(access.context),
-          can_override_conflict: canOverrideBookingConflict(access.context),
-          booking_step_minutes: settings?.bookingStepMinutes ?? DEFAULT_BOOKING_STEP_MINUTES,
-          working_hours: savedWorkingHours.length ? savedWorkingHours : DEFAULT_BOOKING_WORKING_HOURS,
-        } });
-      }
-      if (action === "staff") {
-        const memberships = await prisma.branchMembership.findMany({
-          where: {
-            branchId,
-            OR: [
-              { roleId: BOOKING_MASTER_ROLE_ID, status: "active", user: { status: "active" } },
-              { assignedBookings: { some: { branchId } } },
-            ],
-            ...(bookingViewIsSelfOnly(access.context) ? { id: ownMembership?.id ?? "__none__" } : {}),
-          },
-          include: { user: { select: { name: true, status: true } }, bookingServices: { select: { serviceId: true } } },
-          orderBy: [{ position: "asc" }, { user: { name: "asc" } }],
-        });
-        const hasUnassignedArchive = bookingViewIsSelfOnly(access.context) ? 0 : await prisma.booking.count({ where: { branchId, source: "LEGACY_YCLIENTS", masterMembershipId: null } });
-        return NextResponse.json({ success: true, data: [
-          ...memberships.map((membership) => ({ id: journalId(membership.id), membership_id: membership.id, name: membership.user.name, specialization: membership.position || membership.roleId, bookable: membership.roleId === BOOKING_MASTER_ROLE_ID && membership.status === "active" && membership.user.status === "active" && membership.bookingServices.length > 0 })),
-          ...(hasUnassignedArchive ? [{ id: legacyUnassignedId(branchId), name: "Архив Yclients", specialization: "Исторические записи без сопоставленного сотрудника", bookable: false }] : []),
-        ] });
-      }
-      if (action === "services") {
-        const services = await (prisma as unknown as PrismaClient).$transaction(async (tx) => {
-          const syncResult = await syncCatalogBookingServices(tx, branchId);
-          if (syncResult.added || syncResult.updated || syncResult.disabled) {
-            await tx.branchAuditLog.create({ data: {
-              businessGroupId: access.context.businessGroupId,
-              branchId,
-              userId: access.context.userId,
-              action: "booking.services.catalog_auto_synced",
-              entityType: "booking_service",
-              entityId: branchId,
-              metadata: syncResult,
-            } });
-          }
-          return tx.bookingService.findMany({
-            where: { branchId, status: "ACTIVE" },
-            include: { masters: { select: { membershipId: true } } },
-            orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-          });
-        });
-        return NextResponse.json({ success: true, data: services.map((service) => ({
-          id: journalId(service.id),
-          booking_service_id: service.id,
-          title: service.name,
-          description: service.description,
-          seance_length: service.durationMinutes * 60,
-          duration: service.durationMinutes * 60,
-          requires_vin: service.requiresVin,
-          requires_confirmation: service.requiresConfirmation,
-          required_fields: service.requiredFieldsJson,
-          master_membership_ids: service.masters.map((item) => item.membershipId),
-          duration_configured: service.durationMinutes > 0,
-          assigned_master_count: service.masters.length,
-        })) });
-      }
-      if (action === "records") {
-        const startDate = request.nextUrl.searchParams.get("start_date") ?? new Date().toISOString().slice(0, 10);
-        const endDate = request.nextUrl.searchParams.get("end_date") ?? startDate;
-        const start = zonedLocalToUtc(startDate, "00:00", branch.timezone);
-        const end = zonedLocalToUtc(addLocalDays(endDate, 1), "00:00", branch.timezone);
-        const staffRaw = request.nextUrl.searchParams.get("staff_id");
-        const isUnassignedArchive = Number(staffRaw) === legacyUnassignedId(branchId);
-        const requestedMembershipId = !bookingViewIsSelfOnly(access.context) && staffRaw && !isUnassignedArchive
-          ? await resolveMembershipId(branchId, staffRaw, true)
+  return withSaveTrace(request, async () => {
+    const access = await requireBranchApi({ allowAll: false, requireActive: false });
+    if (!access.ok) return access.response;
+    try {
+      requireBookingCapability(canViewBookings(access.context));
+      return await runWithBranchApiContext(access.context, async () => {
+        const branchId = access.context.branchId!;
+        const branch = access.context.branch!;
+        const ownMembership = bookingViewIsSelfOnly(access.context)
+          ? await prisma.branchMembership.findFirst({ where: { branchId, userId: access.context.userId, status: "active" }, select: { id: true } })
           : null;
-        const membershipId = bookingViewIsSelfOnly(access.context) ? ownMembership?.id ?? "__none__" : requestedMembershipId;
-        const bookings = await prisma.booking.findMany({
-          where: { branchId, startsAt: { lt: end }, endsAt: { gt: start }, ...(isUnassignedArchive ? { masterMembershipId: null, source: "LEGACY_YCLIENTS" } : membershipId ? { masterMembershipId: membershipId } : {}) },
-          include: BOOKING_INCLUDE,
-          orderBy: { startsAt: "asc" },
-          take: 2_000,
-        });
-        return NextResponse.json({ success: true, data: bookings.map(recordDto) });
-      }
-      if (action === "record") {
-        const booking = await bookingFromJournalId(branchId, request.nextUrl.searchParams.get("record_id"));
-        if (bookingViewIsSelfOnly(access.context) && booking.masterMembershipId !== ownMembership?.id) {
-          throw new BookingError("Запись не найдена", "booking_not_found", 404);
+        const action = request.nextUrl.searchParams.get("action");
+        if (action === "config") {
+          const [settings, savedWorkingHours] = await Promise.all([
+            prisma.branchBookingSettings.findUnique({
+              where: { branchId },
+              select: { bookingStepMinutes: true },
+            }),
+            prisma.branchBookingWorkingHour.findMany({
+              where: { branchId },
+              select: { weekday: true, isWorking: true, startTime: true, endTime: true },
+              orderBy: { weekday: "asc" },
+            }),
+          ]);
+          return NextResponse.json({ success: true, data: {
+            company_id: journalId(branchId),
+            branch_id: branchId,
+            company_title: branch.displayName || branch.shortName || branch.name,
+            branch_timezone: branch.timezone,
+            can_manage: canManageBookings(access.context),
+            can_override_conflict: canOverrideBookingConflict(access.context),
+            booking_step_minutes: settings?.bookingStepMinutes ?? DEFAULT_BOOKING_STEP_MINUTES,
+            working_hours: savedWorkingHours.length ? savedWorkingHours : DEFAULT_BOOKING_WORKING_HOURS,
+          } });
         }
-        return NextResponse.json({ success: true, data: recordDto(booking) });
-      }
-      return NextResponse.json({ success: false, error: "Неизвестная операция журнала" }, { status: 400 });
-    });
-  } catch (error) {
-    const failure = bookingErrorPayload(error);
-    return NextResponse.json(failure.body, { status: failure.status });
-  }
+        if (action === "staff") {
+          const memberships = await prisma.branchMembership.findMany({
+            where: {
+              branchId,
+              OR: [
+                { roleId: BOOKING_MASTER_ROLE_ID, status: "active", user: { status: "active" } },
+                { assignedBookings: { some: { branchId } } },
+              ],
+              ...(bookingViewIsSelfOnly(access.context) ? { id: ownMembership?.id ?? "__none__" } : {}),
+            },
+            include: { user: { select: { name: true, status: true } }, bookingServices: { select: { serviceId: true } } },
+            orderBy: [{ position: "asc" }, { user: { name: "asc" } }],
+          });
+          const hasUnassignedArchive = bookingViewIsSelfOnly(access.context) ? 0 : await prisma.booking.count({ where: { branchId, source: "LEGACY_YCLIENTS", masterMembershipId: null } });
+          return NextResponse.json({ success: true, data: [
+            ...memberships.map((membership) => ({ id: journalId(membership.id), membership_id: membership.id, name: membership.user.name, specialization: membership.position || membership.roleId, bookable: membership.roleId === BOOKING_MASTER_ROLE_ID && membership.status === "active" && membership.user.status === "active" && membership.bookingServices.length > 0 })),
+            ...(hasUnassignedArchive ? [{ id: legacyUnassignedId(branchId), name: "Архив Yclients", specialization: "Исторические записи без сопоставленного сотрудника", bookable: false }] : []),
+          ] });
+        }
+        if (action === "services") {
+          const services = await (prisma as unknown as PrismaClient).$transaction(async (tx) => {
+            const syncResult = await syncCatalogBookingServices(tx, branchId);
+            if (syncResult.added || syncResult.updated || syncResult.disabled) {
+              await tx.branchAuditLog.create({ data: {
+                businessGroupId: access.context.businessGroupId,
+                branchId,
+                userId: access.context.userId,
+                action: "booking.services.catalog_auto_synced",
+                entityType: "booking_service",
+                entityId: branchId,
+                metadata: syncResult,
+              } });
+            }
+            return tx.bookingService.findMany({
+              where: { branchId, status: "ACTIVE" },
+              include: { masters: { select: { membershipId: true } } },
+              orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+            });
+          });
+          return NextResponse.json({ success: true, data: services.map((service) => ({
+            id: journalId(service.id),
+            booking_service_id: service.id,
+            title: service.name,
+            description: service.description,
+            seance_length: service.durationMinutes * 60,
+            duration: service.durationMinutes * 60,
+            requires_vin: service.requiresVin,
+            requires_confirmation: service.requiresConfirmation,
+            required_fields: service.requiredFieldsJson,
+            master_membership_ids: service.masters.map((item) => item.membershipId),
+            duration_configured: service.durationMinutes > 0,
+            assigned_master_count: service.masters.length,
+          })) });
+        }
+        if (action === "records") {
+          const startDate = request.nextUrl.searchParams.get("start_date") ?? new Date().toISOString().slice(0, 10);
+          const endDate = request.nextUrl.searchParams.get("end_date") ?? startDate;
+          const start = zonedLocalToUtc(startDate, "00:00", branch.timezone);
+          const end = zonedLocalToUtc(addLocalDays(endDate, 1), "00:00", branch.timezone);
+          const staffRaw = request.nextUrl.searchParams.get("staff_id");
+          const isUnassignedArchive = Number(staffRaw) === legacyUnassignedId(branchId);
+          const requestedMembershipId = !bookingViewIsSelfOnly(access.context) && staffRaw && !isUnassignedArchive
+            ? await resolveMembershipId(branchId, staffRaw, true)
+            : null;
+          const membershipId = bookingViewIsSelfOnly(access.context) ? ownMembership?.id ?? "__none__" : requestedMembershipId;
+          const bookings = await prisma.booking.findMany({
+            where: { branchId, startsAt: { lt: end }, endsAt: { gt: start }, ...(isUnassignedArchive ? { masterMembershipId: null, source: "LEGACY_YCLIENTS" } : membershipId ? { masterMembershipId: membershipId } : {}) },
+            include: BOOKING_INCLUDE,
+            orderBy: { startsAt: "asc" },
+            take: 2_000,
+          });
+          return NextResponse.json({ success: true, data: bookings.map(recordDto) });
+        }
+        if (action === "record") {
+          const booking = await bookingFromJournalId(branchId, request.nextUrl.searchParams.get("record_id"));
+          if (bookingViewIsSelfOnly(access.context) && booking.masterMembershipId !== ownMembership?.id) {
+            throw new BookingError("Запись не найдена", "booking_not_found", 404);
+          }
+          return NextResponse.json({ success: true, data: recordDto(booking) });
+        }
+        return NextResponse.json({ success: false, error: "Неизвестная операция журнала" }, { status: 400 });
+      });
+    } catch (error) {
+      const failure = bookingErrorPayload(error);
+      return NextResponse.json(failure.body, { status: failure.status });
+    }
+  });
 }
 
 export async function POST(request: NextRequest) {
-  const access = await requireBranchApi({ allowAll: false, requireActive: true });
-  if (!access.ok) return access.response;
-  try {
-    requireBookingCapability(canManageBookings(access.context), "Нет права создавать записи");
-    const body = object(await request.json().catch(() => null));
-    if (body.expectedBranchId !== undefined && body.expectedBranchId !== access.context.branchId) {
-      throw new BookingError("Филиал изменился. Подготовьте новый черновик.", "booking_branch_changed", 409);
-    }
-    if (body.action !== "create-record") throw new BookingError("Неизвестная операция журнала", "booking_action_invalid");
-    const payload = object(body.payload);
-    const client = object(payload.client);
-    const parsed = parseComment(text(payload.comment));
-    const vehicle = structuredVehicle(payload);
-    const result = await runWithBranchApiContext(access.context, async () => {
-      const branchId = access.context.branchId!;
-      const branch = await prisma.branch.findUnique({ where: { id: branchId }, select: { timezone: true } });
-      if (!branch) throw new BookingError("Филиал не найден", "booking_branch_not_found", 404);
-      const serviceIds = await resolveServiceIds(branchId, idsFromPayload(payload));
-      const membershipId = await resolveMembershipId(branchId, payload.staff_id);
-      return createBooking({
-        branchId,
-        serviceIds,
-        masterMembershipId: membershipId,
-        startsAt: journalDateTime(text(payload.datetime), branch.timezone),
-        customerName: text(client.name) ?? "",
-        phone: text(client.phone) ?? "",
-        email: text(client.email),
-        clientId: text(payload.client_id),
-        vehicleId: text(payload.vehicle_id),
-        vehicle: vehicle ?? parsed.vehicle,
-        comment: text(payload.client_comment) ?? parsed.comment,
-        internalComment: journalContactInput(payload, parsed.internalComment),
-        source: "ADMIN",
-        idempotencyKey: text(body.idempotencyKey),
-        overrideConflict: payload.save_if_busy === true,
-        overrideReason: overrideReason(payload.override_reason_code),
-        durationOverrideMinutes: number(payload.seance_length) ? Math.max(5, Math.round(number(payload.seance_length)! / 60)) : null,
-      }, {
-        kind: "USER",
-        userId: access.context.userId,
-        allowConflictOverride: canOverrideBookingConflict(access.context),
-        respectLeadTime: false,
-        allowIncompleteVehicle: true,
+  return withSaveTrace(request, async (log) => {
+    const access = await requireBranchApi({ allowAll: false, requireActive: true });
+    if (!access.ok) return access.response;
+    log("authorized");
+    try {
+      requireBookingCapability(canManageBookings(access.context), "Нет права создавать записи");
+      const body = object(await request.json().catch(() => null));
+      if (body.expectedBranchId !== undefined && body.expectedBranchId !== access.context.branchId) {
+        throw new BookingError("Филиал изменился. Подготовьте новый черновик.", "booking_branch_changed", 409);
+      }
+      if (body.action !== "create-record") throw new BookingError("Неизвестная операция журнала", "booking_action_invalid");
+      const payload = object(body.payload);
+      const client = object(payload.client);
+      const parsed = parseComment(text(payload.comment));
+      const vehicle = structuredVehicle(payload);
+      const result = await runWithBranchApiContext(access.context, async () => {
+        const branchId = access.context.branchId!;
+        const branch = await prisma.branch.findUnique({ where: { id: branchId }, select: { timezone: true } });
+        if (!branch) throw new BookingError("Филиал не найден", "booking_branch_not_found", 404);
+        const serviceIds = await resolveServiceIds(branchId, idsFromPayload(payload));
+        const membershipId = await resolveMembershipId(branchId, payload.staff_id);
+        return createBooking({
+          branchId,
+          serviceIds,
+          masterMembershipId: membershipId,
+          startsAt: journalDateTime(text(payload.datetime), branch.timezone),
+          customerName: text(client.name) ?? "",
+          phone: text(client.phone) ?? "",
+          email: text(client.email),
+          clientId: text(payload.client_id),
+          vehicleId: text(payload.vehicle_id),
+          vehicle: vehicle ?? parsed.vehicle,
+          comment: text(payload.client_comment) ?? parsed.comment,
+          internalComment: journalContactInput(payload, parsed.internalComment),
+          source: "ADMIN",
+          idempotencyKey: text(body.idempotencyKey),
+          overrideConflict: payload.save_if_busy === true,
+          overrideReason: overrideReason(payload.override_reason_code),
+          durationOverrideMinutes: number(payload.seance_length) ? Math.max(5, Math.round(number(payload.seance_length)! / 60)) : null,
+        }, {
+          kind: "USER",
+          userId: access.context.userId,
+          allowConflictOverride: canOverrideBookingConflict(access.context),
+          respectLeadTime: false,
+          allowIncompleteVehicle: true,
+        });
       });
-    });
-    if (!result.reused) {
-      after(async () => {
-        try {
-          const url = managementUrl(request, result.booking);
-          await runWithBranchApiContext(access.context, () => notifyBookingCreated(result.booking, url));
-        } catch (error) {
-          console.warn("[booking-journal/create-notification]", error);
-        }
-      });
+      log(result.reused ? "reused" : "committed");
+      if (!result.reused) {
+        log("notification_scheduled");
+        after(async () => {
+          try {
+            const url = managementUrl(request, result.booking);
+            await runWithBranchApiContext(access.context, () => notifyBookingCreated(result.booking, url));
+            log("notification_completed");
+          } catch (error) {
+            log("notification_failed", undefined, saveErrorCode(error));
+          }
+        });
+      }
+      return NextResponse.json({ success: true, data: recordDto(result.booking) }, { status: 201 });
+    } catch (error) {
+      log("write_failed", undefined, saveErrorCode(error));
+      const failure = bookingErrorPayload(error, false);
+      return NextResponse.json(failure.body, { status: failure.status });
     }
-    return NextResponse.json({ success: true, data: recordDto(result.booking) }, { status: 201 });
-  } catch (error) {
-    const failure = bookingErrorPayload(error);
-    return NextResponse.json(failure.body, { status: failure.status });
-  }
+  });
 }
 
 export async function PUT(request: NextRequest) {
-  const access = await requireBranchApi({ allowAll: false, requireActive: true });
-  if (!access.ok) return access.response;
-  try {
-    requireBookingCapability(canManageBookings(access.context), "Нет права изменять записи");
-    const body = object(await request.json().catch(() => null));
-    if (body.action === "reschedule-record") {
-      if (body.expectedBranchId !== access.context.branchId) {
-        throw new BookingError("Филиал изменился. Подготовьте новый черновик.", "booking_branch_changed", 409);
-      }
-      const expectedUpdatedAt = text(body.expectedUpdatedAt);
-      const datetime = text(body.datetime);
-      if (!expectedUpdatedAt || !datetime) throw new BookingError("Подготовьте перенос заново.", "booking_preview_invalid");
-      const result = await runWithBranchApiContext(access.context, async () => {
-        const booking = await bookingFromJournalId(access.context.branchId!, body.record_id);
-        const contact = readJournalContact(booking.internalComment);
-        const notes = text(body.notes);
-        return updateBooking(booking.id, {
-          startsAt: journalDateTime(datetime, booking.branch.timezone),
-          expectedUpdatedAt,
-          ...(notes ? { internalComment: writeJournalContact({ ...contact, comment: [contact.comment, notes].filter(Boolean).join("\n") }) } : {}),
-        }, { kind: "USER", userId: access.context.userId, respectLeadTime: false, allowIncompleteVehicle: true });
-      });
-      if (result.scheduleChanged) after(async () => {
-        try {
-          await notifyBookingRescheduled(result.booking, managementUrl(request, result.booking));
-        } catch (error) {
-          console.warn("[booking-journal/reschedule-notification]", error);
+  return withSaveTrace(request, async (log) => {
+    const access = await requireBranchApi({ allowAll: false, requireActive: true });
+    if (!access.ok) return access.response;
+    log("authorized");
+    try {
+      requireBookingCapability(canManageBookings(access.context), "Нет права изменять записи");
+      const body = object(await request.json().catch(() => null));
+      if (body.action === "reschedule-record") {
+        if (body.expectedBranchId !== access.context.branchId) {
+          throw new BookingError("Филиал изменился. Подготовьте новый черновик.", "booking_branch_changed", 409);
         }
+        const expectedUpdatedAt = text(body.expectedUpdatedAt);
+        const datetime = text(body.datetime);
+        if (!expectedUpdatedAt || !datetime) throw new BookingError("Подготовьте перенос заново.", "booking_preview_invalid");
+        const result = await runWithBranchApiContext(access.context, async () => {
+          const booking = await bookingFromJournalId(access.context.branchId!, body.record_id);
+          const contact = readJournalContact(booking.internalComment);
+          const notes = text(body.notes);
+          return updateBooking(booking.id, {
+            startsAt: journalDateTime(datetime, booking.branch.timezone),
+            expectedUpdatedAt,
+            ...(notes ? { internalComment: writeJournalContact({ ...contact, comment: [contact.comment, notes].filter(Boolean).join("\n") }) } : {}),
+          }, { kind: "USER", userId: access.context.userId, respectLeadTime: false, allowIncompleteVehicle: true });
+        });
+        if (result.scheduleChanged) after(async () => {
+          try {
+            await notifyBookingRescheduled(result.booking, managementUrl(request, result.booking));
+          } catch (error) {
+            log("notification_failed", undefined, saveErrorCode(error));
+          }
+        });
+        return NextResponse.json({ success: true, data: recordDto(result.booking) });
+      }
+      if (body.action !== "update-record") throw new BookingError("Неизвестная операция журнала", "booking_action_invalid");
+      const payload = object(body.payload);
+      const client = object(payload.client);
+      const parsed = parseComment(text(payload.comment));
+      const vehicle = structuredVehicle(payload);
+      if (payload.confirmed === 1) {
+        requireBookingCapability(canConfirmBookings(access.context), "Нет права подтверждать запись");
+      }
+      const result = await runWithBranchApiContext(access.context, async () => {
+        const branchId = access.context.branchId!;
+        const booking = await bookingFromJournalId(branchId, body.record_id);
+        const requestedServiceIds = idsFromPayload(payload);
+        const serviceIds = requestedServiceIds.length
+          ? await resolveServiceIds(branchId, requestedServiceIds)
+          : booking.serviceItems.map((item) => item.serviceId).filter((id): id is string => Boolean(id));
+        const membershipId = payload.staff_id ? await resolveMembershipId(branchId, payload.staff_id, true) : booking.masterMembershipId;
+        if (!membershipId) throw new BookingError("Мастер не выбран", "booking_master_required");
+        const startsAt = text(payload.datetime)
+          ? journalDateTime(text(payload.datetime), booking.branch.timezone)
+          : booking.startsAt;
+        const durationMinutes = number(payload.seance_length) ? Math.max(5, Math.round(number(payload.seance_length)! / 60)) : booking.durationMinutes;
+        return updateBooking(booking.id, {
+          startsAt,
+          masterMembershipId: membershipId,
+          serviceIds,
+          durationOverrideMinutes: durationMinutes,
+          overrideConflict: payload.save_if_busy === true,
+          overrideReason: overrideReason(payload.override_reason_code),
+          customerName: text(client.name) ?? booking.customerName,
+          phone: text(client.phone) ?? booking.phone,
+          email: text(client.email),
+          clientId: text(payload.client_id) ?? booking.clientId,
+          vehicleId: "vehicle_id" in payload ? text(payload.vehicle_id) : undefined,
+          comment: text(payload.client_comment) ?? parsed.comment,
+          internalComment: journalContactInput(payload, parsed.internalComment, booking.internalComment),
+          vehicle: "vehicle" in payload ? vehicle : parsed.vehicle ?? undefined,
+          confirm: payload.confirmed === 1,
+        }, {
+          kind: "USER",
+          userId: access.context.userId,
+          allowConflictOverride: canOverrideBookingConflict(access.context),
+          respectLeadTime: false,
+          allowIncompleteVehicle: true,
+        });
       });
+      const url = managementUrl(request, result.booking);
+      log("committed");
+      if (result.scheduleChanged) await runWithBranchApiContext(access.context, () => notifyBookingRescheduled(result.booking, url)).catch((error) => log("notification_failed", undefined, saveErrorCode(error)));
+      if (result.confirmed) await runWithBranchApiContext(access.context, () => notifyBookingConfirmed(result.booking, url)).catch((error) => log("notification_failed", undefined, saveErrorCode(error)));
       return NextResponse.json({ success: true, data: recordDto(result.booking) });
+    } catch (error) {
+      log("write_failed", undefined, saveErrorCode(error));
+      const failure = bookingErrorPayload(error, false);
+      return NextResponse.json(failure.body, { status: failure.status });
     }
-    if (body.action !== "update-record") throw new BookingError("Неизвестная операция журнала", "booking_action_invalid");
-    const payload = object(body.payload);
-    const client = object(payload.client);
-    const parsed = parseComment(text(payload.comment));
-    const vehicle = structuredVehicle(payload);
-    if (payload.confirmed === 1) {
-      requireBookingCapability(canConfirmBookings(access.context), "Нет права подтверждать запись");
-    }
-    const result = await runWithBranchApiContext(access.context, async () => {
-      const branchId = access.context.branchId!;
-      const booking = await bookingFromJournalId(branchId, body.record_id);
-      const requestedServiceIds = idsFromPayload(payload);
-      const serviceIds = requestedServiceIds.length
-        ? await resolveServiceIds(branchId, requestedServiceIds)
-        : booking.serviceItems.map((item) => item.serviceId).filter((id): id is string => Boolean(id));
-      const membershipId = payload.staff_id ? await resolveMembershipId(branchId, payload.staff_id, true) : booking.masterMembershipId;
-      if (!membershipId) throw new BookingError("Мастер не выбран", "booking_master_required");
-      const startsAt = text(payload.datetime)
-        ? journalDateTime(text(payload.datetime), booking.branch.timezone)
-        : booking.startsAt;
-      const durationMinutes = number(payload.seance_length) ? Math.max(5, Math.round(number(payload.seance_length)! / 60)) : booking.durationMinutes;
-      return updateBooking(booking.id, {
-        startsAt,
-        masterMembershipId: membershipId,
-        serviceIds,
-        durationOverrideMinutes: durationMinutes,
-        overrideConflict: payload.save_if_busy === true,
-        overrideReason: overrideReason(payload.override_reason_code),
-        customerName: text(client.name) ?? booking.customerName,
-        phone: text(client.phone) ?? booking.phone,
-        email: text(client.email),
-        clientId: text(payload.client_id) ?? booking.clientId,
-        vehicleId: "vehicle_id" in payload ? text(payload.vehicle_id) : undefined,
-        comment: text(payload.client_comment) ?? parsed.comment,
-        internalComment: journalContactInput(payload, parsed.internalComment, booking.internalComment),
-        vehicle: "vehicle" in payload ? vehicle : parsed.vehicle ?? undefined,
-        confirm: payload.confirmed === 1,
-      }, {
-        kind: "USER",
-        userId: access.context.userId,
-        allowConflictOverride: canOverrideBookingConflict(access.context),
-        respectLeadTime: false,
-        allowIncompleteVehicle: true,
-      });
-    });
-    const url = managementUrl(request, result.booking);
-    if (result.scheduleChanged) await runWithBranchApiContext(access.context, () => notifyBookingRescheduled(result.booking, url)).catch((error) => console.warn("[booking-journal/reschedule-notification]", error));
-    if (result.confirmed) await runWithBranchApiContext(access.context, () => notifyBookingConfirmed(result.booking, url)).catch((error) => console.warn("[booking-journal/confirm-notification]", error));
-    return NextResponse.json({ success: true, data: recordDto(result.booking) });
-  } catch (error) {
-    const failure = bookingErrorPayload(error);
-    return NextResponse.json(failure.body, { status: failure.status });
-  }
+  });
 }
 
 export async function DELETE(request: NextRequest) {

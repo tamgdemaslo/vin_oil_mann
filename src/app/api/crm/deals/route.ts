@@ -1,3 +1,4 @@
+import { withSaveTrace } from "@/lib/save-trace-server";
 import { caseRosskoOrder } from "@/lib/client-case-parts";
 import { loadCrmRosskoStatuses } from "@/lib/crm-rossko-orders";
 import { caseCounterpartyPhoneKeys, uniqueCaseCounterpartyId } from "@/lib/client-case-counterparty";
@@ -279,46 +280,48 @@ async function loadStagesWithLegacyDeals(): Promise<CrmStageWithDeals> {
   return stages.map((stage) => ({ ...stage, deals: (dealsByStage.get(stage.id) ?? []) as never[] })) as CrmStageWithDeals;
 }
 
-export async function GET() {
-  const access = await requireCrmSession();
-  if (access.response) return access.response;
-  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
-  if (!branchAccess.ok) return branchAccess.response;
+export async function GET(request: NextRequest) {
+  return withSaveTrace(request, async () => {
+    const access = await requireCrmSession();
+    if (access.response) return access.response;
+    const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+    if (!branchAccess.ok) return branchAccess.response;
 
-  return runWithBranchApiContext(branchAccess.context, async () => {
-    try {
-      await ensureDefaultCrmStages();
+    return runWithBranchApiContext(branchAccess.context, async () => {
       try {
-        await processClientCaseWorkflowTransitions();
-      } catch (error) {
-        if (!isMissingCrmCaseColumns(error)) throw error;
-      }
-      let stages: CrmStageWithDeals;
-      try {
-        stages = await loadStagesWithDeals();
-      } catch (error) {
-        if (!isMissingCrmCaseColumns(error)) throw error;
-        stages = await loadStagesWithLegacyDeals();
-      }
+        await ensureDefaultCrmStages();
+        try {
+          await processClientCaseWorkflowTransitions();
+        } catch (error) {
+          if (!isMissingCrmCaseColumns(error)) throw error;
+        }
+        let stages: CrmStageWithDeals;
+        try {
+          stages = await loadStagesWithDeals();
+        } catch (error) {
+          if (!isMissingCrmCaseColumns(error)) throw error;
+          stages = await loadStagesWithLegacyDeals();
+        }
 
-      const branchId = branchAccess.context.branchId!;
-      const deals = stages.flatMap(stage => stage.deals);
-      const [closures, rosskoStatuses] = await Promise.all([
-        caseClosureById(deals, branchId),
-        loadCrmRosskoStatuses(branchId, deals.filter(deal => caseRosskoOrder(deal.suppliesNote))),
-      ]);
-      const phones = [...new Set(stages.flatMap(stage => stage.deals.flatMap(deal => caseCounterpartyPhoneKeys(deal.phoneNormalized))))];
-      const clients = phones.length ? await prisma.localCounterparty.findMany({
-        where: { branchId, archived: false, ...anonymousRetailCounterpartyExclusion(branchId), normalizedPhone: { in: phones } },
-        select: { id: true, normalizedPhone: true },
-      }) : [];
-      return NextResponse.json({ stages: stages.map(stage => ({ ...stage, deals: stage.deals.map(deal => ({
-        ...deal, clientCounterpartyId: uniqueCaseCounterpartyId(deal.phoneNormalized, clients), closure: closures.get(deal.id) ?? null, rosskoOrderStatus: rosskoStatuses.get(deal.id) ?? null,
-      })) })) });
-    } catch (error) {
-      console.error("[crm/deals GET]", error);
-      return databaseHint(error);
-    }
+        const branchId = branchAccess.context.branchId!;
+        const deals = stages.flatMap(stage => stage.deals);
+        const [closures, rosskoStatuses] = await Promise.all([
+          caseClosureById(deals, branchId),
+          loadCrmRosskoStatuses(branchId, deals.filter(deal => caseRosskoOrder(deal.suppliesNote))),
+        ]);
+        const phones = [...new Set(stages.flatMap(stage => stage.deals.flatMap(deal => caseCounterpartyPhoneKeys(deal.phoneNormalized))))];
+        const clients = phones.length ? await prisma.localCounterparty.findMany({
+          where: { branchId, archived: false, ...anonymousRetailCounterpartyExclusion(branchId), normalizedPhone: { in: phones } },
+          select: { id: true, normalizedPhone: true },
+        }) : [];
+        return NextResponse.json({ stages: stages.map(stage => ({ ...stage, deals: stage.deals.map(deal => ({
+          ...deal, clientCounterpartyId: uniqueCaseCounterpartyId(deal.phoneNormalized, clients), closure: closures.get(deal.id) ?? null, rosskoOrderStatus: rosskoStatuses.get(deal.id) ?? null,
+        })) })) });
+      } catch (error) {
+        console.error("[crm/deals GET]", error);
+        return databaseHint(error);
+      }
+    });
   });
 }
 

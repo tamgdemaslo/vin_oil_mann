@@ -1,3 +1,7 @@
+import { SAVE_BRANCH_HEADER, SAVE_OPERATION_HEADER, saveTraceId } from "@/lib/save-trace";
+import { withSaveTrace } from "@/lib/save-trace-server";
+import { lockSaveReceipt } from "@/lib/save-receipt";
+import type { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi } from "@/lib/branch-api";
@@ -6,6 +10,7 @@ import { findRosskoArticleDuplicate, lockRosskoArticleCreation, rosskoDuplicateR
 import {
   canManageWarehouseMarking,
   createLocalAdminProduct,
+  getLocalAdminProduct,
   listLocalAdminProducts,
   productPayloadHasMarkingSettings,
 } from "@/lib/local-inventory-admin";
@@ -76,34 +81,67 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  const branchAccess = await requireBranchApi();
-  if (!branchAccess.ok) return branchAccess.response;
+  return withSaveTrace(request, async (log) => {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+    const branchAccess = await requireBranchApi();
+    if (!branchAccess.ok) return branchAccess.response;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
-  }
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
+    }
 
-  if (productPayloadHasMarkingSettings(body) && !canManageWarehouseMarking(session.user)) {
-    return NextResponse.json({ error: "Недостаточно прав для изменения настроек маркировки" }, { status: 403 });
-  }
-
-  const input = body as Parameters<typeof createLocalAdminProduct>[0];
-  const branchId = branchAccess.context.branchId!;
-  const result = input.rosskoPartNumber?.trim() && input.entityType !== "service"
-    ? await prisma.$transaction(async (tx) => {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
+    }
+    const actor = session.user;
+    if (productPayloadHasMarkingSettings(body) && !canManageWarehouseMarking(actor)) {
+      return NextResponse.json({ error: "Недостаточно прав для изменения настроек маркировки" }, { status: 403 });
+    }
+    const input = body as Parameters<typeof createLocalAdminProduct>[0];
+    const branchId = branchAccess.context.branchId!;
+    const expectedBranch = request.headers.get(SAVE_BRANCH_HEADER);
+    if (expectedBranch && expectedBranch !== branchId) {
+      return NextResponse.json({ error: "Филиал изменился. Проверьте результат в исходном филиале." }, { status: 409 });
+    }
+    log("authorized");
+    const operationId = saveTraceId(request.headers.get(SAVE_OPERATION_HEADER));
+    const rossko = input.rosskoPartNumber?.trim() && input.entityType !== "service";
+    async function create(tx: Prisma.TransactionClient) {
+      if (rossko) {
         const article = input.article?.trim() || input.rosskoPartNumber!.trim();
         const brand = input.brand?.trim() || input.rosskoBrand?.trim() || "";
         await lockRosskoArticleCreation(tx, branchId, article);
         const duplicate = await findRosskoArticleDuplicate(tx, { branchId, article, brand });
         if (duplicate) return rosskoDuplicateResponse(duplicate);
-        return createLocalAdminProduct(input, session.user, branchId, { transaction: tx });
-      }, { timeout: 20_000 })
-    : await createLocalAdminProduct(input, session.user, branchId);
-  if (!result.ok) return NextResponse.json(result, { status: "existingProduct" in result ? 409 : 400 });
-  return NextResponse.json(result.product);
+      }
+      return createLocalAdminProduct(input, actor, branchId, { transaction: tx });
+    }
+    let reused = false;
+    const result = operationId
+      ? await prisma.$transaction(async (tx) => {
+          const { id, receipt } = await lockSaveReceipt(tx, ["product", branchId, branchAccess.context.userId], operationId);
+          if (receipt?.entityId) {
+            reused = true;
+            return { ok: true as const, existingId: receipt.entityId };
+          }
+          const created = await create(tx);
+          if (created.ok) await tx.branchAuditLog.create({ data: {
+            id, branchId, action: "product.create_receipt", entityType: "local_product", entityId: created.product.id,
+          } });
+          return created;
+        }, { timeout: 20_000 })
+      : rossko ? await prisma.$transaction(create, { timeout: 20_000 })
+      : await createLocalAdminProduct(input, actor, branchId);
+    if (!result.ok) return NextResponse.json(result, { status: "existingProduct" in result ? 409 : 400 });
+    log(reused ? "reused" : "committed");
+    if ("existingId" in result) {
+      const product = await getLocalAdminProduct(result.existingId, branchId);
+      return product ? NextResponse.json(product) : NextResponse.json({ error: "Операция уже выполнена. Карточка недоступна." }, { status: 409 });
+    }
+    return NextResponse.json(result.product);
+  });
 }

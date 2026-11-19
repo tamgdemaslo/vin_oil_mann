@@ -23,7 +23,7 @@ try{
  const clientLinks=await jiti.import('../src/lib/client-case-counterparty.ts');
  db.state.stages=[{id:'first',deals:[{id:'one',customerName:'Сергей',phoneNormalized:'79000000001'},{id:'shared',phoneNormalized:'79000000002'},{id:'no-phone',phoneNormalized:null,customerName:'Сергей'}]}];
  db.state.clients=[{id:'local-client',normalizedPhone:'9000000001',branchId:'a',archived:false},{id:'other-branch',normalizedPhone:'79000000001',branchId:'b',archived:false},{id:'archived',normalizedPhone:'79000000001',branchId:'a',archived:true},{id:'shared-1',normalizedPhone:'79000000002',branchId:'a',archived:false},{id:'shared-2',normalizedPhone:'89000000002',branchId:'a',archived:false}];
- let res=await GET();assert.equal(res.status,200);
+ let res=await GET(new Request("http://example.test/api/crm/deals"));assert.equal(res.status,200);
  const linked=(await res.json()).stages[0].deals;
  assert.equal(linked[0].clientCounterpartyId,'local-client','Direct link uses exact phone match within the current branch');
  assert.equal(linked[1].clientCounterpartyId,null,'Shared number must not open an arbitrary client');assert.equal(linked[2].clientCounterpartyId,null,'Names alone do not identify a client');
@@ -35,7 +35,7 @@ try{
  const closedAt=new Date('2026-10-23T22:04:00Z');
  db.state.stages=[{id:'first',deals:[{id:'manual',status:'won',closedAt,createdByLogin:'vadim'},{id:'legacy',status:'lost',closedAt},{id:'reclosed',status:'won',closedAt},{id:'open',status:'open'}]}];
  db.state.events=[{caseId:'manual',actorLogin:'ilya',createdAt:new Date('2026-10-23T22:04:00.500Z')},{caseId:'reclosed',actorLogin:'old-actor',createdAt:new Date('2026-10-22T22:04:00Z')},{caseId:'other-case',actorLogin:'other',createdAt:closedAt}];
- res=await GET();assert.equal(res.status,200);const history=(await res.json()).stages[0].deals;
+ res=await GET(new Request("http://example.test/api/crm/deals"));assert.equal(res.status,200);const history=(await res.json()).stages[0].deals;
  assert.deepEqual(history[0].closure,{actorLogin:'ilya',closedAt:closedAt.toISOString()},'Closing employee comes from the closing event, not the creator');
  assert.deepEqual(history[1].closure,{actorLogin:null,closedAt:closedAt.toISOString()},'Legacy cases retain known dates without inventing an employee');
  assert.equal(history[2].closure.actorLogin,null,'A previous closing cycle must not claim a newer closure');assert.equal(history[3].closure,null);
