@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { lookupVehicle } from "@/lib/vehicle-identity";
+import { requireApiSession } from "@/lib/api-session-cash-shift";
+import { lookupVehicle, savedVinLookupDiagnostics } from "@/lib/vehicle-identity";
 import { lookupBodySchema, requireVehicleLookupRequest, vehicleLookupError } from "@/lib/vehicle-lookup-api";
 
 export async function POST(request: NextRequest) {
@@ -14,4 +15,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return vehicleLookupError(error);
   }
+}
+
+
+export async function GET(request: NextRequest) {
+  const access = await requireApiSession();
+  if (!access.ok) return access.response;
+  if (access.session.user.role !== "owner") return NextResponse.json({ error: "Доступ владельца" }, { status: 403 });
+  const vin = request.nextUrl.searchParams.get("vin")?.trim().toUpperCase() ?? "";
+  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return NextResponse.json({ error: "Укажите VIN" }, { status: 400 });
+  return NextResponse.json({ vin, savedResponses: await savedVinLookupDiagnostics(vin) }, { headers: { "Cache-Control": "no-store" } });
 }
