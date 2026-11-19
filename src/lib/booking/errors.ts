@@ -12,14 +12,14 @@ export class BookingError extends Error {
   }
 }
 
-export function bookingErrorPayload(error: unknown) {
+export function bookingErrorPayload(error: unknown, logUnexpected = true) {
   if (error instanceof BookingError) {
     return {
       status: error.status,
       body: { error: error.message, code: error.code, details: error.details },
     };
   }
-  console.error("booking request failed", error);
+  if (logUnexpected) console.error("booking request failed", error);
   return {
     status: 500,
     body: { error: "Не удалось выполнить операцию с записью", code: "booking_internal_error" },

@@ -1,3 +1,4 @@
+import { SAVE_REQUEST_HEADER, saveTrace, saveTraceId } from "@/lib/save-trace";
 import crypto from "node:crypto";
 import { rejectDisallowedPublicOrigin } from "@/lib/public-api";
 import { NextRequest, NextResponse } from "next/server";
@@ -295,6 +296,17 @@ function clientSiteDomainResponse(request: NextRequest) {
 }
 
 export function proxy(request: NextRequest) {
+  const log = saveTrace(request.headers, request.nextUrl.pathname, request.method, "proxy");
+  log("received");
+  const response = routeRequest(request);
+  const id = saveTraceId(request.headers.get(SAVE_REQUEST_HEADER));
+  if (id) response.headers.set(SAVE_REQUEST_HEADER, id);
+  if (response.headers.has("x-middleware-next")) log("forwarded");
+  else log("response", response.status);
+  return response;
+}
+
+function routeRequest(request: NextRequest) {
   const domainResponse = clientSiteDomainResponse(request);
   if (domainResponse) return domainResponse;
   if (isRscRequest(request)) {

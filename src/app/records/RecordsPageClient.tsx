@@ -1,4 +1,5 @@
 "use client";
+import { prepareSave, SAVED_REFRESH_FAILED, saveWasRejected, tracedSaveFetch, UNKNOWN_SAVE_RESULT, type PendingSave } from "@/lib/save-trace";
 
 import Link from "next/link";
 import BookingCalendar from "../booking/BookingCalendar";
@@ -844,6 +845,8 @@ export default function RecordsPageClient() {
   const clientPickerRef = useRef<HTMLDivElement | null>(null);
   const timelineInteractionRef = useRef<TimelineInteraction | null>(null);
   const formOpenedSnapshotRef = useRef("");
+  const recordSaveInFlight = useRef(false);
+  const pendingRecordSave = useRef<PendingSave | null>(null);
   const formDialogRef = useRef<HTMLDivElement>(null);
   const formErrorRef = useRef<HTMLDivElement>(null);
   const crmPrefillAppliedRef = useRef(false);
@@ -857,6 +860,7 @@ export default function RecordsPageClient() {
   const [services, setServices] = useState<Service[]>([]);
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [companyId, setCompanyId] = useState("");
+  const [saveBranchId, setSaveBranchId] = useState<string | null>(null);
   const [companyTitle, setCompanyTitle] = useState("Там где масло");
   const [branchTimeZone, setBranchTimeZone] = useState(SERVICE_TIME_ZONE);
   const [bookingStepMinutes, setBookingStepMinutes] = useState(DEFAULT_BOOKING_STEP_MINUTES);
@@ -1087,6 +1091,7 @@ export default function RecordsPageClient() {
       const id = String(cfg.company_id ?? "").trim();
       if (!id) throw new Error("Система записи не настроена для активного филиала");
       setCompanyId(id);
+      setSaveBranchId(typeof cfg.branch_id === "string" ? cfg.branch_id : null);
       if (cfg.company_title) setCompanyTitle(String(cfg.company_title));
       const configuredTimeZone = String(cfg.branch_timezone ?? SERVICE_TIME_ZONE);
       setBranchTimeZone(configuredTimeZone);
@@ -1138,7 +1143,7 @@ export default function RecordsPageClient() {
     }
   }, [companyId]);
 
-  const loadRecords = useCallback(async (): Promise<RecordItem[]> => {
+  const loadRecords = useCallback(async (operationId?: string): Promise<RecordItem[]> => {
     if (!companyId) return [];
     setRecordsLoading(true);
     setError(null);
@@ -1150,14 +1155,14 @@ export default function RecordsPageClient() {
         end_date: scheduleDate,
       });
       if (timelineStaffId) params.set("staff_id", timelineStaffId);
-      const res = await fetch(`/api/booking-journal?${params}`, { cache: "no-store" });
+      const res = await tracedSaveFetch(`/api/booking-journal?${params}`, { cache: "no-store" }, operationId);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Ошибка загрузки записей");
       const next = Array.isArray(data.data) ? (data.data as RecordItem[]) : [];
       setRecords(next);
       return next;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка загрузки записей");
+      setError(operationId ? SAVED_REFRESH_FAILED : e instanceof Error ? e.message : "Ошибка загрузки записей");
       return [];
     } finally {
       setRecordsLoading(false);
@@ -1843,6 +1848,7 @@ export default function RecordsPageClient() {
       setForm(nextForm);
       formOpenedSnapshotRef.current = JSON.stringify(nextForm);
       setEditingRecordId(null);
+      pendingRecordSave.current = null;
       setFormMode("create");
       setFormError(null);
       setLinkedCreateDealId(null);
@@ -1981,6 +1987,7 @@ export default function RecordsPageClient() {
     setSelectedClientVehicles(selectedVehicle.id || vehicleLabel(selectedVehicle) ? [selectedVehicle] : []);
     setServiceSearch("");
     setEditingRecordId(record.id);
+    pendingRecordSave.current = null;
     setFormMode("edit");
     setFormError(null);
     setFormOpen(true);
@@ -2043,6 +2050,8 @@ export default function RecordsPageClient() {
 
   const handleSubmitRecord = useCallback(
     async (openShipmentAfterCreate = false) => {
+      if (recordSaveInFlight.current) return;
+      let confirmed = false;
       if (form.serviceIds.length === 0) {
         reportFormError("Выберите хотя бы одну услугу", "records-services");
         return;
@@ -2052,7 +2061,7 @@ export default function RecordsPageClient() {
         reportFormError("Выберите действующего мастера. Если список пуст, проверьте назначения услуг в настройках записи.", "records-time");
         return;
       }
-      if (!formTimeValidation.ok) {
+      if (!formTimeValidation.ok && !pendingRecordSave.current) {
         reportFormError(formTimeValidation.message, "records-time");
         return;
       }
@@ -2085,6 +2094,7 @@ export default function RecordsPageClient() {
         reportFormError("Окончание записи должно быть позже начала", "records-time");
         return;
       }
+      recordSaveInFlight.current = true;
       setFormSaving(true);
       setFormError(null);
       setError(null);
@@ -2122,26 +2132,36 @@ export default function RecordsPageClient() {
             send_sms: false,
           };
 
-          const res = await fetch("/api/booking-journal", {
+          const body = { action: "create-record", company_id: companyId, expectedBranchId: saveBranchId ?? undefined, payload };
+          const serialized = JSON.stringify(body);
+          if (pendingRecordSave.current && pendingRecordSave.current.body !== serialized) {
+            reportFormError("Сначала проверьте результат предыдущего сохранения с исходными значениями.");
+            return;
+          }
+          const { operationId } = prepareSave(pendingRecordSave, serialized);
+          const res = await tracedSaveFetch("/api/booking-journal", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "create-record", company_id: companyId, payload }),
-          });
+            body: JSON.stringify({ ...body, idempotencyKey: operationId }),
+          }, operationId);
           const data = await res.json();
           if (!res.ok) {
-            reportFormError(getRecordSaveErrorMessage(data, "Ошибка сохранения записи"));
+            if (saveWasRejected(res)) pendingRecordSave.current = null;
+            reportFormError(saveWasRejected(res) ? getRecordSaveErrorMessage(data, "Ошибка сохранения записи") : UNKNOWN_SAVE_RESULT);
             return;
           }
 
           const created = (data?.data ?? data) as RecordItem;
           if (!created?.booking_id || !created?.id) {
-            reportFormError("Запись могла сохраниться, но сервер не вернул её идентификатор. Обновите журнал перед повторной попыткой.");
+            reportFormError(UNKNOWN_SAVE_RESULT);
             return;
           }
+          confirmed = true;
+          pendingRecordSave.current = null;
           setSelectedRecordId(created.id);
           setPendingFocusRecordId(created.id);
           if (created.local_date) setScheduleDate(created.local_date);
-          await loadRecords();
+          await loadRecords(operationId);
           let successToast = "Запись создана";
           if (created && linkedCreateDealId) {
             try {
@@ -2226,7 +2246,8 @@ export default function RecordsPageClient() {
           confirmed: confirmedForStatus(form.statusKey),
           attendance: attendanceForStatus(form.statusKey),
         };
-        const res = await fetch("/api/booking-journal", {
+        const operationId = crypto.randomUUID();
+        const res = await tracedSaveFetch("/api/booking-journal", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2237,20 +2258,23 @@ export default function RecordsPageClient() {
               : editingRecordId,
             payload,
           }),
-        });
+        }, operationId);
         const data = await res.json();
         if (!res.ok) {
           reportFormError(getRecordSaveErrorMessage(data, "Ошибка редактирования записи"));
           return;
         }
 
+        confirmed = true;
         setFormOpen(false);
-        await loadRecords();
+        await loadRecords(operationId);
         setSelectedRecordId(editingRecordId);
         setToast("Запись обновлена");
       } catch {
-        reportFormError("Не удалось получить ответ сервера. Проверьте журнал перед повторным сохранением.");
+        if (confirmed) setToast("Сохранено. Не удалось выполнить следующее действие.");
+        else reportFormError(formMode === "create" ? UNKNOWN_SAVE_RESULT : "Результат сохранения неизвестен. Проверьте запись в журнале.");
       } finally {
+        recordSaveInFlight.current = false;
         setFormSaving(false);
       }
     },
@@ -2265,6 +2289,7 @@ export default function RecordsPageClient() {
       loadRecords,
       router,
       reportFormError,
+      saveBranchId,
       selectedRecordItem,
       selectedServiceDurationSeconds,
       serviceById,

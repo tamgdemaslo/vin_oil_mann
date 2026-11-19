@@ -117,7 +117,6 @@ async function inBookingCreatePhase<T>(phase: BookingCreatePhase, operation: () 
     return await operation();
   } catch (error) {
     if (error instanceof BookingError) throw error;
-    console.error(`[booking/create:${phase}]`, error);
     const failureKind = error instanceof Prisma.PrismaClientKnownRequestError
       ? error.code.toLowerCase()
       : error instanceof Prisma.PrismaClientValidationError

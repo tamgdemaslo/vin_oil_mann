@@ -1,4 +1,5 @@
 "use client";
+import { prepareSave, SAVED_REFRESH_FAILED, saveWasRejected, tracedSaveFetch, UNKNOWN_SAVE_RESULT, type PendingSave } from "@/lib/save-trace";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -101,6 +102,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<WorkCaseStatus | null>(null);
   const mutationPending = useRef(false);
+  const pendingPartsSave = useRef<PendingSave | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [edit, setEdit] = useState({ title: "", phone: "", customerName: "", vehicle: "", notes: "" });
   const [now, setNow] = useState(() => new Date());
@@ -109,11 +111,11 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
   const focusedId = useRef<string | null>(null);
   const loadVersion = useRef(0);
 
-  const load = useCallback(async (initial = false) => {
+  const load = useCallback(async (initial = false, operationId?: string) => {
     const version = ++loadVersion.current;
     if (initial) setLoading(true);
     try {
-      const res = await fetch("/api/crm/deals", { cache: "no-store" });
+      const res = await tracedSaveFetch("/api/crm/deals", { cache: "no-store" }, operationId);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Не удалось загрузить заявки");
       if (version !== loadVersion.current) return;
@@ -121,8 +123,10 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
       setCases((data.stages ?? []).flatMap((stage: Stage) => stage.deals.map(deal => ({ ...deal, stage }))));
       setLoadError(null);
       window.dispatchEvent(new Event("eco-client-cases-changed"));
+      return true;
     } catch (error) {
-      if (version === loadVersion.current) setLoadError(error instanceof Error ? error.message : "Не удалось загрузить заявки");
+      if (version === loadVersion.current) setLoadError(operationId ? SAVED_REFRESH_FAILED : error instanceof Error ? error.message : "Не удалось загрузить заявки");
+      return false;
     } finally { if (version === loadVersion.current) setLoading(false); }
   }, []);
 
@@ -207,15 +211,23 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
     try {
       const id = encodeURIComponent(row.id);
       const endpoint = saveSource ? `/api/crm/deals/${id}/order` : `/api/client-cases/${id}/action`;
-      const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(saveSource ? body : { ...body, action }) });
+      const serialized = JSON.stringify(saveSource ? body : { ...body, action });
+      const operationId = saveSource ? prepareSave(pendingPartsSave, serialized).operationId : undefined;
+      const res = await tracedSaveFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: serialized }, operationId);
       const data = await res.json();
-      if (!res.ok) { if (res.status === 409) await load(); throw new Error(data.error || "Не удалось обновить заявку"); }
+      if (!res.ok) {
+        if (saveSource && saveWasRejected(res)) pendingPartsSave.current = null;
+        if (res.status === 409) await load();
+        throw new Error(saveSource && !saveWasRejected(res) ? UNKNOWN_SAVE_RESULT : data.error || "Не удалось обновить заявку");
+      }
+      if (saveSource && data.ok !== true) throw new Error(UNKNOWN_SAVE_RESULT);
+      if (saveSource) pendingPartsSave.current = null;
       if (data.case?.id === row.id) setCases(current => current.map(item => item.id === row.id ? { ...item, ...data.case, stage: item.stage } : item));
-      await load();
-      setNotice(successMessage ?? (action === "mark_calculation_sent" ? "Расчёт отмечен отправленным. Напоминаний об ответе не будет." : "Заявка обновлена"));
+      const refreshed = await load(false, operationId);
+      setNotice(refreshed === false ? SAVED_REFRESH_FAILED : successMessage ?? (action === "mark_calculation_sent" ? "Расчёт отмечен отправленным. Напоминаний об ответе не будет." : "Заявка обновлена"));
       return true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Не удалось обновить заявку";
+      const message = saveSource && (!(error instanceof Error) || error.name !== "Error") ? UNKNOWN_SAVE_RESULT : error instanceof Error ? error.message : "Не удалось обновить заявку";
       setActionError(message);
       if (partsConfirmed) setPartsError(message);
       return false;
@@ -313,6 +325,7 @@ export default function CrmPipelineClient({ userLogin, userName }: { userLogin: 
 
   function openPartsOrder(row: Case) {
     if (mutationPending.current || saving) return;
+    pendingPartsSave.current = null;
     setPartsRow(row);
     const orderNumber = caseRosskoOrder(row.suppliesNote);
     setPartsSource(orderNumber || !row.suppliesSupplier ? "rossko" : "manual");

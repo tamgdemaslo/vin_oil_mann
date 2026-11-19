@@ -1,3 +1,5 @@
+import { SAVE_BRANCH_HEADER } from "@/lib/save-trace";
+import { withSaveTrace } from "@/lib/save-trace-server";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { Prisma } from "@prisma/client";
@@ -30,46 +32,54 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const branchAccess = await requireBranchApi();
-  if (!branchAccess.ok) return branchAccess.response;
+  return withSaveTrace(request, async (log) => {
+    const branchAccess = await requireBranchApi();
+    if (!branchAccess.ok) return branchAccess.response;
 
-  const { id } = await params;
-  if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
+    const { id } = await params;
+    if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
-  }
-
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
-  }
-  const { context } = branchAccess;
-  if (productPayloadHasMarkingSettings(body) && !canManageWarehouseMarking(context.user)) {
-    return NextResponse.json({ error: "Недостаточно прав для изменения настроек маркировки" }, { status: 403 });
-  }
-
-  try {
-    const result = await runWithBranchApiContext(context, () =>
-      updateLocalAdminProduct(id, body as Parameters<typeof updateLocalAdminProduct>[1], context.user, context.branchId!),
-    );
-    if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
     }
-    return NextResponse.json(result.product);
-  } catch (error) {
-    const code = error instanceof Prisma.PrismaClientKnownRequestError ? error.code : undefined;
-    console.error("[inventory-products] product update failed", { id, code, name: error instanceof Error ? error.name : undefined });
-    if (code && ["P2024", "P2028", "P2034"].includes(code)) {
-      return NextResponse.json({ error: "Склад сейчас занят. Подождите несколько секунд и повторите сохранение." }, { status: 503 });
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
     }
-    if (code === "P2002") {
-      return NextResponse.json({ error: "Товар с такими уникальными данными уже существует. Проверьте артикул и код." }, { status: 409 });
+    const { context } = branchAccess;
+    const expectedBranch = request.headers.get(SAVE_BRANCH_HEADER);
+    if (expectedBranch && expectedBranch !== context.branchId) {
+      return NextResponse.json({ error: "Филиал изменился. Проверьте результат в исходном филиале." }, { status: 409 });
     }
-    return NextResponse.json({ error: "Не удалось подтвердить сохранение. Проверьте карточку перед повтором." }, { status: 500 });
-  }
+    log("authorized");
+    if (productPayloadHasMarkingSettings(body) && !canManageWarehouseMarking(context.user)) {
+      return NextResponse.json({ error: "Недостаточно прав для изменения настроек маркировки" }, { status: 403 });
+    }
+
+    try {
+      const result = await runWithBranchApiContext(context, () =>
+        updateLocalAdminProduct(id, body as Parameters<typeof updateLocalAdminProduct>[1], context.user, context.branchId!),
+      );
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
+      }
+      log("committed");
+      return NextResponse.json(result.product);
+    } catch (error) {
+      const code = error instanceof Prisma.PrismaClientKnownRequestError ? error.code : undefined;
+      log("write_failed", undefined, code);
+      if (code && ["P2024", "P2028", "P2034"].includes(code)) {
+        return NextResponse.json({ error: "Склад сейчас занят. Подождите несколько секунд и повторите сохранение." }, { status: 503 });
+      }
+      if (code === "P2002") {
+        return NextResponse.json({ error: "Товар с такими уникальными данными уже существует. Проверьте артикул и код." }, { status: 409 });
+      }
+      return NextResponse.json({ error: "Не удалось подтвердить сохранение. Проверьте карточку перед повтором." }, { status: 500 });
+    }
+  });
 }
 
 export async function DELETE(

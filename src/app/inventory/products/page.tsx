@@ -11,7 +11,7 @@ export default async function InventoryProductsPage({ searchParams }: { searchPa
   const user = branch?.user ?? (await getSession())?.user;
   return (
     <Suspense fallback={null}>
-      <ProductsClient canSetAverageCost={user?.role === "owner"} catalogScope={inventoryPreviewScope(branch)} />
+      <ProductsClient canSetAverageCost={user?.role === "owner"} catalogScope={inventoryPreviewScope(branch)} saveBranchId={branch?.branchId} />
     </Suspense>
   );
 }

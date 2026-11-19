@@ -1,3 +1,4 @@
+import { lockSaveReceipt, saveReceiptId } from "@/lib/save-receipt";
 import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 import { caseRosskoOrder, parseRosskoOrderNumber, withCaseRosskoOrder } from "@/lib/client-case-parts";
 import { simpleCaseStatus } from "@/lib/client-case-simple";
@@ -60,12 +61,22 @@ async function describeOrder(branchId: string, payload: unknown, orderNumber: st
   return describeCrmRosskoOrder(await loadPostedRosskoOrderQuantities(branchId, order), order.deliveryDate);
 }
 
+type OrderReceipt = {
+  operationId: string;
+  userId: string;
+  log: (phase: string) => void;
+};
+function orderScope(branchId: string, caseId: string, receipt: OrderReceipt) {
+  return ["crm-order", branchId, receipt.userId, caseId];
+}
+
 async function saveOrder(
   branchId: string,
   deal: OrderDeal,
   input: OrderInput,
   snapshot: ReturnType<typeof describeCrmRosskoOrder> | null,
   actorLogin?: string,
+  receipt?: OrderReceipt,
 ) {
   const orderNumber = input.source === "rossko" ? input.orderNumber : null;
   const supplier = input.source === "rossko" ? "РОССКО" : input.supplier;
@@ -104,7 +115,13 @@ async function saveOrder(
     }),
   };
 
-  return prisma.$transaction(async (tx) => {
+  let reused = false;
+  const saved = await prisma.$transaction(async (tx) => {
+    const operation = receipt ? await lockSaveReceipt(tx, orderScope(branchId, deal.id, receipt), receipt.operationId) : null;
+    if (operation?.receipt?.entityId) {
+      reused = true;
+      return true;
+    }
     const result = await tx.crmDeal.updateMany({
       where: { id: deal.id, branchId, updatedAt: deal.updatedAt, status: "open", caseStatus: deal.caseStatus },
       data: {
@@ -140,14 +157,27 @@ async function saveOrder(
         },
       });
     }
+    if (operation) await tx.branchAuditLog.create({ data: {
+      id: operation.id, branchId, action: "crm.order_save_receipt", entityType: "crm_deal", entityId: deal.id,
+    } });
     return true;
   });
+  if (saved) receipt?.log(reused ? "reused" : "committed");
+  return saved;
 }
 
-export async function setCrmOrderSource(caseId: string, input: OrderInput, actorLogin: string) {
+export async function setCrmOrderSource(caseId: string, input: OrderInput, actorLogin: string, receipt?: OrderReceipt) {
   const { branchId } = requireSingleBranchSqlContext();
   const deal = await prisma.crmDeal.findFirst({ where: { id: caseId, branchId }, select: selectDeal });
   if (!deal) return { error: "Дело клиента не найдено", status: 404 };
+  if (receipt) {
+    const id = saveReceiptId(orderScope(branchId, caseId, receipt), receipt.operationId);
+    const saved = await prisma.branchAuditLog.findUnique({ where: { id }, select: { entityId: true } });
+    if (saved?.entityId === caseId) {
+      receipt.log("reused");
+      return null;
+    }
+  }
   if (simpleCaseStatus(deal) === "closed") {
     return { error: "Дело клиента закрыто", status: 409 };
   }
@@ -164,7 +194,7 @@ export async function setCrmOrderSource(caseId: string, input: OrderInput, actor
       return { error: failure.error, status: failure.code === "ROSSKO_NOT_CONFIGURED" ? 409 : 502 };
     }
   }
-  const saved = await saveOrder(branchId, deal, input, snapshot, actorLogin);
+  const saved = await saveOrder(branchId, deal, input, snapshot, actorLogin, receipt);
   return saved ? null : { error: "Дело изменилось. Обновите список и повторите попытку.", status: 409 };
 }
 

@@ -97,6 +97,9 @@ jobs:
       - name: Verify customer management insights
         run: npm run test:customer-management-insights
 
+      - name: Verify CRM save recovery
+        run: node scripts/test-save-recovery.mjs && node scripts/test-product-save-route.mjs
+
       - name: TypeScript check
         run: npx tsc --noEmit
 

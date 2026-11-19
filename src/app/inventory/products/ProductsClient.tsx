@@ -1,4 +1,5 @@
 "use client";
+import { SAVE_BRANCH_HEADER, prepareSave, SAVED_REFRESH_FAILED, saveWasRejected, tracedSaveFetch, UNKNOWN_SAVE_RESULT, type PendingSave } from "@/lib/save-trace";
 import KitTabs from "@/components/products/KitTabs";
 
 import BulkOilBarrelManager from "@/components/receipts/BulkOilBarrelManager";
@@ -1720,9 +1721,10 @@ function ProductAverageCostEditor({
   );
 }
 
-export default function ProductsClient({ canSetAverageCost = false, catalogScope }: {
+export default function ProductsClient({ canSetAverageCost = false, catalogScope, saveBranchId }: {
   canSetAverageCost?: boolean;
   catalogScope: string | null;
+  saveBranchId?: string | null;
 }) {
   const searchParams = useSearchParams();
   const initialProductId = searchParams.get("product")?.trim() ?? "";
@@ -1772,6 +1774,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
   const [loadingMore, setLoadingMore] = useState(false);
   const [saving, setSaving] = useState(false);
   const productSaveInFlightRef = useRef(false);
+  const pendingProductSave = useRef<PendingSave | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [toast, setToast] = useState<ProductToast | null>(null);
@@ -2420,7 +2423,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
     };
   }
 
-  async function load(nextSearch = search, nextSort = sort, nextDirection = direction, nextFilters = filters) {
+  async function load(nextSearch = search, nextSort = sort, nextDirection = direction, nextFilters = filters, operationId?: string) {
     setRosskoLastImportVisible(false);
     listAbortRef.current?.abort();
     loadMoreAbortRef.current?.abort();
@@ -2443,10 +2446,10 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
       const params = buildListParams(nextSearch, nextSort, nextDirection, nextFilters);
       params.set("context", "products");
       params.set("view", "inventory");
-      const res = await fetch(`/api/catalog/search?${params.toString()}`, {
+      const res = await tracedSaveFetch(`/api/catalog/search?${params.toString()}`, {
         cache: "no-store",
         signal: controller.signal,
-      });
+      }, operationId);
       const data = await readJson<ProductListResponse>(res);
       controller.signal.throwIfAborted();
       if (res.status === 401 || res.status === 403 || res.status === 423) setCatalogPreview(null);
@@ -2454,13 +2457,15 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
       setRows(Array.isArray(data?.products) ? data.products : []);
       setMeta(data?.meta ?? null);
       setMatchedOutsideFilters(data?.matchedOutsideFilters ?? 0);
+      return true;
     } catch (e) {
       if (listAbortRef.current !== controller || (controller.signal.aborted && !timedOut)) return;
-      console.error("[inventory-products] list load failed:", e);
+      if (!operationId) console.error("[inventory-products] list load failed:", e);
       setError(PRODUCT_LIST_ERROR);
-      setRows([]);
+      if (!operationId) setRows([]);
       setMeta(null);
       setMatchedOutsideFilters(0);
+      return false;
     } finally {
       window.clearTimeout(slow);
       window.clearTimeout(timeout);
@@ -2933,6 +2938,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
   }
 
   function resetForm() {
+    pendingProductSave.current = null;
     setEditingId(null);
     setActiveProduct(null);
     setForm(emptyForm);
@@ -2956,6 +2962,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
   }
 
   function openNewProduct() {
+    pendingProductSave.current = null;
     setEditingId(null);
     setActiveProduct(null);
     setForm(emptyForm);
@@ -2992,6 +2999,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
       barcodeCode128: "",
       rosskoPartNumber: "",
     };
+    pendingProductSave.current = null;
     setEditingId(null);
     setActiveProduct(null);
     setForm(nextForm);
@@ -4271,6 +4279,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
     setInfo(null);
     try {
       let savedId = editingId;
+      let operationId: string | undefined;
       if (!editingId || isProductFormDirty(form, formBaseline)) {
         const payload: Record<string, unknown> = {
           name: form.name.trim(),
@@ -4349,20 +4358,25 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
           }
         }
         const signal = AbortSignal.timeout(30_000);
-        const res = await fetch(
+        const body = JSON.stringify(payload);
+        operationId = prepareSave(pendingProductSave, body).operationId;
+        const res = await tracedSaveFetch(
           editingId ? `/api/local-inventory/products/${editingId}` : "/api/local-inventory/products",
           {
             method: editingId ? "PUT" : "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+            headers: { "Content-Type": "application/json", ...(saveBranchId ? { [SAVE_BRANCH_HEADER]: saveBranchId } : {}) },
+            body,
             signal,
-          }
+          },
+          operationId,
         );
         const data = await readJson<ProductRow & { error?: string }>(res);
-        if (!res.ok) throw new Error(data?.error ?? (res.status >= 500
-          ? "Не удалось подтвердить сохранение. Проверьте карточку перед повтором."
-          : "Не удалось сохранить товар"));
-        if (!data?.id) throw new Error("Не удалось подтвердить сохранение. Проверьте карточку перед повтором.");
+        if (!res.ok) {
+          if (saveWasRejected(res)) pendingProductSave.current = null;
+          throw new Error(saveWasRejected(res) ? data?.error ?? "Не удалось сохранить товар" : UNKNOWN_SAVE_RESULT);
+        }
+        if (!data?.id) throw new Error(UNKNOWN_SAVE_RESULT);
+        pendingProductSave.current = null;
         savedId = data.id;
         const savedForm = formFromProduct(data);
         const savedGroup = data.groupPath?.trim();
@@ -4393,12 +4407,12 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
       if (closeAfter) {
         setInfo(editingId ? "Товар обновлён" : "Товар добавлен");
         resetForm();
-        void load(search, sort, direction, filters);
+        if (await load(search, sort, direction, filters, operationId) === false) setInfo(SAVED_REFRESH_FAILED);
       }
     } catch (e) {
       setFormError(e instanceof Error && e.name === "Error"
         ? e.message
-        : "Сервер не подтвердил сохранение. Изменения остались в форме. Проверьте, сохранилась ли карточка, перед повтором.");
+        : UNKNOWN_SAVE_RESULT);
     } finally {
       productSaveInFlightRef.current = false;
       setSaving(false);
