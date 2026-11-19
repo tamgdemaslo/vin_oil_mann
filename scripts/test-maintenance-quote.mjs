@@ -185,3 +185,11 @@ assert.equal(quoteRequirementChoices(m111, null).automaticVolume, '7');
 assert.equal(withMannEngineOilReference(null, { make: 'MERCEDES-BENZ', model: 'W204', engineCode: 'M111955' }), null);
 assert.equal(withMannEngineOilReference(null, { make: 'BMW', model: 'W203', engineCode: 'M111955' }), null);
 console.log('M111.955 oil profile without MANN catalogue entry passed');
+
+const { decodedEngineOilReference } = await jiti.import('../src/lib/mann-engine-oil-reference.ts');
+const decodedM111 = decodedEngineOilReference({ makeRaw: 'MERCEDES-BENZ', modelRaw: 'C-Klasse',
+  generationRaw: 'III', bodyName: 'W203', engineCode: 'M111.955' });
+assert.equal(quoteRequirementChoices(decodedM111, null).automaticVolume, '7');
+assert.deepEqual(quoteRequirementChoices(decodedM111, null).specifications, ['MB 229.5']);
+assert.equal(decodedEngineOilReference({ makeRaw: 'MERCEDES-BENZ', modelRaw: 'C-Klasse', generationRaw: 'III', engineCode: 'M111.955' }), null);
+console.log('Decoded generation III retains W203 chassis for oil prefill passed');

@@ -1,3 +1,4 @@
+import type { NormalizedVehicleIdentity } from "@/lib/vehicle-identity-client";
 import { isEngineOilServiceCapacity } from "@/lib/maintenance-quote";
 import type { MannTechnicalVehicleContext } from "@/lib/mann-technical-applicability";
 import type { MannUnifiedTechnicalProfile } from "@/lib/mann-unified-technical-profile";
@@ -65,4 +66,14 @@ export function withMannEngineOilReference(
       userConfirmedTransmission: false,
     }],
   };
+}
+
+/** Generation labels such as III do not replace the actual chassis code. */
+export function decodedEngineOilReference(vehicle: NormalizedVehicleIdentity): MannUnifiedTechnicalProfile | null {
+  return withMannEngineOilReference(null, {
+    make: vehicle.makeRaw ?? vehicle.makeCanonical,
+    model: vehicle.modelRaw ?? vehicle.modelCanonical,
+    generation: [vehicle.generationRaw, vehicle.generationCanonical, vehicle.bodyName, vehicle.bodyCode].filter(Boolean).join(" "),
+    engineCode: vehicle.engineCode,
+  });
 }
