@@ -1,5 +1,7 @@
 "use client";
 
+import lookupStyles from "./VehicleLookupCandidates.module.css";
+
 import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, CircleStop, Cog, Droplet, Gauge, GitBranch, Info, Link2, RefreshCw, Settings, Snowflake, type LucideIcon } from "lucide-react";
 import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
@@ -1335,17 +1337,35 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
       ) : null}
       {lookup?.message && !feedback ? <p className="eco-vehicle-lookup__message">{lookup.message}</p> : null}
       {lookup && lookup.candidates.length > 1 ? (
-        <div className="eco-vehicle-lookup__candidates">
-          <strong>Найдено несколько вариантов</strong>
-          <div>
+        <section className={lookupStyles.results} aria-label="Результаты расшифровки">
+          <header className={lookupStyles.header}>
+            <h3>Результат расшифровки</h3>
+            <p>{lookup.candidates[0].vehicle.vin ? `VIN ${lookup.candidates[0].vehicle.vin}` : input}</p>
+            <p>Источник — {lookup.sourceMethods.includes("partsapi_vindecode") ? "PartsAPI · VINdecode" : sourceLabel(lookup.candidates[0].vehicle)}. Получено вариантов — {lookup.candidates.length}.</p>
+          </header>
+          <div className={lookupStyles.list}>
             {lookup.candidates.map((candidate) => (
-              <button type="button" key={candidate.key} className={candidate.key === selectedKey ? "is-selected" : ""} onClick={() => chooseCandidate(candidate.key)}>
-                <b>{vehicleTitle(candidate.vehicle)}</b>
-                <span>{candidate.differences.join(" · ") || "Уточните модификацию"}</span>
-              </button>
+              <article key={candidate.key} className={lookupStyles.row} data-selected={candidate.key === selectedKey}>
+                <div>
+                  <h4>{vehicleTitle(candidate.vehicle)}</h4>
+                  <p>{candidate.vehicle.modificationName || "Название модификации не получено"}</p>
+                  <dl className={lookupStyles.facts}>
+                    <div><dt>Год выпуска</dt><dd>{candidate.vehicle.year ?? "Не получен"}</dd></div>
+                    <div><dt>Двигатель</dt><dd>{candidate.vehicle.engineCode ?? candidate.vehicle.engineName ?? "Не получен"}</dd></div>
+                    <div><dt>Объём</dt><dd>{candidate.vehicle.engineVolumeLiters ? `${candidate.vehicle.engineVolumeLiters} л` : "Не получен"}</dd></div>
+                    <div><dt>Мощность</dt><dd>{candidate.vehicle.powerHp ? `${Math.round(candidate.vehicle.powerHp)} л.с.` : "Не получена"}</dd></div>
+                    <div><dt>Топливо</dt><dd>{candidate.vehicle.fuelType ?? "Не получено"}</dd></div>
+                    <div><dt>Коробка</dt><dd>{candidate.vehicle.transmissionName ?? candidate.vehicle.transmissionType ?? "Не получена"}</dd></div>
+                    <div><dt>Привод</dt><dd>{candidate.vehicle.driveType ?? "Не получен"}</dd></div>
+                  </dl>
+                </div>
+                <button type="button" className="eco-btn eco-btn--primary" disabled={loading || resolving} aria-label={`Выбрать ${vehicleTitle(candidate.vehicle)}, ${vehicleDetails(candidate.vehicle)}`} aria-pressed={candidate.key === selectedKey} onClick={() => chooseCandidate(candidate.key)}>
+                  {candidate.key === selectedKey ? "Выбрано" : "Выбрать"}
+                </button>
+              </article>
             ))}
           </div>
-        </div>
+        </section>
       ) : null}
       {selectedVehicle ? (
         <article className="eco-vehicle-lookup__result">
@@ -1385,35 +1405,36 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
             </div>
           ) : null}
           {resolution?.status === "candidates" ? (
-            <div className="eco-vehicle-lookup__mann-candidates">
-              <div className="eco-vehicle-lookup__mann-candidates-head">
-                <strong>Уточните модификацию автомобиля</strong>
-                <span>Это нужно для точного подбора фильтров.</span>
+            <div className={lookupStyles.mann}>
+              <div className={lookupStyles.header}>
+                <h3>Уточните модификацию автомобиля</h3>
+                <p>Сверьте двигатель, мощность и период выпуска для подбора фильтров.</p>
               </div>
-              <div className="eco-vehicle-modification-columns" aria-hidden="true">
+              <div className={lookupStyles.columns} aria-hidden="true">
                 <span>Модификация</span><span>Двигатель</span><span>Мощность</span><span>Выпуск</span><span />
               </div>
               {resolution.candidates.map((candidate) => (
-                <div key={candidate.applicationId} className="eco-vehicle-modification-row">
+                <div key={candidate.applicationId} className={lookupStyles.modification}>
                   <div>
                     <b>{candidate.effectiveVehicleText ?? candidate.vehicleText ?? "Модификация"}</b>
-                    <dl className="eco-vehicle-candidate-facts">
+                    <dl className={lookupStyles.modificationFacts}>
                       <div><dt>Двигатель</dt><dd>{candidate.engineCode || "Не указан"}</dd></div>
                       <div><dt>Мощность</dt><dd>{candidate.hp ? `${candidate.hp} л.с.` : candidate.kw ? `${candidate.kw} кВт` : "Не указана"}</dd></div>
                       <div><dt>Выпуск</dt><dd>{candidate.vehicleYears || "Не указан"}</dd></div>
                     </dl>
-                    <div className="eco-vehicle-modification-notes"><CandidateConditions candidate={candidate} /></div>
                   </div>
                   <button
                     type="button"
+                    className="eco-btn"
                     aria-label={`Выбрать MANN-модификацию: ${candidateLabel(candidate)}`}
                     onClick={() => confirmMannCandidate(selectedVehicle, candidate)}
                   >
                     Выбрать
                   </button>
+                  <div className={lookupStyles.modificationNotes}><CandidateConditions candidate={candidate} /></div>
                 </div>
               ))}
-              <button type="button" onClick={() => openManualMode({ reason: "partial", vehicle: selectedVehicle })}>Не нашли нужную? Подобрать вручную</button>
+              <button type="button" className="eco-btn" onClick={() => openManualMode({ reason: "partial", vehicle: selectedVehicle })}>Подобрать вручную</button>
             </div>
           ) : null}
           {process.env.NODE_ENV !== "production" && resolution?.trace ? (
