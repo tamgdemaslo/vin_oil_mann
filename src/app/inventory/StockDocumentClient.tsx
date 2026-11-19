@@ -887,21 +887,28 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     const timer = window.setTimeout(async () => {
       setProductsSearching(true);
       setProductsError(null);
+      const timeout = AbortSignal.timeout(10_000);
       try {
         const params = new URLSearchParams({ search: query, limit: "30" });
-        const res = await fetch(`/api/local-inventory/products?${params.toString()}`, {
+        const endpoint = isReceipt ? "products/receipt-search" : "products";
+        const res = await fetch(`/api/local-inventory/${endpoint}?${params}`, {
           cache: "no-store",
-          signal: controller.signal,
+          signal: isReceipt ? AbortSignal.any([controller.signal, timeout]) : controller.signal,
         });
         const data = await readJson<{ products?: ProductOption[]; error?: string }>(res);
-        if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить товары");
+        if (isReceipt) timeout.throwIfAborted();
+        if (!res.ok || (isReceipt && !Array.isArray(data?.products))) {
+          throw new Error(data?.error ?? "Не удалось загрузить товары");
+        }
         if (controller.signal.aborted) return;
         setProductsQuery(query);
         setProducts((Array.isArray(data?.products) ? data.products : []).filter((p) => p.entityType !== "service"));
       } catch (e) {
-        if (!(e instanceof DOMException && e.name === "AbortError")) {
+        if (!controller.signal.aborted) {
           setProducts([]);
-          setProductsError(e instanceof Error ? e.message : "Не удалось загрузить товары");
+          setProductsError(isReceipt && timeout.aborted
+            ? "Поиск занял слишком много времени. Повторите попытку."
+            : e instanceof Error ? e.message : "Не удалось загрузить товары");
         }
       } finally {
         if (!controller.signal.aborted) setProductsSearching(false);
@@ -911,7 +918,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [productSearch]);
+  }, [isReceipt, productSearch]);
 
   useEffect(() => {
     const query = counterpartySearch.trim();

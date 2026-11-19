@@ -1405,6 +1405,9 @@ const productSortKeys = new Set<ProductSortKey>([
 ]);
 const ruCollator = new Intl.Collator("ru", { numeric: true, sensitivity: "base" });
 const PRODUCT_ROWS_CACHE_MS = 60_000;
+const RECEIPT_SEARCH_CACHE_MS = 60_000;
+const RECEIPT_SEARCH_CACHE_SIZE = 256;
+const receiptSearchCache = new Map<string, { expiresAt: number; ids: Promise<string[]> }>();
 const COUNTERPARTY_ROWS_CACHE_MS = 60_000;
 const STORE_ROWS_CACHE_MS = 300_000;
 const STOCK_DOCUMENTS_CACHE_MS = 60_000;
@@ -1654,6 +1657,7 @@ function buildProductFacets(searchRows: ProductSearchRow[], params: ProductFilte
 
 export function invalidateProductFilterOptions() {
   productAdminCache.rows = null;
+  receiptSearchCache.clear();
 }
 
 function invalidateStockDocumentLists() {
@@ -1780,6 +1784,76 @@ export function supplierCounterpartyIdentityWhere(): Prisma.LocalCounterpartyWhe
       { counterpartyTypeName: { contains: "поставщик", mode: "insensitive" } },
     ],
   };
+}
+
+export async function searchReceiptProducts(branchId: string, search: string, limit: number) {
+  const { tokens } = parseSearchQuery(search);
+  const key = JSON.stringify([branchId, search.toLowerCase(), limit]);
+  const scope = { branchId, archived: false, entityType: { not: "service" } };
+  let entry = receiptSearchCache.get(key);
+  if (!entry || entry.expiresAt <= Date.now()) {
+    const identity = { equals: search, mode: "insensitive" as const };
+    const exact = [
+      { article: identity },
+      { code: identity },
+      { externalCode: identity },
+      { barcodeEan13: identity },
+      { barcodeEan8: identity },
+      { barcodeCode128: identity },
+    ];
+    const orderBy = [{ name: "asc" as const }, { id: "asc" as const }];
+    const ids = (async () => {
+      const exactMatches = await prisma.localProduct.findMany({
+        where: { ...scope, OR: exact },
+        orderBy,
+        select: { id: true },
+        take: limit,
+      });
+      const exactIds = exactMatches.map(({ id }) => id);
+      if (!tokens.length || exactIds.length === limit) return exactIds;
+
+      const matches = await prisma.localProduct.findMany({
+        where: {
+          ...scope,
+          id: { notIn: exactIds },
+          AND: tokens.map((token) => {
+            const match = { contains: token, mode: "insensitive" as const };
+            return { OR: [
+              { name: match }, { brand: match }, { article: match }, { code: match },
+              { externalCode: match }, { oem: match }, { oemParts: match },
+              { barcodeEan13: match }, { barcodeEan8: match }, { barcodeCode128: match }, { searchText: match },
+            ] };
+          }),
+        },
+        orderBy,
+        select: { id: true },
+        take: limit - exactIds.length,
+      });
+      return [...exactIds, ...matches.map(({ id }) => id)];
+    })();
+    receiptSearchCache.delete(key);
+    receiptSearchCache.set(key, entry = { expiresAt: Date.now() + RECEIPT_SEARCH_CACHE_MS, ids });
+    if (receiptSearchCache.size > RECEIPT_SEARCH_CACHE_SIZE) {
+      const oldestKey = receiptSearchCache.keys().next().value;
+      if (oldestKey !== undefined) receiptSearchCache.delete(oldestKey);
+    }
+    const pendingEntry = entry;
+    void ids.catch(() => {
+      if (receiptSearchCache.get(key) === pendingEntry) receiptSearchCache.delete(key);
+    });
+  }
+
+  const ids = await entry.ids;
+  if (!ids.length) return [];
+  const products = await prisma.localProduct.findMany({
+    where: { ...scope, id: { in: ids } },
+    include: productWithStockInclude,
+  });
+  const byId = new Map(products.map((product) => [product.id, product]));
+  return ids.flatMap((id) => {
+    const product = byId.get(id);
+    return product ? [mapProduct(product)] : [];
+  });
 }
 
 export async function getLocalAdminProduct(id: string, branchId: string) {
