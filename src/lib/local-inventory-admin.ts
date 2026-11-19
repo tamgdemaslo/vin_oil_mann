@@ -1786,12 +1786,35 @@ export function supplierCounterpartyIdentityWhere(): Prisma.LocalCounterpartyWhe
   };
 }
 
-export async function searchReceiptProducts(branchId: string, search: string, limit: number) {
+type ReceiptSearchDbStage = "exactDbMs" | "textDbMs" | "detailsDbMs";
+
+export type ReceiptSearchTiming = Partial<Record<ReceiptSearchDbStage, number>> & {
+  cache?: "hit" | "miss";
+  candidateMs?: number;
+};
+
+export async function searchReceiptProducts(
+  branchId: string,
+  search: string,
+  limit: number,
+  timing: ReceiptSearchTiming,
+) {
+  async function measureQuery<T>(stage: ReceiptSearchDbStage, query: () => Promise<T>) {
+    const started = performance.now();
+    try {
+      return await query();
+    } finally {
+      timing[stage] = Math.round(performance.now() - started);
+    }
+  }
+
+  const candidateStarted = performance.now();
   const { tokens } = parseSearchQuery(search);
   const key = JSON.stringify([branchId, search.toLowerCase(), limit]);
   const scope = { branchId, archived: false, entityType: { not: "service" } };
   let entry = receiptSearchCache.get(key);
   if (!entry || entry.expiresAt <= Date.now()) {
+    timing.cache = "miss";
     const identity = { equals: search, mode: "insensitive" as const };
     const exact = [
       { article: identity },
@@ -1803,16 +1826,16 @@ export async function searchReceiptProducts(branchId: string, search: string, li
     ];
     const orderBy = [{ name: "asc" as const }, { id: "asc" as const }];
     const ids = (async () => {
-      const exactMatches = await prisma.localProduct.findMany({
+      const exactMatches = await measureQuery("exactDbMs", () => prisma.localProduct.findMany({
         where: { ...scope, OR: exact },
         orderBy,
         select: { id: true },
         take: limit,
-      });
+      }));
       const exactIds = exactMatches.map(({ id }) => id);
       if (!tokens.length || exactIds.length === limit) return exactIds;
 
-      const matches = await prisma.localProduct.findMany({
+      const matches = await measureQuery("textDbMs", () => prisma.localProduct.findMany({
         where: {
           ...scope,
           id: { notIn: exactIds },
@@ -1828,7 +1851,7 @@ export async function searchReceiptProducts(branchId: string, search: string, li
         orderBy,
         select: { id: true },
         take: limit - exactIds.length,
-      });
+      }));
       return [...exactIds, ...matches.map(({ id }) => id)];
     })();
     receiptSearchCache.delete(key);
@@ -1841,14 +1864,21 @@ export async function searchReceiptProducts(branchId: string, search: string, li
     void ids.catch(() => {
       if (receiptSearchCache.get(key) === pendingEntry) receiptSearchCache.delete(key);
     });
+  } else {
+    timing.cache = "hit";
   }
 
-  const ids = await entry.ids;
+  let ids: string[];
+  try {
+    ids = await entry.ids;
+  } finally {
+    timing.candidateMs = Math.round(performance.now() - candidateStarted);
+  }
   if (!ids.length) return [];
-  const products = await prisma.localProduct.findMany({
+  const products = await measureQuery("detailsDbMs", () => prisma.localProduct.findMany({
     where: { ...scope, id: { in: ids } },
     include: productWithStockInclude,
-  });
+  }));
   const byId = new Map(products.map((product) => [product.id, product]));
   return ids.flatMap((id) => {
     const product = byId.get(id);
