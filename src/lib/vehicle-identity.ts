@@ -819,14 +819,14 @@ export async function savedVinLookupDiagnostics(vin: string) {
       if (forbidden.test(key)) return [];
       const next = path ? path + "." + key : key;
       if (child && typeof child === "object") return Object.entries(fields(child, next, depth + 1));
-      return technical.test(key) && (typeof child === "string" || typeof child === "number")
+      return technical.test(next) && (typeof child === "string" || typeof child === "number")
         ? [[next, typeof child === "string" ? child.slice(0, 300) : child]] : [];
     }));
   }
   return rows.map(row => {
     const raw = decryptRaw(row.rawResponseEncrypted);
     return { method: row.method, status: row.status, completedAt: row.completedAt,
-      errorCode: row.errorCode, fields: fields(raw),
+      errorCode: row.errorCode, errorMessage: row.errorMessage?.replace(/key=[^&\s]+/gi, "key=[redacted]"), fields: fields(raw),
       rootKeys: raw ? Object.keys(raw) : [], resultKeys: raw?.result && typeof raw.result === "object" ? Object.keys(raw.result) : [] };
   });
 }
