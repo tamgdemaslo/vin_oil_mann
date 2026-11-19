@@ -203,3 +203,33 @@ calls = [];
 assert.equal((await lookupVin()).status, "found");
 assert.deepEqual(calls, ["tronk"]);
 console.log("vehicle-identity PartsAPI priority and TRONK fallback passed");
+
+// Production regression: legacy decode returns the whole W203 range while
+// vindecode2 has no data. The six-digit Mercedes type must disambiguate it.
+const mercedesReports = [
+  ['C160K', 'M271.921', 1800, undefined],
+  ['C180', 'M111.951', 1998, undefined],
+  ['C200CDI', 'OM611.962', 2151, undefined],
+  ['C200K', 'M111.955', 1998, 120],
+  ['C230K', 'M111.981', 2295, undefined],
+].map(([Modification, EngineSeries, Ccm, KW]) => ({ Data: {
+  Brand: 'MERCEDES-BENZ', Model: 'C-Klasse', BodyName: 'W203',
+  Modification, EngineSeries, EngineVolume: { Ccm, L: Ccm / 1000 },
+  EnginePower: { KW }, StartYear: '07.2001', FinishYear: '2003',
+} }));
+tronkClient.decodeVinPrimary = async () => ({ ok: true, method: 'vindecode', durationMs: 1,
+  data: { decode: { Reports: mercedesReports } } });
+const specific = await lookupVehicle({ organizationId: 'test', inputType: 'vin', input: 'WDB2030451A139398', refresh: true });
+assert.equal(specific.candidates.length, 1);
+assert.equal(specific.vehicle.engineCode, 'M111.955');
+assert.equal(specific.vehicle.modificationName, 'C 200 Kompressor (203.045)');
+assert.equal(specific.vehicle.year, undefined, 'catalogue range must not invent a build year');
+const { selectMercedesVinType } = await jiti.import('../src/lib/mercedes-vin-type.ts');
+const vehicles = mercedesReports.map(r => toVehicle(r.Data, 'tronk_vindecode'));
+assert.equal(selectMercedesVinType('WDB2030451A999999', vehicles)[0].engineCode, 'M111.955', 'type applies beyond one VIN serial');
+assert.equal(selectMercedesVinType('WDB2030421A139398', vehicles).length, vehicles.length, 'unsupported type stays ambiguous');
+assert.equal(selectMercedesVinType('WVW2030451A139398', vehicles).length, vehicles.length);
+assert.equal(selectMercedesVinType('WDB2030451A139398', vehicles.filter(v => v.engineSeries !== 'M111.955')).length, 4);
+assert.equal(selectMercedesVinType('WDB2030451A139398', [...vehicles, vehicles[3]]).length, 6, 'duplicate matching reports do not silently choose');
+assert.equal(selectMercedesVinType('WDB2030451A139398', vehicles.map(v => ({ ...v, powerKw: 140 }))).length, 5, 'contradictory engine characteristics remain ambiguous');
+console.log('Mercedes VIN type production regression passed');

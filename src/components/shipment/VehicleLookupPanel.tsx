@@ -121,7 +121,7 @@ function vehicleDetails(vehicle: NormalizedVehicleIdentity): string {
   return [
     vehicle.licensePlate,
     vehicle.year,
-    vehicle.modificationName && vehicle.sourceMethods.includes("mann_manual") ? vehicle.modificationName : undefined,
+    vehicle.modificationName,
     vehicle.engineVolumeLiters ? `${vehicle.engineVolumeLiters} л` : undefined,
     vehicle.engineCode,
     vehicle.powerHp ? `${Math.round(vehicle.powerHp)} л.с.` : undefined,
@@ -714,6 +714,20 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
 
       setResolution(data);
 
+      // Oil requirements belong to the decoded engine. A gap in the local
+      // filter catalogue must not erase an independently verified oil profile.
+      const referenceProfile = withMannEngineOilReference(null, mannTechnicalContextFromVehicle({
+        ...vehicle, generationRaw: vehicle.generationRaw ?? vehicle.bodyName,
+      }));
+      if (referenceProfile && data.status !== "resolved") {
+        setAppliedVehicle(vehicle);
+        setAppliedFromCache(Boolean(fromCache));
+        setTechnicalProfile(referenceProfile);
+        onUseVehicle(vehicle, data);
+        setFeedback({ tone: "neutral", title: "Автомобиль определён",
+          body: "Масло и объём заполнены по двигателю. Точного соответствия фильтров в локальном каталоге MANN нет." });
+        return;
+      }
       onUseVehicle(vehicle, data);
       if (data.status === "resolved") {
         setAppliedVehicle(vehicle);
@@ -984,6 +998,7 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
             </div>
             <strong>{vehicleTitle(appliedVehicle)}</strong>
             {vehicleDetails(appliedVehicle) && <span>{vehicleDetails(appliedVehicle)}</span>}
+            {appliedVehicle.identificationNote && <small>{appliedVehicle.identificationNote}</small>}
           </div>
           <div className="eco-vehicle-lookup__actions">
             <button type="button" onClick={onEditVehicle ?? changeAppliedVehicle}>

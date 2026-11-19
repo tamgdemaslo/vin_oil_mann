@@ -16,3 +16,20 @@
 Проверки: `npm run test:maintenance-quote`, TypeScript, ESLint изменённых новых модулей. Браузерный сценарий проверен на реальном компоненте с изолированным демонстрационным API, включая два варианта, фильтр, работу, копирование и ширину 390 px. Проверка с рабочей базой и публикация отдельно.
 
 В сохранённой отгрузке данные прежнего VIN-подбора передаются как подсказки; диапазон объёма не выбирается автоматически. В Роско отправляются только явно распознанные артикулы MANN, не OEM-номера других брендов. Складские варианты ограничиваются складом документа. Артикул MANN, введённый вручную, помечается как требующий проверки применяемости.
+
+
+### Mercedes W203: legacy VIN ambiguity
+
+TRONK `vindecode` can return the whole W203 engine range and `vindecode2`
+can return no data. The verified manufacturer type crosswalk currently covers
+`WDB…` type `203045`: C 200 Kompressor (203.045), M111.955. It selects only a
+single matching provider report with compatible displacement and power;
+unsupported types or conflicting reports remain unselected. It does not infer
+a build year from catalogue production dates.
+
+The M111.955/W203 oil reference is independent of local MANN filter coverage:
+MB 229.5, 7 l with filter. Evidence: Daimler WIS BF18.00-P-1001-01L and
+[Ravenol's 203.045 application](https://choise.ravenol.com/1-cars/365-mercedes-benz/1433-c-klass-w203-s203-cl203/83364-c-200-kompressor-203-045245745/).
+Identity crosswalk: [Hengst](https://catalog.hengst.com/en/online-catalog/product/7835310000-01/de/).
+Viscosity is not inferred as a unique value from an approval that permits
+multiple grades. Filter catalogue gaps do not substitute a later M271 engine.
