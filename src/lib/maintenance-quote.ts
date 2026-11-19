@@ -184,7 +184,7 @@ export function quoteRequirementChoices(profile: import("@/lib/mann-unified-tech
   const engines = profile?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
   const discoveries = research?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
   const raw = [...engines.flatMap(item => item.specifications), ...discoveries.map(item => item.specification)].join("; ");
-  const norm = buildRequirementsNorm({ oem: raw, acea: raw, api: raw, ilsac: raw, sae: [...engines.flatMap(item => item.viscosityGrades), raw].join("; ") });
+  const norm = buildRequirementsNorm({ oem: raw, acea: raw, api: raw, ilsac: raw, sae: [...engines.flatMap(item => item.viscosityGrades), ...Array.from(raw.matchAll(/\b\d{1,2}W[- ]?\d{1,2}\b/gi), match => match[0]), ...Array.from(raw.matchAll(/\bSAE\s+(\d{1,2})(?![\d.W-])/gi), match => match[1])].join("; ") });
   const oem = [...norm.oem.filter(value => !fordOilApprovals(value).length), ...fordOilApprovals(raw)];
   const specifications = [...new Set(oem.length ? oem : [...norm.acea, ...norm.api, ...norm.ilsac])];
   const viscosities = [...new Set(norm.sae)];
