@@ -26,14 +26,21 @@ export default function ReceiptBarcodeResolver({ barcode, onAdded, onCancel, onB
     if (search.length < 2 || selected) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
+      const timeout = AbortSignal.timeout(10_000);
       try {
         const params = new URLSearchParams({ search, limit: "12" });
-        const response = await fetch(`/api/local-inventory/products?${params}`, { cache: "no-store", signal: controller.signal });
+        const response = await fetch(`/api/local-inventory/products/receipt-search?${params}`, { cache: "no-store", signal: AbortSignal.any([controller.signal, timeout]) });
         const data = await response.json().catch(() => ({ error: "Не удалось загрузить товары. Повторите поиск." }));
-        if (!response.ok) throw new Error(data.error || "Не удалось найти товары");
+        if (!response.ok || !Array.isArray(data?.products)) {
+          throw new Error(data?.error || "Не удалось найти товары");
+        }
         if (!controller.signal.aborted) setProducts((Array.isArray(data.products) ? data.products : []).filter((product: ProductOption) => product.entityType !== "service"));
       } catch (failure) {
-        if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Не удалось найти товары");
+        if (!controller.signal.aborted) {
+          setError(timeout.aborted
+            ? "Поиск занял слишком много времени. Повторите попытку."
+            : failure instanceof Error ? failure.message : "Не удалось найти товары");
+        }
       } finally {
         if (!controller.signal.aborted) setSearching(false);
       }
