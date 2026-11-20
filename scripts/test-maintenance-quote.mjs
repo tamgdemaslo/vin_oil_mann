@@ -12,6 +12,9 @@ assert.equal(matchesQuoteOil({ ...product, groupPath: 'Трансмиссион�
 assert.equal(quoteLitresPerUnit({ name: 'Oil 4 л', uomName: 'л', packageVolume: '200' }), 1);
 assert.equal(quoteLitresPerUnit({ name: 'Oil', uomName: 'шт.', packageVolume: '4 л' }), 4);
 assert.equal(quoteLitresPerUnit({ name: 'Oil 5W-30', uomName: 'шт.' }), null);
+assert.equal(quoteLitresPerUnit({ name: 'Oil barrel', uomName: 'шт.', packageVolume: '200 л', markingMode: 'BULK_OIL_FROM_MARKED_BARREL' }), null, 'bulk marking cannot silently sell a whole barrel or guess liter stock');
+assert.equal(quoteLitresPerUnit({ name: 'Oil bottle', uomName: 'л', packageVolume: '1 л', markingMode: 'PACKAGED_MARKED_GOOD' }), null, 'packaged marked goods cannot silently become fractional retail liters');
+assert.equal(quoteLitresPerUnit({ name: 'Oil barrel', uomName: 'л', packageVolume: '200 л', markingMode: 'BULK_OIL_FROM_MARKED_BARREL' }), 1);
 const bulk = { id: 'bulk', name: 'Масло на розлив', article: '', price: 900, available: 5, unit: 'л', litresPerUnit: 1, sae: '5W-30', oem: 'VW 504.00' };
 assert.deepEqual(quoteOilAmount(bulk, 4.5), { quantity: 4.5, suppliedLitres: 4.5, cents: 405000, enough: true });
 const packed = { ...bulk, id: 'packed', unit: 'шт.', litresPerUnit: 4, available: 1 };
@@ -154,10 +157,13 @@ console.log('Shipment quote suggestions, MANN reference safety, warehouse isolat
 const { quoteSupplierDeliveryAt, quoteServiceGroups } = await jiti.import('../src/lib/maintenance-quote.ts');
 const quoteNow = Date.parse('2026-11-14T21:50:00Z');
 const quoteTime = { timeZone: 'Europe/Kaliningrad', now: quoteNow };
-const deliveryPart = { id: 'part', name: 'Фильтр Роско', filterLabel: 'Воздушный фильтр', brand: 'MANN', quantity: 1, price: 1000, supplierProductId: 'rossko:part' };
+const deliveryPart = { id: 'part', name: 'Расходник', quantity: 1, price: 1000, supplierProductId: 'rossko:part' };
 const scheduledPart = { ...deliveryPart, supplierDeliveryLabel: 'доставка: 17.11.2026, 10:00–12:00' };
 const scheduledText = quoteClientText('Автомобиль', '', 0, [], [scheduledPart]);
 assert.match(scheduledText, /Ориентировочная поставка: 17\.11\.2026, 10:00–12:00/u);
+const cleanFilterText = quoteClientText('Автомобиль', '', 0, [], [{ ...scheduledPart, name: 'LYNX LA-1030 (аналог Росско)', filterLabel: 'Воздушный фильтр', brand: 'LYNXauto' }]);
+assert.match(cleanFilterText, /Воздушный фильтр LYNXauto: /u);
+assert.doesNotMatch(cleanFilterText, /Росско|LA-1030|поставка|доставка|17\.11/u, 'client filter line contains type, brand and price only, even when supplier delivery metadata exists');
 const replacementText = quoteClientText('Автомобиль', '', 0, [], [{ ...scheduledPart, supplierDeliveryLabel: 'доставка: 18.11.2026, 09:30' }]);
 assert.match(replacementText, /Ориентировочная поставка: 18\.11\.2026, 09:30/u);
 assert.doesNotMatch(replacementText, /10:00–12:00/u);
@@ -166,9 +172,9 @@ const quoteWithPart = (deliveryAt, deliveryDays, oils = []) => quoteClientText('
 ], quoteTime);
 assert.doesNotMatch(quoteWithPart('2026-11-14T21:59:00Z', null), /доставка/u);
 assert.doesNotMatch(quoteWithPart('2026-11-15T21:59:00Z', 4), /доставка/u, 'exact date overrides estimated days');
-assert.match(quoteWithPart('2026-11-15T22:00:00Z', null), /Воздушный фильтр MANN: .*доставка 16\.11\.2026/u);
+assert.match(quoteWithPart('2026-11-15T22:00:00Z', null), /Расходник: .*доставка 16\.11\.2026/u);
 assert.doesNotMatch(quoteWithPart(null, null), /доставка/u);
-assert.match(quoteWithPart(null, 3, [bulk]), /Воздушный фильтр MANN: .*доставка 17\.11\.2026/u);
+assert.match(quoteWithPart(null, 3, [bulk]), /Расходник: .*доставка 17\.11\.2026/u);
 assert.doesNotMatch(quoteClientText('Автомобиль', '', 0, [], [{ ...deliveryPart, supplierProductId: undefined, supplierDeliveryAt: quoteNow + 3 * 86400000 }], quoteTime), /доставка/u);
 const services = ['Частичная замена масла в АКПП', 'Замена топливного фильтра', 'Замена масла в двигателе', 'Замена масла в заднем редукторе', 'Замена салонного фильтра']
   .map((name, index) => ({ id: String(index), name, salePriceCents: 100000 }));

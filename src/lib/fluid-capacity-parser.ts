@@ -1,4 +1,4 @@
-export const FLUID_CAPACITY_PARSER_VERSION = "capacity-parser-v7" as const;
+export const FLUID_CAPACITY_PARSER_VERSION = "capacity-parser-v8" as const;
 
 export type FluidCapacityKind =
   | "SERVICE"
@@ -178,6 +178,18 @@ function contextFor(text: string, start: number, end: number): { text: string; o
   return { text: text.slice(contextStart, contextEnd).trim(), offset: contextStart };
 }
 
+/** Ignore a semantic label explicitly denied or reported as unknown. */
+function negatedKindMarker(context: string, start: number, length: number): boolean {
+  const before = context.slice(0, start);
+  const after = context.slice(start + length);
+  const unknown = String.raw`(?:не\s+(?:указан[а-яё]*|извест[а-яё]*|определ[а-яё]*|подтвержд[а-яё]*|привед[а-яё]*|уточн[а-яё]*)|неизвест[а-яё]*|отсутств[а-яё]*)`;
+  // Include the noun when the marker covers only its adjective: "сервисный
+  // объём не указан", "частичная замена не подтверждена".
+  const noun = String.raw`(?:объ[её]м[а-яё]*|замен[а-яё]*|заправк[а-яё]*)`;
+  return new RegExp(String.raw`(?:^|[^\p{L}])(?:не|${unknown})\s*$`, "iu").test(before)
+    || new RegExp(String.raw`^\s*(?:${noun}\s+)?${unknown}(?![\p{L}])`, "iu").test(after);
+}
+
 function nearestKind(
   context: string,
   absoluteStart: number,
@@ -192,6 +204,7 @@ function nearestKind(
   for (const marker of KIND_MARKERS) {
     marker.pattern.lastIndex = 0;
     for (const match of context.matchAll(marker.pattern)) {
+      if (negatedKindMarker(context, match.index ?? 0, match[0].length)) continue;
       // A replacement quantity is not the total capacity of the assembly.
       if (marker.kind === "TOTAL" && /^полн/iu.test(match[0])
         && /^\s+(?:аппаратн[а-яё]*\s+)?замен[а-яё]*/iu.test(context.slice((match.index ?? 0) + match[0].length))) continue;

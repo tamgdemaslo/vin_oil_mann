@@ -25,6 +25,10 @@ export type NormalizedVehicleIdentity = {
   modelYearTo?: number;
   modificationName?: string;
   identificationNote?: string;
+  manufacturerTypeCodes?: string[];
+  engineCodes?: string[];
+  catalogMonthFrom?: string;
+  catalogMonthTo?: string;
   engineName?: string;
   engineCode?: string;
   engineSeries?: string;
@@ -68,7 +72,7 @@ export type VehicleLookupResult = {
     quality: { status: VehicleDecodeQualityStatus; score: number; present: string[]; missing: string[] };
     failureCode?: VehicleDecodeFailureCode;
     fallbackUsed: boolean;
-    attempts: Array<{ method: "partsapi_vindecode" | "vindecode" | "vindecode2" | "number2vin" | "frameapi" | "convertb2b" | "convertgate"; ok: boolean; fromCache: boolean; durationMs: number; failureCode?: VehicleDecodeFailureCode }>;
+    attempts: Array<{ method: "partsapi_vindecode" | "vindecode" | "vindecode2" | "number2vin" | "frameapi" | "convertb2b" | "convertgate"; ok: boolean; fromCache: boolean; durationMs: number; failureCode?: VehicleDecodeFailureCode; returnedVins?: string[] }>;
   };
 };
 

@@ -1,3 +1,4 @@
+import { mannTechnicalContextFromVehicle } from "@/lib/mann-technical-request-context";
 import { normalizeVehicleMake } from "@/lib/vehicle-normalization";
 import { prisma } from "@/lib/db";
 import { lookupVehicle } from "@/lib/vehicle-identity";
@@ -109,7 +110,8 @@ export async function quickMaintenanceQuote(access: AIAssistantAccess, input: {
     return answer(diagnostic.message);
   }
   const variantKeys = resolution.selectedApplication.variantIds;
-  const profileInput = { organizationId: access.organizationId, variantKeys, profile };
+  const vehicleContext = mannTechnicalContextFromVehicle(vehicle, {}, resolution.selectedApplication);
+  const profileInput = { organizationId: access.organizationId, variantKeys, engineCode: vehicleContext.engineCode, vehicleContext, profile };
   let currentProfile = await addMannResearchCatalogToProfile(profileInput);
   let requirements = quoteRequirementChoices(currentProfile, null);
   if (!requirements.specifications.length || !requirements.automaticVolume) {

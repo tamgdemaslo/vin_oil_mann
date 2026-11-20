@@ -47,6 +47,10 @@ export type NormalizedVehicleIdentity = {
   modelYearTo?: number;
   modificationName?: string;
   identificationNote?: string;
+  manufacturerTypeCodes?: string[];
+  engineCodes?: string[];
+  catalogMonthFrom?: string;
+  catalogMonthTo?: string;
   engineName?: string;
   engineCode?: string;
   engineSeries?: string;
@@ -90,6 +94,7 @@ export type VehicleAttemptDiagnostics = {
   fromCache: boolean;
   durationMs: number;
   failureCode?: VehicleDecodeFailureCode;
+  returnedVins?: string[];
 };
 
 export type VehicleDecodeDiagnostics = {
@@ -274,6 +279,10 @@ export function toVehicle(input: RecordValue, method: VehicleSourceMethod, ident
     productionMonth: consistentVehicleProductionMonth([data.ProduceDate, data.produce_date], year),
     modelYearFrom: firstYear(data, [["ModelYearFrom"], ["model_year_from"], ["StartYear"], ["super_gen", "year_from"]]),
     modelYearTo: firstYear(data, [["ModelYearTo"], ["model_year_to"], ["FinishYear"], ["super_gen", "year_to"]]),
+    manufacturerTypeCodes: Array.isArray(data.ManufacturerTypeCodes) ? data.ManufacturerTypeCodes.filter((v): v is string => typeof v === "string") : undefined,
+    engineCodes: Array.isArray(data.EngineCodes) ? data.EngineCodes.map(normalizeEngineCode).filter((v): v is string => Boolean(v)) : undefined,
+    catalogMonthFrom: firstText(data, [["CatalogMonthFrom"]]),
+    catalogMonthTo: firstText(data, [["CatalogMonthTo"]]),
     modificationName: firstText(data, [["Modification"], ["modificationName"]]),
     engineName: firstText(data, [["EngineName"], ["engine_name"], ["EngineDescription"], ["engine_description"], ["Modification"], ["engine", "name"], ["tech_param", "human_name"]]),
     engineCode: normalizeEngineCode(firstText(data, [["EngineCode"], ["engine_code"], ["engine", "code"]])),
@@ -392,6 +401,32 @@ function primaryReports(raw: RecordValue): RecordValue[] {
   return [];
 }
 
+/** https://data.tronk.info/docs/vindecode and /docs/vindecode2:
+ * Root vin binds the response to the request; it is not independent identity proof.
+ * Explicit identity fields are separate. Nested request/query/input echoes are ignored.
+ */
+export function assessTronkReturnedVin(raw: unknown, requestedVin: string, method: "vindecode" | "vindecode2"): {
+  status: "exact" | "mismatch" | "absent"; returnedVins: string[];
+  correlationStatus: "match" | "mismatch" | "absent"; correlationVins: string[];
+} {
+  const response = asRecord(raw);
+  const records = method === "vindecode"
+    ? primaryReports(response).map(report => asRecord(report.Data ?? report.data ?? report))
+    : [asRecord(response.result)];
+  const returnedVins = [...new Set(records.flatMap(record => Object.entries(record)
+    .filter(([key, value]) => /^(?:vin|vin_code|vincode|vehicleidentificationnumber)$/iu.test(key) && typeof value === "string" && value.trim())
+    .map(([, value]) => normalizeVinInput(String(value)))))];
+  const requested = normalizeVinInput(requestedVin);
+  const correlationVins = [...new Set(Object.entries(response)
+    .filter(([key, value]) => /^vin$/iu.test(key) && typeof value === "string" && value.trim())
+    .map(([, value]) => normalizeVinInput(String(value))))];
+  const correlationStatus = !correlationVins.length ? "absent" : correlationVins.every(vin => vin === requested) ? "match" : "mismatch";
+  return {
+    status: correlationStatus === "mismatch" ? "mismatch" : !returnedVins.length ? "absent" : returnedVins.every(vin => vin === requested) ? "exact" : "mismatch",
+    returnedVins, correlationStatus, correlationVins,
+  };
+}
+
 function primaryVehicleLacksPowertrain(vehicle: NormalizedVehicleIdentity): boolean {
   return !(
     vehicle.engineCode ||
@@ -423,10 +458,25 @@ function usefulFrame(raw: RecordValue): boolean {
   return Object.keys(result).length > 0 && Object.keys(asRecord(result.tech_data)).length > 0;
 }
 
+// Source/cache bookkeeping is deliberately excluded: identical technical
+// identities from separate providers are one candidate, differing facts are not.
+function candidateIdentityKey(vehicle: NormalizedVehicleIdentity): string {
+  return JSON.stringify([
+    vehicle.makeCanonical, vehicle.modelCanonical, vehicle.generationCanonical ?? vehicle.generationRaw,
+    vehicle.bodyCode, vehicle.bodyName, vehicle.bodyType, vehicle.engineCode, vehicle.engineSeries,
+    vehicle.engineName, vehicle.modificationName, vehicle.year, vehicle.productionMonth,
+    [...new Set(vehicle.engineCodes ?? [])].sort(), [...new Set(vehicle.manufacturerTypeCodes ?? [])].sort(),
+    vehicle.modelYearFrom, vehicle.modelYearTo, vehicle.catalogMonthFrom, vehicle.catalogMonthTo,
+    vehicle.engineVolumeCc ?? vehicle.engineVolumeLiters, vehicle.powerKw, vehicle.powerHp,
+    vehicle.fuelType, vehicle.transmissionType, vehicle.transmissionName, vehicle.driveType,
+    vehicle.steeringPosition, vehicle.market,
+  ]);
+}
+
 function dedupeCandidates(candidates: NormalizedVehicleIdentity[]): NormalizedVehicleIdentity[] {
   const byKey = new Map<string, NormalizedVehicleIdentity>();
   for (const candidate of candidates) {
-    const key = [candidate.makeCanonical, candidate.modelCanonical, candidate.generationCanonical, candidate.bodyName, candidate.engineSeries].map((item) => item ?? "").join("|");
+    const key = candidateIdentityKey(candidate);
     const current = byKey.get(key);
     const weight = (item: NormalizedVehicleIdentity) => Object.values(item).filter((value) => value != null && value !== "" && value !== 0).length;
     if (!current || weight(candidate) > weight(current)) byKey.set(key, candidate);
@@ -476,19 +526,32 @@ async function cachedTronkCall(params: {
   call: () => Promise<TronkCallResult>;
 }): Promise<{ call: TronkCallResult; fromCache: boolean; cacheId: string | null }> {
   const hash = inputHash(params.normalizedInput);
+  const vinMethod = params.inputType === "vin" && (params.method === "vindecode" || params.method === "vindecode2") ? params.method : null;
+  const mismatched = (raw: RecordValue) => vinMethod && assessTronkReturnedVin(raw, params.normalizedInput, vinMethod).status === "mismatch";
+  const mismatchFailure = (): TronkCallResult => ({ ok: false, method: params.method, code: "invalid_response", message: "VIN в ответе сервиса не совпадает с запрошенным. Ответ сохранён для проверки.", durationMs: 0 });
   if (!params.refresh) {
     try {
       const cached = await prisma.vehicleLookupCache.findFirst({
-        where: { organizationId: params.organizationId, inputType: params.inputType, normalizedInputHash: hash, method: params.method, status: "success" },
+        where: { organizationId: params.organizationId, inputType: params.inputType, normalizedInputHash: hash, method: params.method, OR: [{ status: "success" }, { errorCode: "VIN_RETURN_MISMATCH" }] },
         orderBy: { completedAt: "desc" },
       });
       const raw = decryptRaw(cached?.rawResponseEncrypted ?? null);
+      if (cached?.errorCode === "VIN_RETURN_MISMATCH" && !raw) return { call: mismatchFailure(), fromCache: true, cacheId: cached.id };
       if (cached && raw) {
+        if (mismatched(raw)) {
+          // Do not re-buy a rejected response; retain encrypted evidence and clear
+          // any legacy normalized identity derived from it before continuing.
+          const cleared = await prisma.vehicleLookupCache.updateMany({ where: { id: cached.id }, data: { status: "error", errorCode: "VIN_RETURN_MISMATCH", errorMessage: "Returned VIN mismatch", normalizedVehicleJson: Prisma.JsonNull } });
+          if (cleared.count !== 1) throw new Error("Incomplete returned VIN mismatch cleanup");
+          return { call: mismatchFailure(), fromCache: true, cacheId: cached.id };
+        }
         return { call: { ok: true, method: params.method, data: raw, durationMs: 0, providerRequestId: cached.providerRequestId }, fromCache: true, cacheId: cached.id };
       }
     } catch (error) {
-      // The cache is an optimization. A missing or temporarily unavailable
-      // cache must not prevent a paid lookup from completing.
+      // A cache read failure must not trigger a purchase after an unsafe identity
+      // may have been encountered. Retry cache processing explicitly instead.
+      if (vinMethod) throw new Error("Не удалось безопасно проверить кэш расшифровки VIN", { cause: error });
+      // Other lookup caches remain optional.
       console.error("[vehicle-lookup-cache] read failed", error);
     }
   }
@@ -498,7 +561,8 @@ async function cachedTronkCall(params: {
     : { ok: false as const, method: params.method, code: "limit" as const, message: "Дневной лимит платных запросов TRONK исчерпан", durationMs: 0 };
   const ttlHours = Math.max(1, Math.min(24 * 365, Number(process.env.TRONK_CACHE_TTL_HOURS ?? 720) || 720));
   const raw = call.ok ? call.data : null;
-  const status = call.ok ? "success" : call.code === "provider" ? "not_found" : "error";
+  const vinMismatch = Boolean(raw && mismatched(raw));
+  const status = vinMismatch ? "error" : call.ok ? "success" : call.code === "provider" ? "not_found" : "error";
   const saved = await prisma.vehicleLookupCache.create({
     data: {
       organizationId: params.organizationId,
@@ -513,8 +577,8 @@ async function cachedTronkCall(params: {
       completedAt: new Date(),
       // Successful identities are durable knowledge; only unsuccessful attempts expire.
       expiresAt: call.ok ? new Date("9999-12-31T00:00:00Z") : new Date(Date.now() + ttlHours * 60 * 60 * 1000),
-      errorCode: call.ok ? null : call.code,
-      errorMessage: call.ok ? null : call.message,
+      errorCode: vinMismatch ? "VIN_RETURN_MISMATCH" : call.ok ? null : call.code,
+      errorMessage: vinMismatch ? "Returned VIN mismatch" : call.ok ? null : call.message,
       providerRequestId: call.ok ? call.providerRequestId : null,
       sourceVersion: "2026-07-21",
     },
@@ -523,14 +587,14 @@ async function cachedTronkCall(params: {
     if (call.ok) throw new Error("Не удалось сохранить найденный автомобиль в БД", { cause: error });
     return null;
   });
-  return { call, fromCache: false, cacheId: saved?.id ?? null };
+  return { call: vinMismatch ? mismatchFailure() : call, fromCache: false, cacheId: saved?.id ?? null };
 }
 
-function resultFromVehicles(params: { vehicles: NormalizedVehicleIdentity[]; inputVin?: string; message?: string; status?: VehicleLookupResult["status"]; fromCache: boolean; cacheIds: string[]; sourceMethods: VehicleSourceMethod[]; diagnostics?: VehicleDecodeDiagnostics }): VehicleLookupResult {
+async function resultFromVehicles(params: { vehicles: NormalizedVehicleIdentity[]; inputVin?: string; message?: string; status?: VehicleLookupResult["status"]; fromCache: boolean; cacheIds: string[]; candidateCacheIds?: string[]; sourceMethods: VehicleSourceMethod[]; diagnostics?: VehicleDecodeDiagnostics }): Promise<VehicleLookupResult> {
   const candidates = dedupeCandidates(params.vehicles).map((vehicle): VehicleLookupCandidate => {
     const resolvedVinStatus: VinStatus = vehicle.vinStatus === "unknown" ? (params.inputVin ? "valid" : "unknown") : vehicle.vinStatus;
     return {
-      key: crypto.createHash("sha1").update(JSON.stringify([vehicle.makeCanonical, vehicle.modelCanonical, vehicle.engineCode, vehicle.year])).digest("hex"),
+      key: crypto.createHash("sha1").update(candidateIdentityKey(vehicle)).digest("hex"),
       vehicle: { ...vehicle, vin: params.inputVin ?? vehicle.vin, vinStatus: resolvedVinStatus },
       differences: [vehicle.engineCode, vehicle.engineVolumeLiters ? `${vehicle.engineVolumeLiters} л` : undefined, vehicle.powerHp ? `${vehicle.powerHp} л.с.` : undefined, vehicle.driveType, vehicle.transmissionType].filter((value): value is string => Boolean(value)),
     };
@@ -546,11 +610,26 @@ function resultFromVehicles(params: { vehicles: NormalizedVehicleIdentity[]; inp
     sourceMethods: params.sourceMethods,
     diagnostics: params.diagnostics ?? diagnosticsForVehicle(best, [], false, true),
   };
-  if (best && params.cacheIds.length > 0) {
-    void prisma.vehicleLookupCache.updateMany({
-      where: { id: { in: params.cacheIds } },
-      data: { normalizedVehicleJson: best as unknown as Prisma.InputJsonValue },
-    }).catch(() => undefined);
+  const candidateCacheIds = params.candidateCacheIds ?? params.cacheIds;
+  if (best && candidateCacheIds.length > 0) {
+    const update = prisma.vehicleLookupCache.updateMany({
+      where: { id: { in: candidateCacheIds }, OR: [{ errorCode: null }, { errorCode: { not: "VIN_RETURN_MISMATCH" } }] },
+      // Rejected raw evidence must never receive another method's identity.
+      // Raw provider cache and UI candidates retain the alternatives. A ranked
+      // first result is not one resolved identity for cache/batch consumers.
+      data: { normalizedVehicleJson: candidates.length === 1 ? best as unknown as Prisma.InputJsonValue : Prisma.JsonNull },
+    });
+    if (candidates.length > 1) {
+      try {
+        const cleared = await update;
+        if (cleared.count !== new Set(candidateCacheIds).size) throw new Error("Incomplete ambiguity cleanup");
+      } catch {
+        throw new Error("Не удалось безопасно очистить неоднозначный результат расшифровки. Исходный ответ сохранён; повторите обработку из кэша.");
+      }
+    } else {
+      // Unique derived-cache persistence remains best effort.
+      void update.catch(() => undefined);
+    }
   }
   return result;
 }
@@ -584,11 +663,16 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
   if (!normalizedInput) return { status: "not_found", vehicle: null, candidates: [], message: "Введите VIN, госномер или номер кузова", fromCache: false, cacheIds: [], sourceMethods: [], diagnostics: failedDiagnostics([], "INVALID_INPUT", false) };
 
   const cacheIds: string[] = [];
+  const candidateCacheIds = new Set<string>();
+  const finalizeResult = (params: Parameters<typeof resultFromVehicles>[0]) => resultFromVehicles({ ...params, candidateCacheIds: [...candidateCacheIds] });
   const attempts: VehicleAttemptDiagnostics[] = [];
   let fromCache = true;
   const collect = async (method: TronkMethod, inputType: VehicleLookupInputType, call: () => Promise<TronkCallResult>) => {
     const item = await cachedTronkCall({ organizationId: options.organizationId, inputType, normalizedInput, method, refresh: options.refresh, call });
-    if (item.cacheId) cacheIds.push(item.cacheId);
+    if (item.cacheId) {
+      cacheIds.push(item.cacheId);
+      if (item.call.ok) candidateCacheIds.add(item.cacheId);
+    }
     fromCache &&= item.fromCache;
     attempts.push({ method, ok: item.call.ok, fromCache: item.fromCache, durationMs: item.call.durationMs, failureCode: callFailureCode(item.call) });
     return item.call;
@@ -607,7 +691,7 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
     }
     const vehicle = toVehicle(asRecord(call.data.result), "tronk_frame", { frameNumber: frame });
     const diagnostics = diagnosticsForVehicle(vehicle, attempts, false, true);
-    return resultFromVehicles({ vehicles: [vehicle], status: diagnostics.quality.status === "insufficient" ? "frame_number" : "found", fromCache, cacheIds, sourceMethods: ["tronk_frame"], diagnostics });
+    return finalizeResult({ vehicles: [vehicle], status: diagnostics.quality.status === "insufficient" ? "frame_number" : "found", fromCache, cacheIds, sourceMethods: ["tronk_frame"], diagnostics });
   }
 
   if (options.inputType === "plate") {
@@ -649,7 +733,7 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
     const b2b = await collect("convertb2b", "plate", () => tronkClient.lookupVehicleByPlate(plate.normalized));
     const b2bVehicle = b2b.ok ? toVehicle(asRecord(b2b.data.result ?? b2b.data), "tronk_convertb2b", { licensePlate: plate.normalized }) : null;
     if (b2bVehicle?.makeCanonical && b2bVehicle.modelCanonical) {
-      return resultFromVehicles({ vehicles: [b2bVehicle], message: "Автомобиль определён по госномеру, VIN не получен.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertb2b"], diagnostics: diagnosticsForVehicle(b2bVehicle, attempts, true) });
+      return finalizeResult({ vehicles: [b2bVehicle], message: "Автомобиль определён по госномеру, VIN не получен.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertb2b"], diagnostics: diagnosticsForVehicle(b2bVehicle, attempts, true) });
     }
     markAttempt("convertb2b", b2b.ok ? decodeFailureCode(b2bVehicle) : callFailureCode(b2b));
     if (b2b.ok) {
@@ -668,7 +752,7 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
     const gate = await collect("convertgate", "plate", () => tronkClient.lookupVehicleByPlateGate(plate.normalized));
     const gateVehicle = gate.ok ? toVehicle(asRecord(gate.data.result ?? gate.data), "tronk_convertgate", { licensePlate: plate.normalized }) : null;
     if (gateVehicle?.makeCanonical && gateVehicle.modelCanonical) {
-      return resultFromVehicles({ vehicles: [gateVehicle], message: "Автомобиль определён по госномеру, VIN не получен.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertgate"], diagnostics: diagnosticsForVehicle(gateVehicle, attempts, true) });
+      return finalizeResult({ vehicles: [gateVehicle], message: "Автомобиль определён по госномеру, VIN не получен.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertgate"], diagnostics: diagnosticsForVehicle(gateVehicle, attempts, true) });
     }
     markAttempt("convertgate", gate.ok ? decodeFailureCode(gateVehicle) : callFailureCode(gate));
     if (partialVinLookup?.vehicle) {
@@ -711,21 +795,25 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
     if (decoded.status !== "unconfigured") {
       attempts.push({
         method: "partsapi_vindecode",
+        returnedVins: decoded.status === "not_found" ? decoded.rejectedVins : undefined,
         ok: Boolean(vehicle),
-        fromCache: false,
+        fromCache: decoded.fromCache ?? false,
         durationMs: Date.now() - startedAt,
         failureCode: vehicle ? undefined
           : decoded.status === "unavailable" ? "PROVIDER_UNAVAILABLE"
           : distinctVehicles.length > 1 ? "DECODE_INSUFFICIENT_CHARACTERISTICS" : "PROVIDER_NO_DATA",
       });
     }
-    if (vehicle) {
-      return resultFromVehicles({
-        vehicles: [vehicle],
+    if (decoded.status !== "unconfigured") {
+      return finalizeResult({
+        vehicles: distinctVehicles,
         inputVin: normalizedVin,
-        fromCache: false,
+        status: decoded.status === "unavailable" ? "unavailable" : distinctVehicles.length ? "found" : "not_found",
+        message: distinctVehicles.length > 1 ? "Найдено несколько модификаций. Выберите подходящий автомобиль."
+          : decoded.status === "unavailable" ? "Сервис PartsAPI временно недоступен." : undefined,
+        fromCache: decoded.fromCache ?? false,
         cacheIds,
-        sourceMethods: vehicle.sourceMethods,
+        sourceMethods: ["partsapi_vindecode"],
         diagnostics: diagnosticsForVehicle(vehicle, attempts, false, true),
       });
     }
@@ -775,7 +863,7 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
   }
   const status = vinStatus(normalizedVin, primaryRaw);
   mergedVehicles = mergedVehicles.map((vehicle) => ({ ...vehicle, vinStatus: status }));
-  return resultFromVehicles({ vehicles: mergedVehicles, inputVin: normalizedVin, fromCache, cacheIds, sourceMethods: [...new Set(mergedVehicles.flatMap((vehicle) => vehicle.sourceMethods))], diagnostics: diagnosticsForVehicle(best, attempts, usedPartsApi || wantsExtended, !usedPartsApi && !wantsExtended) });
+  return finalizeResult({ vehicles: mergedVehicles, inputVin: normalizedVin, fromCache, cacheIds, sourceMethods: [...new Set(mergedVehicles.flatMap((vehicle) => vehicle.sourceMethods))], diagnostics: diagnosticsForVehicle(best, attempts, usedPartsApi || wantsExtended, !usedPartsApi && !wantsExtended) });
 }
 
 export function vehicleFieldValues(vehicle: NormalizedVehicleIdentity): Partial<Record<string, { value: string; source: VehicleSourceMethod }>> {

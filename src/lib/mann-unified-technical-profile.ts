@@ -122,6 +122,7 @@ export type MannTechnicalTransmissionOption = {
 };
 
 export type MannUnifiedTechnicalProfile = {
+  savedVehicleConfirmation?: import("@/lib/mann-saved-vehicle-confirmation").SavedVehicleTechnicalConfirmation;
   status: MannTechnicalProfileStatus;
   items: MannTechnicalProfileItem[];
   transmissionOptions: MannTechnicalTransmissionOption[];

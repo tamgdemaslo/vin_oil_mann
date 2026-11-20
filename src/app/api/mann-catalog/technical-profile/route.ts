@@ -8,8 +8,15 @@ import { VEHICLE_DESTINATION_MARKETS } from "@/lib/vehicle-market";
 import { mannExactEquipmentModel } from "@/lib/mann-equipment-scope";
 import { researchMissingMannFluids } from "@/lib/mann-fluid-research";
 import { MANN_FLUID_GROUP_IDS } from "@/lib/mann-fluid-systems";
+import { loadSavedVehicleTechnicalConfirmation, type SavedVehicleTechnicalConfirmation } from "@/lib/mann-saved-vehicle-confirmation";
 
 const bodySchema = z.object({
+  vin: z.string().trim().toUpperCase().regex(/^[A-HJ-NPR-Z0-9]{17}$/).optional(),
+  decodedPowertrain: z.object({
+    transmissionType: z.string().max(120).optional(),
+    transmissionName: z.string().max(120).optional(),
+    driveType: z.string().max(120).optional(),
+  }).optional(),
   researchMissing: z.boolean().optional(),
   researchGroup: z.enum(MANN_FLUID_GROUP_IDS).optional(),
   retryFailed: z.boolean().optional(),
@@ -23,6 +30,7 @@ const bodySchema = z.object({
     generation: z.string().trim().min(1).max(80).optional(),
     engineCode: z.string().trim().min(1).max(80).optional(),
     confirmedMarket: z.enum(VEHICLE_DESTINATION_MARKETS).optional(),
+    confirmedTransmissionType: z.enum(MANN_TRANSMISSION_TYPES).optional(),
     transmissionModel: z.string().trim().min(1).max(80).optional(),
     transmissionGearCount: z.number().int().min(3).max(18).optional(),
     confirmedEquipment: z.array(z.object({
@@ -46,18 +54,48 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const profile = await runWithBranchApiContext(branch.context, async () => {
-      const { variantKeys, transmissionType, vehicleContext = {} } = parsed.data;
+    const loaded = await runWithBranchApiContext(branch.context, async () => {
+      const { variantKeys } = parsed.data;
+      let transmissionType = parsed.data.transmissionType;
+      let vehicleContext = { ...parsed.data.vehicleContext };
+      let savedVehicleConfirmation: SavedVehicleTechnicalConfirmation | undefined;
+      let confirmationUnavailable = false;
+      if (parsed.data.vin && branch.context.branchId) {
+        try {
+          savedVehicleConfirmation = await loadSavedVehicleTechnicalConfirmation({
+            branchId: branch.context.branchId, vin: parsed.data.vin,
+            vehicleContext: { ...vehicleContext, ...parsed.data.decodedPowertrain },
+          });
+          transmissionType ??= savedVehicleConfirmation.transmissionType;
+          vehicleContext.confirmedDrive ??= savedVehicleConfirmation.confirmedDrive;
+        } catch {
+          confirmationUnavailable = true;
+          console.warn("[mann-technical-profile] saved vehicle confirmation unavailable");
+        }
+      }
+      vehicleContext = { ...vehicleContext, confirmedTransmissionType: transmissionType };
       const { organizationId } = branch.context;
       let profile = await getMannUnifiedTechnicalProfile(variantKeys, transmissionType, vehicleContext);
+      // Establish verified fields before adding saved research, so a saved SAE-only
+      // result cannot hide the known oil capacity on the next visit.
+      profile = withMannEngineOilReference(profile, vehicleContext) ?? profile;
       if (organizationId) {
         try {
-          profile = await addMannResearchCatalogToProfile({ organizationId, variantKeys, transmissionType, engineCode: vehicleContext.engineCode, profile });
+          profile = await addMannResearchCatalogToProfile({ organizationId, variantKeys, transmissionType, engineCode: vehicleContext.engineCode, vehicleContext, profile });
         } catch (error) {
           console.warn("[mann-technical-profile] research catalog unavailable", error instanceof Error ? error.message : String(error));
         }
       }
-      return withMannEngineOilReference(profile, vehicleContext) ?? profile;
+      profile = withMannEngineOilReference(profile, vehicleContext) ?? profile;
+      if (savedVehicleConfirmation && (savedVehicleConfirmation.transmissionType || savedVehicleConfirmation.confirmedDrive || savedVehicleConfirmation.conflicts.length))
+        profile = { ...profile, savedVehicleConfirmation };
+      const confirmationNotice = confirmationUnavailable
+        ? "Сохранённые подтверждения автомобиля недоступны. Уточните КПП и привод вручную."
+        : savedVehicleConfirmation?.conflicts.length
+          ? "Сохранённые подтверждения расходятся с данными автомобиля. Уточните КПП и привод."
+          : undefined;
+      if (confirmationNotice) profile = { ...profile, notice: [profile.notice, confirmationNotice].filter(Boolean).join(" ") };
+      return { profile, transmissionType, vehicleContext };
     });
     if (parsed.data.researchMissing) {
       const organizationId = branch.context.organizationId;
@@ -65,11 +103,11 @@ export async function POST(request: NextRequest) {
       const research = await runWithBranchApiContext(branch.context, () => researchMissingMannFluids({
         organizationId, variantKeys: parsed.data.variantKeys,
         group: parsed.data.researchGroup, retryFailed: parsed.data.retryFailed,
-        transmissionType: parsed.data.transmissionType, vehicleContext: parsed.data.vehicleContext, profile,
+        transmissionType: loaded.transmissionType, vehicleContext: loaded.vehicleContext, profile: loaded.profile,
       }));
       return NextResponse.json(research);
     }
-    return NextResponse.json(profile);
+    return NextResponse.json(loaded.profile);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Не удалось загрузить технический профиль" },

@@ -26,4 +26,16 @@ await run({signal:new AbortController().signal,onProgress:r=>disconnectedEvents.
 assert.equal(disconnectedCalls.length,2,'no second wave on broken connection');
 assert.equal(disconnectedEvents.at(-1).message,'Нет соединения с ИИ');
 assert.ok(Object.values(disconnectedEvents.at(-1).groups).every(g=>g.status==='failed'));
+const held=[];
+const reason='Уточните модель коробки: сохранённые сведения относятся к другой комплектации.';
+await run({signal:new AbortController().signal,onProgress:r=>held.push(r),request:async()=>({status:'needs_context',items:[],message:reason})});
+assert.equal(held.at(-1).status,'needs_context','configuration holds must not turn into a generic transport failure');
+assert.deepEqual(held.at(-1).unresolved,[reason],'the actionable hold reason survives group aggregation');
+const mixed=[];
+await run({signal:new AbortController().signal,onProgress:r=>mixed.push(r),request:async group=>group==='basic'
+  ? {status:'saved',items:[item],message:'saved'} : {status:'needs_context',items:[],message:reason}});
+const resolved=[];
+await run({initial:mixed.at(-1),signal:new AbortController().signal,onProgress:r=>resolved.push(r),request:async()=>({status:'saved',items:[],message:'resolved'})});
+assert.equal(resolved.at(-1).status,'saved','after clarification, completed groups must not retain aggregate needs_context status');
+assert.deepEqual(resolved.at(-1).items,[item]);
 console.log('PASS progressive results, two-request limit, isolated failure, selective retry, cancellation');

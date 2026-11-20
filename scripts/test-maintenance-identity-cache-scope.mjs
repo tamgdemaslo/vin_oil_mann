@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {createMaintenanceIdentityCacheScope} from './lib/maintenance-identity-cache-scope.mjs';
+const scope={branchId:'branch1',organizationId:'org1',inputType:'vin',normalizedInputHash:'a'.repeat(64)};
+let release,updateArg,createArg,findArg;
+const controlled=new Promise(resolve=>{release=resolve;});
+const guarded=createMaintenanceIdentityCacheScope({findFirst:async arg=>{findArg=arg;return null;},create:async arg=>{createArg=arg;return{id:'cache1'};},updateMany:arg=>{updateArg=arg;return controlled;}},scope);
+const write=guarded.db.vehicleLookupCache.updateMany({where:{id:'cache1',branchId:'wrong'},data:{normalizedVehicleJson:{vin:'synthetic'}}});
+let drained=false;const drain=guarded.drain().then(()=>{drained=true;});await Promise.resolve();assert.equal(drained,false,'late fire-and-forget lookup write must finish before final cleanup');
+release({count:1});await write;await drain;assert.equal(drained,true);assert.equal(updateArg.where.branchId,'branch1');assert.equal(updateArg.where.normalizedInputHash,scope.normalizedInputHash);
+assert.throws(()=>guarded.db.vehicleFluidRequirement,/forbids/);
+assert.throws(()=>guarded.db.vehicleLookupCache.updateMany({where:{},data:{rawResponseEncrypted:'unexpected'}}),/Unexpected/);
+assert.throws(()=>guarded.db.vehicleLookupCache.create({data:{method:'vindecode',normalizedInputHash:'b'.repeat(64)}}),/Out-of-scope/);
+await guarded.db.vehicleLookupCache.create({data:{method:'vindecode2',normalizedInputHash:scope.normalizedInputHash,branchId:'wrong'}});assert.equal(createArg.data.branchId,'branch1');
+await guarded.db.vehicleLookupCache.findFirst({where:{organizationId:'wrong'}});assert.equal(findArg.where.organizationId,'org1');
+const failed=createMaintenanceIdentityCacheScope({updateMany:async()=>{throw Error('best-effort derived write failed');}},scope);
+await failed.db.vehicleLookupCache.updateMany({data:{normalizedVehicleJson:{}}}).catch(()=>{});await failed.drain();
+console.log('PASS identity-only cache scope, no technical writes, complete background-write drain before authoritative cleanup');

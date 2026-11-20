@@ -8,7 +8,20 @@ export type QuoteStockProduct = {
   id: string; name: string; article: string; price: number; available: number;
   brand?: string | null; unit: string; litresPerUnit: number | null; sae: string; oem: string;
 };
-export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string; supplierDeliveryAt?: number; supplierDeliveryLabel?: string; filterLabel?: string; brand?: string | null };
+export type QuoteFluidDetails = {
+  systemCode: string; systemLabel: string; specification: string; viscosity?: string;
+  serviceMethodLabel: string; serviceLitres: number; productId: string; litresPerUnit: number;
+  suppliedLitres: number; unit: string; approvalStatus: string; manualCompatibilityConfirmed: boolean;
+  source?: "rossko";
+  localProductId?: string;
+  supplierOfferId?: string;
+  quantityMultiple?: number;
+  deliveryLabel?: string;
+  packageEvidence?: string;
+  profileRevisionId: string;
+  componentModel?: string;
+};
+export type QuoteExtra = { id: string; name: string; quantity: number; price: number; stockStoreId?: string; supplierProductId?: string; supplierDeliveryAt?: number; supplierDeliveryLabel?: string; filterLabel?: string; brand?: string | null; fluid?: QuoteFluidDetails };
 // Ford approval codes are also stored as custom OEM attributes.
 function fordOilApprovals(text?: string | null): string[] {
   return [...(text ?? "").matchAll(/\bWSS[ -]*M2C[ -]*(\d{3})[ -]*([A-Z])\b/gi)]
@@ -31,7 +44,9 @@ export function matchesQuoteOil(product: { groupPath?: string | null; entityType
   if (viscosity.trim() && !required.sae.length) return false;
   return !required.sae.length || required.sae.some(value => actual.sae.includes(value));
 }
-export function quoteLitresPerUnit(product: { uomName?: string | null; packageVolume?: string | null; name: string }) {
+export function quoteLitresPerUnit(product: { uomName?: string | null; packageVolume?: string | null; markingMode?: string | null; name: string }) {
+  if (product.markingMode === "BULK_OIL_FROM_MARKED_BARREL" && !isLiterSaleUnit(product.uomName)) return null;
+  if (product.markingMode === "PACKAGED_MARKED_GOOD" && isLiterSaleUnit(product.uomName)) return null;
   if (isLiterSaleUnit(product.uomName)) return 1;
   const raw = product.packageVolume?.trim();
   const volume = raw ? (/^\d+(?:[.,]\d+)?$/.test(raw) ? Number(raw.replace(",", ".")) : parsePackVolumeLitersFromOilName(raw)) : parsePackVolumeLitersFromOilName(product.name);
@@ -147,23 +162,31 @@ function quoteDeliverySuffix(row: QuoteExtra, timeZone: string, now: number) {
   return ` (доставка ${date})`;
 }
 
-export function quoteClientText(vehicle: string, specification: string, litres: number, oils: QuoteStockProduct[], extras: QuoteExtra[], { timeZone = "Europe/Kaliningrad", now = Date.now() } = {}) {
+export function quoteClientText(vehicle: string, specification: string, litres: number, oils: QuoteStockProduct[], extras: QuoteExtra[], { timeZone = "Europe/Kaliningrad", now = Date.now(), serviceMethodLabel }: { timeZone?: string; now?: number; serviceMethodLabel?: string } = {}) {
   const extraLines = extras.map(row => {
     const filterName = row.name.trim().match(/^(?:масляный|воздушный|салонный|топливный)\s+фильтр(?=$|[^\p{L}\p{N}])/iu)?.[0];
     const filterLabel = row.filterLabel ?? filterName;
     const unitCents = Math.round(row.price * 100);
     const delivery = quoteDeliverySuffix(row, timeZone, now);
+    if (row.fluid) {
+      const fluid = row.fluid;
+      return [`${fluid.systemLabel}: ${row.name}`,
+        `Требования: ${[fluid.specification, fluid.viscosity].filter(Boolean).join(" · ")}.`,
+        `Способ обслуживания: ${fluid.serviceMethodLabel}; объём замены ${fluid.serviceLitres} л.`,
+        `${row.quantity} ${fluid.unit} × ${quoteRub(unitCents)} = ${quoteRub(Math.round(row.quantity * unitCents))}`,
+        `К покупке: ${fluid.suppliedLitres} л.`].join("\n") + (fluid.source === "rossko" ? delivery || "\nСрок поставки уточняется." : "");
+    }
     if (filterLabel) {
       // Free-text names can contain a brand before the article or a parenthesized code.
       const brandFromName = filterName && row.name.trim().slice(filterName.length).trim().split(/\s*\(|(?:^|\s+)\S*\d/)[0].trim();
       const brand = row.brand?.trim() || brandFromName;
       const label = brand ? `${filterLabel} ${brand}` : filterLabel;
-      return row.quantity === 1 ? `${label}: ${quoteRub(unitCents)}${delivery}` : `${label}: ${row.quantity} × ${quoteRub(unitCents)} = ${quoteRub(Math.round(row.quantity * unitCents))}${delivery}`;
+      return row.quantity === 1 ? `${label}: ${quoteRub(unitCents)}` : `${label}: ${row.quantity} × ${quoteRub(unitCents)} = ${quoteRub(Math.round(row.quantity * unitCents))}`;
     }
     return `${row.name}: ${row.quantity} × ${quoteRub(unitCents)} = ${quoteRub(Math.round(row.quantity * unitCents))}${delivery}`;
   });
   if (!oils.length) return [`Расчёт ТО: ${vehicle}`, ...extraLines, `Итого: ${quoteRub(quoteExtraCents(extras))}`, "", "Предварительный расчёт. Наличие и цены уточняются при записи."].join("\n");
-  return [`Расчёт ТО: ${vehicle}`, `Моторное масло: ${specification}; объём замены ${litres} л.`, ...groupQuoteOils(oils).flatMap((variant, index) => {
+  return [`Расчёт ТО: ${vehicle}`, `Моторное масло: ${specification}; объём замены ${litres} л.`, ...(serviceMethodLabel?.trim() ? [`Способ обслуживания: ${serviceMethodLabel.trim()}`] : []), ...groupQuoteOils(oils).flatMap((variant, index) => {
     const amount = quoteVariantAmount(variant, litres);
     if (!amount) return [];
     return ["", `Вариант ${index + 1} — ${variant.name}`, ...amount.lines.map(line=>`Масло${isLiterSaleUnit(line.product.unit) ? "" : ` (фасовка ${line.product.litresPerUnit} л)`}: ${line.quantity} ${line.product.unit || "шт."} × ${quoteRub(Math.round(line.product.price * 100))} = ${quoteRub(line.cents)}`), ...(amount.suppliedLitres > litres + 0.001 ? [`В упаковках: ${amount.suppliedLitres} л.`] : []), ...extraLines, `Итого: ${quoteRub(amount.cents + quoteExtraCents(extras))}`, amount.enough ? "Масло в наличии." : "Масло — под заказ, требуется уточнить срок."];
@@ -180,11 +203,44 @@ export function isEngineOilServiceCapacity(capacity: { serviceContext?: string |
     && capacity.filterContext !== "WITHOUT_FILTER";
 }
 
+/** A stored unqualified main/total volume does not answer the with-filter service gap. */
+export function hasEngineOilServiceResearchVolume(value?: string | null): boolean {
+  if (!value?.trim() || /(?:включение|уч[её]т)\s+фильтра\s+не\s+указан|(?:фильтр[^;\n]{0,35}(?:неизвест|не\s+уточн|не\s+указан))/iu.test(value)) return false;
+  const text = value.replace(/с\s+заменой\s+(?:масляного\s+)?фильтра/giu, "с фильтром");
+  const parsed = parseFluidCapacities(text, "ENGINE_OIL");
+  return !parsed.needsReview && parsed.capacities.some(capacity =>
+    isEngineOilServiceCapacity(capacity) && capacity.filterContext === "WITH_FILTER");
+}
+
+/** A source can retain conditional/unknown text without resolving the selected vehicle's volume. */
+export function hasResolvedFluidResearchVolume(value: string | null | undefined, systemCode: string): boolean {
+  if (systemCode === "ENGINE_OIL") return hasEngineOilServiceResearchVolume(value);
+  if (!value?.trim() || /объ[её]м[^;\n]{0,30}(?:не\s+(?:установлен|известен|определ[её]н|указан[а-яё]*|подтвержд[а-яё]*|уточн[а-яё]*)|неизвест|уточня|зависит)|^(?:нет\s+данных|неизвест|не\s+установлен|unknown)/iu.test(value)) return false;
+  const parsed = parseFluidCapacities(value, systemCode);
+  return !parsed.needsReview && parsed.capacities.some(capacity =>
+    [capacity.nominalLiters, capacity.minLiters, capacity.maxLiters].some(amount => typeof amount === "number" && amount > 0));
+}
+
+export function engineOilViscosities(text: string): string[] {
+  const grades = [...Array.from(text.matchAll(/\b\d{1,2}W[- ]?\d{1,2}\b/gi), match => match[0]),
+    ...Array.from(text.matchAll(/\bSAE\s+(\d{1,2})(?![\d.W-])/gi), match => match[1])];
+  return buildRequirementsNorm({ sae: grades.join("; ") }).sae;
+}
+
 export function quoteRequirementChoices(profile: import("@/lib/mann-unified-technical-profile").MannUnifiedTechnicalProfile | null, research: import("@/lib/mann-fluid-research").MannFluidResearchResult | null, options?: { prefillResearchVolume?: boolean }) {
   const engines = profile?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
   const discoveries = research?.items.filter(item => item.systemCode === "ENGINE_OIL") ?? [];
   const raw = [...engines.flatMap(item => item.specifications), ...discoveries.map(item => item.specification)].join("; ");
   const norm = buildRequirementsNorm({ oem: raw, acea: raw, api: raw, ilsac: raw, sae: [...engines.flatMap(item => item.viscosityGrades), ...Array.from(raw.matchAll(/\b\d{1,2}W[- ]?\d{1,2}\b/gi), match => match[0]), ...Array.from(raw.matchAll(/\bSAE\s+(\d{1,2})(?![\d.W-])/gi), match => match[1])].join("; ") });
+  // Review-only catalogue discoveries remain selectable suggestions. They do
+  // not become default quote requirements before a user explicitly chooses them.
+  const trusted = engines.filter(item => !item.requiresReview && item.sourceStatus === "primary_source" && !item.researchResult);
+  const trustedRaw = trusted.flatMap(item => item.specifications).join("; ");
+  const trustedNorm = buildRequirementsNorm({ oem: trustedRaw, acea: trustedRaw, api: trustedRaw, ilsac: trustedRaw,
+    sae: [...trusted.flatMap(item => item.viscosityGrades), ...engineOilViscosities(trustedRaw)].join("; ") });
+  const trustedOem = [...trustedNorm.oem.filter(value => !fordOilApprovals(value).length), ...fordOilApprovals(trustedRaw)];
+  const trustedSpecifications = [...new Set(trustedOem.length ? trustedOem : [...trustedNorm.acea, ...trustedNorm.api, ...trustedNorm.ilsac])];
+  const trustedViscosities = [...new Set(trustedNorm.sae)];
   const oem = [...norm.oem.filter(value => !fordOilApprovals(value).length), ...fordOilApprovals(raw)];
   const specifications = [...new Set(oem.length ? oem : [...norm.acea, ...norm.api, ...norm.ilsac])];
   const viscosities = [...new Set(norm.sae)];
@@ -219,7 +275,7 @@ export function quoteRequirementChoices(profile: import("@/lib/mann-unified-tech
   const researchVolume = options?.prefillResearchVolume && !catalogVolumes.length && volumes.length === 1 && researchedCapacities.every(capacity =>
     capacity.qualifier === "EXACT" && capacity.filterContext === "WITH_FILTER")
     ? String(volumes[0]) : "";
-  return { specifications, viscosities, volumes, automaticVolume: catalogVolume || researchVolume, volumeFromResearch: Boolean(researchVolume) };
+  return { specifications, viscosities, volumes, automaticSpecification: trustedSpecifications.length === 1 ? trustedSpecifications[0] : "", automaticViscosity: trustedViscosities.length === 1 ? trustedViscosities[0] : "", automaticVolume: catalogVolume || researchVolume, volumeFromResearch: Boolean(researchVolume) };
 }
 
 

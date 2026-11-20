@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import {resolve} from 'node:path';
+import {createHash} from 'node:crypto';
+import {createJiti} from 'jiti';
+const mock=resolve('scripts/fixtures/mann-fluid-research-mocks.mjs');
+const j=createJiti(import.meta.url,{alias:{'@':resolve('src'),'@/lib/db':mock,'@/lib/openai-client':mock}});
+const {mannResearchIdentity,persistMannResearchCatalog:persist,addMannResearchCatalogToProfile:read}=await j.import('../src/lib/mann-research-catalog.ts');
+const {researchMissingMannFluids:run,missingMannFluids}=await j.import('../src/lib/mann-fluid-research.ts');
+const {prisma}=await j.import(mock);
+const app={vehicleVariantKey:'key',make:'FORD',model:'Focus III',vehicleText:'1.6',engineCode:'ABC',vehicleYears:'2011-2018'};
+const profile={items:[],status:'none',transmissionOptions:[],containsCatalogPreview:false};
+const context={make:'FORD',engineCode:'ABC',year:2012,productionMonth:'2012-03',confirmedMarket:'EU',confirmedDrive:'2WD',confirmedTransmissionType:'automatic',transmissionModel:'A6GF1',transmissionGearCount:6,rearAirConditioning:false,confirmedEquipment:[{circuit:'TRANSFER_CASE',componentModel:'ABC123'},{circuit:'REAR_DIFFERENTIAL',componentModel:'XYZ456'}]};
+const base={organizationId:'org1',variantKeys:['key'],applications:[app],engineCode:'ABC',transmissionType:'automatic',vehicleContext:context,profile,materializeSaved:false};
+const item={systemCode:'ENGINE_OIL',specification:'TEST',volumeText:'5 л с фильтром',sourceUrl:'https://example.com/manual',sourceTitle:'Scope fixture (not vehicle evidence)',excerpt:'Synthetic fixture'};
+const reset=()=>globalThis.fluidResearchTest={applications:[app],rows:[],calls:0,payload:{items:[item],unresolved:[]}};
+let state=reset();
+await prisma.$transaction(tx=>persist(tx,{...base,evidenceId:'fixture',sourceKind:'manual_source_review',items:[item]}));
+assert.equal((await read(base)).items.length,1);
+state.links[0].evidenceJson.scope=Object.fromEntries(Object.entries(state.links[0].evidenceJson.scope).reverse());
+assert.equal((await read(base)).items.length,1,'jsonb key order cannot invalidate equal scope');
+state.links[0].evidenceJson.scope.confirmedEquipment=state.links[0].evidenceJson.scope.confirmedEquipment.map(row=>Object.fromEntries(Object.entries(row).reverse()));
+assert.equal((await read(base)).items.length,1,'nested jsonb key order cannot invalidate equal scope');
+const validScope=structuredClone(state.links[0].evidenceJson.scope);
+state.links[0].evidenceJson.scope.extra='unknown discriminator';
+assert.equal((await read(base)).items.length,0,'extra scope fields fail closed');
+state.links[0].evidenceJson.scope=structuredClone(validScope);delete state.links[0].evidenceJson.scope.confirmedMarket;
+assert.equal((await read(base)).items.length,0,'missing scope fields fail closed');
+state.links[0].evidenceJson.scope=validScope;
+
+for(const [field,value] of Object.entries({year:2013,productionMonth:'2012-04',confirmedMarket:'RU',confirmedDrive:'4WD',confirmedTransmissionType:'manual',transmissionModel:'A4CF1',transmissionGearCount:4,rearAirConditioning:true,confirmedEquipment:[]})){
+ const other={...context,[field]:value};
+ assert.notDeepEqual(mannResearchIdentity([app],'automatic','ABC',context),mannResearchIdentity([app],'automatic','ABC',other),field+' isolates cache');
+ const result=await read({...base,vehicleContext:other});
+ assert.equal(result.items.length,0,field+' isolates catalog');assert.match(result.notice,/комплектации/);
+ assert.equal(missingMannFluids(result).find(g=>g.systemCode==='ENGINE_OIL').volume,true);
+}
+assert.equal((await read({...base,vehicleContext:undefined})).items.length,0,'unknown cannot match known');
+assert.equal((await read({...base,vehicleContext:{...context,transmissionModel:'a6-gf1'}})).items.length,1,'literal model normalization');
+assert.equal((await read({...base,vehicleContext:{...context,confirmedEquipment:[...context.confirmedEquipment].reverse()}})).items.length,1,'equipment confirmation is a canonical set');
+state.links[0].evidenceJson.scopeVersion=undefined;
+assert.equal((await read(base)).items.length,0,'legacy source remains stored, cannot close specific gaps');
+assert.equal(state.links.length,1);assert.equal(state.calls,0);
+const prior=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY='mock-only';
+try{
+ state=reset();await run(base);assert.equal(state.calls,1);
+ assert.equal(JSON.parse(state.request.input).vehicle.scope.productionMonth,'2012-03');
+ assert.equal(JSON.parse(state.request.input).vehicle.variants[0].productionYears,'2011-2018');
+ assert.equal(JSON.stringify(JSON.parse(state.request.input).vehicle).includes('vin'),false);
+ await run(base);assert.equal(state.calls,1,'same v4 exact scope no repeat');
+ await run({...base,vehicleContext:{...context,confirmedMarket:'RU'}});assert.equal(state.calls,2,'ordinary genuinely different scope may research under existing limits');
+ await run({...base,vehicleContext:{...context,confirmedMarket:'RU'}});assert.equal(state.calls,2,'new exact scope reuses own result');
+ const row=state.rows[0],{scope,...legacy}=row.vehicleSnapshot;legacy.source='selected_mann_all_systems_v3';
+ row.vehicleKey='mann-research:'+createHash('sha256').update(JSON.stringify(legacy)).digest('hex');row.vehicleSnapshot=legacy;
+ const result=await run({...base,batch:{skipHourlyLimit:true,reuseAnyGroupResult:true}});
+ assert.equal(result.status,'needs_context');assert.equal(state.calls,2,'legacy batch result cannot trigger another paid request');
+ assert.equal(state.rows.length,2);
+ const unspecified=await run({...base,vehicleContext:undefined});
+ assert.equal(unspecified.status,'needs_context');assert.equal(state.calls,2,'scope upgrade alone cannot restart old research without actual conditions');
+ console.log('PASS research v4 exact configuration isolation, legacy hold, separate actual/catalogue years, safe catalogue reuse and batch no-repeat');
+}finally{if(prior===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=prior;}

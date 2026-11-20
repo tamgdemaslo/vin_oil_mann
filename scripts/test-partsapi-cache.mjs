@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {resolve} from 'node:path';
+import {createJiti} from 'jiti';
+const mock=resolve('scripts/fixtures/mann-fluid-research-mocks.mjs');
+const j=createJiti(import.meta.url,{alias:{'@':resolve('src'),'@/lib/db':mock}});
+const {prisma}=await j.import('./fixtures/mann-fluid-research-mocks.mjs');
+const {runWithRequestTenant}=await j.import('../src/lib/request-tenant-store.ts');
+const {decodePartsApiVin}=await j.import('../src/lib/integrations/partsapi/client.ts');
+const vin='WDB2030451A000001';
+const response={result:[{manuName:'MERCEDES-BENZ',modelName:'C-CLASS (W203)',typeName:'C 200 Kompressor (203.045)',vin:'WDB2030451A000002',cylinderCapacityCcm:1998,powerHpFrom:163,powerHpTo:163}]};
+let payload={source:'PARTSAPI_600_RAW_V1',status:'decoded',response},reads=0,calls=0,failed=false;
+prisma.vinLookupCache.findFirst=async({where})=>{reads++;assert.equal(where.vin,vin);assert.ok(where.expiresAt.gt instanceof Date);if(failed)throw Error('database unavailable');return where.branchId==='branch1'?{payload}:null;};
+globalThis.fetch=async()=>{calls++;return Response.json(response);};
+const branch=id=>({mode:'branch',branchId:id,organizationId:'org1',allowedBranchIds:[id]});
+process.env.PARTSAPI_VINDECODE_KEY='';
+let r=await runWithRequestTenant(branch('branch1'),()=>decodePartsApiVin(vin));
+assert.equal(r.status,'decoded');assert.equal(r.fromCache,true);assert.equal(calls,0);assert.equal(r.vehicles[0].Modification,'C 200 Kompressor (203.045)');
+payload={decoded:{old:true},oilInfo:{old:true},partsApiBatch:payload};
+r=await runWithRequestTenant(branch('branch1'),()=>decodePartsApiVin(vin));assert.equal(r.status,'decoded');assert.equal(calls,0);
+for(const status of ['pending','error','transport_uncertain']){payload={source:'PARTSAPI_600_RAW_V1',status};r=await runWithRequestTenant(branch('branch1'),()=>decodePartsApiVin(vin));assert.equal(r.status,'unavailable');assert.equal(calls,0);}
+payload={source:'PARTSAPI_600_RAW_V1',status:'not_found',response:{result:{}}};r=await runWithRequestTenant(branch('branch1'),()=>decodePartsApiVin(vin));assert.equal(r.status,'not_found');assert.equal(r.fromCache,true);assert.equal(calls,0);
+failed=true;r=await runWithRequestTenant(branch('branch1'),()=>decodePartsApiVin(vin));assert.equal(r.status,'unavailable');assert.equal(calls,0);failed=false;
+process.env.PARTSAPI_VINDECODE_KEY='fixture-only';
+r=await runWithRequestTenant(branch('branch2'),()=>decodePartsApiVin(vin));assert.equal(r.status,'decoded');assert.equal(r.fromCache,false);assert.equal(calls,1,'another branch must never reuse branch1 data');
+payload={decoded:{unrelatedLegacy:true}};r=await runWithRequestTenant(branch('branch1'),()=>decodePartsApiVin(vin));assert.equal(r.fromCache,false);assert.equal(calls,2);
+const before=reads;r=await runWithRequestTenant({mode:'all',branchId:null,organizationId:'org1',allowedBranchIds:['branch1','branch2']},()=>decodePartsApiVin(vin));assert.equal(reads,before,'all-branch context cannot read a branch cache');assert.equal(calls,3);
+console.log('PASS PartsAPI branch cache, nested legacy preservation, negative/pending/error reuse, DB failure without repurchase and branch isolation');

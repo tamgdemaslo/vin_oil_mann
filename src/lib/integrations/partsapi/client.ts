@@ -1,63 +1,46 @@
+import { normalizePartsApiMannCard } from "@/lib/partsapi-mann-normalization";
 import { assistantRemainingMs, assistantSignal } from "@/lib/ai-assistant/execution";
+import { prisma } from "@/lib/db";
+import { getRequestTenant } from "@/lib/request-tenant-store";
 
 type PartsApiDecode =
-  | { status: "decoded"; vehicles: Record<string, unknown>[] }
-  | { status: "not_found" | "unavailable" | "unconfigured" };
+  | { status: "decoded"; vehicles: Record<string, unknown>[]; fromCache?: boolean }
+  | { status: "not_found" | "unavailable" | "unconfigured"; rejectedVins?: string[]; fromCache?: boolean };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function text(value: unknown): string | undefined {
-  return typeof value === "string" ? value.trim() || undefined : undefined;
-}
-
-function positiveNumber(value: unknown): number | undefined {
-  const number = typeof value === "number" || typeof value === "string"
-    ? Number(String(value).replace(",", ".")) : NaN;
-  return Number.isFinite(number) && number > 0 ? number : undefined;
-}
-
-function singleValue(from: unknown, to: unknown): number | undefined {
-  const low = positiveNumber(from);
-  const high = positiveNumber(to);
-  return low && high && low !== high ? undefined : low ?? high;
-}
-
-function driveType(value: unknown): string | undefined {
-  const drive = text(value);
-  if (!drive) return undefined;
-  if (/\b(?:AWD|4WD|4X4|XDRIVE|4MOTION|QUATTRO)\b|полн|все кол[её]са/i.test(drive)) return "AWD";
-  if (/\b(?:FWD|4X2F)\b|передн/i.test(drive)) return "FWD";
-  if (/\bRWD\b|задн/i.test(drive)) return "RWD";
-  return drive;
-}
-
-function mapCard(card: Record<string, unknown>, vin: string): Record<string, unknown> | null {
-  const make = text(card.manuName);
-  const model = text(card.modelName);
-  const returnedVin = text(card.vin ?? card.VIN);
-  if (!make || !model || (returnedVin && returnedVin.toUpperCase() !== vin)) return null;
-
-  const motorCodes = Array.isArray(card.motorCodes) ? card.motorCodes : [card.motorCodes];
-  const codes = [...new Set(motorCodes.map(text).filter(Boolean))];
-  const cc = positiveNumber(card.cylinderCapacityCcm) ?? positiveNumber(card.ccmTech);
-  return {
-    make,
-    model,
-    ModelYearFrom: String(card.yearOfConstrFrom ?? "").match(/^(?:19|20)\d{2}/)?.[0],
-    ModelYearTo: String(card.yearOfConstrTo ?? "").match(/^(?:19|20)\d{2}/)?.[0],
-    EngineCode: codes.length === 1 ? codes[0] : undefined,
-    EngineVolumeCc: cc,
-    EngineVolumeLiters: cc ? undefined : positiveNumber(card.cylinderCapacityLiter),
-    PowerKw: singleValue(card.powerKwFrom, card.powerKwTo),
-    PowerHp: singleValue(card.powerHpFrom, card.powerHpTo),
-    FuelType: text(card.fuelType),
-    DriveType: driveType(card.impulsionType),
-  };
+function decodePayload(payload: unknown, vin: string, fromCache = false): PartsApiDecode {
+  const result = isRecord(payload) ? payload.result : undefined;
+  const cards = Array.isArray(result) ? result : isRecord(result) ? Object.values(result) : [];
+  const normalized = cards.filter(isRecord).map(card => normalizePartsApiMannCard(card, vin));
+  // Catalogue-card VIN differences do not reject the requested modification.
+  const vehicles = normalized.filter(card => card.valid).map(card => card.vehicle);
+  const rejectedVins = normalized.filter(card => !card.vinMatches).flatMap(card => card.returnedVin ? [card.returnedVin] : []);
+  return vehicles.length ? { status: "decoded", vehicles, fromCache } : { status: "not_found", rejectedVins, fromCache };
 }
 
 export async function decodePartsApiVin(vin: string): Promise<PartsApiDecode> {
+  const tenant = getRequestTenant();
+  if (tenant?.mode === "branch" && tenant.branchId) {
+    try {
+      const cached = await prisma.vinLookupCache.findFirst({
+        where: { branchId: tenant.branchId, vin, expiresAt: { gt: new Date() } },
+        select: { payload: true },
+      });
+      if (cached && isRecord(cached.payload)) {
+        const record = isRecord(cached.payload.partsApiBatch) ? cached.payload.partsApiBatch : cached.payload;
+        if (record.source === "PARTSAPI_600_RAW_V1") {
+          if (record.status === "decoded" || record.status === "not_found") return decodePayload(record.response, vin, true);
+          // A reserved or uncertain request must not be purchased again.
+          return { status: "unavailable", fromCache: true };
+        }
+      }
+    } catch {
+      return { status: "unavailable", fromCache: true };
+    }
+  }
   const key = process.env.PARTSAPI_VINDECODE_KEY?.trim();
   if (!key) return { status: "unconfigured" };
 
@@ -76,11 +59,7 @@ export async function decodePartsApiVin(vin: string): Promise<PartsApiDecode> {
     if (!response.ok) return { status: "unavailable" };
 
     const payload: unknown = await response.json();
-    const result = isRecord(payload) ? payload.result : undefined;
-    const cards = Array.isArray(result) ? result : isRecord(result) ? Object.values(result) : [];
-    const vehicles = cards.filter(isRecord).map((card) => mapCard(card, vin))
-      .filter((vehicle): vehicle is Record<string, unknown> => vehicle !== null);
-    return vehicles.length ? { status: "decoded", vehicles } : { status: "not_found" };
+    return decodePayload(payload, vin);
   } catch {
     assistant?.throwIfAborted();
     return { status: "unavailable" };
