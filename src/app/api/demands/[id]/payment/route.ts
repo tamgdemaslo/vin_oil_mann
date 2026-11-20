@@ -388,6 +388,18 @@ async function trySendLocalDemand(
       productMarkingSettings: position.product?.markingSettings,
     };
   });
+  const positionIds = new Set(rows.map((row) => row.id));
+  const submittedPositionIds = [
+    ...Object.entries(body.markingCodes ?? {}).filter(([, value]) => normalizeCodes(value).length > 0).map(([id]) => id),
+    ...(Array.isArray(body.markingBypassPositionIds) ? body.markingBypassPositionIds : []),
+  ];
+  if (submittedPositionIds.some((id) => !positionIds.has(id))) {
+    return NextResponse.json(
+      { error: "Позиции отгрузки изменились. Обновите предчек и проверьте коды маркировки перед отправкой на кассу." },
+      { status: 409 }
+    );
+  }
+
   const withdrawals = await shipmentBulkOilWithdrawals(prisma, getScopedBranchId(), loaded.data.header.id);
   for (const row of rows) {
     const settings = normalizeProductMarkingSettings(row.productMarkingSettings);

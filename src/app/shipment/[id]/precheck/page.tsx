@@ -491,14 +491,14 @@ export default function ShipmentPrecheckPage() {
     setSuccess(null);
     try {
       const markingCodes = Object.fromEntries(
-        Object.entries(markingInputs).map(([positionId, value]) => [
+        requiredPositions.map(({ id: positionId }) => [
           positionId,
-          parseMarkingCodesInput(value),
+          parseMarkingCodesInput(markingInputs[positionId] ?? ""),
         ])
       );
-      const markingBypassPositionIds = Object.entries(bypassed)
-        .filter(([, value]) => value)
-        .map(([positionId]) => positionId);
+      const markingBypassPositionIds = requiredPositions
+        .map((position) => position.id)
+        .filter((positionId) => bypassed[positionId]);
 
       const res = await fetch(`/api/demands/${id}/payment`, {
         method: "POST",

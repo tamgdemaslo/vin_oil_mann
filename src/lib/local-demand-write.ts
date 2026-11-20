@@ -2170,8 +2170,13 @@ async function updateLocalDemandInTx(
   if (Array.isArray(body.positions)) {
     await tx.localDemandPosition.deleteMany({ where: { demandId: current.id } });
     if (effectivePositions.length > 0) {
+      const reusablePositionIds = new Set(existingById.keys());
       await tx.localDemandPosition.createMany({
         data: effectivePositions.map((position) => ({
+          // Keep the precheck's marking codes attached to the same product line.
+          id: position.productId && position.sourcePositionId && reusablePositionIds.delete(position.sourcePositionId)
+            ? position.sourcePositionId
+            : undefined,
           branchId: current.branchId,
           demandId: current.id,
           productId: position.productId,
