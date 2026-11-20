@@ -97,6 +97,20 @@ try {
   assert.ok((await save(separateLinesId, { positions: separateLines })).ok);
   await verify(separateLinesId, 2, 18_900, 1);
 
+  const markingId = await fixture("precheck-marking");
+  assert.ok((await save(markingId, { positions: separateLines })).ok);
+  const before = await verify(markingId, 2, 18_900, 1);
+  const [first, second] = separateLines.map((line) => before.positions.find((p) => p.priceCentsPerUnit === line.price));
+  assert.ok((await save(markingId, { positions: [
+    { ...input[1], id: second.id },
+    { ...separateLines[0], id: first.id },
+  ] })).ok);
+  const after = await verify(markingId, 2, 19_800, 2);
+  assert.equal(after.positions.find((p) => p.productId === first.productId)?.id, first.id,
+    "A code from an open precheck must still address the same product line after saving");
+  assert.ok(after.positions.every((p) => p.id !== second.id),
+    "A replacement product must not inherit the old line's marking code");
+
   const rollbackId = await fixture("rollback");
   assert.ok((await save(rollbackId, { positions: input })).ok);
   const failed = await save(rollbackId, { positions: [{ ...input[0], quantity: 1e14 }] });
