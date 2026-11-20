@@ -23,6 +23,18 @@ try {
    assert.throws(()=>parseResearchResponse(response),error=>researchFailure(error,'parse').code===code);
  }
  assert.throws(()=>parseResearchResponse({output_text:'{"items":[null]}'}));
+ const partial=parseResearchResponse({output_text:JSON.stringify({items:[item,{...item,systemCode:'ENGINE_COOLANT',sourceUrl:'',sourceTitle:'',excerpt:''}],systems:[],unresolved:[]})});
+ assert.deepEqual(partial.items,[item],'an uncited placeholder must not discard independently valid oil evidence');
+ assert.ok(partial.unresolved.some(reason=>reason.startsWith('ENGINE_COOLANT:')),'uncited data stays explicitly unresolved');
+ const invalidCitation=parseResearchResponse({output_text:JSON.stringify({items:[{...item,sourceUrl:'invalid'}],unresolved:[]})});
+ assert.deepEqual(invalidCitation.items,[],'invalid citation is never promoted to a fluid fact');
+ assert.throws(()=>parseResearchResponse({output_text:JSON.stringify({items:[{...item,systemCode:'INVENTED'}],unresolved:[]})}),'unknown system codes remain a contract error');
+ const partialState=reset(); partialState.payload={items:[item,{...item,systemCode:'ENGINE_COOLANT',sourceUrl:'',sourceTitle:'',excerpt:''}],unresolved:[]};
+ const partialSaved=await run(input);
+ assert.equal(partialSaved.status,'saved');
+ assert.deepEqual(partialSaved.items,[item]);
+ assert.ok(partialState.requirements.some(row=>row.systemCode==='ENGINE_OIL'),'valid evidence persists even when its group contains an uncited placeholder');
+ assert.ok(!partialState.requirements.some(row=>row.systemCode==='ENGINE_COOLANT'),'uncited placeholder is not persisted as a requirement');
  assert.equal(researchFailure({name:'APIConnectionTimeoutError'},'request').code,'timeout');
  assert.equal(new APIConnectionTimeoutError().name,'Error');
  assert.equal(researchFailure(new APIConnectionTimeoutError(),'request').code,'timeout');

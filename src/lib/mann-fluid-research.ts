@@ -40,7 +40,21 @@ function researchOutputSchema(scope: readonly string[]) {
 export function parseResearchResponse(response: { status?: string; output_text: string; incomplete_details?: { reason?: string } | null }) {
   if (response.status === "incomplete") throw Object.assign(new Error("Incomplete research response"), { code: "incomplete_output" });
   if (!response.output_text?.trim()) throw Object.assign(new Error("Empty research response"), { code: "empty_output" });
-  return resultSchema.parse(JSON.parse(response.output_text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
+  // Unknown systems sometimes arrive as placeholder items with empty citations.
+  // Validate the envelope first, then keep independently valid evidence: an
+  // uncited coolant row must not discard a correctly sourced engine-oil row.
+  const candidateItemSchema = itemSchema.extend({ sourceUrl: z.string().max(2000), sourceTitle: sourceTitleSchema, excerpt: z.string().max(2000) });
+  const candidates = resultSchema.extend({ items: z.array(candidateItemSchema).max(40) }).parse(
+    JSON.parse(response.output_text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")),
+  );
+  const items: z.infer<typeof itemSchema>[] = [];
+  const unresolved = new Set(candidates.unresolved);
+  for (const candidate of candidates.items) {
+    const parsed = itemSchema.safeParse(candidate);
+    if (parsed.success) items.push(parsed.data);
+    else unresolved.add(`${candidate.systemCode}: данные без полного источника не применены; требуется подтверждение.`);
+  }
+  return { ...candidates, items, unresolved: [...unresolved] };
 }
 export type MannFluidResearchResult = { evidenceId?: string; fromCache?: boolean; status: "saved" | "searching" | "unavailable" | "needs_context" | "complete"; items: z.infer<typeof itemSchema>[]; systems?: z.infer<typeof systemStateSchema>[]; unresolved?: string[]; message: string; errorCode?: string; groups?: Partial<Record<MannFluidGroup, { status: "queued" | "searching" | "done" | "failed"; message: string }>> };
 
