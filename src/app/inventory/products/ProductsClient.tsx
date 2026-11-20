@@ -1232,7 +1232,6 @@ function validateProductForm(values: ProductForm): ProductFormErrors {
   if (!values.groupPath.trim()) errors.groupPath = "Выберите группу товара";
   if (!values.salePrice.trim()) errors.salePrice = "Укажите цену продажи";
   if (!values.uomName.trim()) errors.uomName = "Укажите единицу учёта";
-  if (values.entityType !== "service" && !values.article.trim()) errors.article = "Укажите артикул товара";
   if (isMarkingEnabled(values) && formMarkingMode(values) === "BULK_OIL_FROM_MARKED_BARREL" && !isLiterSaleUnit(values.uomName)) {
     errors.uomName = "Для масла на разлив единица должна быть «л»";
     errors.markingMode = "Единица товара должна быть «л»";
@@ -4283,7 +4282,7 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
       if (!editingId || isProductFormDirty(form, formBaseline)) {
         const payload: Record<string, unknown> = {
           name: form.name.trim(),
-          article: form.article.trim() || undefined,
+          article: form.article.trim(),
           code: form.code.trim() || undefined,
           externalCode: form.externalCode.trim() || undefined,
           groupPath: form.groupPath.trim() || undefined,
@@ -5832,15 +5831,11 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
                       <fieldset className="product-editor-identifier-group">
                         <legend>
                           <strong>Идентификаторы</strong>
-                          {form.entityType !== "service" && <span>Артикул обязателен</span>}
                         </legend>
                         <div className="product-editor-grid">
-                          {renderField("article", form.entityType === "service" ? "Артикул" : "Артикул *", { placeholder: "Например: W 914/2", hideErrorMessage: true })}
+                          {renderField("article", "Артикул", { placeholder: "Например: W 914/2", hint: "Можно добавить позже" })}
                           {renderField("code", "Код / штрихкод", { placeholder: "Например: 30015649815", hideErrorMessage: true })}
                         </div>
-                        {formErrors.article ? (
-                          <span className="product-editor-error">{formErrors.article}</span>
-                        ) : null}
                       </fieldset>
                       {renderEntityTypeField()}
                       <CreatableSearchCombobox
@@ -7180,6 +7175,16 @@ export default function ProductsClient({ canSetAverageCost = false, catalogScope
                         </span>
                       ) : null}
                       {row.archived ? <span className="eco-product-archive-badge">В архиве</span> : null}
+                      {row.entityType !== "service" && !row.article.trim() ? (
+                        <button
+                          type="button"
+                          className="eco-product-marking-badge is-warning"
+                          aria-label={`Открыть карточку без артикула: ${row.name}`}
+                          onClick={() => openProductEditor(row)}
+                        >
+                          Нет артикула
+                        </button>
+                      ) : null}
                       {row.priceNeedsSetup ? <span className="eco-product-marking-badge is-warning">Настроить цену</span> : null}
                     </div>
                   </td>
