@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { loadSelectedMannApplications } from "@/lib/mann-selected-applications";
 import { nextVehicleMannSelection, mannSelectionMatchesMake } from "./client-vehicle-mann-selection";
 import {
   CLIENT_VEHICLE_PASSPORT_FIELDS,
@@ -169,10 +170,7 @@ export async function upsertClientVehicleProfile(input: {
   const identityChanged = merge.changedFields.some(field => ["make", "model", "vin", "frameNumber"].includes(field));
   const nextVariants = nextVehicleMannSelection(previousVariants, input.mannVariantIds === undefined ? undefined : stringArray(input.mannVariantIds), identityChanged);
   if (nextVariants.length) {
-    const applications = await prisma.mannFilterApplication.findMany({
-      where: { vehicleVariantKey: { in: nextVariants } },
-      select: { vehicleVariantKey: true, make: true },
-    });
+    const applications = await loadSelectedMannApplications(nextVariants);
     if (!mannSelectionMatchesMake(merge.values.make, nextVariants, applications)) {
       return { ok: false as const, error: "Модификация MANN не найдена или относится к другой марке. Выберите модификацию автомобиля заново." };
     }
@@ -211,7 +209,7 @@ export async function upsertClientVehicleProfile(input: {
           },
         });
 
-    if (!existing || merge.changedFields.length || variantsChanged) {
+    if (!existing || merge.changedFields.length || merge.confirmedFields.length || variantsChanged) {
       await tx.clientVehicleRevision.create({
         data: {
           id: crypto.randomUUID(),
@@ -220,7 +218,11 @@ export async function upsertClientVehicleProfile(input: {
           source: input.write.source,
           verificationStatus: overallStatus,
           changedFieldsJson: [...merge.changedFields, ...(variantsChanged ? ["mannVariantIds"] : [])] as Prisma.InputJsonValue,
-          snapshotJson: profileSnapshot(vehicle as unknown as Record<string, unknown>) as Prisma.InputJsonValue,
+          snapshotJson: {
+            ...profileSnapshot(vehicle as unknown as Record<string, unknown>),
+            // Confirmation is an audit event, not an identity value change.
+            confirmedFields: merge.confirmedFields,
+          } as Prisma.InputJsonValue,
           actorLogin: input.actor.login,
           actorName: input.actor.name,
         },

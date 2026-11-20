@@ -226,6 +226,7 @@
 .workspace .extra:last-child { border-bottom: 0; }
 @media(min-width:901px) {
   .workspace[data-active-section="oil"] [data-quote-section]:not([data-quote-section="oil"]),
+  .workspace[data-active-section="fluids"] [data-quote-section]:not([data-quote-section="fluids"]),
   .workspace[data-active-section="filters"] [data-quote-section]:not([data-quote-section="filters"]),
   .workspace[data-active-section="work"] [data-quote-section]:not([data-quote-section="work"]) { display: none; }
 }
@@ -429,3 +430,8 @@
 @media (max-width: 700px) {
   .filterArticleEntry { grid-template-columns: minmax(0, 1fr); }
 }
+.serviceMethod { display: grid; gap: 8px; max-width: 420px; margin-bottom: 16px; font-size: 14px; font-weight: 500; }
+.serviceMethod select { min-height: 44px; padding: 8px 12px; border: 1px solid var(--eco-line); border-radius: 6px; background: var(--eco-surface, #fff); color: var(--eco-ink); font: inherit; }
+.fluidLine { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-block: 12px; border-top: 1px solid var(--eco-line); }
+.fluidLine > div { flex: 1 1 250px; }
+.fluidLine p { margin: 6px 0; color: var(--eco-muted); font-size: 13px; }

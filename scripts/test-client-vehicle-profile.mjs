@@ -96,4 +96,27 @@ assert.deepEqual(completeness, { completed: 10, total: 10, percent: 100, missing
 const frameCompleteness = clientVehicleCompleteness({ ...completeValues, vin: null, frameNumber: "KZN130-0001234" });
 assert.equal(frameCompleteness.missing.includes("vin"), false, "frame number must satisfy the vehicle identity requirement");
 
+const oldSource = { source: "tronk_vindecode", confidence: "HIGH", verificationStatus: "AUTO_FILLED", updatedAt: "2026-09-01T10:00:00.000Z" };
+const unchangedConfirmation = mergeClientVehiclePassport({
+  existing: { transmissionType: "АКПП", driveType: "Передний", transmissionName: null },
+  fieldSources: { transmissionType: oldSource, driveType: oldSource },
+  incoming: normalizeManualVehicleProfile({ transmissionType: "АКПП", transmissionName: null }),
+  mode: "confirmed", now: "2026-09-05T11:00:00.000Z", actorLogin: "reviewer",
+});
+assert.deepEqual(unchangedConfirmation.changedFields, [], "confirmation-only must not invalidate MANN identity");
+assert.deepEqual(unchangedConfirmation.confirmedFields, ["transmissionType"]);
+assert.deepEqual(unchangedConfirmation.fieldSources.transmissionType, {
+  source: "vehicle_card", confidence: "HIGH", verificationStatus: "CONFIRMED",
+  updatedAt: "2026-09-05T11:00:00.000Z", updatedBy: "reviewer",
+});
+assert.deepEqual(unchangedConfirmation.fieldSources.driveType, oldSource, "omitted field is not confirmed");
+assert.equal(unchangedConfirmation.fieldSources.transmissionName, undefined, "blank field is not confirmed");
+const unchangedAuto = mergeClientVehiclePassport({
+  existing: { transmissionType: "АКПП" }, fieldSources: { transmissionType: oldSource },
+  incoming: normalizeManualVehicleProfile({ transmissionType: "АКПП" }),
+  mode: "auto", now: "2026-09-05T11:00:00.000Z", actorLogin: "reviewer",
+});
+assert.deepEqual(unchangedAuto.fieldSources.transmissionType, oldSource);
+assert.deepEqual(unchangedAuto.confirmedFields, []);
+
 console.log("Client vehicle passport merge and completeness tests — passed");

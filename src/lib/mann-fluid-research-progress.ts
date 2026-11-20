@@ -14,7 +14,8 @@ export async function runFluidResearchGroups(options: {
   for (const group of MANN_FLUID_GROUP_IDS) {
     const scope = MANN_FLUID_GROUPS[group].systems;
     const prior = options.initial;
-    if (prior) results.set(group, { ...prior, items: prior.items.filter(i => scope.includes(i.systemCode)), systems: prior.systems?.filter(i => scope.includes(i.systemCode)), unresolved: [] });
+    if (prior) results.set(group, { ...prior, status: prior.groups?.[group]?.status === "done" ? "saved" : prior.status,
+      items: prior.items.filter(i => scope.includes(i.systemCode)), systems: prior.systems?.filter(i => scope.includes(i.systemCode)), unresolved: [] });
     groups[group] = prior?.groups?.[group]?.status === "done" ? prior.groups[group] : { status: "queued", message: "Ожидает поиска" };
   }
   const publish = () => {
@@ -24,12 +25,13 @@ export async function runFluidResearchGroups(options: {
     const failed = states.filter(g => g.status === "failed").length;
     const searching = states.some(g => g.status === "queued" || g.status === "searching");
     const values = [...results.values()];
+    const needsContext = values.some(result => result.status === "needs_context");
     options.onProgress({
-      status: searching ? "searching" : done ? "saved" : "unavailable",
+      status: searching ? "searching" : needsContext ? "needs_context" : done ? "saved" : "unavailable",
       items: values.flatMap(r => r.items), systems: values.flatMap(r => r.systems ?? []),
       unresolved: [...new Set(values.flatMap(r => r.unresolved ?? []))],
       groups: structuredClone(groups),
-      message: searching ? `Завершено групп: ${done} из ${states.length}. Найденное сохраняется сразу.` : serviceFailure ?? (failed ? `Завершено групп: ${done} из ${states.length}. ${done ? "Повторите незавершённые; сохранённые данные не потеряны." : "Поиск не завершён, новых данных нет."}` : "Все группы проверены. Найденное сохранено; пропуски отмечены отдельно."),
+      message: searching ? `Завершено групп: ${done} из ${states.length}. Найденное сохраняется сразу.` : serviceFailure ?? (needsContext ? "Уточните комплектацию автомобиля. Уже найденные данные доступны." : failed ? `Завершено групп: ${done} из ${states.length}. ${done ? "Повторите незавершённые; сохранённые данные не потеряны." : "Поиск не завершён, новых данных нет."}` : "Все группы проверены. Найденное сохранено; пропуски отмечены отдельно."),
     });
   };
   publish();
@@ -60,7 +62,10 @@ export async function runFluidResearchGroups(options: {
           const scope = MANN_FLUID_GROUPS[group].systems;
           results.set(group, { ...result, items: result.items.filter(i => scope.includes(i.systemCode)), systems: result.systems?.filter(i => scope.includes(i.systemCode)) });
           groups[group] = { status: "done", message: result.message };
-        } else groups[group] = { status: "failed", message: result.message };
+        } else {
+          groups[group] = { status: "failed", message: result.message };
+          if (result.status === "needs_context") results.set(group, { ...result, items: [], unresolved: [...new Set([result.message, ...(result.unresolved ?? [])])] });
+        }
       } catch {
         if (options.signal.aborted) return;
         groups[group] = { status: "failed", message: "Запрос группы прерван. Сохранённые группы доступны." };

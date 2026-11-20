@@ -1,5 +1,7 @@
 "use client";
 
+import { mannFluidDisplayItems } from "@/lib/mann-fluid-display";
+
 import lookupStyles from "./VehicleLookupCandidates.module.css";
 import { withMannEngineOilReference, decodedEngineOilReference } from "@/lib/mann-engine-oil-reference";
 
@@ -296,15 +298,16 @@ function FluidCard({
 
 export function FluidResearchResults({ result, onRetry }: { result: MannFluidResearchResult; onRetry?: () => void }) {
   const searching = result.status === "searching";
+  const needsContext = result.status === "needs_context";
   const failed = result.status === "unavailable" || Object.values(result.groups ?? {}).some(group => group.status === "failed");
-  if (!searching && !failed && !result.unresolved?.length) return null;
+  if (!searching && !failed && !needsContext && !result.unresolved?.length) return null;
   return <section className="eco-fluid-research eco-fluid-research--status" aria-label="Поиск жидкостей" aria-busy={searching}>
     <div className="eco-fluid-research__head">
       <p role="status">{result.message}</p>
       {searching ? <span className="eco-fluid-research__spinner" aria-hidden="true" /> : null}
-      {!searching && failed && onRetry ? <button type="button" className="eco-btn" onClick={onRetry}>{result.groups ? "Повторить незавершённые" : "Повторить поиск"}</button> : null}
+      {!searching && !needsContext && failed && onRetry ? <button type="button" className="eco-btn" onClick={onRetry}>{result.groups ? "Повторить незавершённые" : "Повторить поиск"}</button> : null}
     </div>
-    {result.unresolved?.length ? <details><summary>Что осталось уточнить</summary><ul>{result.unresolved.map((reason, index) => <li key={index}>{readableFluidIssue(reason)}</li>)}</ul></details> : null}
+    {result.unresolved?.length ? <details open={needsContext || undefined}><summary>Что осталось уточнить</summary><ul>{result.unresolved.map((reason, index) => <li key={index}>{readableFluidIssue(reason)}</li>)}</ul></details> : null}
   </section>;
 }
 
@@ -335,11 +338,8 @@ export function TechnicalProfile({
   confirmedEquipment: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>[];
   onSelectEquipment: (circuit: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>['circuit'], option?: NonNullable<MannUnifiedTechnicalProfile['items'][number]['userConfirmedEquipment']>) => void;
 }) {
-  const catalogItems = profile?.items.filter(item =>
-    [...item.specifications, ...item.viscosityGrades].some(value => value.trim())
-    || (!item.requiresReview && item.capacities.some(capacity => capacityLabel(capacity).trim()))
-  ) ?? [];
-  const researchItems = research?.items.filter(item => item.specification.trim() || item.volumeText.trim()) ?? [];
+  const { catalogItems, researchItems } = mannFluidDisplayItems(profile?.items ?? [],
+    research?.items.filter(item => item.specification.trim() || item.volumeText.trim()) ?? []);
   const researchOnlySystems = MANN_FLUID_SYSTEMS.filter(system =>
     researchItems.some(item => item.systemCode === system) && !catalogItems.some(item => item.systemCode === system)
   );
@@ -367,7 +367,7 @@ export function TechnicalProfile({
               </button>
             ))}
             {loading ? <span role="status">Обновляем…</span> : null}
-            {profile.selectedTransmissionType ? <em>Указано вручную</em> : <span>Выберите установленный тип — покажем жидкость и объём.</span>}
+            {profile.selectedTransmissionType ? <em>{profile.savedVehicleConfirmation?.transmissionType === profile.selectedTransmissionType ? "Подтверждено в карточке автомобиля" : "Указано вручную"}</em> : <span>Выберите установленный тип — покажем жидкость и объём.</span>}
           </div>
         </fieldset>
       ) : null}
@@ -479,6 +479,7 @@ export function TechnicalProfile({
       ) : researchPendingOrFound ? null : (
         <div className="eco-vehicle-lookup__profile-state">{profile?.transmissionGearCountOptions?.length && selectedTransmissionGearCount == null ? "Для показа жидкости укажите число передач установленной коробки." : profile?.transmissionComponentOptions?.length ? "Для показа жидкости укажите модель установленной коробки." : profile?.equipmentOptions?.length ? "Для показа жидкости подтвердите установленное оборудование." : "Нет данных с подтверждённой применяемостью. При необходимости уточните месяц выпуска или условия агрегата."}</div>
       )}
+      {!hasFluids && !loading && !error && profile?.notice ? <div role="status" className="eco-vehicle-lookup__profile-state is-warning">{profile.notice}</div> : null}
     </div>
   );
 }
@@ -598,11 +599,9 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
     setConfirmedMarket(details.confirmedMarket);
     setProductionMonth(details.productionMonth ?? "");
     setProductionMonthDraft(details.productionMonth ?? "");
-    if (!transmissionType) {
-      setTechnicalProfile(null);
-    } else {
-      setTechnicalProfile((current) => current ? { ...current, selectedTransmissionType: transmissionType } : current);
-    }
+    // Previous aggregate facts are not applicable while a new configuration is
+    // being checked. Fresh database facts are published before background search.
+    setTechnicalProfile(null);
     setTechnicalProfileError("");
     setTechnicalProfileLoading(true);
     if (!retryFailed) setFluidResearch(null);
@@ -610,12 +609,17 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
     const vehicleContext = mannTechnicalContextFromVehicle(vehicle, details,
       candidate?.variantIds.length === variantKeys.length && variantKeys.every(key => candidate.variantIds.includes(key))
         ? candidate : undefined);
+    const normalizedVin = vehicle.vin?.trim().toUpperCase();
+    const savedVehicleLookup = {
+      vin: normalizedVin && /^[A-HJ-NPR-Z0-9]{17}$/.test(normalizedVin) ? normalizedVin : undefined,
+      decodedPowertrain: { transmissionType: vehicle.transmissionType, transmissionName: vehicle.transmissionName, driveType: vehicle.driveType },
+    };
     const referenceProfile = withMannEngineOilReference(null, vehicleContext);
     try {
       const response = await fetch("/api/mann-catalog/technical-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variantKeys, transmissionType, vehicleContext }),
+        body: JSON.stringify({ variantKeys, transmissionType, vehicleContext, ...savedVehicleLookup }),
         signal: controller.signal,
       });
       const data = await responseJson<MannUnifiedTechnicalProfile & { error?: string }>(response);
@@ -626,6 +630,8 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
         return;
       }
       setTechnicalProfile(withMannEngineOilReference(data, vehicleContext));
+      setSelectedTransmissionType(data.selectedTransmissionType);
+      setConfirmedDrive(details.confirmedDrive ?? data.savedVehicleConfirmation?.confirmedDrive);
       setTechnicalProfileLoading(false);
       await runFluidResearchGroups({
         signal: controller.signal, initial: retryFailed ? fluidResearch ?? undefined : undefined,
@@ -633,7 +639,7 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
         request: async researchGroup => {
           const researchResponse = await fetch("/api/mann-catalog/technical-profile", {
           method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
-          body: JSON.stringify({ researchMissing: true, researchGroup, retryFailed, variantKeys, transmissionType, vehicleContext }),
+          body: JSON.stringify({ researchMissing: true, researchGroup, retryFailed, variantKeys, transmissionType, vehicleContext, ...savedVehicleLookup }),
         });
         const research = await responseJson<MannFluidResearchResult>(researchResponse);
           return researchResponse.ok && research ? research : { status: "unavailable", items: [], message: "Запрос группы не выполнен. Остальные результаты сохранены." };
@@ -997,6 +1003,8 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
             <strong>{vehicleTitle(appliedVehicle)}</strong>
             {vehicleDetails(appliedVehicle) && <span>{vehicleDetails(appliedVehicle)}</span>}
             {appliedVehicle.identificationNote && <small>{appliedVehicle.identificationNote}</small>}
+            {lookup?.diagnostics?.attempts.filter(attempt => attempt.returnedVins?.length).map(attempt =>
+              <small key={attempt.method} role="status">PartsAPI вернул другой VIN ({attempt.returnedVins!.join(", ")}). Его ответ не применён; использован {sourceLabel(appliedVehicle)}.</small>)}
           </div>
           <div className="eco-vehicle-lookup__actions">
             <button type="button" onClick={onEditVehicle ?? changeAppliedVehicle}>
@@ -1170,7 +1178,8 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
             <p id="rear-air-conditioning-help">От этого зависит объём антифриза. Если комплектация неизвестна, оставьте «Не уточнено» — объём не будет выбран автоматически.</p>
           </fieldset>
         ) : null}
-        {(!combinedIdentifier || Boolean(technicalProfile?.items.length) || Boolean(fluidResearch?.items.length)) && <TechnicalDetails className={combinedIdentifier ? "eco-quote-source-details" : undefined}>
+        </TechnicalDetails>}
+        {(!combinedIdentifier || Boolean(technicalProfile?.items.length) || Boolean(fluidResearch?.items.length)) && <TechnicalDetails open={combinedIdentifier ? true : undefined} className={combinedIdentifier ? "eco-quote-source-details" : undefined}>
         {combinedIdentifier && <summary>Технические сведения</summary>}
         {fluidResearch ? <FluidResearchResults key={fluidResearch.status} result={fluidResearch} onRetry={() => {
           if (!technicalProfileVariantKeys.length) return;
@@ -1212,7 +1221,6 @@ export function VehicleLookupPanel({ initialState, manualCatalogId = "quote-manu
             void loadTechnicalProfile(technicalProfileVariantKeys, appliedVehicle, transmissionType, { confirmedEngineCode, confirmedMarket, confirmedDrive, rearAirConditioning, productionMonth: productionMonth || undefined });
           }}
         />
-        </TechnicalDetails>}
         </TechnicalDetails>}
       </section>
     );

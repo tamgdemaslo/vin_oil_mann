@@ -1,0 +1,23 @@
+.root { display: grid; gap: 14px; margin-top: 22px; }
+.root h3 { margin: 0; font-size: 18px; }
+.card { min-width: 0; border: 1px solid #dce2ea; border-radius: 10px; padding: 16px; background: #fff; display: grid; gap: 10px; }
+.heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.heading h4 { margin: 0; font-size: 16px; }
+.heading span { color: #607087; font-size: 12px; }
+.card p { margin: 0; overflow-wrap: anywhere; }
+.spec { font-size: 14px; }
+.note { color: #617187; font-size: 13px; line-height: 1.5; margin: 0; }
+.fields { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+.fields label { display: grid; gap: 6px; min-width: min(100%, 220px); font-size: 13px; }
+.fields select { min-height: 40px; max-width: 100%; border: 1px solid #aebdce; border-radius: 6px; padding: 8px 10px; color: #243041; background: white; font: inherit; }
+.card button { justify-self: start; }
+.offers { display: grid; gap: 12px; list-style: none; margin: 0; padding: 0; }
+.offers li { display: grid; gap: 8px; border-top: 1px solid #e1e6ed; padding-top: 12px; font-size: 13px; }
+.root .confirm { display: flex; flex-direction: row; align-items: center; min-height: 44px; gap: 8px; line-height: 1.5; }
+.root .confirm input { width: 16px; min-width: 16px; height: 16px; min-height: 16px; padding: 0; margin: 0; flex: none; }
+.source { color: #aa3c11; font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .card { padding: 12px; } .fields { display: grid; align-items: stretch; } .fields label { min-width: 0; } }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.references { display: grid; gap: 10px; margin-top: 4px; }
+.references h5 { margin: 0; font-size: 14px; }
+.references .activeReference { border-left: 3px solid #b84511; padding-left: 12px; }

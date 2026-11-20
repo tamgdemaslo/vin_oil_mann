@@ -197,6 +197,7 @@ export function mergeClientVehiclePassport(input: {
   const values: ClientVehiclePassportValues = { ...input.existing };
   const fieldSources = { ...(input.fieldSources ?? {}) };
   const changedFields: ClientVehiclePassportField[] = [];
+  const confirmedFields: ClientVehiclePassportField[] = [];
   const verificationStatus: ClientVehicleVerificationStatus = input.mode === "confirmed" ? "CONFIRMED" : "AUTO_FILLED";
 
   for (const field of CLIENT_VEHICLE_PASSPORT_FIELDS) {
@@ -204,7 +205,9 @@ export function mergeClientVehiclePassport(input: {
     const nextValue = input.incoming.values[field];
     const currentValue = input.existing[field];
     if (input.mode === "auto" && (isBlank(nextValue) || !isBlank(currentValue))) continue;
-    if (Object.is(currentValue ?? null, nextValue ?? null)) continue;
+    const valueChanged = !Object.is(currentValue ?? null, nextValue ?? null);
+    const explicitlyConfirmed = input.mode === "confirmed" && !isBlank(nextValue);
+    if (!valueChanged && !explicitlyConfirmed) continue;
     values[field] = nextValue ?? null;
     fieldSources[field] = {
       source: input.incoming.source,
@@ -213,10 +216,11 @@ export function mergeClientVehiclePassport(input: {
       updatedAt: input.now,
       ...(input.actorLogin ? { updatedBy: input.actorLogin } : {}),
     };
-    changedFields.push(field);
+    if (valueChanged) changedFields.push(field);
+    if (explicitlyConfirmed) confirmedFields.push(field);
   }
 
-  return { values, fieldSources, changedFields, verificationStatus };
+  return { values, fieldSources, changedFields, confirmedFields, verificationStatus };
 }
 
 export function clientVehicleCompleteness(values: ClientVehiclePassportValues) {

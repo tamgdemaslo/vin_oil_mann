@@ -38,6 +38,7 @@
     "generate:product-attribute-dictionaries:partial": "node scripts/generate-product-attribute-dictionaries.mjs --allow-missing",
     "test:openai-oil": "node scripts/test-openai-oil.mjs",
     "test:vehicle-identity": "node scripts/test-vehicle-identity.mjs",
+    "test:maintenance-vehicle-pipeline": "node scripts/test-maintenance-vehicle-pipeline.mjs",
     "test:client-vehicle-profile": "node scripts/test-client-vehicle-profile.mjs",
     "test:shipment-visit-oil": "node scripts/test-shipment-visit-oil.mjs",
     "test:mann-vehicle-resolver": "node scripts/test-mann-vehicle-resolver.mjs",
@@ -146,7 +147,8 @@
     "test:catalog-motivation-goals": "node scripts/test-catalog-motivation-goals.mjs",
     "test:employee-sales-plan": "node scripts/test-employee-sales-plan.mjs",
     "test:individual-piecework": "node scripts/test-individual-piecework.mjs",
-    "test:payroll-cashout-periods": "node scripts/test-payroll-cashout-periods.mjs"
+    "test:payroll-cashout-periods": "node scripts/test-payroll-cashout-periods.mjs",
+    "test:partsapi-cache": "node scripts/test-partsapi-cache.mjs"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",

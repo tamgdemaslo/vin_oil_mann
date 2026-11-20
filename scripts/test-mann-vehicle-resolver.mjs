@@ -582,3 +582,88 @@ assert.ok(conflictingCode.mismatchedFields.includes("код двигателя")
 const missingSeries = normalizeDecodedVehicleForTest({...optimaIdentity, engineSeries:undefined});
 assert.notEqual(rankMannCandidatesForTest(missingSeries, [optimaTurbo])[0].confidence, "high", "do not infer an unverified engine-code-to-series mapping");
 assert.notEqual(rankMannCandidatesForTest(normalizeDecodedVehicleForTest({...optimaIdentity, powerKw:undefined, powerHp:undefined, engineVolumeCc:undefined}), [optimaTurbo,optimaOther])[0].confidence, "high", "shared series does not disambiguate different power variants");
+
+// MANN can glue a marketing execution label directly to displacement.
+const compactVolumeVehicle=normalizeDecodedVehicleForTest(vehicle({makeRaw:'AUDI',modelRaw:'Q3 (F3)',engineVolumeLiters:1.498,powerHp:150}));
+for (const label of ['35TFSI1.5(F3)','1.5TFSI(F3)']) {
+ const check=evaluateMannCandidate(compactVolumeVehicle,row({make:'AUDI',model:'Q3(F3)',vehicleText:label,hp:'150'}));
+ assert.ok(check.candidate?.matchedFields.includes('объём двигателя'),label);
+}
+const notDisplacement=evaluateMannCandidate(compactVolumeVehicle,row({make:'AUDI',model:'Q3(F3)',vehicleText:'type203.045(F3)',hp:'150'}));
+assert.ok(!notDisplacement.candidate?.matchedFields.includes('объём двигателя'),'do not truncate a manufacturer type code into displacement');
+console.log('MANN compact execution displacement regression passed');
+
+// A decoded individual year wins over a broader catalogue applicability window;
+// the window remains on the normalized identity for diagnostics and unknown years.
+const yearPriorityIdentity=vehicle({makeRaw:'HYUNDAI',modelRaw:'Creta',generationRaw:'I',bodyName:'GS',year:2017,modelYearFrom:2015,modelYearTo:2020,engineCode:'G4FG',engineVolumeCc:1591,powerKw:90,powerHp:123});
+const yearPriorityVehicle=normalizeDecodedVehicleForTest(yearPriorityIdentity);
+assert.deepEqual(yearPriorityVehicle.applicabilityYears,{from:2015,to:2020});
+const cretaApplication=row({make:'HYUNDAI',model:'Creta',vehicleText:'1.6MPI',engineCode:'G4FG',kw:'90',hp:'123',vehicleYears:'01/16 ->',vehicleYearFrom:2016});
+const actualYearCandidate=evaluateMannCandidate(yearPriorityVehicle,cretaApplication).candidate;
+assert.ok(actualYearCandidate.matchedFields.includes('год'));
+assert.ok(!actualYearCandidate.missingFields.includes('диапазон годов MANN'));
+assert.match(actualYearCandidate.featureContributions.find(f=>f.feature==='год').evidence,/2017 ∈/);
+const yearUnknown=evaluateMannCandidate(normalizeDecodedVehicleForTest({...yearPriorityIdentity,year:undefined}),cretaApplication).candidate;
+assert.ok(yearUnknown.missingFields.includes('диапазон годов MANN'),'without actual year, do not convert partial catalogue coverage into a match');
+const yearOutside=evaluateMannCandidate(normalizeDecodedVehicleForTest({...yearPriorityIdentity,year:2014}),cretaApplication).candidate;
+assert.ok(yearOutside.mismatchedFields.includes('год'),'an overlapping generation range cannot hide an actual year outside the application');
+
+const getzIdentity=vehicle({makeRaw:'HYUNDAI',modelRaw:'Getz',generationRaw:'I',bodyName:'TB',year:2004,engineCode:'G4EA',engineVolumeCc:1341,powerKw:60,powerHp:82});
+const getzApplication=row({make:'HYUNDAI',model:'Getz',vehicleText:'1.3(TB)',engineCode:'G4EA',kw:'60',hp:'82',vehicleYears:'08/02-12/10',vehicleYearFrom:2002,vehicleYearTo:2010});
+const literalTb=evaluateMannCandidate(normalizeDecodedVehicleForTest(getzIdentity),getzApplication).candidate;
+assert.ok(literalTb.matchedFields.includes('код кузова'),'literal TB in the complete Getz1.3 application is real chassis evidence');
+assert.ok(!literalTb.missingFields.includes('код кузова MANN'));
+assert.ok(evaluateMannCandidate(normalizeDecodedVehicleForTest({...getzIdentity,bodyName:'PB'}),getzApplication).candidate.mismatchedFields.includes('код кузова'));
+assert.ok(!evaluateMannCandidate(normalizeDecodedVehicleForTest(getzIdentity),row({...getzApplication,vehicleText:'1.3(GL)'})).candidate.matchedFields.includes('код кузова'),'do not treat arbitrary trim as chassis');
+
+const {canAutomaticallySelectMann,rowBodyCodes}=await jiti.import('../src/lib/mann-vehicle-resolver.ts');
+const poloIdentity=vehicle({makeRaw:'VOLKSWAGEN',modelRaw:'Polo',generationRaw:'V',bodyName:'Typ 6R',year:2015,engineCode:'CFNA',engineVolumeCc:1598,powerKw:77,powerHp:105});
+const poloApplication=row({make:'VOLKSWAGEN',model:'Polo VStufenheck/Sedan(61)',vehicleText:'1.6(61/Kaluga)',engineCode:'CFNA',kw:'77',hp:'105',vehicleYears:'06/10-12/15',vehicleYearFrom:2010,vehicleYearTo:2015});
+const poloRanked=rankMannCandidatesForTest(normalizeDecodedVehicleForTest(poloIdentity),[poloApplication]);
+assert.ok(poloRanked[0].matchedFields.includes('поколение'),'glued literal V before Stufenheck is retained for this complete archived heading');
+assert.ok(!poloRanked[0].mismatchedFields.includes('поколение'));
+assert.ok(evaluateMannCandidate(normalizeDecodedVehicleForTest({...poloIdentity,generationRaw:'IV'}),poloApplication).candidate.mismatchedFields.includes('поколение'),'literal parsing must preserve real generation conflicts');
+assert.equal(canAutomaticallySelectMann({...poloIdentity,engineCode:undefined},rankMannCandidatesForTest(normalizeDecodedVehicleForTest({...poloIdentity,engineCode:undefined}),[poloApplication])),false,'recovering a generation does not authorize an unknown engine');
+
+// Minimal replay of the private RAV4V false-chassis fixture; no VIN in this test.
+const rav4Identity=vehicle({makeRaw:'Toyota',makeCanonical:'TOYOTA',modelRaw:'RAV4',modelCanonical:'RAV4',bodyCode:'RAV4',generationRaw:'V (XA50)',modelYearFrom:2018,modelYearTo:2025,fuelType:'GASOLINE'});
+const rav4Normalized=normalizeDecodedVehicleForTest(rav4Identity);
+assert.deepEqual(rav4Normalized.bodyCodes,['XA50'],'RAV4 is a model token; actual XA50 must remain');
+const rav4Application=row({make:'TOYOTA',model:'RAV4V',vehicleText:'2.0VVTi',engineCode:'M20A-FKS',kw:'110',hp:'150',vehicleYears:'12/18 ->',vehicleYearFrom:2018});
+assert.deepEqual(rowBodyCodes(rav4Application),[],'RAV4V must not become a fictitious chassis');
+const rav4Candidate=evaluateMannCandidate(rav4Normalized,rav4Application).candidate;
+assert.ok(!rav4Candidate.mismatchedFields.includes('код кузова'));
+assert.ok(rav4Candidate.matchedFields.includes('поколение'),'the literal glued V is generation, not chassis');
+assert.equal(canAutomaticallySelectMann(rav4Identity,rankMannCandidatesForTest(rav4Normalized,[rav4Application])),false,'RAV4 with no exact engine/powertrain must remain a choice');
+const rav4ActualChassis=row({...rav4Application,model:'RAV4 V(XA50)'});
+assert.deepEqual(rowBodyCodes(rav4ActualChassis),['XA50']);
+assert.ok(evaluateMannCandidate(rav4Normalized,rav4ActualChassis).candidate.matchedFields.includes('код кузова'));
+assert.ok(evaluateMannCandidate(normalizeDecodedVehicleForTest({...rav4Identity,generationRaw:'V (XB50)'}),rav4ActualChassis).candidate.mismatchedFields.includes('код кузова'),'actual chassis conflicts survive the model-token fix');
+
+// The literal imported Ford qualifier headings carry filter/system context,
+// not independent engines. Keep actual EcoBlue applications untouched.
+for(const [model,label]of[['Galaxy III','Filterfür:/Filterfor:(283) EcoBlueA'],['Galaxy III','Filterfür:/Filterfor:(283) EcoBlueB,C,D'],['Transit Connect(TC7)','System/System(188) DELPHI'],['Transit Connect(TC7)','System/System(188) BOSCH']]){
+ const decoded=normalizeDecodedVehicleForTest(vehicle({makeRaw:'FORD',modelRaw:model}));
+ assert.equal(rankMannCandidatesForTest(decoded,[row({make:'FORD',model,vehicleText:label})]).length,0,'filter/system qualifier is not a vehicle candidate');
+}
+const actualEcoBlue=row({make:'FORD',model:'Galaxy III',vehicleText:'2.0EcoBlue',engineCode:'YMCB',kw:'110',hp:'150',vehicleYearFrom:2018});
+assert.equal(rankMannCandidatesForTest(normalizeDecodedVehicleForTest(vehicle({makeRaw:'FORD',modelRaw:'Galaxy',generationRaw:'III',engineCode:'YMCB',year:2020})),[actualEcoBlue]).length,1);
+console.log('MANN actual-year, literal TB/Polo/RAV4 generation and narrow qualifier regressions passed');
+
+// A provider can put drivetrain enums in TransmissionType while its actual
+// generic gearbox label is stored in TransmissionName. Validate before fallback.
+const gearboxFallbackIdentity=vehicle({makeRaw:'VOLKSWAGEN',modelRaw:'Polo V',transmissionType:'ALL_WHEEL_DRIVE',transmissionName:'AUTOMATIC'});
+const gearboxFallback=normalizeDecodedVehicleForTest(gearboxFallbackIdentity);
+assert.equal(gearboxFallback.transmissionType,'AUTOMATIC','drivetrain enum cannot mask the actual gearbox name');
+assert.equal(gearboxFallback.driveType,undefined,'do not move an unverified drivetrain enum into the drive field');
+const automaticApplication=row({make:'VW (VOLKSWAGEN)',model:'Polo V',vehicleText:'1.6 AUTOMATIC'});
+assert.ok(evaluateMannCandidate(gearboxFallback,automaticApplication).candidate.matchedFields.includes('коробка'));
+for(const [type,name,label] of [['FORWARD_CONTROL','VARIATOR','VARIATOR'],['REAR_DRIVE','ROBOT','ROBOT'],['CVT','AUTOMATIC','CVT'],['DSG','MECHANICAL','DSG']]){
+ const identity=vehicle({makeRaw:'VOLKSWAGEN',modelRaw:'Polo V',transmissionType:type,transmissionName:name});const normalized=normalizeDecodedVehicleForTest(identity);
+ assert.equal(normalized.transmissionType,label,'preserve the actual CVT/robot category, never infer a factory model');
+ const check=evaluateMannCandidate(normalized,automaticApplication).candidate;
+ assert.ok(!check.matchedFields.includes('коробка')&&!check.mismatchedFields.includes('коробка'),'coarse automatic/manual comparison must not collapse CVT or robot into either class');
+}
+assert.equal(normalizeDecodedVehicleForTest(vehicle({makeRaw:'VOLKSWAGEN',modelRaw:'Polo V',transmissionType:'AUT',transmissionName:'MECHANICAL'})).transmissionType,'AUT','recognizable primary gearbox class keeps priority');
+assert.equal(normalizeDecodedVehicleForTest(vehicle({makeRaw:'VOLKSWAGEN',modelRaw:'Polo V',transmissionType:'FORWARD_CONTROL',transmissionName:'UNKNOWN_TRANSMISSION'})).transmissionType,undefined);
+console.log('MANN transmission-name fallback rejects drivetrain enums and preserves CVT/robot classes');

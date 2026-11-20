@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {planPilotAudit,PILOT_STATUS_FACT} from './lib/maintenance-pilot-audit.mjs';
+const sourceHash='a'.repeat(64),config={organizationId:'org1',branchId:'branch1',sourceHash};
+const rows=Array.from({length:600},(_,i)=>({vin:'WDB2030451A'+String(i).padStart(6,'0'),status:i<120?'ready':'needs_selection',reason:'Recorded pilot outcome',physicalVinVerified:i<120,variantKeys:i<120?['key']:[],gaps:[]}));
+rows[0].status='partial';rows[120].variantKeys=['candidate-only'];
+rows[0].reason='Check '+rows[0].vin;rows[0].gaps=[{note:rows[1].vin}];
+const planned=planPilotAudit({rows},config);assert.equal(planned.length,600);assert.equal(planned.filter(r=>r.facts.physicalVinVerified).length,120);assert.deepEqual(planned,planPilotAudit({rows},config));
+for(const record of planned){assert.equal(record.factType,PILOT_STATUS_FACT);assert.equal(record.status,'audit_only');assert.equal(record.confidence,0);assert.ok(record.sourceUrl.startsWith('urn:sha256:'));}
+const serialized=JSON.stringify(planned);for(const row of rows)assert.equal(serialized.includes(row.vin),false,'full VIN never reaches database plan');
+assert.notEqual(planned[0].id,planPilotAudit(rows,{...config,organizationId:'org2'})[0].id);
+assert.throws(()=>planPilotAudit(rows.slice(1),config),/exactly600/);
+assert.throws(()=>planPilotAudit([...rows.slice(0,599),rows[0]],config),/duplicate/);
+assert.throws(()=>planPilotAudit(rows.map((r,i)=>i? r:{...r,physicalVinVerified:'yes'}),config),/Invalid status/);
+assert.equal(planned[120].facts.variantKeys.length,0);
+assert.deepEqual(planned[120].facts.unverifiedCandidateVariantKeys,['candidate-only']);
+assert.throws(()=>planPilotAudit(rows.map((r,i)=>i===120?{...r,status:'ready'}:r),config),/Ready status/);
+assert.throws(()=>planPilotAudit(rows.map((r,i)=>i===0?{...r,status:'ready'}:r),config),/Ready status/);
+console.log('PASS exact600, unique VIN validation, deterministic tenant IDs, physical verification preservation, immutable audit-only plan and nested VIN redaction');
+const ambiguous=rows.map((row,i)=>i===120?{...row,identityResolved:false,actualReturnedVinVerified:true,reasonCode:'ambiguous_provider_identity',variantKeys:[],candidateVariantKeys:['candidate-only']}:row);
+const ambiguityPlan=planPilotAudit(ambiguous,config)[120];
+assert.equal(ambiguityPlan.vehicleSnapshot.identityResolved,false);assert.equal(ambiguityPlan.vehicleSnapshot.actualReturnedVinVerified,true);
+assert.equal(ambiguityPlan.facts.reasonCode,'ambiguous_provider_identity');assert.equal(ambiguityPlan.facts.identityResolved,false);assert.equal(ambiguityPlan.facts.actualReturnedVinVerified,true);
+assert.deepEqual(ambiguityPlan.facts.variantKeys,[]);assert.deepEqual(ambiguityPlan.facts.unverifiedCandidateVariantKeys,['candidate-only']);
+assert.throws(()=>planPilotAudit(rows.map((row,i)=>i===1?{...row,identityResolved:false}:row),config),/Ready status/);
+console.log('PASS immutable audit distinguishes returned VIN from resolved identity and preserves diagnostic-only alternatives');

@@ -38,7 +38,7 @@ export function mannTechnicalContextFromVehicle(vehicle: NormalizedVehicleIdenti
   return {
     make: vehicle.makeRaw ?? vehicle.makeCanonical,
     model: vehicle.modelRaw ?? vehicle.modelCanonical,
-    generation: vehicle.generationRaw ?? vehicle.generationCanonical ?? selected?.generation,
+    generation: [vehicle.generationRaw ?? vehicle.generationCanonical ?? selected?.generation, vehicle.bodyName, vehicle.bodyCode].filter(Boolean).join(" ") || undefined,
     engineCode: vehicle.engineCode ?? confirmedEngine ?? exactSeries ?? selected?.engineCode,
     year: vehicle.year,
     transmissionModel: details.transmissionModel,

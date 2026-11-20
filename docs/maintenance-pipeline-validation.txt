@@ -1,0 +1,19 @@
+Local validation boundaries, 2026-11-19
+
+Historical behavior before the policy change: the recorded PartsAPI fixture returns WDB…850 for requested WDB…398. It is rejected explicitly; the tested fallback resolves C200 Kompressor 203.045 / M111.955. A separate synthetic transport test covers a consistent PartsAPI response.
+
+Pipeline regression uses actual normalization, resolver, technical profile route, gap selection, persistence/reload and warehouse matcher functions, with isolated Prisma/OpenAI adapters. It proves persistence behavior, not a live PostgreSQL transaction or live OpenAI provider request. Browser harness uses actual components and isolated fetch fixtures; TEST fluid values are not service recommendations.
+
+Passed: maintenance vehicle pipeline, vehicle identity, MANN resolver, maintenance quote, fluid research, research catalog, research progress, unified technical profile; changed-module ESLint; Timeweb-only guards; diff whitespace check.
+
+Known baseline issue: test-mann-technical-request-context.mjs contains stale source-code regex checks expecting old inline expressions. The unchanged HEAD component already fails those checks. Behavioral assertions are separate; the test was not weakened.
+
+Production build completed successfully (Prisma generation, webpack, TypeScript, 280 static pages, standalone runtime assets). NODE_OPTIONS=--max-old-space-size=4096.
+
+No production database writes, migrations, push, or deployment performed.
+
+Current contract, 2026-11-20: the anonymized PartsAPI card with a differing VIN is accepted; requested VIN remains the lookup identity. It resolves C200 Kompressor203.045/M111.955 and four filters. Configured PartsAPI ambiguity, empty results and HTTP503 do not invoke TRONK. These are isolated fixture tests, not live-provider or production acceptance.
+
+The new branch cache test covers saved/negative/pending/error responses, nested legacy records and isolation. Catalogue engine options and date ranges remain distinct UI candidates. Saving the reviewed MANN supplement uses the same application loader as the technical profile and still rejects other makes.
+
+The earlier no-write/no-deploy observations above describe their historical phase. A later authorized PartsAPI600 data run stored responses/statuses in Timeweb; see maintenance-partsapi-600-2026-11-20.md. Production deployment verification is recorded separately.

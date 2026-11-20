@@ -8,9 +8,10 @@ function catalogUpsert(name) {
   return row;
  };
 }
-export async function requireBranchApi(){return {ok:true,context:{organizationId:"org1"}};}
+export async function requireBranchApi(){return {ok:true,context:globalThis.fluidResearchTest?.branchContext??{organizationId:"org1"}};}
 export async function runWithBranchApiContext(_context,fn){return fn();}
 export const prisma = {
+  vinLookupCache: {findFirst:async()=>null},
   mannTechnicalAssociationRevision: {findMany:async()=>[]},
   mannFilterApplication: {
     findMany: async ({where}) => globalThis.fluidResearchTest.applications.filter(row => where.vehicleVariantKey.in.includes(row.vehicleVariantKey)),
@@ -37,7 +38,7 @@ export const prisma = {
   },
   aIAgentTechnicalEvidence: {
     findMany: async ({where}) => globalThis.fluidResearchTest.rows.filter(r=>r.organizationId===where.organizationId&&r.vehicleKey===where.vehicleKey&&r.factType===where.factType&&!r.invalidatedAt&&where.status.in.includes(r.status)),
-    findFirst: async ({where}) => [...globalThis.fluidResearchTest.rows].reverse().find(r=>r.organizationId===where.organizationId&&r.vehicleKey===where.vehicleKey&&r.aggregate===where.aggregate&&r.factType===where.factType&&!r.invalidatedAt&&where.OR.some(condition=>condition.status ? condition.status.in.includes(r.status) : r.validUntil>condition.validUntil.gt)),
+    findFirst: async ({where}) => [...globalThis.fluidResearchTest.rows].reverse().find(r=>r.organizationId===where.organizationId&&(where.vehicleKey===undefined||(typeof where.vehicleKey==='object'?r.vehicleKey!==where.vehicleKey.not:r.vehicleKey===where.vehicleKey))&&(!where.vehicleSnapshot||JSON.stringify(r.vehicleSnapshot?.variants)===JSON.stringify(where.vehicleSnapshot.equals))&&(where.aggregate===undefined||r.aggregate===where.aggregate)&&(!where.facts||r.facts?.group===where.facts.equals)&&r.factType===where.factType&&(!where.invalidatedAt||!r.invalidatedAt)&&(!where.OR||where.OR.some(condition=>condition.status ? condition.status.in.includes(r.status) : r.validUntil>condition.validUntil.gt))),
     count: async () => globalThis.fluidResearchTest.limit ? 20 : 0,
     create: async ({data}) => {const row={...data,id:String(globalThis.fluidResearchTest.rows.length+1)};globalThis.fluidResearchTest.rows.push(row);return row;},
     update: async ({where,data}) => Object.assign(globalThis.fluidResearchTest.rows.find(r=>r.id===where.id),data),

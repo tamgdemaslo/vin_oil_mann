@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
+import { createJiti } from 'jiti';
+const mock=resolve('scripts/fixtures/mann-fluid-research-mocks.mjs');
+const j=createJiti(import.meta.url,{alias:{'@':resolve('src'),'@/lib/db':mock,'@/lib/openai-client':mock}});
+const {prisma}=await j.import('./fixtures/mann-fluid-research-mocks.mjs');
+const {persistMannResearchCatalog,addMannResearchCatalogToProfile}=await j.import('../src/lib/mann-research-catalog.ts');
+const {missingMannFluids,citedResearchItems}=await j.import('../src/lib/mann-fluid-research.ts');
+const application={vehicleVariantKey:'key',make:'FORD',model:'Mondeo V',effectiveVehicleText:'2.5',vehicleText:'2.5',engineCode:'ABC',vehicleYears:'05/15 ->',modelYears:null,kw:'110',hp:'150'};
+const item={systemCode:'ENGINE_OIL',specification:'TEST',volumeText:'5 л. с фильтром',sourceUrl:'https://example.com/manual',sourceTitle:'Manual',excerpt:'Test excerpt'};
+const s=globalThis.fluidResearchTest={applications:[application],rows:[],calls:0};
+const input={organizationId:'org1',variantKeys:['key'],applications:[application],engineCode:'ABC',evidenceId:'manual-evidence',items:[item],sourceKind:'manual_source_review'};
+await persistMannResearchCatalog(prisma,input);await persistMannResearchCatalog(prisma,input);
+assert.equal(s.sources.length,1);assert.equal(s.requirements.length,1);assert.equal(s.links.length,1);
+assert.ok(s.requirements[0].id.startsWith('manual-fluid:'));assert.equal(s.requirements[0].contextConfidence,'manual_source_review');assert.equal(s.links[0].matchMethod,'MANUAL_SELECTED_MANN_RESEARCH_V1');assert.equal(s.links[0].status,'review_required');assert.equal(s.sources[0].tableKind,'manual_source_review');assert.equal(s.calls,0);
+const originalFindMany=prisma.aIAgentTechnicalEvidence.findMany;
+prisma.aIAgentTechnicalEvidence.findMany=async()=>{throw Error('Legacy materialization must not be called by read-only loader');};
+const profile={items:[],status:'none',containsCatalogPreview:false,transmissionOptions:[]};
+const loaded=await addMannResearchCatalogToProfile({organizationId:'org1',variantKeys:['key'],engineCode:'ABC',profile,materializeSaved:false});
+assert.equal(loaded.items.length,1);assert.equal(loaded.items[0].requiresReview,true);assert.equal(loaded.items[0].automaticSelectionEligible,false);assert.doesNotMatch(loaded.items[0].recommendation,/ИИ/);
+const verified={...profile,items:[{systemCode:'ENGINE_OIL',specifications:['Existing approval'],viscosityGrades:['5W-30'],capacities:[{nominalLiters:7,description:'с фильтром'}]}]};
+const accepted=citedResearchItems({items:[item],unresolved:[],systems:[]},new Set([item.sourceUrl]),missingMannFluids(verified));
+assert.deepEqual(accepted,[],'manual source import cannot overwrite populated approval/viscosity/service capacity');
+prisma.aIAgentTechnicalEvidence.findMany=originalFindMany;
+const adapter=await import('./lib/maintenance-vin-batch-db.mjs');
+globalThis[Symbol.for('maintenance-vin-batch-db')]={x:{id:1}};assert.equal(adapter.prisma.x.id,1);
+globalThis[Symbol.for('maintenance-vin-batch-db')]={x:{id:2}};assert.equal(adapter.prisma.x.id,2,'multiple source records use the current transaction');delete globalThis[Symbol.for('maintenance-vin-batch-db')];
+console.log('PASS manual-source provenance, deterministic deduplication, review-required reload without writes or API, verified-field preservation and transaction rebinding');
+// A manual automatic-gearbox fact must survive the matching selection only;
+// an explicitly unknown service quantity remains a gap after reload.
+const scopedContext={year:2016,engineCode:'ABC',confirmedMarket:'RU',confirmedTransmissionType:'automatic'};
+const atf={...item,systemCode:'AUTOMATIC_TRANSMISSION',specification:'ATF SP-IV',volumeText:'Заправочный объём: 7,3 л. Способ обслуживания и объём замены не указаны.'};
+await persistMannResearchCatalog(prisma,{...input,items:[atf],transmissionType:'automatic',vehicleContext:scopedContext});
+const scoped={organizationId:'org1',variantKeys:['key'],engineCode:'ABC',profile,materializeSaved:false,vehicleContext:scopedContext,transmissionType:'automatic'};
+const automatic=await addMannResearchCatalogToProfile(scoped);
+assert.equal(automatic.items.filter(i=>i.systemCode==='AUTOMATIC_TRANSMISSION').length,1);
+assert.equal(missingMannFluids(automatic,'automatic').find(i=>i.systemCode==='AUTOMATIC_TRANSMISSION').volume,true);
+for (const type of [undefined,'manual','cvt']) {
+ const mismatch=await addMannResearchCatalogToProfile({...scoped,transmissionType:type,vehicleContext:{...scopedContext,confirmedTransmissionType:type}});
+ assert.equal(mismatch.items.some(i=>i.systemCode==='AUTOMATIC_TRANSMISSION'),false);
+}
+assert.equal(s.calls,0);
+console.log('PASS explicit manual gearbox scope survives reload only for that type; reference fill does not close service gap');

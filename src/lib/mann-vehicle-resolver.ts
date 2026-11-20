@@ -1,3 +1,5 @@
+import { manufacturerTypeCodes, normalizeModificationLabel } from "@/lib/partsapi-mann-normalization";
+import { reviewedMannRows } from "@/lib/mann-reviewed-applications";
 import { prisma } from "@/lib/db";
 import { MANN_RESOLVER_ROW_SELECT } from "@/lib/mann-resolver-row-select";
 import { splitMannEngineCodeList } from "@/lib/mann-engine-code-list";
@@ -21,6 +23,8 @@ export type NormalizedMannVehicle = {
   year?: number;
   // Catalogue applicability range, not an individual vehicle's build year.
   applicabilityYears?: { from?: number; to?: number };
+  manufacturerTypeCodes?: string[];
+  modificationName?: string;
   exactEngineCode?: string;
   // Explicit alternatives from a catalogue requirement, never inferred for a VIN.
   sourceExactEngineCodes?: string[];
@@ -119,6 +123,11 @@ type ResolveOptions = {
 };
 
 type MannRow = {
+  engineVolumeCc?: number;
+  fuelType?: string | null;
+  generation?: string | null;
+  canonicalBodyCodes?: string[];
+  manufacturerTypeCodes?: string[];
   vehicleVariantKey: string;
   make: string;
   makeNormalized: string;
@@ -208,6 +217,11 @@ function bodyCodesFromText(value: unknown): string[] {
     && !/^\d{3}[DIE]$/.test(code)
     && !/^\d+(?:V|XDI|TDI|TFSI|TSI|FSI|DCI|CDI|HDI|CRDI|GDI|MPI|VVT|CVVT|D|I)/.test(code)
   ))]);
+}
+
+/** RAV4 plus its glued Roman generation is a model label, never a chassis. */
+function isRav4ModelToken(code: string, make?: string | null): boolean {
+  return normalizeVehicleMake(make) === "TOYOTA" && /^RAV4(?:I|II|III|IV|V|VI)?$/.test(code);
 }
 
 function bodyCodesCompatible(left: string, right: string): boolean {
@@ -338,6 +352,7 @@ function numberFromText(value?: string | null): number | null {
 }
 
 function engineVolumeCcFromRow(row: MannRow): number | null {
+  if (row.engineVolumeCc && row.engineVolumeCc > 0) return row.engineVolumeCc;
   const explicit = mannRowIdentityEvidence(row);
   if (explicit) return explicit.engineVolumeCc;
   const value = `${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""} ${row.condition ?? ""}`;
@@ -346,7 +361,7 @@ function engineVolumeCcFromRow(row: MannRow): number | null {
     .find((volume) => Number.isFinite(volume) && volume >= 0.5 && volume <= 12);
   if (liters) return Math.round(liters * 1000);
   // MANN often writes a displacement directly next to an engine suffix: 2.0TDCi, 1.5EcoBoost, 2.7.
-  const compactLiters = [...value.matchAll(/\b(\d{1,2}[.,]\d{1,3})(?=\s*(?:[A-ZА-Я]|\(|\)|\+|,|;|$))/gi)]
+  const compactLiters = [...value.matchAll(/(?<![\d.,])(\d{1,2}[.,]\d{1,3})(?=\s*(?:[A-ZА-Я]|\(|\)|\+|,|;|$))/gi)]
     .map((match) => Number(match[1]?.replace(",", ".")))
     .find((volume) => Number.isFinite(volume) && volume >= 0.5 && volume <= 12);
   if (compactLiters) return Math.round(compactLiters * 1000);
@@ -392,7 +407,7 @@ export function mannFuelCompatibility(input?: MannFuelKind, candidate?: MannFuel
 }
 
 function fuelFromRow(row: MannRow): MannFuelKind | undefined {
-  return normalizeMannFuel(`${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""} ${row.condition ?? ""}`);
+  return normalizeMannFuel(row.fuelType) ?? normalizeMannFuel(`${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""} ${row.condition ?? ""}`);
 }
 
 function makeForms(make: string): string[] {
@@ -432,8 +447,12 @@ export async function normalizeDecodedVehicle(vehicle: DecodedVehicle): Promise<
       ...bodyCodesFromText(vehicle.generationCanonical),
       ...bodyCodesFromText(vehicle.generationRaw),
       ...bodyCodesFromText(rawModel),
-    ]).filter((code) => code !== generation && code !== generation?.split(".")[0]),
+    ]).filter((code) => code !== generation && code !== generation?.split(".")[0] && !isRav4ModelToken(code, canonicalMake)),
+    manufacturerTypeCodes: [...new Set([...(vehicle.manufacturerTypeCodes ?? []), ...manufacturerTypeCodes(vehicle.modificationName)])],
+    modificationName: vehicle.modificationName,
+    applicabilityYears: vehicle.modelYearFrom || vehicle.modelYearTo ? { from: vehicle.modelYearFrom, to: vehicle.modelYearTo } : undefined,
     year: safeYear(vehicle.year),
+    sourceExactEngineCodes: unique((vehicle.engineCodes ?? []).map(normalizeEngineCode)),
     exactEngineCode: normalizeEngineCode(vehicle.engineCode ?? vehicle.engineSeries),
     engineFamily: engineFamily(vehicle.engineCode ?? vehicle.engineSeries),
     engineSeries: normalizeEngineCode(vehicle.engineSeries),
@@ -441,18 +460,31 @@ export async function normalizeDecodedVehicle(vehicle: DecodedVehicle): Promise<
     powerKw: vehicle.powerKw ? Math.round(vehicle.powerKw) : undefined,
     powerHp: vehicle.powerHp ? Math.round(vehicle.powerHp) : vehicle.powerPs ? Math.round(vehicle.powerPs) : undefined,
     fuelType: normalizeMannFuel(vehicle.fuelType),
-    transmissionType: text(vehicle.transmissionType || vehicle.transmissionName) || undefined,
+    transmissionType: decodedTransmissionLabel(vehicle),
     driveType: text(vehicle.driveType) || undefined,
   };
 }
 
+/** Literal generations in these complete archived model headings lost their
+ * separator during PDF extraction. This does not infer generation from age. */
+function compactCatalogueGeneration(row: MannRow): string | undefined {
+  const make = normalizeVehicleMake(row.make);
+  if (make === "VOLKSWAGEN" && /^Polo\s+VStufenheck\s*\/\s*Sedan\s*\(61\)$/i.test(row.model.trim())) return "V";
+  if (make === "TOYOTA") return row.model.trim().match(/^RAV4\s*(I|II|III|IV|V|VI)(?=$|[\s(])/i)?.[1].toUpperCase();
+  return undefined;
+}
+
 function rowGeneration(row: MannRow): string | undefined {
+  if (row.generation) return row.generation;
+  const compact = compactCatalogueGeneration(row);
+  if (compact) return compact;
   if (normalizeVehicleMake(row.make) === "OPEL") return normalizeVehicleModel(row.model, "OPEL").generation;
   if (normalizeVehicleMake(row.make) === "HONDA" && /^CR[- ]?V/i.test(row.model)) return normalizeVehicleModel(row.model, "HONDA").generation;
   return vehicleGeneration(`${row.model} ${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""}`) ?? mannRowGenerationEvidence(row);
 }
 
 function rowGenerationForVehicle(row: MannRow, vehicle: NormalizedMannVehicle): string | undefined {
+  if (compactCatalogueGeneration(row)) return rowGeneration(row);
   // Slashes inside platform-code parentheses are not model separators:
   // Swift III(MZ/EZ/SG) is one model, unlike S60 II/V60.
   const parts: string[] = [];
@@ -479,7 +511,7 @@ function rowGenerationForVehicle(row: MannRow, vehicle: NormalizedMannVehicle): 
 
 export function rowBodyCodes(row: MannRow): string[] {
   const explicit = mannRowIdentityEvidence(row);
-  if (explicit) return [...explicit.bodyCodes];
+  if (explicit) return [...explicit.bodyCodes].filter(code => !isRav4ModelToken(code, row.make));
   const generation = rowGeneration(row);
   const alphabeticPlatformCodes = [...row.model.matchAll(/\(([A-Z]{2,3})\)/gi)].map((match) => match[1]?.toUpperCase());
   // The archived Solaris rows explicitly print 1.4(RB) / 1.6(RB).
@@ -487,6 +519,12 @@ export function rowBodyCodes(row: MannRow): string[] {
   if (normalizeVehicleMake(row.make) === "HYUNDAI" && /^Solaris$/i.test(row.model.trim())
     && [row.vehicleText, row.effectiveVehicleText].some(value => /^1\.[46]\s*\(RB\)$/i.test(text(value)))) {
     alphabeticPlatformCodes.push("RB");
+  }
+  // The complete Getz application prints its literal TB chassis after 1.3.
+  // Do not generalize arbitrary parenthesized trim/gearbox labels to chassis.
+  if (normalizeVehicleMake(row.make) === "HYUNDAI" && /^Getz$/i.test(row.model.trim())
+    && [row.vehicleText, row.effectiveVehicleText].some(value => /^1\.3\s*\(TB\)$/i.test(text(value)))) {
+    alphabeticPlatformCodes.push("TB");
   }
   // Kodiaq prints its NS platform in the engine application, not the heading.
   // Require the complete archived application form; arbitrary gearbox/trim
@@ -496,10 +534,11 @@ export function rowBodyCodes(row: MannRow): string[] {
     alphabeticPlatformCodes.push("NS");
   }
   const headingCodes = unique([
+    ...(row.canonicalBodyCodes ?? []),
     ...bodyCodesFromText(row.model), ...alphabeticPlatformCodes,
     ...(/^Passat\s+(?:B[5-8]|CCB6)\b/i.test(row.model)
       ? [...row.model.matchAll(/\(([^)]*)\)/g)].flatMap(match => explicitVwNumericBodyCodes(match[1], normalizeVehicleMake(row.make) ?? "")) : []),
-  ]).filter(code => code !== generation && code !== generation?.split(".")[0]);
+  ]).filter(code => code !== generation && code !== generation?.split(".")[0] && !isRav4ModelToken(code, row.make));
   // A specific row can select one chassis from a shared model heading.
   // Accept only complete parenthesized lists of codes already in that heading;
   // engine sizes, power figures and unrecognized qualifiers are not chassis.
@@ -515,7 +554,7 @@ export function rowBodyCodes(row: MannRow): string[] {
     ...(/^Passat\s+(?:B[5-8]|CCB6)\b/i.test(row.model)
       ? [...row.model.matchAll(/\(([^)]*)\)/g)].flatMap(match => explicitVwNumericBodyCodes(match[1], "VOLKSWAGEN")) : []),
   ])
-    .filter((code) => code !== generation && code !== generation?.split(".")[0]);
+    .filter((code) => code !== generation && code !== generation?.split(".")[0] && !isRav4ModelToken(code, row.make));
 }
 
 function engineVolumeMatches(left?: number | null, right?: number | null): boolean {
@@ -532,6 +571,12 @@ function isGenericMannVariant(row: MannRow): boolean {
 
 function isQualifierOnlyVariant(row: MannRow): boolean {
   const vehicleText = row.effectiveVehicleText ?? row.vehicleText;
+  if (normalizeVehicleMake(row.make) === "FORD") {
+    const heading = normalizeMannSearchText(vehicleText).replace(/\s+/g, "");
+    const model = normalizeMannSearchText(row.model).replace(/\s+/g, "");
+    if ((model === "GALAXYIII" && /^FILTERFURFILTERFOR283ECOBLUE[ABCD]+$/.test(heading))
+      || (model === "TRANSITCONNECTTC7" && /^SYSTEMSYSTEM188(?:DELPHI|BOSCH)$/.test(heading))) return true;
+  }
   return !isGenericMannVariant(row) && isMannNonVehicleVariantText(vehicleText);
 }
 
@@ -572,10 +617,27 @@ function candidateFromRow(row: MannRow, score: number, matchedFields: string[], 
   };
 }
 
+function specializedTransmissionClass(value?: string | null): boolean {
+  const normalized = text(value).toUpperCase();
+  return /\b(?:CVT|VARIATOR|DCT|DSG|ROBOT|ROBOTIC)\b/.test(normalized)
+    || /ВАРИАТОР|РОБОТ/.test(normalized);
+}
+
 function normalizedTransmission(value?: string | null): "automatic" | "manual" | undefined {
   const normalized = text(value).toUpperCase();
-  if (/\b(?:AUT|AT|AUTOMATIC|AUTOMATIK|CVT|DCT|DSG)\b/.test(normalized)) return "automatic";
-  if (/\b(?:MAN|MT|MANUAL|SCHALTGETRIEBE)\b/.test(normalized)) return "manual";
+  // The scorer only compares coarse automatic/manual labels. CVT and robot
+  // remain distinct raw categories; they are not evidence for either side.
+  if (specializedTransmissionClass(normalized)) return undefined;
+  if (/\b(?:AUT|AT|AUTOMATIC|AUTOMATIK)\b/.test(normalized) || /АКПП|АВТОМАТ/.test(normalized)) return "automatic";
+  if (/\b(?:MAN|MT|MANUAL|MECHANICAL|SCHALTGETRIEBE)\b/.test(normalized) || /МКПП|МЕХАНИЧ/.test(normalized)) return "manual";
+  return undefined;
+}
+
+function decodedTransmissionLabel(vehicle: DecodedVehicle): string | undefined {
+  for (const value of [vehicle.transmissionType, vehicle.transmissionName]) {
+    const label = text(value);
+    if (label && (specializedTransmissionClass(label) || normalizedTransmission(label))) return label;
+  }
   return undefined;
 }
 
@@ -653,6 +715,16 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
     reasons.push(`retrieved by structured anchors ${anchorStrength}`);
   }
 
+  const modification = normalizeModificationLabel(vehicle.modificationName);
+  const rowModification = normalizeModificationLabel(row.effectiveVehicleText ?? row.vehicleText);
+  if (modification && modification === rowModification) contribute("модификация", modification, 12, "match");
+  const sourceTypes = vehicle.manufacturerTypeCodes ?? [];
+  const rowTypes = [...(row.manufacturerTypeCodes ?? []), ...manufacturerTypeCodes(row.effectiveVehicleText ?? row.vehicleText)];
+  if (sourceTypes.length && rowTypes.length) {
+    const same = sourceTypes.some(code => rowTypes.includes(code));
+    contribute("код модификации", `${sourceTypes.join(",")} ${same ? "=" : "≠"} ${rowTypes.join(",")}`, same ? 18 : -35, same ? "match" : "mismatch");
+  }
+
   const candidateGeneration = rowGenerationForVehicle(row, vehicle);
   if (vehicle.generation && candidateGeneration) {
     if (vehicle.generation === candidateGeneration) contribute("поколение", `${vehicle.generation}`, 12, "match");
@@ -670,7 +742,9 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
     contribute("код кузова MANN", "код отсутствует", 0, "missing");
   }
 
-  if (vehicle.applicabilityYears) {
+  // A known individual vehicle year takes precedence over catalogue production
+  // bounds. Those bounds constrain only identities whose actual year is absent.
+  if (vehicle.applicabilityYears && !vehicle.year) {
     const from = vehicle.applicabilityYears.from ?? -Infinity;
     const to = vehicle.applicabilityYears.to ?? Infinity;
     const rowFrom = row.vehicleYearFrom ?? -Infinity;
@@ -705,7 +779,7 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
   const candidateCodes = engineCodes(row.engineCode);
   const candidateFamilies = unique(candidateCodes.map(engineFamily));
   const hasSpecificCandidateEngineCode = candidateCodes.some((code) => code.replace(/[^A-Z0-9]/g, "").length >= 4);
-  const matchingEngineCodes = unique([vehicle.exactEngineCode, ...(vehicle.sourceExactEngineCodes ?? [])]).filter(code => candidateCodes.includes(code));
+  const matchingEngineCodes = unique([vehicle.exactEngineCode, ...(vehicle.sourceExactEngineCodes ?? [])]).filter(code => candidateCodes.some(candidate => candidate.replace(/[^A-Z0-9]/g, "") === code.replace(/[^A-Z0-9]/g, "")));
   const exactEngineMatch = matchingEngineCodes.length > 0;
   // Catalogue rows may name an explicitly supplied series (e.g. Theta2)
   // instead of the decoder's engine code. This does not infer a code-to-series
@@ -822,8 +896,12 @@ export function normalizeDecodedVehicleForTest(vehicle: DecodedVehicle): Normali
       ...bodyCodesFromText(vehicle.generationCanonical),
       ...bodyCodesFromText(vehicle.generationRaw),
       ...bodyCodesFromText(rawModel),
-    ]).filter((code) => code !== generation && code !== generation?.split(".")[0]),
+    ]).filter((code) => code !== generation && code !== generation?.split(".")[0] && !isRav4ModelToken(code, canonicalMake)),
+    manufacturerTypeCodes: [...new Set([...(vehicle.manufacturerTypeCodes ?? []), ...manufacturerTypeCodes(vehicle.modificationName)])],
+    modificationName: vehicle.modificationName,
+    applicabilityYears: vehicle.modelYearFrom || vehicle.modelYearTo ? { from: vehicle.modelYearFrom, to: vehicle.modelYearTo } : undefined,
     year: safeYear(vehicle.year),
+    sourceExactEngineCodes: unique((vehicle.engineCodes ?? []).map(normalizeEngineCode)),
     exactEngineCode: normalizeEngineCode(vehicle.engineCode ?? vehicle.engineSeries),
     engineFamily: engineFamily(vehicle.engineCode ?? vehicle.engineSeries),
     engineSeries: normalizeEngineCode(vehicle.engineSeries),
@@ -831,7 +909,7 @@ export function normalizeDecodedVehicleForTest(vehicle: DecodedVehicle): Normali
     powerKw: vehicle.powerKw ? Math.round(vehicle.powerKw) : undefined,
     powerHp: vehicle.powerHp ? Math.round(vehicle.powerHp) : vehicle.powerPs ? Math.round(vehicle.powerPs) : undefined,
     fuelType: normalizeMannFuel(vehicle.fuelType),
-    transmissionType: text(vehicle.transmissionType || vehicle.transmissionName) || undefined,
+    transmissionType: decodedTransmissionLabel(vehicle),
     driveType: text(vehicle.driveType) || undefined,
   };
 }
@@ -995,18 +1073,37 @@ async function filtersFor(candidate: MannVehicleCandidate | null, options: Resol
 }
 
 function mappingMatchesVehicle(mapping: { normalizedGeneration: string | null; bodyCodesJson: unknown; yearFrom: number | null; yearTo: number | null; engineCode: string | null; engineFamily: string | null; engineVolumeCc: number | null; powerKw: number | null; powerHp: number | null; fuelType: string | null; driveType: string | null }, vehicle: NormalizedMannVehicle): boolean {
-  if (mapping.normalizedGeneration && vehicle.generation && mapping.normalizedGeneration !== vehicle.generation) return false;
+  if (mapping.normalizedGeneration && mapping.normalizedGeneration !== vehicle.generation) return false;
   const mappingCodes = jsonStrings(mapping.bodyCodesJson);
-  if (mappingCodes.length > 0 && vehicle.bodyCodes.length > 0 && !mappingCodes.some((code) => vehicle.bodyCodes.includes(code))) return false;
-  if (vehicle.year && ((mapping.yearFrom != null && vehicle.year < mapping.yearFrom) || (mapping.yearTo != null && vehicle.year > mapping.yearTo))) return false;
-  if (mapping.engineCode && vehicle.exactEngineCode && mapping.engineCode !== vehicle.exactEngineCode) return false;
-  if (mapping.engineFamily && vehicle.engineFamily && mapping.engineFamily !== vehicle.engineFamily) return false;
-  if (mapping.engineVolumeCc && vehicle.engineVolumeCc && !engineVolumeMatches(mapping.engineVolumeCc, vehicle.engineVolumeCc)) return false;
-  if (mapping.powerKw && vehicle.powerKw && Math.abs(mapping.powerKw - vehicle.powerKw) > 3) return false;
-  if (mapping.powerHp && vehicle.powerHp && Math.abs(mapping.powerHp - vehicle.powerHp) > 5) return false;
-  if (mapping.fuelType && vehicle.fuelType && mapping.fuelType !== vehicle.fuelType) return false;
-  if (mapping.driveType && vehicle.driveType && mapping.driveType !== vehicle.driveType) return false;
-  return true;
+  if (mappingCodes.length > 0 && !mappingCodes.some((code) => vehicle.bodyCodes.includes(code))) return false;
+  if ((mapping.yearFrom != null || mapping.yearTo != null) && (!vehicle.year || (mapping.yearFrom != null && vehicle.year < mapping.yearFrom) || (mapping.yearTo != null && vehicle.year > mapping.yearTo))) return false;
+  if (mapping.engineCode && mapping.engineCode !== vehicle.exactEngineCode) return false;
+  if (mapping.engineFamily && mapping.engineFamily !== vehicle.engineFamily) return false;
+  if (mapping.engineVolumeCc && !engineVolumeMatches(mapping.engineVolumeCc, vehicle.engineVolumeCc)) return false;
+  if (mapping.powerKw && (!vehicle.powerKw || Math.abs(mapping.powerKw - vehicle.powerKw) > 3)) return false;
+  if (mapping.powerHp && (!vehicle.powerHp || Math.abs(mapping.powerHp - vehicle.powerHp) > 5)) return false;
+  if (mapping.fuelType && mapping.fuelType !== vehicle.fuelType) return false;
+  if (mapping.driveType && mapping.driveType !== vehicle.driveType) return false;
+  // Missing discriminators are not wildcards. Never reuse a make/model-only
+  // historical decision for another VIN with an unknown powertrain.
+  const exactEngine = Boolean(mapping.engineCode && vehicle.exactEngineCode);
+  const chassis = Boolean((mapping.normalizedGeneration && vehicle.generation) || (mappingCodes.length && vehicle.bodyCodes.length));
+  const powertrain = Boolean(mapping.engineVolumeCc && vehicle.engineVolumeCc
+    && ((mapping.powerKw && vehicle.powerKw) || (mapping.powerHp && vehicle.powerHp)));
+  return exactEngine || (chassis && powertrain);
+}
+
+/** High ranking alone is insufficient: require an exact powertrain/execution
+ * anchor and no conflicting fields. Unverified provider VINs never reach here. */
+export function canAutomaticallySelectMann(vehicle: DecodedVehicle, candidates: MannVehicleCandidate[]): boolean {
+  const top = candidates[0];
+  if (!top || vehicle.confidence !== "high" || top.confidence !== "high" || top.mismatchedFields.length
+    || (vehicle.engineCodes?.length ?? 0) > 1) return false;
+  if (candidates[1] && top.score - candidates[1].score < 12) return false;
+  const fields = new Set(top.matchedFields);
+  return (fields.has("точный код двигателя") || fields.has("код модификации")
+      || (fields.has("модификация") && fields.has("объём двигателя") && fields.has("мощность")))
+    && fields.has("базовая модель") && (fields.has("код кузова") || fields.has("поколение"));
 }
 
 export async function resolveMannVehicle(options: ResolveOptions): Promise<MannVehicleResolution> {
@@ -1019,11 +1116,39 @@ export async function resolveMannVehicle(options: ResolveOptions): Promise<MannV
 
   const forms = makeForms(normalized.canonicalMake);
   const queryStartedAt = Date.now();
-  const rows = await prisma.mannFilterApplication.findMany({
+  const databaseRows = await prisma.mannFilterApplication.findMany({
     where: { makeNormalized: { in: forms } },
     select: MANN_RESOLVER_ROW_SELECT,
     take: 25_000,
   }) as MannRow[];
+  try {
+    const canonical = await prisma.mannVehicleVariant.findMany({
+      where: { key: { in: [...new Set(databaseRows.map(row => row.vehicleVariantKey))] } },
+      select: { key: true, engineVolumeCc: true, engineCode: true, powerKw: true, powerHp: true,
+        fuelType: true, generation: true, bodyCodesJson: true },
+    });
+    const byKey = new Map(canonical.map(row => [row.key, row]));
+    for (const row of databaseRows) {
+      const identity = byKey.get(row.vehicleVariantKey);
+      if (!identity) continue;
+      row.engineVolumeCc = identity.engineVolumeCc ?? undefined;
+      row.engineCode ??= identity.engineCode;
+      row.kw ??= identity.powerKw != null ? String(identity.powerKw) : null;
+      row.hp ??= identity.powerHp != null ? String(identity.powerHp) : null;
+      row.fuelType = identity.fuelType;
+      row.generation = identity.generation;
+      row.canonicalBodyCodes = jsonStrings(identity.bodyCodesJson);
+    }
+  } catch (error) {
+    // The canonical expand table is optional for legacy installations. Its
+    // absence cannot disable the original filter catalogue.
+    console.warn("[mann-resolver] canonical identity unavailable", error instanceof Error ? error.message : String(error));
+  }
+  const supplements = reviewedMannRows().filter(row => forms.includes(row.makeNormalized)
+    && !databaseRows.some(existing => existing.makeNormalized === row.makeNormalized
+      && existing.modelNormalized === row.modelNormalized
+      && normalizeEngineCode(existing.engineCode) === normalizeEngineCode(row.engineCode)));
+  const rows: MannRow[] = [...databaseRows, ...supplements];
   const queryMs = Date.now() - queryStartedAt;
   const matchingMake = rows[0]?.make ?? null;
   const rankStartedAt = Date.now();
@@ -1038,17 +1163,22 @@ export async function resolveMannVehicle(options: ResolveOptions): Promise<MannV
     orderBy: { updatedAt: "desc" },
   });
   const mapping = mappings.find((item) => mappingMatchesVehicle(item, normalized));
-  // Until the new blind holdout is complete, HIGH means "safe proposal", not
-  // an unconditional selection. Only a persisted human confirmation resolves
-  // the vehicle and triggers filter/product lookup.
+  // Persisted confirmations take precedence; otherwise only the conservative
+  // structured identity gate below can select a unique catalogue application.
   let selectedApplication: MannVehicleCandidate | null = null;
   let usedManualMapping = false;
   if (mapping) {
     const mapped = rankedCandidates.find((candidate) => candidate.variantIds.includes(mapping.mannApplicationId));
-    if (mapped) {
+    // A historical manual confirmation cannot override contradictory current
+    // engine/chassis/year evidence. Old broad mappings may target another generation.
+    if (mapped && mapped.mismatchedFields.length === 0) {
       selectedApplication = { ...mapped, confidence: "high", reasons: [...mapped.reasons, "подтверждено вручную"] };
       usedManualMapping = true;
     }
+  }
+
+  if (!selectedApplication && canAutomaticallySelectMann(options.vehicle, candidates)) {
+    selectedApplication = { ...candidates[0], reasons: [...candidates[0].reasons, "однозначное структурированное сопоставление"] };
   }
 
   const status = selectedApplication ? "resolved" : candidates.length > 0 ? "candidates" : "unresolved";

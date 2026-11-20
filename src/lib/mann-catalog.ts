@@ -1,3 +1,4 @@
+import { reviewedMannApplications, reviewedMannFilters } from "@/lib/mann-reviewed-applications";
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -1008,6 +1009,15 @@ function dedupeMannFilters(filters: MannCatalogFilter[]): MannCatalogFilter[] {
 }
 
 export async function listMannFilters(params: { make?: string | null; model?: string | null; variantId: string; year?: number | null }) {
+  const reviewed = reviewedMannFilters(params.variantId);
+  if (reviewed) {
+    const application = reviewedMannApplications([params.variantId])[0]!;
+    if ((params.make && normalizeMannText(params.make) !== application.makeNormalized)
+      || (params.model && normalizeMannSearchText(params.model) !== application.modelNormalized)
+      || (params.year && (params.year < application.vehicleYearFrom || params.year > application.vehicleYearTo))) return [];
+    return reviewed;
+  }
+
   const makeSql = params.make ? Prisma.sql`AND make_normalized = ${normalizeMannText(params.make)}` : Prisma.empty;
   const modelSql = params.model ? Prisma.sql`AND model_normalized = ${normalizeMannSearchText(params.model)}` : Prisma.empty;
   const [filters, selected] = await Promise.all([

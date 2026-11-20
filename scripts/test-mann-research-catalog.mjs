@@ -5,7 +5,8 @@ const mock=resolve('scripts/fixtures/mann-fluid-research-mocks.mjs');
 const j=createJiti(import.meta.url,{alias:{'@':resolve('src'),'@/lib/db':mock,'@/lib/openai-client':mock,'@/lib/branch-api':mock}});
 const {researchMissingMannFluids:run,missingMannFluids}=await j.import('../src/lib/mann-fluid-research.ts');
 const {POST}=await j.import("../src/app/api/mann-catalog/technical-profile/route.ts");
-const {addMannResearchCatalogToProfile:read}=await j.import('../src/lib/mann-research-catalog.ts');
+const {addMannResearchCatalogToProfile:read,persistMannResearchCatalog:persist}=await j.import('../src/lib/mann-research-catalog.ts');
+const {prisma}=await j.import('./fixtures/mann-fluid-research-mocks.mjs');
 const application={vehicleVariantKey:'key',make:'FORD',model:'Mondeo V',effectiveVehicleText:'2.5(CNG)',vehicleText:'2.5(CNG)',engineCode:'C25HDEX',vehicleYears:'05/15 ->',modelYears:null,kw:'110',hp:'150'};
 const item={systemCode:'ENGINE_OIL',specification:'VW 504.00; SAE 5W-30',volumeText:'5 л. с фильтром',sourceUrl:'https://example.com/manual',sourceTitle:'Manual',excerpt:'Test excerpt'};
 const profile={items:[],status:'none',transmissionOptions:[],containsCatalogPreview:false};
@@ -57,6 +58,28 @@ try {
  assert.equal((await read(input)).items.length,1);assert.equal(s.links.length,1);assert.equal(s.calls,1,'legacy evidence materialized without AI');
  // The catalog is sufficient even if the research ledger has been removed.
  s.rows=[];assert.equal((await read(input)).items[0].researchVolumeText,item.volumeText);
+ // Saved source amounts must supplement unresolved text rather than being hidden by it.
+ for(const unresolvedVolume of ['Объём не установлен','7,0 л — полный объём для МКПП; 8,6 л — полный объём для CVT']){
+  s=reset();
+  const existingCoolant={revisionId:'existing-coolant',systemCode:'ENGINE_COOLANT',systemLabel:'Охлаждающая жидкость',
+   specifications:['NISSAN coolant'],viscosityGrades:[],capacities:[],researchVolumeText:unresolvedVolume,
+   sourceStatus:'catalog_preview',requiresReview:true,automaticSelectionEligible:false,userConfirmedTransmission:false,
+   evidence:[{url:'https://example.com/original',title:'Original conditional source'}]};
+  const before={...profile,status:'catalog_preview',items:[existingCoolant],containsCatalogPreview:true};
+  assert.equal(missingMannFluids(before).find(g=>g.systemCode==='ENGINE_COOLANT').volume,true);
+  const resolvedCoolant={...item,systemCode:'ENGINE_COOLANT',specification:'',volumeText:'7 л',sourceUrl:'https://example.com/resolved-coolant'};
+  await prisma.$transaction(tx=>persist(tx,{organizationId:input.organizationId,variantKeys:input.variantKeys,
+   applications:[application],evidenceId:'manual-coolant-evidence',sourceKind:'manual_source_review',items:[resolvedCoolant]}));
+  const supplemented=await read({...input,profile:before,materializeSaved:false});
+  assert.equal(supplemented.items.length,2,'unresolved existing coolant text must not suppress a saved resolved amount');
+  assert.deepEqual(supplemented.items[0],existingCoolant,'original conditional source remains visible unchanged');
+  assert.equal(supplemented.items[1].researchVolumeText,'7 л');
+  assert.ok(supplemented.items.every(row=>row.requiresReview===true&&row.automaticSelectionEligible===false),'neither source is promoted or automatically bound');
+  assert.equal(supplemented.items[1].evidence[0].url,resolvedCoolant.sourceUrl);
+  assert.equal(missingMannFluids(supplemented).some(g=>g.systemCode==='ENGINE_COOLANT'),false);
+  assert.equal(s.calls,0,'reading persisted manual sources makes no provider call');
+ }
+ console.log('PASS unresolved coolant text does not suppress saved resolved amounts; both sources stay review-only');
  process.env.OPENAI_API_KEY='test-only-not-a-real-key';
  s=reset();s.failCatalog=true;
  const failed=await run(input);assert.equal(failed.errorCode,'storage');

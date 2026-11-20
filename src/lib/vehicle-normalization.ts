@@ -179,6 +179,9 @@ export function normalizeVehicleModel(value: unknown, make?: string): { raw?: st
     if (matchingForm) normalized = normalized.slice(matchingForm.length).trim();
   }
   normalized = transliterateVehicleText(normalizeMixedAlphabet(normalized));
+  // Exact Cyrillic transliteration of Volkswagen Туарег. This corrects the
+  // spelling only; it supplies no generation, chassis, or powertrain evidence.
+  if (canonicalMake === "VOLKSWAGEN" && normalized === "TUAREG") normalized = "TOUAREG";
   // X is part of X-Trail's name, not a Roman generation numeral.
   if (canonicalMake === "NISSAN") normalized = normalized.replace(/\bX\s+TRAIL\b/g, "X-TRAIL");
   // MANN joins CR-V and its generation: CR-VII, CR-VIV, CR-VV(RW).

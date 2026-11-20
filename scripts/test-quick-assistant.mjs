@@ -123,6 +123,7 @@ const crmModule = load("src/lib/ai-assistant/quick-crm.ts", {
 const quoteJiti = createJiti(import.meta.url, { alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) } });
 const quoteCalculations = await quoteJiti.import("../src/lib/maintenance-quote.ts");
 const quoteNormalizer = await quoteJiti.import("../src/lib/oil-normalizer.ts");
+const quoteTechnicalContext = await quoteJiti.import("../src/lib/mann-technical-request-context.ts");
 const oilPack = { id: "pack-4", name: "Тестовое масло 5W-30, 4 л", article: "", price: 3000, available: 1, unit: "шт.", litresPerUnit: 4, sae: "5W-30", oem: "VW 507 00" };
 const { quickMaintenanceQuote, quickOilQuote } = load("src/lib/ai-assistant/quick-maintenance-quote.ts", {
   "@/lib/vehicle-normalization": load("src/lib/vehicle-normalization.ts"),
@@ -130,6 +131,7 @@ const { quickMaintenanceQuote, quickOilQuote } = load("src/lib/ai-assistant/quic
   "@/lib/vehicle-identity": { lookupVehicle: async () => ({
     status: "found", candidates: [{}], vehicle: { makeRaw: "Chevrolet", modelRaw: "Lacetti" },
   }) },
+  "@/lib/mann-technical-request-context": quoteTechnicalContext,
   "@/lib/mann-research-catalog": {},
   "@/lib/mann-fluid-research": {},
   "@/lib/maintenance-quote-stock": { loadMaintenanceQuoteStock: async input => {

@@ -80,3 +80,5 @@ Set runtime secrets, including `OPENAI_API_KEY`, only in Timeweb. Application
 startup must never apply Prisma migrations: take and verify a Timeweb database
 backup, then run an explicitly approved migration operation. See
 [`deploy/timeweb/README.md`](deploy/timeweb/README.md).
+
+Расчёт ТО: [устройство, проверки и результаты партии VIN](docs/maintenance-quote.md).

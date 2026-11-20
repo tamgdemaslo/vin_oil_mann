@@ -12,7 +12,29 @@ const { FLUID_CAPACITY_PARSER_VERSION, parseFluidCapacities } = await jiti.impor
   "../src/lib/fluid-capacity-parser.ts",
 );
 
-assert.equal(FLUID_CAPACITY_PARSER_VERSION, "capacity-parser-v7");
+assert.equal(FLUID_CAPACITY_PARSER_VERSION, "capacity-parser-v8");
+const { hasResolvedFluidResearchVolume } = await jiti.import('../src/lib/maintenance-quote.ts');
+for (const text of [
+  'Заправочный объём: 7,3 л. Способ обслуживания и объём замены не указаны.',
+  '7.3 л, сервисный объём не подтверждён',
+]) assert.equal(hasResolvedFluidResearchVolume(text, 'AUTOMATIC_TRANSMISSION'), false, text);
+
+
+// A source saying the service method/quantity is unknown is not a service claim.
+for (const text of [
+  'Заправочный объём: 7,3 л. Способ обслуживания и объём замены не указаны.',
+  '7.3 л; сервисный объём не известен',
+  '7.3 л, не объём замены',
+  '7.3 л, полная замена не подтверждена',
+  '7.3 л, не указана частичная замена',
+]) {
+  const parsed = parseFluidCapacities(text, 'AUTOMATIC_TRANSMISSION');
+  assert.equal(parsed.capacities[0]?.kind, 'UNKNOWN', text);
+}
+assert.equal(parseFluidCapacities('Общий объём 7.3 л, объём замены не указан', 'AUTOMATIC_TRANSMISSION').capacities[0]?.kind, 'TOTAL');
+assert.equal(parseFluidCapacities('Частичная замена 3.6 л; полный объём не указан', 'AUTOMATIC_TRANSMISSION').capacities[0]?.kind, 'PARTIAL');
+assert.equal(parseFluidCapacities('С фильтром: 3.6 л', 'ENGINE_OIL').capacities[0]?.kind, 'WITH_FILTER');
+
 
 for (const text of ['6.9 л. для полной замены','Полная замена: 6.9 л.']) {
   const parsed=parseFluidCapacities(text,'ROBOT_TRANSMISSION');
@@ -199,4 +221,4 @@ for (const testCase of golden.cases) {
   assert.deepEqual(stableActual, expected, testCase.caseId);
 }
 
-console.log("Fluid capacity parser v7 regressions + 200-case golden set with explicit full-replacement correction — passed");
+console.log("Fluid capacity parser v8 negation regressions + 200-case golden set with explicit full-replacement correction — passed");

@@ -61,11 +61,11 @@ try {
  const vehicle=JSON.parse(s.request.input).vehicle;
  assert.equal(vehicle.variants.length,1,'filter rows deduplicated');
  assert.equal(vehicle.variants[0].engineCode,'C25HDEX');assert.equal(vehicle.variants[0].productionYears,'05/15 ->');
- assert.equal(JSON.stringify(vehicle).includes('2014'),false,'card year must not override MANN');
- await run({...input,vehicleContext:undefined});assert.equal(s.calls,1,'same selected MANN cache without card');
+ assert.equal(vehicle.scope.actualYear,2014,'actual year remains separate from authoritative catalogue applicability');
+ assert.equal((await run({...input,vehicleContext:undefined})).status,'needs_context');assert.equal(s.calls,1,'unknown configuration neither reuses known scope nor starts a duplicate paid search');
  s=reset();s.applications.push({...application,vehicleVariantKey:'key2'});
  assert.equal((await run({...input,variantKeys:['key2','key'],vehicleContext:undefined})).status,'saved');
- await run({...input,variantKeys:['key','key2','key']});assert.equal(s.calls,1,'group keys stable and deduplicated');
+ await run({...input,variantKeys:['key','key2','key'],vehicleContext:undefined});assert.equal(s.calls,1,'group keys stable and deduplicated');
  s=reset();s.applications=[{...application,engineCode:null}];
  assert.equal((await run({...input,vehicleContext:undefined})).status,'saved','catalog description sufficient without engine code');
  const gaps=missingMannFluids(profile);assert.deepEqual(citedResearchItems({items:[{...item,sourceUrl:'https://invented.example/manual'}],unresolved:[]},new Set([item.sourceUrl]),gaps),[]);
