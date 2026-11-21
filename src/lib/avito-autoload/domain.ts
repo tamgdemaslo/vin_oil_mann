@@ -121,17 +121,21 @@ export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOv
     multiName: overrides.multiName ?? "",
   };
   let variables = avitoContentVariables(source, settings, values, type);
-  const generatedTitle = renderAvitoTemplate(settings.titleTemplate, variables);
-  values.title = overrides.title === undefined
-    ? settings.autoShortenTitles ? shortenAvitoTitle(generatedTitle, settings.titleRemovePhrases) : generatedTitle
-    : overrides.title.trim();
+  const rawTitle = overrides.title?.trim() ?? renderAvitoTemplate(settings.titleTemplate, variables);
+  const brandedTitle = type === "motor"
+    ? rawTitle.replace(/(^|[^\p{L}\p{N}])(?:(?:лукойл|лукоил|lukoil)\s+)?(?:genesis|genezis)(?=$|[^\p{L}\p{N}])/giu, "$1Лукойл Genesis")
+    : rawTitle;
+  const canShortenTitle = overrides.title === undefined || brandedTitle !== rawTitle;
+  values.title = canShortenTitle && settings.autoShortenTitles
+    ? shortenAvitoTitle(brandedTitle, settings.titleRemovePhrases)
+    : brandedTitle;
   variables = avitoContentVariables(source, settings, values, type);
   const descriptionTemplate = settings.categoryDescriptionTemplates[type].trim() || settings.descriptionTemplate;
   values.description = inherited(overrides.description, renderAvitoTemplate(descriptionTemplate, variables));
   const issues: AvitoIssue[] = [...avitoSettingsIssues(settings)];
   const error = (field: string, message: string) => issues.push({ field, message, severity: "error" });
   const warning = (field: string, message: string) => issues.push({ field, message, severity: "warning" });
-  if (overrides.title === undefined && values.title !== generatedTitle) warning("title", "Заголовок автоматически сокращён до 50 символов. Проверьте предпросмотр");
+  if (values.title !== brandedTitle) warning("title", "Заголовок автоматически сокращён до 50 символов. Проверьте предпросмотр");
   if (!inferred) error("type", "Для этого раздела выберите в карточке товара группу моторных или трансмиссионных масел");
   if (source.entityType !== "product") error("type", "В этом разделе выгружаются только товары");
   if (bulk) {
