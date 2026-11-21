@@ -2860,7 +2860,7 @@ function ProductPage({catalogVersion}) {
           </div>
 
           {/* Info side */}
-          <div>
+          <div className="oil-product-detail-info">
             <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 14}}>
               {[oil.brand, oil.type].filter(Boolean).join(' · ')}
             </div>
@@ -2871,11 +2871,7 @@ function ProductPage({catalogVersion}) {
               {[oil.volume, oil.uom].filter(Boolean).join(' · ')}
             </div>
 
-            <table className="spec" style={{marginTop: 32}}>
-              <tbody>
-                {specifications.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value}</td></tr>)}
-              </tbody>
-            </table>
+
 
             <div style={{marginTop: 36, background: '#0a0a0a', color: '#F5F2ED', padding: '28px 28px 24px', position: 'relative', overflow: 'hidden'}}>
               <div className="t-eyebrow" style={{marginBottom: 8}}>Наличие и цены</div>
@@ -2885,6 +2881,11 @@ function ProductPage({catalogVersion}) {
                 Уточнить и записаться <span className="arr">→</span>
               </a>
             </div>
+            <table className="spec" style={{marginTop: 32}}>
+              <tbody>
+                {specifications.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value}</td></tr>)}
+              </tbody>
+            </table>
           </div>
         </div>
 

@@ -1806,6 +1806,7 @@ button:disabled {
 .oil-branch-offer small, .oil-branch-offer a { grid-column: 1 / -1; }
 .oil-branch-offer a { width: fit-content; display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; color: inherit; }
 @media (max-width: 900px) {
+  .oil-product-detail-info { order: -1; }
   .oil-filter-toggle { display: inline-flex; justify-self: start; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid currentColor; background: transparent; color: inherit; }
   .shop-layout { grid-template-columns: minmax(0,1fr) !important; gap: 12px !important; }
   #oil-shop-filters:not(.is-open) { display: none; }
