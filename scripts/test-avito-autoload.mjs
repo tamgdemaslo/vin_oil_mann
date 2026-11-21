@@ -111,6 +111,9 @@ try {
   const source = { id: "product-A", name: "Shell Helix Ultra 5W-40 4 л", article: "550040755", groupPath: "Масла/Моторные масла", entityType: "product", brand: "Shell", sae: "5W-40", packageVolume: "4 л", acea: "A3/B4", aceaExtra: null, apiSpec: "SP", atf: null, oem: "VW 504.00/507.00", oemAtf: null, description: null, salePriceCents: 499000, archived: false, avito: true, available: 3, photos: [], updatedAt: "2026-10-13T10:00:00.000Z" };
   const scope = { branchId: "branch-A", organizationId: "org-A", businessGroupId: "group-A", userId: "user-A" };
   const listing = (changes = {}, overrides = {}, opts = settings) => domain.buildAvitoListing({ ...source, ...changes }, overrides, opts, storage.avitoAdId(scope, source.id));
+  assert.equal(listing({ name: "GENESIS UNIVERSAL 10W-40, 1 л" }).values.title, "Лукойл Genesis UNIVERSAL 10W-40, 1 л");
+  assert.equal(listing({}, { title: "LUKOIL Genezis 5W-40, 4 л" }).values.title, "Лукойл Genesis 5W-40, 4 л");
+  assert.equal(listing({}, { title: "Лукойл Genesis 5W-40, 4 л" }).values.title, "Лукойл Genesis 5W-40, 4 л");
   const valid = listing();
   assert.equal(valid.included, true);
   assert.equal(valid.values.multiItem, false);
