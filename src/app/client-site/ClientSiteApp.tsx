@@ -452,6 +452,7 @@ const BRANCHES = [
   {
     id: 'dachnaya',
     label: 'Дачная, 6В',
+    street: 'дачн',
     address: 'Калининград, ул. Дачная, 6В',
     phone: '+7 (995) 054-58-59',
     phoneHref: 'tel:+79950545859',
@@ -464,6 +465,7 @@ const BRANCHES = [
   {
     id: 'gagarina',
     label: 'Юрия Гагарина, 116',
+    street: 'гагарин',
     address: 'Калининград, ул. Юрия Гагарина, 116',
     phone: '+7 (965) 054-58-58',
     phoneHref: 'tel:+79650545858',
@@ -2531,6 +2533,7 @@ function ShopPage({ initialBrands }: { initialBrands: string[] }) {
   const [types, setTypes] = useState(new Set());
   const [vols, setVols] = useState(new Set());
   const [oems, setOems] = useState(new Set());
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState('rec');
 
   const toggle = (set, setter, v) => {
@@ -2561,33 +2564,15 @@ function ShopPage({ initialBrands }: { initialBrands: string[] }) {
   return (
     <main style={{background: '#F5F2ED', color: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
       <div className="container">
-        {/* Header */}
-        <div style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, marginBottom: 14, borderBottom: '1px solid #0a0a0a', paddingBottom: 24}}>
-          <div>
-            <div className="t-eyebrow" style={{marginBottom: 14}}>Каталог · моторные масла</div>
-            <h1 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(40px, 6vw, 80px)', lineHeight: 0.92, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
-              Масло.<br />Цены и наличие<span style={{color: '#C2410C'}}>.</span>
-            </h1>
-          </div>
-          <div style={{textAlign: 'right'}}>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginBottom: 6}}>В каталоге</div>
-            <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 64, lineHeight: 1, color: '#0a0a0a'}}>{filtered.length}</div>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginTop: 4}}>из {catalogTotal} ПОЗИЦИЙ</div>
-          </div>
-        </div>
-
-        {/* Branch pricing notice */}
-        <div style={{background: '#0a0a0a', color: '#F5F2ED', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 36}}>
-          <div style={{display: 'flex', alignItems: 'center', gap: 18}}>
-            <span className="badge">ДВЕ ТОЧКИ</span>
-            <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 20, textTransform: 'uppercase'}}>Цена и наличие показаны отдельно для каждого филиала.</span>
-          </div>
-          <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.12em'}}>ДАННЫЕ ИЗ CRM</div>
-        </div>
-
+        <header className="oil-shop-heading">
+          <h1>Моторные масла{brands.size === 1 ? ` · ${[...brands][0]}` : ''}</h1>
+        </header>
         <div className="responsive-grid shop-layout" style={{display: 'grid', gridTemplateColumns: '260px minmax(0, 1fr)', gap: 40, alignItems: 'start'}}>
-          {/* Filters */}
-          <aside className="responsive-sticky shop-filters" style={{position: 'sticky', top: 120}}>
+          <button type="button" className="oil-filter-toggle" aria-controls="oil-shop-filters"
+            aria-expanded={filtersOpen} onClick={() => setFiltersOpen(open => !open)}>
+            {filtersOpen ? 'Скрыть фильтры' : 'Фильтры'}
+          </button>
+          <aside id="oil-shop-filters" className={`responsive-sticky shop-filters${filtersOpen ? ' is-open' : ''}`} style={{position: 'sticky', top: 120}}>
             <FilterGroup title="Бренд" items={allBrands} active={brands} onToggle={v => toggle(brands, setBrands, v)} />
             <FilterGroup title="Вязкость" items={allViscs} active={viscs} onToggle={v => toggle(viscs, setViscs, v)} />
             <FilterGroup title="Тип ДВС" items={allTypes} active={types} onToggle={v => toggle(types, setTypes, v)} />
@@ -2726,9 +2711,30 @@ function OemApprovals({ items }) {
   );
 }
 
+function OilBranchOffers({oil}) {
+  if (!oil.offers?.length) return <p>Цены и наличие уточняются</p>;
+  return <div className="oil-branch-offers">
+    {oil.offers.map(offer => {
+      const location = `${offer.name} ${offer.address || ''}`.toLowerCase();
+      const branch = BRANCHES.find(item => location.includes(item.street));
+      const available = offer.availability === 'IN_STOCK' && offer.available > 0;
+      return <section key={offer.branchId} className="oil-branch-offer">
+        <strong>{branch?.label || offer.address || offer.name}</strong>
+        <span>{offer.price == null ? (offer.availability === 'NOT_LISTED' ? '—' : 'Цена уточняется') : fmtMoney(offer.price)}</span>
+        <small>{formatOfferQuantity(offer)}</small>
+        {available && branch && <a href={branch.routeUrl} target="_blank" rel="noopener noreferrer"
+          aria-label={`Построить маршрут — ${branch.label}`}
+          onClick={() => trackClientGoal(branch.id === 'dachnaya' ? 'oil_catalog_route_dachnaya' : 'oil_catalog_route_gagarina')}>
+          Построить маршрут ↗
+        </a>}
+      </section>;
+    })}
+  </div>;
+}
+
 function ShopCard({ oil, idx }) {
   return (
-    <Link className="shop-card-link" to={`/product/${oil.id}`}>
+
       <div className="shop-card" style={{
         background: '#FFFFFF', border: '1px solid #D9D3C5',
         padding: '20px 20px 22px', display: 'flex', flexDirection: 'column', gap: 16,
@@ -2736,6 +2742,7 @@ function ShopCard({ oil, idx }) {
         transition: 'border-color 160ms',
         contentVisibility: 'auto', containIntrinsicSize: '405px',
       }} onMouseEnter={e => e.currentTarget.style.borderColor = '#C2410C'} onMouseLeave={e => e.currentTarget.style.borderColor = '#D9D3C5'}>
+        <Link className="shop-card-link oil-product-link" to={`/product/${oil.id}`}>
         <div className="shop-card__meta">
           <span className="shop-card__index">
             {(idx+1).toString().padStart(3,'0')} · {oil.brand.toUpperCase()}
@@ -2759,15 +2766,9 @@ function ShopCard({ oil, idx }) {
           <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, padding: '4px 8px', border: '1px solid #C2410C', color: '#C2410C', display: 'inline-block', alignSelf: 'flex-start', letterSpacing: '0.1em', textTransform: 'uppercase'}}>{oil.badge}</div>
         )}
 
-        <div style={{marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 14, borderTop: '1px dashed #D9D3C5'}}>
-          <div>
-            <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26}}>{fmtOilPrice(oil)}</span>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.08em', marginTop: 2}}>Цена зависит от точки</div>
-          </div>
-          <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#0a0a0a', letterSpacing: '0.06em', textAlign: 'right'}}>{offerCountLabel(oil)} →</span>
-        </div>
+        </Link>
+        <OilBranchOffers oil={oil} />
       </div>
-    </Link>
   );
 }
 
@@ -2879,18 +2880,7 @@ function ProductPage({catalogVersion}) {
             <div style={{marginTop: 36, background: '#0a0a0a', color: '#F5F2ED', padding: '28px 28px 24px', position: 'relative', overflow: 'hidden'}}>
               <div className="t-eyebrow" style={{marginBottom: 8}}>Наличие и цены</div>
               <div className="t-headline" style={{fontSize: 24, marginBottom: 18}}>По филиалам.</div>
-              <div style={{display: 'flex', flexDirection: 'column', gap: 1, background: '#343434'}}>
-                {(oil.offers || []).map(offer => (
-                  <div key={offer.branchId} style={{background: '#0a0a0a', padding: '15px 0', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 18, alignItems: 'center'}}>
-                    <div>
-                      <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 18, textTransform: 'uppercase'}}>{offer.name}</div>
-                      {offer.address ? <div style={{fontSize: 12, color: '#9A9A9A', marginTop: 3}}>{offer.address}</div> : null}
-                      <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: offer.availability === 'IN_STOCK' ? '#F5F2ED' : '#9A9A9A', marginTop: 7}}>{formatOfferQuantity(offer)}</div>
-                    </div>
-                    <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, textAlign: 'right'}}>{offer.price == null ? 'Уточнить' : fmtMoney(offer.price)}</div>
-                  </div>
-                ))}
-              </div>
+              <OilBranchOffers oil={oil} />
               <a href="/booking" className="btn rust lg" style={{width: '100%', marginTop: 22, justifyContent: 'space-between'}}>
                 Уточнить и записаться <span className="arr">→</span>
               </a>

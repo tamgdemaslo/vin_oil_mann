@@ -1798,3 +1798,17 @@ button:disabled {
   .akpp-detail__tariffs > div { grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
   .akpp-detail__tariffs dd { flex-direction: column; gap: 4px; }
 }
+
+.oil-shop-heading h1 { font: 700 clamp(30px,5vw,60px)/1.1 var(--f-display); margin: 0 0 20px; }
+.oil-filter-toggle { display: none; }
+.oil-product-link { display: grid; gap: 10px; color: inherit; text-decoration: none; }
+.oil-branch-offer { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: baseline; gap: 4px 8px; border-top: 1px solid #8886; padding: 10px 0; font-size: 14px; }
+.oil-branch-offer small, .oil-branch-offer a { grid-column: 1 / -1; }
+.oil-branch-offer a { width: fit-content; display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; color: inherit; }
+@media (max-width: 900px) {
+  .oil-filter-toggle { display: inline-flex; justify-self: start; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid currentColor; background: transparent; color: inherit; }
+  .shop-layout { grid-template-columns: minmax(0,1fr) !important; gap: 12px !important; }
+  #oil-shop-filters:not(.is-open) { display: none; }
+  #oil-shop-filters.is-open { position: static !important; max-height: 52vh; overflow: auto; }
+  .oil-product-link > div:nth-child(2) { height: 85px !important; }
+}
