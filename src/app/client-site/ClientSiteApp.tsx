@@ -3,7 +3,7 @@
 "use client";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useId } from "react";
 import servicePages from "@/lib/client-service-pages.json";
-import { Navigation, Phone, X } from "lucide-react";
+import { Phone, X } from "lucide-react";
 import { trackClientContactClick, trackClientGoal } from "@/lib/client-site-analytics";
 import type { ClientOil } from "@/lib/client-site-api";
 import TransmissionPriceTables from "./TransmissionPriceTables";
@@ -569,7 +569,7 @@ const fmtOrderTotal = (knownTotal, hasUnknownPrice) => {
   return knownTotal > 0 ? `от ${fmtMoney(knownTotal)}` : 'Уточнить стоимость';
 };
 const fmtOilPrice = (oil) => oil?.price == null
-  ? oil?.pricesDiffer ? 'Цены по точкам' : 'Уточнить стоимость'
+  ? 'Уточнить стоимость'
   : fmtMoney(oil.price);
 
 function formatOfferQuantity(offer) {
@@ -1212,7 +1212,7 @@ function BranchCallButton() {
   );
 }
 
-function Footer({ showCatalogRoutes = false }) {
+function Footer() {
   return (
     <footer style={{background: '#0a0a0a', color: '#F5F2ED', borderTop: '1px solid var(--line)'}}>
       {/* Map + hours block */}
@@ -1242,21 +1242,6 @@ function Footer({ showCatalogRoutes = false }) {
                   <span>{branch.hours}</span>
                   <small>{branch.daysOff} · открыть в Яндекс Картах ↗</small>
                 </a>
-                {showCatalogRoutes && (
-                  <a
-                    className="btn ghost"
-                    style={{ marginTop: 8 }}
-                    href={branch.routeUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`Построить маршрут — ${branch.label}`}
-                    onClick={() => trackClientGoal(branch.id === 'dachnaya'
-                      ? 'oil_catalog_route_dachnaya'
-                      : 'oil_catalog_route_gagarina')}
-                  >
-                    Построить маршрут ↗
-                  </a>
-                )}
               </div>
             ))}
           </div>
@@ -2696,31 +2681,14 @@ function OemApprovals({ items }) {
 }
 
 function OilBranchOffers({oil}) {
-  if (!oil.offers?.length) return <p>Цены и наличие уточняются</p>;
+  if (!oil.offers?.length) return <p>Наличие уточняется</p>;
   return <div className="oil-branch-offers">
     {oil.offers.map(offer => {
       const location = `${offer.name} ${offer.address || ''}`.toLowerCase();
       const branch = BRANCHES.find(item => location.includes(item.street));
-      const available = offer.availability === 'IN_STOCK' && offer.available > 0;
       return <section key={offer.branchId} className="oil-branch-offer">
         <strong>{branch?.label || offer.address || offer.name}</strong>
-        <span>{offer.price == null ? (offer.availability === 'NOT_LISTED' ? '—' : 'Цена уточняется') : fmtMoney(offer.price)}</span>
-        <div className="oil-branch-offer__availability">
-          <small>{formatOfferQuantity(offer)}</small>
-          {available && branch && (
-            <a
-              className="oil-branch-offer__route"
-              href={branch.routeUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Маршрут до филиала «${branch.label}» в Яндекс Картах (новая вкладка)`}
-              onClick={() => trackClientGoal(branch.id === 'dachnaya' ? 'oil_catalog_route_dachnaya' : 'oil_catalog_route_gagarina')}
-            >
-              <Navigation size={14} aria-hidden="true" />
-              Маршрут
-            </a>
-          )}
-        </div>
+        <small>{formatOfferQuantity(offer)}</small>
       </section>;
     })}
   </div>;
@@ -2761,7 +2729,7 @@ function ShopCard({ oil, idx }) {
         )}
 
         </Link>
-        <OilBranchOffers oil={oil} />
+        <div className="oil-card-price">{fmtOilPrice(oil)}</div>
       </div>
   );
 }
@@ -2868,8 +2836,8 @@ function ProductPage({catalogVersion}) {
 
 
             <div style={{marginTop: 36, background: '#0a0a0a', color: '#F5F2ED', padding: '28px 28px 24px', position: 'relative', overflow: 'hidden'}}>
-              <div className="t-eyebrow" style={{marginBottom: 8}}>Наличие и цены</div>
-              <div className="t-headline" style={{fontSize: 24, marginBottom: 18}}>По филиалам.</div>
+              <div className="t-eyebrow" style={{marginBottom: 8}}>Цена и наличие</div>
+              <div className="t-headline" style={{fontSize: 24, marginBottom: 18}}>{fmtOilPrice(oil)}</div>
               <OilBranchOffers oil={oil} />
               <a href="/booking" className="btn rust lg" style={{width: '100%', marginTop: 22, justifyContent: 'space-between'}}>
                 Уточнить и записаться <span className="arr">→</span>
@@ -4206,7 +4174,7 @@ function App({
     <CatalogCtx.Provider value={OILS}><RouterCtx.Provider value={{ ...router, catalogVersion, catalogTotal, catalogLoadingMore }}>
       <TopBar />
       {page}
-      <Footer showCatalogRoutes={seg[0] === 'shop'} />
+      <Footer />
     </RouterCtx.Provider></CatalogCtx.Provider>
   );
 }
