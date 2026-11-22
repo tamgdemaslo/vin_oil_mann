@@ -3,7 +3,7 @@
 "use client";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useId } from "react";
 import servicePages from "@/lib/client-service-pages.json";
-import { Phone, X } from "lucide-react";
+import { Navigation, Phone, X } from "lucide-react";
 import { trackClientContactClick, trackClientGoal } from "@/lib/client-site-analytics";
 import type { ClientOil } from "@/lib/client-site-api";
 import TransmissionPriceTables from "./TransmissionPriceTables";
@@ -2705,12 +2705,22 @@ function OilBranchOffers({oil}) {
       return <section key={offer.branchId} className="oil-branch-offer">
         <strong>{branch?.label || offer.address || offer.name}</strong>
         <span>{offer.price == null ? (offer.availability === 'NOT_LISTED' ? '—' : 'Цена уточняется') : fmtMoney(offer.price)}</span>
-        <small>{formatOfferQuantity(offer)}</small>
-        {available && branch && <a href={branch.routeUrl} target="_blank" rel="noopener noreferrer"
-          aria-label={`Построить маршрут — ${branch.label}`}
-          onClick={() => trackClientGoal(branch.id === 'dachnaya' ? 'oil_catalog_route_dachnaya' : 'oil_catalog_route_gagarina')}>
-          Построить маршрут ↗
-        </a>}
+        <div className="oil-branch-offer__availability">
+          <small>{formatOfferQuantity(offer)}</small>
+          {available && branch && (
+            <a
+              className="oil-branch-offer__route"
+              href={branch.routeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Маршрут до филиала «${branch.label}» в Яндекс Картах (новая вкладка)`}
+              onClick={() => trackClientGoal(branch.id === 'dachnaya' ? 'oil_catalog_route_dachnaya' : 'oil_catalog_route_gagarina')}
+            >
+              <Navigation size={14} aria-hidden="true" />
+              Маршрут
+            </a>
+          )}
+        </div>
       </section>;
     })}
   </div>;
