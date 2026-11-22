@@ -1,7 +1,7 @@
 /* eslint-disable */
 // @ts-nocheck
 "use client";
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useId } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useId } from "react";
 import servicePages from "@/lib/client-service-pages.json";
 import { Phone, X } from "lucide-react";
 import { trackClientContactClick, trackClientGoal } from "@/lib/client-site-analytics";
@@ -953,56 +953,32 @@ function OilImageSkeleton({ variant }) {
 }
 
 function OilProductVisual({ oil, variant = 'shop', priority = false }) {
+  const imageHref = isBardahlXts5W40Bulk(oil) ? BARDAHL_XTS_5W40_DRUM_IMAGE : oil.imageHref;
+  return <OilProductImage key={imageHref || ''} oil={oil} variant={variant} priority={priority} visualImageHref={imageHref} />;
+}
+
+function OilProductImage({ oil, variant, priority, visualImageHref }) {
   const product = variant === 'product';
-  const visualImageHref = isBardahlXts5W40Bulk(oil) ? BARDAHL_XTS_5W40_DRUM_IMAGE : oil.imageHref;
   const [imageAttempt, setImageAttempt] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
-  const [imageVisible, setImageVisible] = useState(product || priority);
+  const imageRef = useRef(null);
   const retryTimerRef = useRef(null);
-  const viewportRef = useRef(null);
-
-  useEffect(() => {
-    if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
+  useEffect(() => () => {
+    window.clearTimeout(retryTimerRef.current);
     retryTimerRef.current = null;
-    setImageAttempt(0);
-    setImageLoaded(false);
-    setImageFailed(false);
-    return () => {
-      if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
-    };
-  }, [visualImageHref]);
-
-  useEffect(() => {
-    if (!visualImageHref || product || priority) {
-      setImageVisible(true);
-      return;
-    }
-    const node = viewportRef.current;
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      setImageVisible(true);
-      return;
-    }
-    const observer = new IntersectionObserver(entries => {
-      if (!entries.some(entry => entry.isIntersecting)) return;
-      setImageVisible(true);
-      observer.disconnect();
-    }, { rootMargin: '240px 0px' });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [visualImageHref, product, priority]);
+  }, []);
 
   const showImage = Boolean(visualImageHref) && !imageFailed;
-  const requestImage = showImage && imageVisible;
   const imageWidth = product ? 1200 : 480;
   const imageParams = [`width=${imageWidth}`];
   if (imageAttempt > 0) imageParams.push(`retry=${imageAttempt}`);
   const imageSrc = showImage
     ? `${visualImageHref}${visualImageHref.includes('?') ? '&' : '?'}${imageParams.join('&')}`
     : visualImageHref;
-  const handleImageError = () => {
+  const handleImageError = useCallback(() => {
     setImageLoaded(false);
-    if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
+    if (retryTimerRef.current != null) return;
     const retryDelay = STOREFRONT_IMAGE_RETRY_DELAYS_MS[imageAttempt];
     if (retryDelay == null) {
       setImageFailed(true);
@@ -1012,16 +988,23 @@ function OilProductVisual({ oil, variant = 'shop', priority = false }) {
       retryTimerRef.current = null;
       setImageAttempt(attempt => attempt + 1);
     }, retryDelay);
-  };
+  }, [imageAttempt]);
+  // Check after the source is committed, including when it is already cached.
+  useEffect(() => {
+    const image = imageRef.current;
+    if (!image?.complete) return;
+    if (image.naturalWidth > 0) setImageLoaded(true);
+    else handleImageError();
+  }, [imageSrc, handleImageError]);
   const inner = (
-    <div ref={viewportRef} aria-busy={requestImage && !imageLoaded} style={{position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+    <div aria-busy={showImage && !imageLoaded} style={{position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
       {showImage && !imageLoaded && <OilImageSkeleton variant={variant} />}
       {!showImage && (
         <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
           <OilCanFallback oil={oil} variant={variant} />
         </div>
       )}
-      {requestImage && (
+      {showImage && (
         <img
           key={imageSrc}
           src={imageSrc}
@@ -1029,7 +1012,8 @@ function OilProductVisual({ oil, variant = 'shop', priority = false }) {
           loading={product || priority ? 'eager' : 'lazy'}
           fetchPriority={product || priority ? 'high' : 'auto'}
           decoding="async"
-          onLoad={() => { setImageLoaded(true); }}
+          ref={imageRef}
+          onLoad={() => setImageLoaded(true)}
           onError={handleImageError}
           style={{
             position: 'absolute',
