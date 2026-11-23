@@ -12,7 +12,7 @@ export type LoyaltyLineInput = { beforeCents: number; rate: number; quantityMill
 export type LoyaltyLine = LoyaltyLineInput & { cashCents: number; spendCents: number; earned: number };
 export type LoyaltyTotals = { beforeCents: number; cashCents: number; spent: number; earned: number; centsPerPoint: number };
 export type LoyaltyQuote = LoyaltyTotals & { maximum: number; balance: number; token: string };
-export type LoyaltyIntent = { points: number; token?: string; skip?: boolean };
+export type LoyaltyIntent = { points: number; token?: string; skip?: boolean; suppressEarn?: boolean };
 
 function floorRatio(numerator: bigint, denominator: bigint) {
   return Number(numerator / denominator);
