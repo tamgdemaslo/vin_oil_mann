@@ -94,6 +94,9 @@ jobs:
       - name: Verify customer return scenarios and shared draft API
         run: npm run test:customer-return
 
+      - name: Verify customer loyalty rules and branch access
+        run: npm run test:customer-loyalty
+
       - name: Verify customer management insights
         run: npm run test:customer-management-insights
 

@@ -15,7 +15,8 @@ const BRANCH_SCOPED_MODELS = new Set([
   "SalesAnalyticsMapping", "BranchSalesPlan",
   "StorageCell", "ProductStorageAssignment", "LocalBulkOilBarrel", "LocalBulkOilBarrelEvent",
   "LocalCounterparty", "CashShift", "CashWithdrawal", "CashExpenseItem", "CashExpenseOrder",
-  "LocalDemand", "ShipmentRevision", "NotificationTemplate", "NotificationRule", "NotificationJob",
+  "LocalDemand", "ShipmentRevision", "ShipmentPostingRequest", "LoyaltyLink", "LoyaltyOperation",
+  "LoyaltySale", "LoyaltyReturn", "LoyaltyCampaign", "NotificationTemplate", "NotificationRule", "NotificationJob",
   "AIAgentSetting", "AIAgentSession", "AIServiceQuote", "AIAgentTechnicalEvidence",
   "AIAgentQualityFeedback", "AIAgentRun", "AIAgentRunEvent", "AIAgentToolCall", "AIAgentDecision",
   "AIAgentHandoff", "AIAgentSlotHold", "AIAssistantThread", "AIAssistantMessage", "AIAssistantRun",
@@ -99,6 +100,50 @@ export function applyBranchQueryPolicy(
   args: JsonObject,
   tenant: RequestTenant | null = getRequestTenant()
 ) {
+  if (tenant && (model === "LoyaltyProgram" || model === "LoyaltyAccount")) {
+    if (tenant.mode === "denied") throw new Error("Нет доступа к программе лояльности");
+    if (tenant.mode === "all" && WRITE_OPERATIONS.has(operation)
+      && (model !== "LoyaltyProgram" || !tenant.permissions?.includes("group_owner"))) {
+      throw new Error("В режиме «Все филиалы» операции изменения запрещены");
+    }
+    const groupId = tenant.businessGroupId;
+    if (groupId) {
+      const assertGroup = (value: unknown) => {
+        const row = object(value);
+        if (row?.businessGroupId !== undefined && row.businessGroupId !== groupId) {
+          throw new Error("Нет доступа к бонусному счёту другой сети");
+        }
+        return row;
+      };
+      const data = (value: unknown) => ({ ...assertGroup(value), businessGroupId: groupId });
+      if (operation === "createMany" || operation === "createManyAndReturn") {
+        return { ...args, data: Array.isArray(args.data) ? args.data.map(data) : data(args.data) };
+      }
+      if (operation === "create") return { ...args, data: data(args.data) };
+      assertGroup(args.data);
+      assertGroup(args.update);
+      return { ...args, where: data(args.where), ...(operation === "upsert" ? { create: data(args.create) } : {}) };
+    }
+  }
+  if (tenant && model === "LoyaltyLot") {
+    // The branch is the grant's origin. Spending has to see lots from the whole account.
+    if (!tenant.businessGroupId || tenant.mode === "denied") throw new Error("Нет доступа к бонусному счёту");
+    if (tenant.mode === "all" && WRITE_OPERATIONS.has(operation)) throw new Error("Выберите филиал для бонусной операции");
+    if (operation === "create") return { ...args, data: scopeData(args.data, tenant.branchId!) };
+    if (WRITE_OPERATIONS.has(operation) && operation !== "update") throw new Error("Недопустимая операция с начислением бонусов");
+    return { ...args, where: { ...(object(args.where) ?? {}), account: { is: { businessGroupId: tenant.businessGroupId } } } };
+  }
+  if (tenant && model === "LoyaltyCampaignRecipient") {
+    // Recipients can span the owner's branches, while the campaign itself has a home branch.
+    if (tenant.mode !== "branch" || !tenant.businessGroupId || !tenant.permissions?.includes("group_owner")) {
+      throw new Error("Нет доступа к получателям бонусной акции");
+    }
+    if (operation === "createMany") return args;
+    if (WRITE_OPERATIONS.has(operation) && !["update", "updateMany"].includes(operation)) {
+      throw new Error("Недопустимая операция с получателем акции");
+    }
+    return { ...args, where: { ...(object(args.where) ?? {}), campaign: { is: { businessGroupId: tenant.businessGroupId } } } };
+  }
   if (model === "SharedProductKit" && tenant) {
     if (tenant.mode === "denied" || !tenant.businessGroupId) throw new Error("Нет доступа к общим комплектам сети");
     if (tenant.mode === "all" && WRITE_OPERATIONS.has(operation)) throw new Error("В режиме «Все филиалы» операции изменения запрещены");

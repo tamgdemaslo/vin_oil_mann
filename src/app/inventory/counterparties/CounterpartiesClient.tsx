@@ -1,5 +1,6 @@
 "use client";
 
+import { ClientLoyalty } from "@/components/loyalty/ClientLoyalty";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
@@ -1455,6 +1456,8 @@ function ClientDrawer({
               <p className="eco-muted-value">История отгрузок пока не найдена.</p>
             )}
           </InfoBlock> : null}
+
+          {row.category !== "SUPPLIER" && canPersistCounterparty(row) && <ClientLoyalty key={row.id} clientId={row.id} />}
 
           <InfoBlock title="Реквизиты" icon={<FileText aria-hidden className="eco-icon" />}>
             <InfoLine label="Юр. название" value={row.legalTitle || "не указано"} muted={!row.legalTitle} />

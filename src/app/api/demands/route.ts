@@ -1,3 +1,4 @@
+import { loyaltyPermissions } from "@/lib/loyalty/accounts";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { type CreateDemandBody } from "@/lib/demand-create-payload";
@@ -42,6 +43,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Укажите организацию и склад" }, { status: 400 });
   }
 
+  if ((body.loyalty?.points ?? 0) > 0 && !loyaltyPermissions(branchAccess.context).employee) {
+    return NextResponse.json({ error: "Недостаточно прав для списания бонусов" }, { status: 403 });
+  }
+
   return runWithBranchApiContext(branchAccess.context, async () => {
     let created;
     try {
@@ -58,7 +63,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if (!created.ok) return NextResponse.json({ error: created.error }, { status: 400 });
+    if (!created.ok) return NextResponse.json({ error: created.error, quote: created.quote }, { status: created.status ?? 400 });
 
     return NextResponse.json(created);
   });

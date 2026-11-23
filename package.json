@@ -148,7 +148,9 @@
     "test:employee-sales-plan": "node scripts/test-employee-sales-plan.mjs",
     "test:individual-piecework": "node scripts/test-individual-piecework.mjs",
     "test:payroll-cashout-periods": "node scripts/test-payroll-cashout-periods.mjs",
-    "test:partsapi-cache": "node scripts/test-partsapi-cache.mjs"
+    "test:partsapi-cache": "node scripts/test-partsapi-cache.mjs",
+    "test:customer-loyalty": "node scripts/test-customer-loyalty.mjs",
+    "test:customer-loyalty-api": "node scripts/test-customer-loyalty-api.mjs"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",

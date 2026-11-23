@@ -1,5 +1,7 @@
 "use client";
 
+import { LoyaltyCampaigns, useCampaignAccess } from "@/components/loyalty/LoyaltyCampaigns";
+import { matchesLoyaltyQueueFilter } from "@/lib/loyalty/queue-filter";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, Copy, RefreshCw, Send } from "lucide-react";
@@ -44,6 +46,8 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
   const states=useMemo(()=>Object.fromEntries(Object.entries(shared.states).map(([key,state])=>[key,effectiveCustomerReturnState(candidates.find(candidate=>candidate.id===key)??{},state)])),[shared.states,candidates]);
   const saved = {skipped:Object.values(states).filter(state=>state.skipped).map(state=>state.clientKey)};
   const hasEdits=Object.keys(edits).length>0;
+  const campaignAccess = useCampaignAccess(branchId);
+  const [marked, setMarked] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [scenario, setScenario] = useState<ReturnScenario | "all">("all");
   const [search, setSearch] = useState("");
@@ -95,11 +99,8 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
     return [{candidate,delivery,retry}];
   });
   const batchReady=batchEntries.filter(entry=>!entry.retry).length;
-  const visible = useMemo(() => reportCandidates.filter(candidate =>
-    customerReturnTab(candidate,states[candidate.id])===tab &&
-    (!todayResult || (!states[candidate.id]?.historyServiceDate && (todayResult==="processing" ? ["queued","sending"].includes(states[candidate.id]?.deliveryStatus??"") : states[candidate.id]?.deliveryStatus===todayResult))) &&
-    (scenario === "all" || candidate.reasons.some(reason => reason.scenario === scenario)) &&
-    (!search.trim() || [candidate.displayName, candidate.phone, ...candidate.reasons.map(r => r.vehicle)].filter(Boolean).join(" ").toLowerCase().includes(search.trim().toLowerCase()))
+  const visible = useMemo(() => reportCandidates.filter((candidate) =>
+    matchesLoyaltyQueueFilter(candidate, states[candidate.id], { tab, todayResult, scenario, search })
   ), [reportCandidates, scenario, search, tab, states, todayResult]);
   const current = visible.find(c => c.id === selected) ?? visible[0];
   const currentBusy=!!current && !!shared.busy[current.id];
@@ -241,18 +242,23 @@ export default function CustomerReturnQueue({ candidates, today, scope, branchId
       {shared.error && <p role="alert" className="eco-return-queue__notice">{shared.error} <button type="button" className="eco-btn" onClick={()=>void shared.refresh()}>Повторить загрузку</button></p>}
       {!shared.loaded && !shared.error && <p role="status" className="eco-return-queue__note">Загружаем общие черновики и пропуски…</p>}
       {notice && <p role="status" className="eco-return-queue__notice">{notice}</p>}
+      {campaignAccess && <LoyaltyCampaigns branchId={branchId} today={today} filters={{ tab, todayResult, scenario, search }}
+        current={current?.id} selected={marked} history={campaignAccess.campaigns} />}
       {!current ? <div className="eco-return-queue__empty"><h3>{search.trim() || scenario!=="all" ? "Клиентов по этим фильтрам нет" : ({ready:"Предложений к отправке не осталось",processing:"Активных отправок нет",sent:"Отправленных сообщений пока нет",errors:"Ошибок отправки нет",review:"Предложений на проверку нет",skipped:"Пропущенных клиентов нет"})[tab]}</h3><p>{search.trim() || scenario!=="all" ? "Измените поиск или сценарий." : tab==="ready" && counts.processing>0 ? "Сообщения обрабатываются в фоне. Результаты появятся в «Отправленных» или «Ошибках»." : "Выберите другую вкладку или пересчитайте подборку."}</p>{tab==="ready" && counts.processing>0 && <button type="button" className="eco-btn" onClick={()=>setTab("processing")}>Открыть отправки в процессе ({counts.processing})</button>}</div> : (
         <div className="eco-return-queue__layout">
           <div className="eco-return-queue__list" aria-label="Кандидаты на сегодня">
             <p>Клиентов в выборке: {visible.length}</p>
-            {visible.map(candidate => <button key={candidate.id} type="button" className="eco-return-queue__client" aria-pressed={candidate.id === current.id} onClick={() => {setSelected(candidate.id);setNotice(null);}}>
+            {visible.map(candidate => <div key={candidate.id} className="eco-loyalty-queue-row">
+              {campaignAccess && <input type="checkbox" checked={marked.includes(candidate.id)} aria-label={`Отметить для акции · ${candidate.displayName}`}
+                onChange={(event) => setMarked((previous) => event.target.checked ? [...previous, candidate.id] : previous.filter((id) => id !== candidate.id))} />}
+              <button key={candidate.id} type="button" className="eco-return-queue__client" aria-pressed={candidate.id === current.id} onClick={() => {setSelected(candidate.id);setNotice(null);}}>
               <strong>{candidate.displayName}</strong>
               <span>{[...new Set(candidate.reasons.map(r => r.vehicle))].join("; ")}</span>
               <span>{[...new Set(candidate.reasons.map(r => RETURN_SCENARIO_LABELS[r.scenario]))].join(" · ")}</span>
               <span className={`eco-return-queue__badge eco-return-queue__badge--${customerReturnTab(candidate,states[candidate.id])}`}>{customerReturnStatus(states[candidate.id])??(candidate.offerReady?"Готово к отправке":"Проверить предложение")}{states[candidate.id]?.deliveryAt && ` · ${formatServiceDateTime(states[candidate.id].deliveryAt!)}`}</span>
               {candidate.needsReview && <span className="eco-ca-table-warning">{candidate.offerReady===false ? "Проверить предложение" : "Проверить историю"}</span>}
               {saved.skipped.includes(candidate.id) && <span>Пропущен сегодня</span>}
-            </button>)}
+            </button></div>)}
           </div>
           <div className="eco-return-queue__detail">
             <div className="eco-return-queue__detail-head"><div><h3 ref={titleRef} tabIndex={-1}>{current.displayName}</h3><p>{current.phone || "Телефон не указан"}</p></div>{onOpenClient && <button type="button" className="eco-btn" onClick={() => onOpenClient(current.clientKey)}>История клиента</button>}</div>

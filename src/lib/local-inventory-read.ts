@@ -868,6 +868,7 @@ function localDemandToApiShape(row: LocalDemandWithRelations) {
     id: row.id,
     name: row.name,
     moment: row.momentAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
     applicable: row.applicable,
     paymentStatus: demandPaymentStatusFromRaw(row.raw, row.applicable),
     sum: row.sumCents,

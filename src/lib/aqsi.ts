@@ -23,6 +23,8 @@ export type AqsiPendingOrderItem = {
   quantity: number;
   unitPrice: number;
   discountPercent?: number;
+  exactUnitPrice?: number;
+  sourcePositionId?: string;
   sku?: string | null;
   markingCode?: string | null;
   markingRequired?: boolean;
@@ -444,9 +446,9 @@ export async function syncAqsiPendingOrder(
       const discountPercent = Math.max(0, Math.min(100, Number(item.discountPercent) || 0));
       // AQSI schema: OrderDtoPosition.text has maxLength=128
       const name = normalizeString(item.name, 128) ?? `Позиция ${index + 1}`;
-      if (quantity <= 0 || unitPrice <= 0) return null;
-      const effectiveUnitPrice = roundMoney(unitPrice * (1 - discountPercent / 100));
-      if (effectiveUnitPrice <= 0) return null;
+      if (quantity <= 0 || (unitPrice <= 0 && item.exactUnitPrice === undefined)) return null;
+      const effectiveUnitPrice = item.exactUnitPrice ?? roundMoney(unitPrice * (1 - discountPercent / 100));
+      if (effectiveUnitPrice < 0 || (effectiveUnitPrice === 0 && item.exactUnitPrice === undefined)) return null;
       const markingCode = normalizeString(item.markingCode, 256);
       const markingRequired = item.markingRequired === true;
       const shouldSendMarking = markingRequired && item.markingBypass !== true && Boolean(markingCode);
@@ -470,7 +472,7 @@ export async function syncAqsiPendingOrder(
         ...(shouldSendMarking && markingCode ? { itemCode: markingCode } : {}),
         addingType: shouldSendMarking ? 2 : 1,
         addedAt: orderDateTime,
-        editable: true,
+        editable: item.exactUnitPrice === undefined,
         unitOfMeasurement: measuredPour ? "Litre" : "Piece",
         unitCode: measuredPour ? AQSI_UNIT_CODE_LITER : AQSI_UNIT_CODE_PIECE,
         isWeight: measuredPour ? 1 : 0,
@@ -496,7 +498,7 @@ export async function syncAqsiPendingOrder(
       customer: normalizeString(input.customer, 243),
       customerContact: normalizeString(input.customerContact, 512),
     },
-    isEditableByDevice: true,
+    isEditableByDevice: input.items.every((item) => item.exactUnitPrice === undefined),
     ignoreItemCodeCheck: false,
   };
 
@@ -535,6 +537,7 @@ export async function syncAqsiPendingOrder(
       id: payload.id,
       number: payload.number,
       dateTime: payload.dateTime,
+      isEditableByDevice: payload.isEditableByDevice,
       content: {
         positions: basePositionPayload.map((position) => ({
           text: position.text,
@@ -560,6 +563,7 @@ export async function syncAqsiPendingOrder(
       id: payload.id,
       number: payload.number,
       dateTime: payload.dateTime,
+      isEditableByDevice: payload.isEditableByDevice,
       content: {
         positions: basePositionPayload.map((position) => ({
           text: position.text,

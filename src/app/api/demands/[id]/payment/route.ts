@@ -9,6 +9,8 @@ import { consumeBulkOilTx, shipmentBulkOilWithdrawals, type BulkOilMovement } fr
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { SyncAqsiPendingOrderInput } from "@/lib/aqsi";
+import { priceAqsiLoyaltyLine } from "@/lib/loyalty/fiscal-price";
+import { loyaltyIdentity, loyaltyProgram } from "@/lib/loyalty/accounts";
 import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 import {
   isRecognizedMotorOilMarkingCode,
@@ -61,6 +63,7 @@ type OrderPosition = {
   productMarkingStatus?: string | null;
   productMarkingSettings?: unknown;
   stockWithdrawn?: boolean;
+  loyaltyCashCents?: number;
 };
 
 type BuildAqsiResult = {
@@ -266,8 +269,7 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody, bypassPassword
       }
 
       if (!measuredPour && requiredCount > 1 && Number.isInteger(quantity)) {
-        for (const code of codes.slice(0, requiredCount)) {
-          items.push({
+        const markedItems = codes.slice(0, requiredCount).map((code) => ({
             name,
             quantity: 1,
             unitPrice,
@@ -276,8 +278,10 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody, bypassPassword
             markingRequired: true,
             markingCode: code,
             measuredPour: false,
-          });
-        }
+        }));
+        items.push(...(row.loyaltyCashCents === undefined
+          ? markedItems
+          : priceAqsiLoyaltyLine(markedItems, row.loyaltyCashCents).map((item) => ({ ...item, sourcePositionId: row.id }))));
         continue;
       }
     }
@@ -286,7 +290,7 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody, bypassPassword
       bulkOilMovements.push({ productId: row.productId, volumeLiters: quantity, markingCode: activeBarrelCode, storeId: row.storeId ?? "" });
     }
 
-    items.push({
+    const item = {
       name,
       quantity,
       unitPrice,
@@ -296,7 +300,8 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody, bypassPassword
       markingCode: markingRequired && !bypassed ? (bulkOil ? activeBarrelCode : codes[0]) : undefined,
       markingBypass: bypassed,
       measuredPour,
-    });
+    };
+    items.push(...(row.loyaltyCashCents === undefined ? [item] : priceAqsiLoyaltyLine([item], row.loyaltyCashCents)));
   }
 
   return { items, bulkOilMovements };
@@ -312,6 +317,9 @@ async function sendAqsiOrder(input: {
   items: AqsiPendingOrderItem[];
   bulkOilMovements?: BulkOilMovement[];
   actor?: { login?: string; name?: string | null };
+  loyalty?: boolean;
+  expectedCashCents?: number;
+  expectedUpdatedAt?: string;
 }) {
   const submission = await submitAqsiFiscalization({
     id: input.id,
@@ -322,7 +330,26 @@ async function sendAqsiOrder(input: {
     customer: input.customer ?? "",
     customerContact: input.customerContact ?? undefined,
     items: input.items,
-  }, input.bulkOilMovements?.length ? (tx) => consumeBulkOilTx(tx, getScopedBranchId(), input.id, input.bulkOilMovements!, input.actor) : undefined);
+  }, async (tx) => {
+    const branchId = getScopedBranchId();
+    const [locked] = await tx.$queryRaw<Array<{ applicable: boolean; counterparty_id: string | null; loyalty: boolean; sum_cents: number; updated_at: Date }>>`
+      SELECT applicable, counterparty_id, sum_cents, updated_at,
+        COALESCE(jsonb_typeof(raw->'loyaltySale') = 'object', false) AS loyalty FROM local_demands WHERE id = ${input.id} AND branch_id = ${branchId} FOR UPDATE`;
+    if (!locked) throw new Error("Отгрузка не найдена");
+    if (locked.loyalty !== Boolean(input.loyalty) || (locked.loyalty && locked.sum_cents !== input.expectedCashCents)
+      || (input.expectedUpdatedAt && locked.updated_at.toISOString() !== input.expectedUpdatedAt)) {
+      throw new Error("Сумма отгрузки изменилась. Обновите предчек");
+    }
+    if (!locked.applicable && input.loyalty) throw new Error("Проведите отгрузку перед отправкой на кассу");
+    if (!locked.applicable && locked.counterparty_id) {
+      const branch = await tx.branch.findUniqueOrThrow({ where: { id: branchId }, select: { businessGroupId: true } });
+      const client = await tx.localCounterparty.findFirst({ where: { branchId, id: locked.counterparty_id } });
+      if (client && loyaltyIdentity(client) && (await loyaltyProgram(tx, branch.businessGroupId)).enabled) {
+        throw new Error("Проведите отгрузку перед отправкой на кассу");
+      }
+    }
+    if (input.bulkOilMovements?.length) await consumeBulkOilTx(tx, branchId, input.id, input.bulkOilMovements, input.actor);
+  });
 
   if (submission.pending) {
     return NextResponse.json({
@@ -361,16 +388,18 @@ async function trySendLocalDemand(
   const accepted = await prisma.aqsiFiscalizationRecord.findFirst({ where: { branchId: getScopedBranchId(), documentType: "local_demand", documentId: loaded.data.header.id } });
   if (accepted) {
     const payload = accepted.payloadJson as unknown as SyncAqsiPendingOrderInput;
-    if (payload.items.some((item) => item.measuredPour)) {
-      return sendAqsiOrder({ ...payload, registerId: accepted.registerId });
+    if (payload.items.some((item) => item.measuredPour || item.exactUnitPrice !== undefined)) {
+      return sendAqsiOrder({ ...payload, registerId: accepted.registerId, loyalty: payload.items.some((item) => item.exactUnitPrice !== undefined), expectedCashCents: loaded.data.header.sum });
     }
   }
 
+  const loyaltyLines = new Map(loaded.data.header.loyalty?.lines.map((line) => [line.id, line.cashCents]));
   const rows: OrderPosition[] = loaded.data.positions.map((position) => {
     const nonstockOilRequiresCheck = position.lineKind === "nonstock_product"
       && ["ENGINE_OIL", "TRANSMISSION_FLUID"].includes(position.oneOffProduct?.groupCode ?? "");
     return {
       id: position.id,
+      loyaltyCashCents: loyaltyLines.get(position.id),
       productId: position.product?.id,
       storeId: loaded.data.header.storeId,
       name: position.name,
@@ -416,6 +445,10 @@ async function trySendLocalDemand(
   const built = buildAqsiItems(rows, body, bypassPasswordAccepted);
   if (built instanceof NextResponse) return built;
 
+  if (loaded.data.header.loyalty) {
+    const cents = built.items.reduce((sum, item) => sum + Math.round((item.exactUnitPrice ?? NaN) * item.quantity * 100), 0);
+    if (cents !== loaded.data.header.sum) return NextResponse.json({ error: "Денежная сумма AQSI не совпадает с отгрузкой" }, { status: 409 });
+  }
   const agent = pickRawAgent(loaded.data.raw);
   const response = await sendAqsiOrder({
     id: loaded.data.header.id,
@@ -426,6 +459,9 @@ async function trySendLocalDemand(
     customerContact: pickCustomerContact(agent),
     items: built.items,
     bulkOilMovements: built.bulkOilMovements,
+    loyalty: Boolean(loaded.data.header.loyalty),
+    expectedCashCents: loaded.data.header.sum,
+    expectedUpdatedAt: loaded.data.header.updatedAt,
     actor: actor ?? undefined,
   });
   invalidateWarehouseReadCaches();

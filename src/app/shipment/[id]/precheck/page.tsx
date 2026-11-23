@@ -1,5 +1,6 @@
 "use client";
 
+import type { DemandDetailHeader } from "@/lib/demand-detail-load";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -39,6 +40,7 @@ type Meta = {
 };
 
 type Header = {
+  loyalty?: DemandDetailHeader["loyalty"];
   id: string;
   name: string;
   moment: string;
@@ -445,15 +447,18 @@ export default function ShipmentPrecheckPage() {
   const totals = useMemo(() => {
     const positions = data?.positions ?? [];
     const subtotal = positions.reduce((sum, position) => sum + positionBaseTotal(position), 0);
-    const total = positions.reduce((sum, position) => sum + positionTotal(position), 0);
+    const loyalty = data?.header.loyalty;
+    const regularTotal = positions.reduce((sum, position) => sum + positionTotal(position), 0);
+    const total = loyalty ? loyalty.cashCents : regularTotal;
     return {
       subtotal,
-      discount: Math.max(0, subtotal - total),
+      discount: Math.max(0, subtotal - (loyalty ? loyalty.beforeCents : total)),
       total,
       quantity: positions.reduce((sum, position) => sum + (Number(position.quantity) || 0), 0),
     };
-  }, [data?.positions]);
+  }, [data?.positions, data?.header.loyalty]);
 
+  const loyaltyCashByLine = new Map(data?.header.loyalty?.lines.map((line) => [line.id, line.cashCents]));
   const precheckStatus = useMemo(() => {
     if (sendState === "sending") return { label: "Отправляем…", tone: "warning" as const };
     if (sendState === "sent") return { label: "Отправлен на кассу", tone: "success" as const };
@@ -701,7 +706,7 @@ export default function ShipmentPrecheckPage() {
                           <span>Кол-во <strong>{position.quantity}</strong></span>
                           <span>Цена <strong>{formatMoney(position.price)}</strong></span>
                           <span>Скидка <strong>{position.discount ? `${position.discount}%` : "0"}</strong></span>
-                          <span>Сумма <strong>{formatMoney(positionTotal(position))}</strong></span>
+                          <span>Сумма <strong>{formatMoney(loyaltyCashByLine.get(position.id) ?? positionTotal(position))}</strong></span>
                         </div>
                         {blockingReason && (
                           <div className="eco-precheck-message is-error" role="alert">
@@ -814,7 +819,7 @@ export default function ShipmentPrecheckPage() {
                             </td>
                             <td className="is-num">{formatMoney(position.price)}</td>
                             <td className="is-num">{position.discount ? `${position.discount}%` : "0"}</td>
-                            <td className="is-num is-total">{formatMoney(positionTotal(position))}</td>
+                            <td className="is-num is-total">{formatMoney(loyaltyCashByLine.get(position.id) ?? positionTotal(position))}</td>
                             <td className="eco-precheck-marking-cell">
                               {needsMarking ? (
                                 <div className="eco-precheck-marking-box">
@@ -935,6 +940,9 @@ export default function ShipmentPrecheckPage() {
                 <span>Скидка</span>
                 <strong>{totals.discount > 0 ? `− ${formatMoney(totals.discount)}` : "0 ₽"}</strong>
               </div>
+              {!!data.header.loyalty?.spent && <div className="eco-precheck-total-line">
+                <span>Списано бонусов</span><strong>{data.header.loyalty.spent.toLocaleString("ru-RU")}</strong>
+              </div>}
               <div className="eco-precheck-total-main">
                 <span>К оплате</span>
                 <strong>{formatMoney(totals.total)}</strong>

@@ -61,6 +61,7 @@ export default async function ManagementPage() {
       { href: context?.branchId ? `/cabinet/branches?branch=${context.branchId}&tab=employees` : "/cabinet/branches?tab=employees", label: "Сотрудники и роли", description: "Назначение людей и доступ к филиалам.", icon: UsersRound },
     ] : []),
     ...(allowed.has("/cabinet/organizations") ? [{ href: "/cabinet/organizations", label: "Организации", description: "ИП и ООО, реквизиты, налоги и документы.", icon: Landmark }] : []),
+    ...(allowed.has("/management/loyalty") ? [{ href: "/management/loyalty", label: "Программа лояльности", description: "Настройки начисления, списания и привязки.", icon: Settings }] : []),
     ...(canManageBooking ? [{ href: "/management/booking", label: "Система записи", description: "Услуги, мастера, графики и публичная запись.", icon: CalendarClock }] : []),
   ];
 

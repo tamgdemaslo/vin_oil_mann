@@ -1,4 +1,6 @@
 "use client";
+import { requiresPostingForLoyaltyPrecheck } from "@/components/loyalty/client";
+import { ShipmentLoyalty, useShipmentLoyalty } from "@/components/loyalty/ShipmentLoyalty";
 import ProductKitsWorkspace from "@/components/products/ProductKitsWorkspace";
 import type { ProductKitView } from "@/lib/product-kits";
 import { mergeKitPositions } from "@/lib/product-kit-calculation";
@@ -3644,7 +3646,19 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     }
   };
 
-  const handleSubmit = async () => {
+  const shipmentLoyalty = useShipmentLoyalty(selectedAgent && !selectedAgent.isAnonymousRetail ? selectedAgent.id : undefined,
+    undefined, positions.map((position) => demandPositionPayload(position, { priceIsCents: false })));
+  const postingInFlight = useRef(false);
+  const postingRetry = useRef<{ endpoint: string; method: string; payload: string } | null>(null);
+  const [postingUncertain, setPostingUncertain] = useState(false);
+
+  const handleSubmit = async (destination: "detail" | "precheck" = "detail") => {
+    if (postingInFlight.current) return;
+    const shouldPost = applicable || destination === "precheck";
+    if (shouldPost && shipmentLoyalty.stale && !postingRetry.current) {
+      setSubmitError("Проверьте и подтвердите сумму списания перед проведением");
+      return;
+    }
     if (!selectedOrg || !selectedStore || !selectedAgent) {
       setSubmitError("Укажите организацию, склад и контрагента");
       return;
@@ -3652,6 +3666,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     setSubmitError(null);
     setSaveState("idle");
+    postingInFlight.current = true;
     setSubmitLoading(true);
     try {
       const atts = attributes.map((a) => {
@@ -3664,7 +3679,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         agent: { meta: selectedAgent.meta },
         store: { meta: selectedStore.meta },
         description: description.trim() || undefined,
-        applicable,
+        applicable: shouldPost,
+        ...(shouldPost ? { postingKey: crypto.randomUUID(), loyalty: shipmentLoyalty.intent } : {}),
         moment: momentStr || toServiceMomentString(),
         attributes: atts,
         positions: demandIdLocal
@@ -3674,13 +3690,23 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             : undefined,
       };
       const endpoint = demandIdLocal ? `/api/demands/${encodeURIComponent(demandIdLocal)}` : "/api/demands";
-      const res = await fetch(endpoint, {
-        method: demandIdLocal ? "PUT" : "POST",
+      const pending = postingRetry.current ?? {
+        endpoint, method: demandIdLocal ? "PUT" : "POST", payload: JSON.stringify(body),
+      };
+      const posting = JSON.parse(pending.payload).applicable === true;
+      if (posting) postingRetry.current = pending;
+      const res = await fetch(pending.endpoint, {
+        method: pending.method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: pending.payload,
       });
       const data = await safeJson<DemandCreateJson>(res, {});
       if (!res.ok) {
+        if (res.status < 500) {
+          postingRetry.current = null;
+          setPostingUncertain(false);
+          if (res.status === 409) shipmentLoyalty.retry();
+        } else if (posting) setPostingUncertain(true);
         setSubmitError(demandSaveErrorMessage(res, data, demandIdLocal ? "Ошибка сохранения отгрузки" : "Ошибка создания отгрузки"));
         setSaveState("error");
         return;
@@ -3691,6 +3717,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         setSaveState("error");
         return;
       }
+      postingRetry.current = null;
+      setPostingUncertain(false);
       setDemandIdLocal(nextId);
       if (data.name) setExistingDemandName(data.name);
       if (crmDealId) {
@@ -3699,22 +3727,26 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             shipmentId: nextId,
-            nextAction: applicable ? "Закрыть вопрос после визита" : "Подготовить документ к визиту",
+            nextAction: posting ? "Закрыть вопрос после визита" : "Подготовить документ к визиту",
           }),
         }).catch(() => undefined);
       }
       setDraftActivity(false);
       if (!isExistingDraft) window.localStorage.removeItem(SHIPMENT_DRAFT_STORAGE_KEY);
       setSaveState("saved");
-      if (applicable) {
-        router.push(`/shipment/${nextId}`);
+      if (posting) {
+        router.push(`/shipment/${encodeURIComponent(nextId)}${destination === "precheck" ? "/precheck" : ""}`);
       } else if (!isExistingDraft) {
         router.push(`/shipment/${nextId}/edit`);
       }
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : "Ошибка сети");
+      if (postingRetry.current) {
+        setPostingUncertain(true);
+        setSubmitError("Результат проведения не подтверждён. Повторите проведение с теми же данными.");
+      } else setSubmitError(e instanceof Error ? e.message : "Ошибка сети");
       setSaveState("error");
     } finally {
+      postingInFlight.current = false;
       setSubmitLoading(false);
     }
   };
@@ -3782,6 +3814,14 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     );
 
   const handleOpenPrecheck = async () => {
+    if (shipmentLoyalty.stale) {
+      setSubmitError("Проверьте и подтвердите сумму списания перед проведением");
+      return;
+    }
+    if (shipmentLoyalty.client && requiresPostingForLoyaltyPrecheck(shipmentLoyalty.status)) {
+      if (window.confirm("Провести отгрузку и открыть предчек?")) await handleSubmit("precheck");
+      return;
+    }
     if (!demandIdLocal) {
       setSubmitError("Сначала сохраните отгрузку");
       return;
@@ -3849,6 +3889,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       items: visibleIndexedPositions.filter(({ position }) => !isServiceMeta(position.assortmentMeta)),
     },
   ].filter((group) => group.items.length > 0);
+  const payableLabel = !shipmentLoyalty.quote && shipmentLoyalty.intent.points ? "Уточняется"
+    : formatShipmentMoney(shipmentLoyalty.quote ? shipmentLoyalty.quote.cashCents / 100 : positionsTotal);
   const positionsDiscount = Math.max(0, positionsSubtotal - positionsTotal);
   const hasIncompleteCost = positions.some((p) => {
     const stock = getPositionStock(p);
@@ -4047,7 +4089,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     : nonstockCostBlocksPosting
       ? "Укажите закупочную цену разового товара"
       : "";
-  const saveDisabled = submitLoading || saveState === "saving" || readinessMissing.length > 0 || nonstockCostBlocksPosting;
+  const saveDisabled = submitLoading || (!postingUncertain && (saveState === "saving" || readinessMissing.length > 0 || nonstockCostBlocksPosting || (applicable && shipmentLoyalty.stale)));
   const documentStepReady = Boolean(selectedOrg && selectedStore);
   const finalStepReady = documentStepReady && Boolean(selectedAgent) && positions.length > 0 && overAvailablePositionsCount === 0 && !nonstockCostBlocksPosting;
   const vehicleAttributeControls = [
@@ -4651,7 +4693,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     window.setTimeout(() => document.getElementById("shipment-client-search")?.focus(), 0);
   };
   const documentTitle = isExistingDraft ? `Отгрузка ${existingDemandName ?? demandIdLocal ?? demandId}` : "Новая отгрузка";
-  const saveButtonLabel = submitLoading
+  const saveButtonLabel = postingUncertain && !submitLoading ? "Проверить проведение" : submitLoading
     ? isExistingDraft
       ? "Сохранение..."
       : "Создание..."
@@ -6894,9 +6936,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	              </div>
 	              <div className="eco-shipment-new-total-main">
 	                <span>К оплате</span>
-	                <strong>{formatShipmentMoney(positionsTotal)}</strong>
+	                <strong>{payableLabel}</strong>
 	                <em>{positions.length} позиций · {positionsQty} ед.</em>
 	              </div>
+                <ShipmentLoyalty state={shipmentLoyalty} disabled={submitLoading || postingUncertain} />
 	              <div className="eco-shipment-new-total-line is-muted">
 	                <span>Себестоимость</span>
 	                <strong>
@@ -6942,7 +6985,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	                {submitError && <p className="eco-shipment-new-error">{submitError}</p>}
 	                <EcoButton
 	                  type="button"
-	                  onClick={handleSubmit}
+	                  onClick={() => void handleSubmit()}
 	                  disabled={saveDisabled}
 	                  title={saveDisabledReason}
 	                  variant="primary"
@@ -7003,9 +7046,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       <div className="eco-shipment-bottom-bar">
         <button type="button" className="eco-shipment-bottom-total" onClick={() => setSummarySheetOpen(true)}>
           <span>В отгрузке: {positions.length} поз. · {positionsQty} ед.</span>
-          <strong>{formatShipmentMoney(positionsTotal)}</strong>
+          <strong>{payableLabel}</strong>
         </button>
-        <EcoButton type="button" onClick={handleSubmit} disabled={saveDisabled} title={saveDisabledReason} variant="primary">
+        <EcoButton type="button" onClick={() => void handleSubmit()} disabled={saveDisabled} title={saveDisabledReason} variant="primary">
           {compactSaveButtonLabel}
         </EcoButton>
       </div>
@@ -7030,8 +7073,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               </div>
               <div className="eco-shipment-new-total-main">
                 <span>К оплате</span>
-                <strong>{formatShipmentMoney(positionsTotal)}</strong>
+                <strong>{payableLabel}</strong>
               </div>
+              <ShipmentLoyalty state={shipmentLoyalty} disabled={submitLoading || postingUncertain} />
               <label className="eco-field">
                 <span>Комментарий</span>
                 <textarea rows={3} value={description} onChange={(e) => { setDescription(e.target.value); markDraftDirty(); }} className="eco-input eco-shipment-new-comment" />
@@ -7051,7 +7095,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 ))}
               </div>
               {submitError && <p className="eco-shipment-new-error">{submitError}</p>}
-              <EcoButton type="button" onClick={handleSubmit} disabled={saveDisabled} title={saveDisabledReason} variant="primary" className="eco-shipment-new-submit">
+              <EcoButton type="button" onClick={() => void handleSubmit()} disabled={saveDisabled} title={saveDisabledReason} variant="primary" className="eco-shipment-new-submit">
                 {saveButtonLabel}
               </EcoButton>
               <div className="eco-shipment-print-actions">

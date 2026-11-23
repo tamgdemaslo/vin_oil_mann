@@ -1,0 +1,33 @@
+.eco-loyalty-panel {
+  min-width: 0;
+  display: grid;
+  gap: .75rem;
+  margin: .85rem 0;
+  padding: .8rem;
+  border: 1px solid var(--line, #d6d9dd);
+  border-radius: .6rem;
+}
+.eco-loyalty-panel legend { font-weight: 700; padding: 0 .35rem; }
+.eco-loyalty-panel p { margin: 0; }
+.eco-loyalty-panel label { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.eco-loyalty-panel input, .eco-loyalty-panel select {
+  min-width: 0;
+  max-width: 100%;
+  font: inherit;
+  border: 1px solid var(--line, #d6d9dd);
+  border-radius: .35rem;
+  padding: .35rem .55rem;
+  color: inherit;
+  background: var(--surface, Canvas);
+}
+.eco-loyalty-panel input[type="number"] { width: 8ch; }
+.eco-loyalty-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.eco-loyalty-metrics { display: flex; gap: .9rem 1.4rem; flex-wrap: wrap; margin: 0; }
+.eco-loyalty-metrics dt { font-size: .85em; opacity: .75; }
+.eco-loyalty-metrics dd { margin: .15rem 0 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.eco-loyalty-history { padding-left: 1.2rem; max-height: 18rem; overflow: auto; }
+.eco-loyalty-history li + li { margin-top: .5rem; }
+.eco-loyalty-rates { display: grid; gap: .5rem; }
+.eco-loyalty-queue-row { display: flex; align-items: flex-start; gap: .4rem; }
+.eco-loyalty-queue-row > button { flex: 1; }
+.eco-loyalty-queue-row > input { margin-top: 1rem; }

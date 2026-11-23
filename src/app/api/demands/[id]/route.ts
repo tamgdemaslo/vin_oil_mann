@@ -1,3 +1,4 @@
+import { loyaltyPermissions } from "@/lib/loyalty/accounts";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import {
@@ -6,34 +7,7 @@ import {
   updateLocalDemand,
 } from "@/lib/local-demand-write";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
-import type { NonstockProductInput } from "@/lib/one-off-product";
-import type { OneOffServiceInput } from "@/lib/one-off-service";
-
-type Meta = { href: string; type: string; mediaType: string };
-
-type UpdateBody = {
-  organization?: { meta: Meta };
-  agent?: { meta: Meta };
-  store?: { meta: Meta };
-  name?: string;
-  description?: string;
-  moment?: string;
-  applicable?: boolean;
-  attributes?: unknown[];
-  positions?: {
-    id?: string;
-    name?: string;
-    comment?: string;
-    quantity: number;
-    price: number;
-    discount?: number;
-    assortment?: { meta: Meta };
-    lineKind?: "catalog" | "one_off_service" | "nonstock_product";
-    oneOffProduct?: NonstockProductInput;
-    oneOffService?: OneOffServiceInput;
-    copyMeta?: unknown;
-  }[];
-};
+import type { UpdateDemandBody } from "@/lib/local-demand-write";
 
 export async function GET(
   _request: NextRequest,
@@ -53,7 +27,7 @@ export async function GET(
       return NextResponse.json({ error: loaded.error }, { status: loaded.notFound ? 404 : 400 });
     }
 
-    return NextResponse.json(loaded.data);
+    return NextResponse.json({ ...loaded.data, loyaltyCanReturn: loyaltyPermissions(branchAccess.context).manager });
   });
 }
 
@@ -66,18 +40,22 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  let body: UpdateBody;
+  let body: UpdateDemandBody;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
   }
 
+  if ((body.loyalty?.points ?? 0) > 0 && !loyaltyPermissions(branchAccess.context).employee) {
+    return NextResponse.json({ error: "Недостаточно прав для списания бонусов" }, { status: 403 });
+  }
+
   return runWithBranchApiContext(branchAccess.context, async () => {
     try {
       const updated = await updateLocalDemand(id, body, session.user, branchAccess.context.branchId!, branchAccess.context.organizationId!);
       if (!updated.ok) {
-        return NextResponse.json({ error: updated.error }, { status: updated.notFound ? 404 : 400 });
+        return NextResponse.json({ error: updated.error, quote: updated.quote }, { status: updated.status ?? (updated.notFound ? 404 : 400) });
       }
 
       return NextResponse.json(updated);

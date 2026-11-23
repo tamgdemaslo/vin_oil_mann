@@ -1,3 +1,4 @@
+import "@/components/loyalty/loyalty.css";
 import { getRouteTitle } from "@/lib/route-title";
 import { headers } from "next/headers";
 import { isClientBookingManagementPath, isClientSiteRoot } from "@/lib/client-site-domain";
