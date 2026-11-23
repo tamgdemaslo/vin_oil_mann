@@ -329,6 +329,25 @@ try {
   const all = await ownerG.call("/api/loyalty/campaigns", { ...campaign, id: randomUUID(), mode: "all" });
   assert.ok(all.skips.some((item) => item.error.includes("уже включён")));
 
+  const optOutPositions = [row("g", "work", 1000)];
+  const optOutQuote = (await quote(masterG, a, optOutPositions, 10)).quote;
+  assert.ok(optOutQuote.spent > 0 && optOutQuote.earned > 0);
+  const balanceBeforeOptOut = (await readCard(masterG, a)).balance;
+  const draft = await masterG.call("/api/demands", input("g", a, optOutPositions, { applicable: false }));
+  assert.equal((await readCard(masterG, a)).balance, balanceBeforeOptOut);
+  const draftDetail = await masterG.call("/api/demands/" + draft.id);
+  assert.equal(draftDetail.header.applicable, false);
+  await masterG.call("/api/demands/" + draft.id, input("g", a, [row("g", "work", 100_000)], {
+    applicable: true, postingKey: randomUUID(),
+    loyalty: { points: optOutQuote.spent, token: optOutQuote.token, suppressEarn: true },
+  }), { method: "PUT" });
+  const { header: postedHeader } = await masterG.call("/api/demands/" + draft.id);
+  assert.equal(postedHeader.applicable, true);
+  assert.equal(postedHeader.loyalty.spent, optOutQuote.spent);
+  assert.equal(postedHeader.loyalty.earned, 0);
+  assert.ok(postedHeader.loyalty.lines.every((line) => line.earned === 0));
+  assert.equal((await readCard(masterG, a)).balance, balanceBeforeOptOut - optOutQuote.spent);
+
   console.log("CRM HTTP: activation, retail, identity and roles, cross-branch race, replay, compensation, expiry, repost, group rates, mock AQSI, ordinary and marked partial returns, reports, debt and paged campaign retries: PASS");
 } finally {
   mock.close();

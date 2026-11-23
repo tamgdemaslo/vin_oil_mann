@@ -18,7 +18,6 @@ import {
   Fuel,
   Pencil,
   Plus,
-  Receipt,
   Search,
   Settings2,
   Sparkles,
@@ -3652,9 +3651,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const postingRetry = useRef<{ endpoint: string; method: string; payload: string } | null>(null);
   const [postingUncertain, setPostingUncertain] = useState(false);
 
-  const handleSubmit = async (destination: "detail" | "precheck" = "detail") => {
+  const handleSubmit = async (destination: "detail" | "precheck" | "post" = "detail") => {
     if (postingInFlight.current) return;
-    const shouldPost = applicable || destination === "precheck";
+    const shouldPost = destination !== "detail";
+    if (shouldPost && missingNonstockCostCount > 0 && !postingRetry.current) {
+      setSubmitError("Укажите закупочную цену разового товара");
+      return;
+    }
     if (shouldPost && shipmentLoyalty.stale && !postingRetry.current) {
       setSubmitError("Проверьте и подтвердите сумму списания перед проведением");
       return;
@@ -4083,13 +4086,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     : workflowMissing.length > 0
       ? `Можно дополнить: ${workflowMissing.join(", ")}`
       : "Готово к сохранению";
-  const nonstockCostBlocksPosting = applicable && missingNonstockCostCount > 0;
+  const nonstockCostBlocksPosting = missingNonstockCostCount > 0;
   const saveDisabledReason = readinessMissing.length > 0
     ? `Не хватает: ${readinessMissing.join(", ")}`
     : nonstockCostBlocksPosting
       ? "Укажите закупочную цену разового товара"
       : "";
-  const saveDisabled = submitLoading || (!postingUncertain && (saveState === "saving" || readinessMissing.length > 0 || nonstockCostBlocksPosting || (applicable && shipmentLoyalty.stale)));
+  const saveDisabled = submitLoading || (!postingUncertain && (saveState === "saving" || readinessMissing.length > 0));
   const documentStepReady = Boolean(selectedOrg && selectedStore);
   const finalStepReady = documentStepReady && Boolean(selectedAgent) && positions.length > 0 && overAvailablePositionsCount === 0 && !nonstockCostBlocksPosting;
   const vehicleAttributeControls = [
@@ -4693,14 +4696,26 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     window.setTimeout(() => document.getElementById("shipment-client-search")?.focus(), 0);
   };
   const documentTitle = isExistingDraft ? `Отгрузка ${existingDemandName ?? demandIdLocal ?? demandId}` : "Новая отгрузка";
-  const saveButtonLabel = postingUncertain && !submitLoading ? "Проверить проведение" : submitLoading
-    ? isExistingDraft
-      ? "Сохранение..."
-      : "Создание..."
-    : isExistingDraft
-      ? "Сохранить изменения"
-      : "Сохранить отгрузку";
-  const compactSaveButtonLabel = submitLoading ? (isExistingDraft ? "Сохранение..." : "Создание...") : "Сохранить";
+  const saveButtonLabel = postingUncertain ? "Проверить проведение" : submitLoading ? "Сохраняем…" : "Сохранить";
+  const compactSaveButtonLabel = saveButtonLabel;
+
+  const finalizeActions = () => (
+    <>
+      <p>Проведение списывает складские товары. Остатки разовых товаров не изменятся.</p>
+      <div className="eco-loyalty-finalize-actions">
+        <EcoButton type="button" onClick={() => void handleSubmit()} disabled={saveDisabled} title={saveDisabledReason}>
+          {saveButtonLabel}
+        </EcoButton>
+        {!postingUncertain && <EcoButton type="button" variant="primary"
+          disabled={saveDisabled || nonstockCostBlocksPosting || overAvailablePositionsCount > 0 || shipmentLoyalty.stale}
+          onClick={() => {
+            if (window.confirm("Провести отгрузку? Складские товары будут списаны.")) void handleSubmit("post");
+          }}>
+          Сохранить и провести
+        </EcoButton>}
+      </div>
+    </>
+  );
 
   if (existingDemandLoading) {
     return (
@@ -6922,6 +6937,12 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	              </EcoBadge>
 	            </div>
 	            <div className="eco-shipment-new-total-body">
+	              <div className="eco-shipment-new-total-main">
+	                <span>К оплате</span>
+	                <strong>{payableLabel}</strong>
+	                <em>{positions.length} позиций · {positionsQty} ед.</em>
+	              </div>
+                <ShipmentLoyalty state={shipmentLoyalty} disabled={submitLoading || postingUncertain} />
 	              <div className="eco-shipment-new-total-line">
 	                <span>Подытог</span>
 	                <strong>{positionsSubtotal.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽</strong>
@@ -6934,12 +6955,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	                    : "0%"}
 	                </strong>
 	              </div>
-	              <div className="eco-shipment-new-total-main">
-	                <span>К оплате</span>
-	                <strong>{payableLabel}</strong>
-	                <em>{positions.length} позиций · {positionsQty} ед.</em>
-	              </div>
-                <ShipmentLoyalty state={shipmentLoyalty} disabled={submitLoading || postingUncertain} />
 	              <div className="eco-shipment-new-total-line is-muted">
 	                <span>Себестоимость</span>
 	                <strong>
@@ -6972,10 +6987,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	                </a>
 	              </div>
 	              <div className="eco-shipment-final-actions">
-	                <label className="eco-shipment-new-check">
-	                  <input id="applicable" type="checkbox" checked={applicable} onChange={(e) => { setApplicable(e.target.checked); markDraftDirty(); }} />
-	                  <span>Провести отгрузку. Складские товары будут списаны; разовые товары остатки не изменят.</span>
-	                </label>
+
 	                {nonstockCostBlocksPosting && (
 	                  <p className="eco-shipment-new-error">Укажите закупочную цену разового товара. Без неё прибыль по отгрузке будет рассчитана неверно.</p>
 	                )}
@@ -6983,24 +6995,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	                  <p className="eco-shipment-new-error">Нужно исправить позиции с нехваткой остатка: {overAvailablePositionsCount}</p>
 	                )}
 	                {submitError && <p className="eco-shipment-new-error">{submitError}</p>}
-	                <EcoButton
-	                  type="button"
-	                  onClick={() => void handleSubmit()}
-	                  disabled={saveDisabled}
-	                  title={saveDisabledReason}
-	                  variant="primary"
-	                  className="eco-shipment-new-submit"
-	                >
-	                  <Receipt className="eco-icon" aria-hidden />
-	                  {saveButtonLabel}
-	                </EcoButton>
-	                <details className="eco-shipment-final-details">
-	                  <summary>Комментарий</summary>
-	                  <label className="eco-field">
-	                    <span>Комментарий к отгрузке</span>
-	                    <textarea rows={3} value={description} onChange={(e) => { setDescription(e.target.value); markDraftDirty(); }} className="eco-input eco-shipment-new-comment" />
-	                  </label>
-	                </details>
+                  {finalizeActions()}
 	                <details className="eco-shipment-final-details">
 	                  <summary>Печать, предчек и диагностика</summary>
 	                  <div className="eco-shipment-print-actions">
@@ -7063,6 +7058,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               </button>
             </div>
             <div className="eco-shipment-new-total-body">
+              <div className="eco-shipment-new-total-main">
+                <span>К оплате</span>
+                <strong>{payableLabel}</strong>
+              </div>
+              <ShipmentLoyalty state={shipmentLoyalty} disabled={submitLoading || postingUncertain} />
               <div className="eco-shipment-new-total-line">
                 <span>Подытог</span>
                 <strong>{positionsSubtotal.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽</strong>
@@ -7071,19 +7071,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 <span>Скидка</span>
                 <strong>{positionsDiscount.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽</strong>
               </div>
-              <div className="eco-shipment-new-total-main">
-                <span>К оплате</span>
-                <strong>{payableLabel}</strong>
-              </div>
-              <ShipmentLoyalty state={shipmentLoyalty} disabled={submitLoading || postingUncertain} />
-              <label className="eco-field">
-                <span>Комментарий</span>
-                <textarea rows={3} value={description} onChange={(e) => { setDescription(e.target.value); markDraftDirty(); }} className="eco-input eco-shipment-new-comment" />
-              </label>
-              <label className="eco-shipment-new-check">
-                <input type="checkbox" checked={applicable} onChange={(e) => { setApplicable(e.target.checked); markDraftDirty(); }} />
-                <span>Провести отгрузку. Складские товары будут списаны; разовые товары остатки не изменят.</span>
-              </label>
+
               {nonstockCostBlocksPosting ? (
                 <p className="eco-shipment-new-error">Укажите закупочную цену разового товара. Без неё прибыль по отгрузке будет рассчитана неверно.</p>
               ) : null}
@@ -7095,9 +7083,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 ))}
               </div>
               {submitError && <p className="eco-shipment-new-error">{submitError}</p>}
-              <EcoButton type="button" onClick={() => void handleSubmit()} disabled={saveDisabled} title={saveDisabledReason} variant="primary" className="eco-shipment-new-submit">
-                {saveButtonLabel}
-              </EcoButton>
+              {finalizeActions()}
               <div className="eco-shipment-print-actions">
                 <ShipmentPrintMenu
                   shipmentId={demandIdLocal}

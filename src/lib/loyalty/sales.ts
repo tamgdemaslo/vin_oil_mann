@@ -117,13 +117,14 @@ export async function postSaleLoyalty(
   const origin = { shipmentId, counterpartyId: client.id };
   const spendOperationId = quote.spent > 0
     ? await spendLoyalty(tx, scope, accountId, "PURCHASE_SPEND", quote.spent, origin, now) : null;
-  const earnOperationId = quote.earned > 0
-    ? await grantLoyalty(tx, scope, accountId, "PURCHASE_EARN", quote.earned, origin, null, now) : null;
-  const { beforeCents, cashCents, spent, earned, centsPerPoint } = quote;
+  const earned = intent?.suppressEarn === true ? 0 : quote.earned;
+  const earnOperationId = earned > 0
+    ? await grantLoyalty(tx, scope, accountId, "PURCHASE_EARN", earned, origin, null, now) : null;
+  const { beforeCents, cashCents, spent, centsPerPoint } = quote;
   const frozen = lines.map((line, index) => {
     const id = positions[index].id;
     if (!id) throw new Error("Отсутствует идентификатор бонусной строки");
-    return { ...line, id };
+    return { ...line, earned: intent?.suppressEarn === true ? 0 : line.earned, id };
   });
   await tx.loyaltySale.create({ data: {
     ...scope, shipmentId, revision, documentDate, accountId, beforeCents, cashCents, spent, earned, centsPerPoint,

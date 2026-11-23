@@ -31,3 +31,32 @@
 .eco-loyalty-queue-row { display: flex; align-items: flex-start; gap: .4rem; }
 .eco-loyalty-queue-row > button { flex: 1; }
 .eco-loyalty-queue-row > input { margin-top: 1rem; }
+
+.eco-loyalty-earn {
+  margin-top: .5rem;
+  padding: .65rem .75rem .15rem;
+  border-radius: .5rem;
+  background: var(--eco-surface-muted, #f5f2ec);
+}
+.eco-loyalty-panel .eco-loyalty-earn-option {
+  min-height: 44px;
+  font-size: .85rem;
+}
+.eco-loyalty-panel .eco-loyalty-earn-option input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+.eco-loyalty-finalize-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: .5rem;
+}
+.eco-loyalty-finalize-actions button {
+  flex: 1 1 auto;
+  min-height: 44px;
+}
+.eco-loyalty-panel small { color: var(--eco-muted, #625d52); }
+.eco-loyalty-actions input[type="number"] { flex: 1 1 8ch; min-height: 44px; }
+.eco-loyalty-actions button { min-height: 44px; }
