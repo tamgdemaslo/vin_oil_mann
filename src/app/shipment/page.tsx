@@ -22,6 +22,7 @@ type DemandRow = {
   name: string;
   moment: string;
   applicable: boolean;
+  updatedAt: string;
   paymentStatus?: "paid" | "unpaid" | "unknown";
   sum: number;
   description?: string;
@@ -270,6 +271,7 @@ export default async function ShipmentListPage({ searchParams }: { searchParams:
       id: row.id,
       name: shipmentNumberLabel(row.name),
       applicable: row.applicable,
+      updatedAt: row.updatedAt,
       paymentStatus: row.paymentStatus ?? "unknown",
       sum: row.sum,
       sumLabel: `${rubles(row.sum)} ₽`,

@@ -34,6 +34,7 @@ const ALLOWED_ALL_MODE_WRITES = new Set([
   "POST /api/auth/logout",
   "POST /api/auth/change-password",
   "POST /api/branches",
+  "PUT /api/loyalty/settings",
 ]);
 
 type RequestBurstKind = keyof typeof REQUEST_BURST_LIMITS;

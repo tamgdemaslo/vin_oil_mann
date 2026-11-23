@@ -1,3 +1,4 @@
+import type { LoyaltyLine, LoyaltyTotals } from "@/lib/loyalty/calculation";
 import type { LocalEntityMeta } from "@/lib/local-entity-meta";
 import type { NonstockProductInput } from "@/lib/one-off-product";
 import type { OneOffServiceInput } from "@/lib/one-off-service";
@@ -9,6 +10,8 @@ export type DemandDetailHeader = {
   applicable: boolean;
   description: string;
   sum: number;
+  updatedAt?: string;
+  loyalty?: LoyaltyTotals & { lines: (LoyaltyLine & { id: string })[] };
   href?: string;
   agentName: string;
   organizationName: string;

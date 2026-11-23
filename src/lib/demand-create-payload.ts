@@ -1,3 +1,4 @@
+import type { LoyaltyIntent } from "@/lib/loyalty/calculation";
 import type { LocalEntityMeta } from "@/lib/local-entity-meta";
 import type { NonstockProductInput } from "@/lib/one-off-product";
 import type { OneOffServiceInput } from "@/lib/one-off-service";
@@ -18,6 +19,8 @@ export type DemandPositionInput = {
 };
 
 export type CreateDemandBody = {
+  loyalty?: LoyaltyIntent;
+  postingKey?: string;
   organization: { meta: LocalEntityMeta };
   agent?: { meta: LocalEntityMeta };
   store: { meta: LocalEntityMeta };

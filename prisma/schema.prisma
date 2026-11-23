@@ -5398,3 +5398,174 @@ model BankCashTransfer {
   @@index([branchId, cashDate])
   @@map("bank_cash_transfers")
 }
+
+model ShipmentPostingRequest {
+  branchId String @map("branch_id")
+  shipmentId String @map("shipment_id")
+  requestKey String @map("request_key")
+  digest String
+  name String
+  description String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([branchId, shipmentId, requestKey])
+  @@map("shipment_posting_requests")
+}
+
+model LoyaltyProgram {
+  businessGroupId String @id @map("business_group_id")
+  enabled Boolean @default(false)
+  centsPerPoint Int @default(100) @map("cents_per_point")
+  productRate Int @default(500) @map("product_rate")
+  serviceRate Int @default(500) @map("service_rate")
+  spendRate Int @default(3000) @map("spend_rate")
+  compensationLimit Int @default(1000) @map("compensation_limit")
+  groupRates Json @default("{}") @map("group_rates")
+
+  @@map("loyalty_programs")
+}
+
+model LoyaltyAccount {
+  id String @id @default(cuid())
+  businessGroupId String @map("business_group_id")
+  phoneKey String @map("phone_key")
+  nameKey String @map("name_key")
+  displayName String @map("display_name")
+  debt Int @default(0)
+  links LoyaltyLink[]
+  lots LoyaltyLot[]
+
+  @@index([businessGroupId, phoneKey])
+  @@map("loyalty_accounts")
+}
+
+model LoyaltyLink {
+  counterpartyId String @id @map("counterparty_id")
+  businessGroupId String @map("business_group_id")
+  branchId String @map("branch_id")
+  accountId String? @map("account_id")
+  account LoyaltyAccount? @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  review Boolean @default(false)
+  excluded Boolean @default(false)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([businessGroupId, branchId, review])
+  @@map("loyalty_links")
+}
+
+model LoyaltyOperation {
+  id String @id @default(cuid())
+  businessGroupId String @map("business_group_id")
+  branchId String @map("branch_id")
+  accountId String? @map("account_id")
+  counterpartyId String? @map("counterparty_id")
+  shipmentId String? @map("shipment_id")
+  campaignId String? @map("campaign_id")
+  actor String
+  kind String
+  points Int
+  reason String?
+  createdAt DateTime @default(now()) @map("created_at")
+  requestKey String? @map("request_key")
+  requestDigest String? @map("request_digest")
+  allocation Json?
+
+  @@unique([branchId, requestKey])
+  @@index([accountId, branchId, createdAt])
+  @@index([accountId, shipmentId, kind])
+  @@index([campaignId, accountId])
+  @@map("loyalty_operations")
+}
+
+model LoyaltyLot {
+  id String @id
+  accountId String @map("account_id")
+  account LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  branchId String @map("branch_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+  expirationRecorded Boolean @default(false) @map("expiration_recorded")
+  remaining Int
+
+  @@index([accountId, expiresAt, createdAt])
+  @@map("loyalty_lots")
+}
+
+model LoyaltySale {
+  id String @id @default(cuid())
+  businessGroupId String @map("business_group_id")
+  branchId String @map("branch_id")
+  shipmentId String @map("shipment_id")
+  revision Int
+  accountId String @map("account_id")
+  actor String
+  documentDate String @map("document_date")
+  beforeCents Int @map("before_cents")
+  cashCents Int @map("cash_cents")
+  spent Int
+  earned Int
+  centsPerPoint Int @map("cents_per_point")
+  spendOperationId String? @map("spend_operation_id")
+  earnOperationId String? @map("earn_operation_id")
+  voidedAt DateTime? @map("voided_at")
+  lines Json
+  returns LoyaltyReturn[]
+
+  @@unique([shipmentId, revision])
+  @@index([branchId, documentDate])
+  @@map("loyalty_sales")
+}
+
+model LoyaltyReturn {
+  id String @id @default(cuid())
+  branchId String @map("branch_id")
+  saleId String @map("sale_id")
+  sale LoyaltySale @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  requestKey String @map("request_key")
+  receipt String @map("receipt")
+  reason String
+  actor String
+  documentDate String @map("document_date")
+  createdAt DateTime @default(now()) @map("created_at")
+  beforeCents Int @map("before_cents")
+  cashCents Int @map("cash_cents")
+  restored Int
+  earnedReversed Int @map("earned_reversed")
+  lines Json
+
+  @@unique([saleId, requestKey])
+  @@unique([saleId, receipt])
+  @@index([branchId, documentDate])
+  @@map("loyalty_returns")
+}
+
+model LoyaltyCampaign {
+  id String @id
+  businessGroupId String @map("business_group_id")
+  branchId String @map("branch_id")
+  actor String
+  createdAt DateTime @default(now()) @map("created_at")
+  confirmedAt DateTime? @map("confirmed_at")
+  filters Json
+  points Int
+  expiresAt DateTime? @map("expires_at")
+  reason String
+  recipients LoyaltyCampaignRecipient[]
+
+  @@index([branchId, createdAt])
+  @@map("loyalty_campaigns")
+}
+
+model LoyaltyCampaignRecipient {
+  campaignId String @map("campaign_id")
+  campaign LoyaltyCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  counterpartyId String @map("counterparty_id")
+  branchId String @map("branch_id")
+  accountId String? @map("account_id")
+  status String
+  error String?
+
+  @@id([campaignId, counterpartyId])
+  @@index([campaignId, status])
+  @@map("loyalty_campaign_recipients")
+}

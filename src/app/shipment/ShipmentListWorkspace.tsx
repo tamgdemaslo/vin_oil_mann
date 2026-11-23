@@ -12,6 +12,7 @@ export type ShipmentListItem = {
   id: string;
   name: string;
   applicable: boolean;
+  updatedAt: string;
   paymentStatus: "paid" | "unpaid" | "unknown";
   sum: number;
   sumLabel: string;
@@ -54,6 +55,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 
 export function ShipmentListWorkspace({ rows, totalCount, totalSumLabel, emptyMessage }: ShipmentListWorkspaceProps) {
   const router = useRouter();
+  const postingKeys = useRef(new Map<string, { version: string; key: string }>());
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [busyAction, setBusyAction] = useState<"post" | "copy" | "delete" | null>(null);
@@ -103,9 +105,9 @@ export function ShipmentListWorkspace({ rows, totalCount, totalSumLabel, emptyMe
     setNotice("");
   }
 
-  async function requestAction(url: string, method: "POST" | "DELETE"): Promise<string | null> {
+  async function requestAction(url: string, method: "POST" | "DELETE", postingKey?: string): Promise<string | null> {
     try {
-      const response = await fetch(url, { method });
+      const response = await fetch(url, { method, ...(postingKey ? { headers: { "x-shipment-posting-key": postingKey } } : {}) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) return typeof payload.error === "string" ? payload.error : "Не удалось выполнить действие";
       return null;
@@ -120,8 +122,12 @@ export function ShipmentListWorkspace({ rows, totalCount, totalSumLabel, emptyMe
     setNotice("");
     const errors: string[] = [];
     for (const row of draftRows) {
-      const error = await requestAction(`/api/shipments/${encodeURIComponent(row.id)}/post`, "POST");
+      const previous = postingKeys.current.get(row.id);
+      const key = previous?.version === row.updatedAt ? previous.key : crypto.randomUUID();
+      postingKeys.current.set(row.id, { version: row.updatedAt, key });
+      const error = await requestAction(`/api/shipments/${encodeURIComponent(row.id)}/post`, "POST", key);
       if (error) errors.push(`${row.name}: ${error}`);
+      else postingKeys.current.delete(row.id);
     }
     const completed = draftRows.length - errors.length;
     setNotice(errors.length > 0 ? `Проведено ${completed} из ${draftRows.length}. ${errors[0]}` : `Проведено: ${completed}`);

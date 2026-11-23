@@ -17,6 +17,7 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/crm/ai-agent", title: () => "ИИ-агент | Клиенты" },
   { match: (pathname) => pathname === "/inventory/products/audit", title: () => "Проверка товаров | Склад" },
   { match: (pathname) => pathname === "/inventory/integrations/mann-pdf", title: () => "Каталог MANN | Склад" },
+  { match: (pathname) => pathname === "/management/loyalty", title: () => "Программа лояльности | Настройки" },
   { match: (pathname) => pathname === "/management/booking", title: () => "Настройки записи | Управление" },
   { match: (pathname) => pathname === "/management/inventory-cost-cutover", title: () => "Себестоимость склада | Управление" },
   { match: (pathname) => pathname === "/operations/restock", title: () => "Пополнение | Склад" },

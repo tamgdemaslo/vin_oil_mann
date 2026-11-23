@@ -167,6 +167,7 @@ export function resolveNavigationForUser({
     managementItems.push(item("/cabinet/integrations/messenger", "Каналы связи", "Рабочий Telegram филиала и другие каналы."));
   }
   if (canManageClientCommunications) managementItems.push(item("/cabinet/notifications", "Уведомления клиентам", "Сценарии, шаблоны и журнал отправок."));
+  if (isGroupManager || isBranchManager) managementItems.push(item("/management/loyalty", "Программа лояльности", "Правила начисления и спорные привязки."));
   if (canBookingSettings) managementItems.push(branchOnly("/management/booking", "Система записи", "Услуги, мастера, расписания и публичная форма."));
   if (canManageIntegrations) managementItems.push(item("/cabinet/ai-assistant", "Настройки ИИ", "Доступ, модель и правила расчёта."));
   if (managementItems.length) sections.push({ id: "management", label: "Управление", href: "/management", items: managementItems });

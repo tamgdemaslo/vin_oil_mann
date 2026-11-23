@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readJournalContact } from "@/lib/booking/journal-contact";
 import { lockBarrelProducts, syncBulkOilWarehouseTx, shipmentBulkOilWithdrawals } from "@/lib/bulk-oil-barrels";
 import { resolveServicePositionName } from "@/lib/demand-position-name";
@@ -11,6 +12,10 @@ import { ensureDemandAttributeMetadata } from "@/lib/demand-attributes";
 import { invalidateDemandListCache } from "@/lib/demand-list-cache";
 import { syncActiveDiagnosticVehiclesForShipment } from "@/lib/diagnostic-vehicle-sync";
 import { prisma } from "@/lib/db";
+import { LoyaltyError } from "@/lib/loyalty/accounts";
+import { postSaleLoyalty, previewSaleLoyalty, voidLoyaltySale, LoyaltyQuoteChanged } from "@/lib/loyalty/sales";
+import { loyaltyLock, postingRequestKey, requestDigest } from "@/lib/loyalty/posting-request";
+import type { LoyaltyIntent, LoyaltyQuote } from "@/lib/loyalty/calculation";
 import { getBranchContext } from "@/lib/branch-context";
 import { invalidateCounterpartyRows, invalidateWarehouseReadCaches, supplierCounterpartyIdentityWhere } from "@/lib/local-inventory-admin";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
@@ -63,7 +68,9 @@ type LocalEntityMeta = {
   mediaType: string;
 };
 
-type UpdateDemandBody = {
+export type UpdateDemandBody = {
+  loyalty?: LoyaltyIntent;
+  postingKey?: string;
   organization?: { meta: LocalEntityMeta };
   agent?: { meta: LocalEntityMeta };
   store?: { meta: LocalEntityMeta };
@@ -120,7 +127,7 @@ async function resolveDemandBranchScope(branchId?: string, organizationId?: stri
     throw new Error("Организация не относится к активному филиалу");
   }
 
-  return { branchId: branch.id, organizationId: branch.legacyOrganizationId };
+  return { branchId: branch.id, organizationId: branch.legacyOrganizationId, businessGroupId: branch.businessGroupId };
 }
 
 export type ReopenDemandBody = {
@@ -890,6 +897,7 @@ async function freezePostingCostSnapshots(
   )];
   if (storeId && productIds.length > 0) {
     await lockInventoryCostKeys(tx, { branchId, storeId, productIds });
+    await lockBarrelProducts(tx, branchId, productIds);
   }
   const [balances, store] = await Promise.all([
     storeId && productIds.length > 0
@@ -1264,7 +1272,7 @@ async function applyStockMovements(
 async function findLocalDemand(id: string, branchId: string, db: Prisma.TransactionClient | typeof prisma = prisma) {
   return db.localDemand.findFirst({
     where: { branchId, OR: [{ id }, { id: id }] },
-    include: { positions: true, counterparty: true, store: true, organization: true },
+    include: { positions: { orderBy: { id: "asc" } }, counterparty: true, store: true, organization: true },
   });
 }
 
@@ -1756,15 +1764,69 @@ export async function linkLocalDemandToAppointment(
   }
 }
 
+type PostingFailure = { ok: false; error: string; notFound?: boolean; status?: number; quote?: LoyaltyQuote };
+
+function postingFailure(error: unknown, fallback: string): PostingFailure {
+  return {
+    ok: false, error: demandWriteErrorMessage(error, fallback),
+    ...(error instanceof LoyaltyError ? { status: error.status } : {}),
+    ...(error instanceof LoyaltyQuoteChanged ? { quote: error.quote } : {}),
+  };
+}
+
+async function postingReplay(tx: Pick<Prisma.TransactionClient, "shipmentPostingRequest">, branchId: string, shipmentId: string, requestKey: string, digest: string) {
+  const saved = await tx.shipmentPostingRequest.findUnique({
+    where: { branchId_shipmentId_requestKey: { branchId, shipmentId, requestKey } },
+  });
+  if (!saved) return null;
+  if (saved.digest !== digest) throw new LoyaltyError("Ключ проведения уже использован с другими данными. Обновите отгрузку.");
+  return { id: shipmentId, name: saved.name, applicable: true, description: saved.description };
+}
+
+async function storePostingResult(tx: Prisma.TransactionClient, demand: { id: string; branchId: string; name: string; description: string | null },
+  key: string | undefined, digest: string | undefined) {
+  if (!key || !digest) return;
+  await tx.shipmentPostingRequest.create({ data: {
+    shipmentId: demand.id, branchId: demand.branchId, requestKey: key, digest, name: demand.name, description: demand.description ?? "",
+  } });
+}
+
+export async function quoteLocalDemand(scope: { branchId: string; businessGroupId: string; actor: string },
+  counterpartyId: string, positions: CreateDemandBody["positions"], points: number) {
+  const [client, resolved] = await Promise.all([
+    prisma.localCounterparty.findFirst({ where: { id: counterpartyId, branchId: scope.branchId } }),
+    resolveCreatePositions(positions, null, scope.branchId),
+  ]);
+  return prisma.$transaction((tx) => previewSaleLoyalty(tx, scope, client, resolved, points));
+}
+
 export async function createLocalDemand(
   body: CreateDemandBody,
   options: { ecoUserName?: string; actor?: ShipmentActor | null; demandId?: string; branchId?: string; organizationId?: string } = {}
-): Promise<{ ok: true; id: string; name: string; href: string } | { ok: false; error: string }> {
-  let scope: { branchId: string; organizationId: string };
+): Promise<{ ok: true; id: string; name: string; href: string } | PostingFailure> {
+  let scope: Awaited<ReturnType<typeof resolveDemandBranchScope>>;
   try {
     scope = await resolveDemandBranchScope(options.branchId, options.organizationId);
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Не удалось определить филиал" };
+  }
+  const actor = options.actor ?? (options.ecoUserName
+    ? { login: options.ecoUserName, name: options.ecoUserName, role: "admin" as const }
+    : null);
+  const applicable = body.applicable ?? false;
+  let key: string | undefined;
+  let digest: string | undefined;
+  let demandId: string | undefined;
+  try {
+    key = applicable ? postingRequestKey(body.postingKey) : undefined;
+    digest = key ? requestDigest([actor?.login, body]) : undefined;
+    demandId = key ? `shipment-${requestDigest([scope.branchId, key]).slice(0, 40)}` : options.demandId ?? (applicable ? randomUUID() : undefined);
+    if (key && demandId && digest) {
+      const replay = await postingReplay(prisma, scope.branchId, demandId, key, digest);
+      if (replay) return { ok: true, id: replay.id, name: replay.name, href: `local://demand/${replay.id}` };
+    }
+  } catch (error) {
+    return postingFailure(error, "Не удалось проверить результат проведения");
   }
   const storeId = entityIdFromMeta(body.store?.meta);
   const counterpartyId = entityIdFromMeta(body.agent?.meta);
@@ -1793,26 +1855,37 @@ export async function createLocalDemand(
   }
 
   const { documentDate, momentAt } = parseMoment(body.moment);
-  const actor = options.actor ?? (options.ecoUserName
-    ? { login: options.ecoUserName, name: options.ecoUserName, role: "admin" as const }
-    : null);
   const positions = await resolveCreatePositions(body.positions, store.id, scope.branchId, actor);
-  const applicable = body.applicable ?? false;
   const localAttributes = await buildLocalDemandAttributes(body.attributes, options?.ecoUserName);
 
-  let demand: Awaited<ReturnType<typeof prisma.localDemand.create>>;
+  let demand: { id: string; name: string };
   try {
     demand = await prisma.$transaction(async (tx) => {
+      if (key && demandId) {
+        await loyaltyLock(tx, `shipment:post:${demandId}`);
+        const replay = await postingReplay(tx, scope.branchId, demandId, key, digest!);
+        if (replay) return replay;
+      }
       const costedPositions = applicable
         ? await freezePostingCostSnapshots(tx, scope.branchId, store.id, positions, { preserveExistingSnapshots: false })
         : positions;
-      const effectivePositions = applicable
+      const classifiedPositions = applicable
         ? await freezeSalesAnalyticsSnapshots(tx, scope.branchId, costedPositions, { preserveExistingSnapshots: false })
         : costedPositions;
+      const generatedLineId = applicable ? randomUUID() : null;
+      const effectivePositions = classifiedPositions.map((position, index) => ({ ...position,
+        id: generatedLineId ? `${generatedLineId}-${String(index).padStart(6, "0")}` : undefined,
+      }));
+      const loyalty = applicable ? await postSaleLoyalty(tx,
+        { branchId: scope.branchId, businessGroupId: scope.businessGroupId, actor: actor?.login ?? "system" },
+        counterparty, effectivePositions, body.loyalty, demandId!, 1, documentDate) : null;
       const generatedNumber = body.name?.trim() ? null : await nextLocalDemandNameInTx(tx);
       const name = body.name?.trim() || generatedNumber?.name || "0001";
       const raw = {
         ...body,
+        loyalty: undefined,
+        postingKey: undefined,
+        loyaltySale: loyalty,
         agent: body.agent ?? { meta: localMeta("counterparty", counterparty.id) },
         customerMode: isAnonymousRetailCounterparty(counterparty) ? "anonymous_retail" : "identified",
         ecoUserName: options?.ecoUserName ?? null,
@@ -1825,13 +1898,13 @@ export async function createLocalDemand(
       };
       const created = await tx.localDemand.create({
         data: {
-          ...(options.demandId ? { id: options.demandId } : {}),
+          ...(demandId ? { id: demandId } : {}),
           branchId: scope.branchId,
           name,
           momentAt,
           documentDate,
           applicable,
-          sumCents: sumPositionsCents(effectivePositions),
+          sumCents: loyalty?.cashCents ?? sumPositionsCents(effectivePositions),
           description: body.description?.trim() || null,
           counterpartyId: counterparty.id,
           agentNameSnapshot: counterparty.name,
@@ -1850,6 +1923,7 @@ export async function createLocalDemand(
           data: effectivePositions.map((position) => ({
             branchId: scope.branchId,
             demandId: created.id,
+            id: position.id,
             productId: position.productId,
             groupIdSnapshot: position.groupIdSnapshot,
             assortmentType: position.assortmentType,
@@ -1904,10 +1978,11 @@ export async function createLocalDemand(
         snapshotAfter: shipmentSnapshot(created, effectivePositions),
         actor,
       });
+      await storePostingResult(tx, created, key, digest);
       return created;
-    });
+    }, { maxWait: 10_000, timeout: 20_000 });
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Не удалось создать локальную отгрузку" };
+    return postingFailure(error, "Не удалось создать локальную отгрузку");
   }
 
   invalidateDemandCostConsumers();
@@ -1960,7 +2035,7 @@ export async function updateLocalDemand(
   actor: ShipmentActor | null | undefined,
   branchId?: string,
   organizationId?: string
-): Promise<{ ok: true; id: string; name: string; applicable: boolean; description: string } | { ok: false; error: string; notFound?: boolean }> {
+): Promise<{ ok: true; id: string; name: string; applicable: boolean; description: string } | PostingFailure> {
   const scope = await resolveDemandBranchScope(branchId, organizationId);
   let result: Awaited<ReturnType<typeof updateLocalDemandInTx>>;
   try {
@@ -1969,9 +2044,10 @@ export async function updateLocalDemand(
       { maxWait: 10_000, timeout: 20_000 }
     );
   } catch (error) {
-    return { ok: false, error: demandWriteErrorMessage(error, "Не удалось сохранить отгрузку") };
+    return postingFailure(error, "Не удалось сохранить отгрузку");
   }
   if (!result.ok) return result;
+  if ("replay" in result) return { ok: true, ...result.replay };
   const updated = result.demand;
 
   invalidateDemandCostConsumers();
@@ -2002,12 +2078,19 @@ async function updateLocalDemandInTx(
   scope: Awaited<ReturnType<typeof resolveDemandBranchScope>>
 ): Promise<
   | { ok: true; demand: Awaited<ReturnType<typeof prisma.localDemand.update>> }
-  | { ok: false; error: string; notFound?: boolean }
+  | { ok: true; replay: { id: string; name: string; applicable: boolean; description: string } }
+  | PostingFailure
 > {
   // Lock before reading positions/status. Concurrent DELETE + INSERT saves can
   // otherwise both recreate the rows, leaving two copies and one header total.
   await tx.$queryRaw`SELECT "id" FROM "local_demands"
     WHERE "id" = ${id} AND "branch_id" = ${scope.branchId} FOR UPDATE`;
+  const key = body.applicable ? postingRequestKey(body.postingKey) : undefined;
+  const digest = key ? requestDigest([actor?.login, body]) : undefined;
+  if (key) {
+    const replay = await postingReplay(tx, scope.branchId, id, key, digest!);
+    if (replay) return { ok: true, replay };
+  }
   const current = await findLocalDemand(id, scope.branchId, tx);
   if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
   if (current.applicable) {
@@ -2112,12 +2195,23 @@ async function updateLocalDemandInTx(
         preserveExistingSnapshots: eventType === "REPOSTED",
       })
     : nextPositions;
-  const effectivePositions = nextApplicable
+  const classifiedPositions = nextApplicable
     ? await freezeSalesAnalyticsSnapshots(tx, current.branchId, costedPositions, {
         preserveExistingSnapshots: eventType === "REPOSTED",
       })
     : costedPositions;
+  const reusablePositionIds = new Set(existingById.keys());
+  const generatedLineId = nextApplicable ? randomUUID() : null;
+  const effectivePositions = Array.isArray(body.positions)
+    ? classifiedPositions.map((position, index) => ({ ...position,
+        id: position.productId && position.sourcePositionId && reusablePositionIds.delete(position.sourcePositionId)
+          ? position.sourcePositionId : generatedLineId ? `${generatedLineId}-${String(index).padStart(6, "0")}` : undefined,
+      }))
+    : classifiedPositions;
   const revisionNumber = await nextShipmentRevisionNumber(tx, current.id);
+  const loyalty = nextApplicable ? await postSaleLoyalty(tx,
+    { branchId: scope.branchId, businessGroupId: scope.businessGroupId, actor: actor?.login ?? "system" },
+    nextCounterparty, effectivePositions, body.loyalty, current.id, revisionNumber, nextMoment.documentDate) : null;
   const beforeSnapshot = shipmentSnapshot(current, current.positions);
   if (!importedDraftBeingPosted) {
     if (storeChanged) {
@@ -2170,13 +2264,10 @@ async function updateLocalDemandInTx(
   if (Array.isArray(body.positions)) {
     await tx.localDemandPosition.deleteMany({ where: { demandId: current.id } });
     if (effectivePositions.length > 0) {
-      const reusablePositionIds = new Set(existingById.keys());
       await tx.localDemandPosition.createMany({
         data: effectivePositions.map((position) => ({
           // Keep the precheck's marking codes attached to the same product line.
-          id: position.productId && position.sourcePositionId && reusablePositionIds.delete(position.sourcePositionId)
-            ? position.sourcePositionId
-            : undefined,
+          id: position.id,
           branchId: current.branchId,
           demandId: current.id,
           productId: position.productId,
@@ -2240,9 +2331,10 @@ async function updateLocalDemandInTx(
       organizationId: nextOrganization?.id ?? current.organizationId,
       organizationName: nextOrganization?.name ?? current.organizationName,
       attributes: Array.isArray(body.attributes) ? toJson(body.attributes) : current.attributes ?? Prisma.JsonNull,
-      sumCents: sumPositionsCents(effectivePositions),
+      sumCents: loyalty?.cashCents ?? sumPositionsCents(effectivePositions),
       raw: toJson({
         ...nextRawBase,
+        loyaltySale: loyalty,
         ...(nextCounterparty
           ? {
               agent: { meta: localMeta("counterparty", nextCounterparty.id) },
@@ -2265,6 +2357,7 @@ async function updateLocalDemandInTx(
     snapshotAfter: shipmentSnapshot(updated, effectivePositions),
     actor,
   });
+  await storePostingResult(tx, updated, key, digest);
   return { ok: true, demand: updated };
 }
 
@@ -2324,6 +2417,16 @@ export async function getLocalDemandReopenCheck(
   if (!current.applicable) blockers.push("Отгрузка уже находится в черновике");
   if (!canReopenShipment(actor)) blockers.push("Недостаточно прав для возврата проведённой отгрузки в черновик");
 
+  const loyalty = jsonRecord(current.raw).loyaltySale;
+  if (loyalty) {
+    const [fiscalization, sales] = await Promise.all([
+      prisma.aqsiFiscalizationRecord.findFirst({ where: { branchId: scope.branchId, documentType: "local_demand", documentId: current.id }, select: { id: true } }),
+      prisma.loyaltySale.findFirst({ where: { branchId: scope.branchId, businessGroupId: scope.businessGroupId,
+        shipmentId: current.id, voidedAt: null }, select: { _count: { select: { returns: true } } } }),
+    ]);
+    if (fiscalization) blockers.push("Отгрузка передана на кассу. Оформите возврат по чеку.");
+    if (sales?._count.returns) blockers.push("По отгрузке уже зарегистрирован возврат.");
+  }
   const { closingDocuments, diagnostics } = await loadReopenRelations(current.id, current.branchId);
   for (const doc of closingDocuments) {
     if (isBlockingClosingStatus(doc.status)) {
@@ -2360,6 +2463,7 @@ export async function getLocalDemandReopenCheck(
       `Будет возвращено на склад позиций: ${trackedPositions.length}`,
       "Документ временно исключится из выручки, себестоимости и прибыли",
       "Печатные формы и предчек нужно будет сформировать заново после повторного проведения",
+      ...(loyalty ? ["Списание бонусов будет восстановлено с исходными сроками. Начисление за покупку будет сторнировано."] : []),
       "Номер отгрузки сохранится",
     ],
     related: {
@@ -2396,7 +2500,7 @@ export async function reopenLocalDemand(
   const reason = normalizeReopenReason(body);
   if (!reason.ok) return { ok: false, error: reason.error };
 
-  let scope: { branchId: string; organizationId: string };
+  let scope: Awaited<ReturnType<typeof resolveDemandBranchScope>>;
   try {
     scope = await resolveDemandBranchScope(branchId, organizationId);
   } catch (error) {
@@ -2405,6 +2509,7 @@ export async function reopenLocalDemand(
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM local_demands WHERE id = ${id} AND branch_id = ${scope.branchId} FOR UPDATE`;
       const current = await tx.localDemand.findFirst({
         where: { branchId: scope.branchId, OR: [{ id }, { id: id }] },
         include: { positions: true, counterparty: true, store: true, organization: true },
@@ -2457,12 +2562,15 @@ export async function reopenLocalDemand(
         }
       );
 
+      await voidLoyaltySale(tx, { businessGroupId: scope.businessGroupId, branchId: scope.branchId, actor: actor.login }, current.id, reason.reason);
       const next = await tx.localDemand.update({
         where: { id: current.id },
         data: {
           applicable: false,
+          sumCents: sumPositionsCents(current.positions),
           raw: toJson({
             ...currentRaw,
+            loyaltySale: null,
             reopenState: "draft_after_reopen",
             lastReopenedAt: new Date().toISOString(),
             lastReopenedBy: actor.login,
@@ -2546,16 +2654,17 @@ export async function deleteLocalDemand(
   branchId?: string
 ): Promise<{ ok: true } | { ok: false; error: string; notFound?: boolean }> {
   const scope = await resolveDemandBranchScope(branchId);
-  const current = await findLocalDemand(id, scope.branchId);
-  if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
-  if (current.applicable) {
-    return { ok: false, error: "Проведённую отгрузку нельзя удалить напрямую. Сначала верните документ в черновик или используйте сценарий отмены." };
-  }
-
-  await prisma.$transaction(async (tx) => {
-    await applyStockMovements(tx, current.storeId, current.positions, current.applicable, [], false);
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM local_demands WHERE id = ${id} AND branch_id = ${scope.branchId} FOR UPDATE`;
+    const current = await findLocalDemand(id, scope.branchId, tx);
+    if (!current) return { ok: false as const, error: "Локальная отгрузка не найдена", notFound: true };
+    if (current.applicable) {
+      return { ok: false as const, error: "Проведённую отгрузку нельзя удалить напрямую. Сначала верните документ в черновик или используйте сценарий отмены." };
+    }
     await tx.localDemand.delete({ where: { id: current.id } });
+    return { ok: true as const };
   });
+  if (!result.ok) return result;
 
   invalidateDemandCostConsumers();
   invalidateDemandListCache();
@@ -2745,6 +2854,8 @@ export async function loadLocalDemandDetailPayload(
       applicable: demand.applicable,
       description: demand.description ?? "",
       sum: demand.sumCents,
+      updatedAt: demand.updatedAt.toISOString(),
+      loyalty: (jsonRecord(demand.raw).loyaltySale as DemandDetailPayload["header"]["loyalty"]) ?? undefined,
       href: `local://demand/${demand.id}`,
       agentName: demand.counterparty?.name ?? demand.agentNameSnapshot ?? "",
       organizationName: demand.organization?.name ?? demand.organizationName ?? "",

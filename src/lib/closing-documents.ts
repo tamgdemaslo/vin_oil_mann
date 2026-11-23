@@ -1,3 +1,4 @@
+import type { DemandDetailHeader } from "@/lib/demand-detail-load";
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -491,10 +492,11 @@ function partyFromCounterparty(row: {
   };
 }
 
-function lineAmounts(priceCents: number, quantity: number, discountPercent: number, vatEnabled: boolean, vatRate: number) {
+function lineAmounts(priceCents: number, quantity: number, discountPercent: number, vatEnabled: boolean, vatRate: number, paidCents?: number) {
   const gross = Math.round(priceCents * quantity);
-  const discountCents = Math.round(gross * (discountPercent / 100));
-  const totalCents = Math.max(0, gross - discountCents);
+  const ordinaryDiscount = Math.round(gross * (discountPercent / 100));
+  const totalCents = paidCents ?? Math.max(0, gross - ordinaryDiscount);
+  const discountCents = paidCents === undefined ? ordinaryDiscount : Math.max(0, gross - paidCents);
   const rate = vatEnabled ? Math.max(0, vatRate) : 0;
   const vatCents = rate > 0 ? Math.round(totalCents * rate / (100 + rate)) : 0;
   return {
@@ -656,6 +658,9 @@ export async function buildClosingDocumentPayload(
     basis: firstFilled(options.customerSignatory?.basis, buyer.signatoryBasis),
   };
 
+  const loyalty = demand.applicable
+    ? positionRawRecord(demand.raw).loyaltySale as DemandDetailHeader["loyalty"] : undefined;
+  const cashByPosition = new Map(loyalty?.lines.map(({ id, cashCents }) => [id, cashCents]));
   const positions: ClosingPositionSnapshot[] = demand.positions.map((position) => {
     const oneOffProduct = positionRawRecord(positionRawRecord(position.raw).oneOffProduct);
     const oneOffText = (key: string) => typeof oneOffProduct[key] === "string" ? String(oneOffProduct[key]).trim() : "";
@@ -663,7 +668,7 @@ export async function buildClosingDocumentPayload(
     const discountPercent = position.discount.toNumber();
     const priceCents = position.priceCentsPerUnit;
     const vatRate = Number(position.vat) || 0;
-    const amounts = lineAmounts(priceCents, quantity, discountPercent, position.vatEnabled, vatRate);
+    const amounts = lineAmounts(priceCents, quantity, discountPercent, position.vatEnabled, vatRate, cashByPosition.get(position.id));
     return {
       id: position.id,
       kind: classifyPosition(position),

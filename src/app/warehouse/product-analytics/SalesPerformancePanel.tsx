@@ -1,5 +1,6 @@
 "use client";
 
+import { LoyaltySalesTotals } from "@/components/loyalty/LoyaltySalesTotals";
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -973,6 +974,10 @@ export default function SalesPerformancePanel() {
           Обновить
         </button>
       </form>
+      {data && <LoyaltySalesTotals key={`${data.scope.branchIds.join(",")}:${data.period.dateFrom}:${data.period.dateTo}:${data.filters.storeId}`}
+        from={data.period.dateFrom} to={data.period.dateTo} store={data.filters.storeId}
+        branchScope={data.scope.branchIds.join(",")} refreshedAt={data.calculatedAt} />}
+
 
       {error ? <div className="eco-sp-alert"><AlertTriangle className="eco-icon" aria-hidden />{error}</div> : null}
       {loading && !data ? <div className="eco-sp-empty">Считаем продажи и услуги…</div> : null}

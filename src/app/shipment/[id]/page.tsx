@@ -1,5 +1,9 @@
 "use client";
 
+import { ClientLoyalty } from "@/components/loyalty/ClientLoyalty";
+import { ShipmentReturn } from "@/components/loyalty/ShipmentReturn";
+import type { DemandDetailHeader } from "@/lib/demand-detail-load";
+import { loyaltyMoney } from "@/components/loyalty/client";
 import { Fragment, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -19,6 +23,7 @@ type Meta = { href: string; type: string; mediaType: string };
 type SessionJson = { user?: { role?: string } };
 
 type Header = {
+  loyalty?: DemandDetailHeader["loyalty"];
   id: string;
   name: string;
   moment: string;
@@ -186,6 +191,7 @@ type DemandAttribute = {
 };
 
 type DetailResponse = {
+  branchId: string;
   header: Header;
   attributes: DemandAttribute[];
   positions: Position[];
@@ -540,6 +546,7 @@ export default function ShipmentDetailPage() {
   const [paying, setPaying] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [loyaltyReturnAllowed, setLoyaltyReturnAllowed] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState<string | null>(null);
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
   const [reopenLoading, setReopenLoading] = useState(false);
@@ -635,6 +642,7 @@ export default function ShipmentDetailPage() {
           router.replace(`/shipment/${id}/edit`);
           return;
         }
+        setLoyaltyReturnAllowed(json.loyaltyCanReturn === true);
         setData(json);
         setDescription(json.header.description ?? "");
         setApplicable(Boolean(json.header.applicable));
@@ -1292,6 +1300,7 @@ export default function ShipmentDetailPage() {
   const agentHref = counterpartyHrefFromDemand(data.raw, agentName);
   const agentCounterpartyId = counterpartyIdFromDemand(data.raw);
   const positionsQty = positions.reduce((sum, p) => sum + (p.quantity || 0), 0);
+  const loyaltyAgent = (data?.raw as { agent?: { id?: string; isAnonymousRetail?: boolean } } | undefined)?.agent;
   const positionsSubtotal = positions.reduce((sum, p) => sum + (p.quantity || 0) * (p.price || 0), 0);
   const positionsDiscount = positions.reduce((sum, p) => {
     const base = (p.quantity || 0) * (p.price || 0);
@@ -2201,7 +2210,7 @@ export default function ShipmentDetailPage() {
               </div>
               <div className="eco-shipment-detail-total-row">
                 <span>Итого</span>
-                <strong>{positionsTotal.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽</strong>
+                <strong>{(data.header.loyalty ? data.header.loyalty.cashCents / 100 : positionsTotal).toLocaleString("ru-RU", { minimumFractionDigits: data.header.loyalty ? 2 : 0, maximumFractionDigits: data.header.loyalty ? 2 : 0 })} ₽</strong>
               </div>
               <div className="eco-shipment-detail-money-row is-muted">
                 <span>Себестоимость</span>
@@ -2211,6 +2220,15 @@ export default function ShipmentDetailPage() {
                 <span>Маржа</span>
                 <strong>{positionsMargin.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽ · {positionsMarginPct}%</strong>
               </div>
+              {data.header.loyalty && <dl className="eco-loyalty-metrics">
+                <div><dt>После обычных скидок</dt><dd>{loyaltyMoney(data.header.loyalty.beforeCents)}</dd></div>
+                <div><dt>Списано бонусов</dt><dd>{data.header.loyalty.spent}</dd></div>
+                <div><dt>Оплачивается деньгами</dt><dd>{loyaltyMoney(data.header.loyalty.cashCents)}</dd></div>
+                <div><dt>Начислено</dt><dd>{data.header.loyalty.earned}</dd></div>
+              </dl>}
+              {data.header.loyalty && loyaltyReturnAllowed && <ShipmentReturn id={id} branchId={data.branchId}
+                loyalty={data.header.loyalty} names={Object.fromEntries(positions.map((position) => [position.id, position.name]))} />}
+              {loyaltyAgent?.id && !loyaltyAgent.isAnonymousRetail && <ClientLoyalty key={loyaltyAgent.id} clientId={loyaltyAgent.id} shipmentId={id} />}
               {paymentInfo ? <p className="eco-shipment-detail-payment-note">{paymentInfo}</p> : null}
             </div>
           </section>
