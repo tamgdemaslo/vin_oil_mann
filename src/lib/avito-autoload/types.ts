@@ -81,6 +81,7 @@ export type AvitoProductSource = {
   entityType: string;
   uomName?: string | null;
   brand: string | null;
+  countryName?: string | null;
   sae: string | null;
   packageVolume: string | null;
   acea: string | null;
@@ -111,7 +112,7 @@ export type AvitoListing = {
   sourcePriceCents: number;
   sourceUpdatedAt: string;
   overrides: AvitoOverrides;
-  values: Required<Omit<AvitoOverrides, "photoIds" | "priceRubles">> & { priceRubles: number | null };
+  values: Required<Omit<AvitoOverrides, "photoIds" | "priceRubles">> & { priceRubles: number | null; countryOfOrigin: string };
   photos: AvitoPhoto[];
   allPhotos: AvitoPhoto[];
   issues: AvitoIssue[];

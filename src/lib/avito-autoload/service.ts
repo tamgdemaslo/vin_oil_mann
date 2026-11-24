@@ -13,7 +13,7 @@ import type { AvitoFeedStats, AvitoHistoryItem, AvitoIntegrationData, AvitoListi
 
 const MAX_FEED_BYTES = 50 * 1024 * 1024;
 const productSelect = {
-  id: true, name: true, article: true, groupPath: true, entityType: true, uomName: true, brand: true, sae: true, packageVolume: true,
+  id: true, name: true, article: true, groupPath: true, entityType: true, uomName: true, brand: true, countryName: true, sae: true, packageVolume: true,
   group: { select: { id: true, name: true, kind: true } },
   acea: true, aceaExtra: true, apiSpec: true, atf: true, oem: true, oemAtf: true, description: true, salePriceCents: true, archived: true, avito: true, updatedAt: true,
   photos: { where: { purpose: "AVITO" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, fileName: true, contentType: true, sizeBytes: true } },

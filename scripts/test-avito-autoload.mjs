@@ -62,8 +62,9 @@ const db = {
   },
   branch: { findFirst: async ({ where }) => branchActive ? branches.get(where.id) ?? null : null },
   localProduct: {
-    findMany: async ({ where }) => {
+    findMany: async ({ where, select }) => {
       productReads++;
+      if (select?.group) assert.equal(select.countryName, true);
       assert.equal(where.branchId, tenant.getScopedBranchId());
       return products.filter((p) => p.branchId === where.branchId && (!where.avito || p.avito) && (!where.id || where.id.in.includes(p.id)));
     },
@@ -199,16 +200,18 @@ try {
   assert.equal(storage.avitoAdId(scope, source.id), storage.avitoAdId(scope, source.id));
   assert.notEqual(storage.avitoAdId(scope, source.id), storage.avitoAdId({ branchId: "branch-B" }, source.id));
   assert.ok(storage.avitoAdId(scope, source.id).length <= 100);
-  const csv = domain.buildAvitoCsv([listing({}, { description: 'Строка, с "кавычками"\nВторая строка' })], settings, (id) => `https://crm.example.ru/${id}`);
+  const csv = domain.buildAvitoCsv([listing({ countryName: " Германия " }, { description: 'Строка, с "кавычками"\nВторая строка' })], settings, (id) => `https://crm.example.ru/${id}`);
   assert.ok(csv.startsWith("\uFEFF"));
   const table = XLSX.utils.sheet_to_json(XLSX.read(csv, { type: "string", raw: true }).Sheets.Sheet1, { header: 1 });
   assert.equal(table[1][7], 'Строка, с "кавычками"\nВторая строка');
   assert.equal(table[1][20], "VW 504.00/507.00");
   assert.equal(table[1][24], "Нет");
   assert.equal(table[1][27], "Free");
-  const special = listing({ photos: [{ id: "photo&1", url: "", name: "Фото", contentType: "image/jpeg", size: 1 }] }, { title: 'Масло & <Shell> "4 л"', description: 'Текст & <html> ]]>\nМасло 🛢', acea: "A3/B4; C3", oem: "VW 504.00/507.00; MB 229.5", multiItem: true, multiName: "Shell4L" });
+  assert.equal(table[0][28], "Страна происхождения");
+  assert.equal(table[1][28], "Германия");
+  const special = listing({ countryName: " Германия ", photos: [{ id: "photo&1", url: "", name: "Фото", contentType: "image/jpeg", size: 1 }] }, { title: 'Масло & <Shell> "4 л"', description: 'Текст & <html> ]]>\nМасло 🛢', acea: "A3/B4; C3", oem: "VW 504.00/507.00; MB 229.5", multiItem: true, multiName: "Shell4L" });
   assert.equal(special.included, true);
-  const transmissionXmlListing = listing({ groupPath: "Трансмиссионные масла", sae: "75W-90", atf: "Dexron III", apiSpec: "GL-4", oemAtf: "ZF TE-ML 14C" });
+  const transmissionXmlListing = listing({ countryName: "Япония", groupPath: "Трансмиссионные масла", sae: "75W-90", atf: "Dexron III", apiSpec: "GL-4", oemAtf: "ZF TE-ML 14C" });
   transmissionXmlListing.adId = storage.avitoAdId(scope, "transmission-A");
   const xml = buildAvitoXml([special, transmissionXmlListing, listing({ brand: "Bad" })], settings, (id) => `https://crm.example.ru/${id}?size=1&v=2`);
   const xmlRoot = parseXml(xml);
@@ -217,6 +220,8 @@ try {
   assert.equal(xmlRoot.children.length, 2, "invalid listings are also skipped in XML");
   const [motorAd, transmissionAd] = xmlRoot.children;
   assert.equal(xmlField(motorAd, "Id").text, table[1][0], "XML preserves the CSV identifier");
+  assert.equal(xmlField(motorAd, "CountryExpedition").text, "Германия");
+  assert.equal(xmlField(transmissionAd, "CountryExpedition").text, "Япония");
   assert.equal(xmlField(motorAd, "Title").text, special.values.title);
   assert.equal(xmlField(motorAd, "Description").text, special.values.description, "CDATA boundaries, markup and Unicode survive XML parsing");
   assert.deepEqual(xmlField(motorAd, "ACEA").children.map((child) => child.text), ["A3/B4", "C3"]);
@@ -229,6 +234,7 @@ try {
   const addressAd = parseXml(buildAvitoXml([valid], { ...settings, sellerAddressId: "123" }, () => "")).children[0];
   assert.equal(xmlField(addressAd, "SellerAddressID").text, "123");
   assert.equal(xmlField(addressAd, "Address"), undefined);
+  assert.equal(xmlField(addressAd, "CountryExpedition"), undefined);
   assert.throws(() => buildAvitoXml([valid, valid], settings, () => ""), /уникальный/);
   assert.throws(() => buildAvitoXml([{ ...valid, adId: "" }], settings, () => ""), /непустой/);
   for (const description of ["Bad\u0001text", "Bad\uD800text"]) assert.equal(listing({}, { description }).included, false, "invalid XML characters are listing errors, not whole-feed failures");
@@ -337,7 +343,7 @@ try {
     branchActive = false;
     assert.equal(await storage.withAvitoPublicProfile(token, async () => "unexpected"), null);
     branchActive = true;
-    products = [{ ...source, branchId: "branch-A", updatedAt: new Date(source.updatedAt), photos: [] }, { ...source, id: "foreign-product", branchId: "branch-B", updatedAt: new Date(source.updatedAt), photos: [] }, { ...source, id: "filter-A", name: "Фильтр масляный АКПП Dencerman A220042", branchId: "branch-A", group: { id: "filter-group", name: "Масляные фильтры АКПП", kind: "product" }, updatedAt: new Date(source.updatedAt), photos: [] }];
+    products = [{ ...source, countryName: "Германия", branchId: "branch-A", updatedAt: new Date(source.updatedAt), photos: [] }, { ...source, id: "foreign-product", branchId: "branch-B", updatedAt: new Date(source.updatedAt), photos: [] }, { ...source, id: "filter-A", name: "Фильтр масляный АКПП Dencerman A220042", branchId: "branch-A", group: { id: "filter-group", name: "Масляные фильтры АКПП", kind: "product" }, updatedAt: new Date(source.updatedAt), photos: [] }];
     await assert.rejects(service.saveAvitoListing({ id: "filter-A", enabled: true, sourceUpdatedAt: source.updatedAt, overrides: { type: "transmission" } }), /групп/);
     products.push({ ...products[0], id: "bad-selected", brand: "Unsupported manufacturer" });
     products[0].brand = "Unsupported manufacturer";
@@ -384,7 +390,9 @@ try {
     assert.deepEqual(await service.downloadAvitoExport("legacy-csv"), original);
     await assert.rejects(service.downloadAvitoExport("legacy-csv", "xml"), (error) => error.status === 404 && /старой выгрузке/.test(error.message));
     const request = () => feedRoute.GET(new Request("https://crm.example.ru/feed.csv"), { params: Promise.resolve({ token }) });
-    assert.equal((await request()).status, 200);
+    const feedResponse = await request();
+    assert.equal(feedResponse.status, 200);
+    assert.equal(xmlField(parseXml(await feedResponse.text()).children[0], "CountryExpedition").text, "Германия");
     const snapshotBeforeHead = await storage.readAvitoValue(scope, "snapshot");
     const auditCountBeforeHead = audit.length;
     const readyHead = await publicHead();
