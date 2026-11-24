@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { loyaltyBalance } from "@/lib/loyalty/ledger";
 import { cleanJobOrderVehicleName } from "@/lib/job-order-vehicle-name";
 import { type DemandDetailAttribute } from "@/lib/demand-detail-load";
 import {
@@ -492,7 +493,16 @@ export async function buildJobOrderPosterModel(
 
   const worksTotal = Math.round(works.reduce((s, w) => s + w.sum, 0) * 100) / 100;
   const partsTotal = Math.round(parts.reduce((s, p) => s + p.sum, 0) * 100) / 100;
-  const grandTotal = Math.round((header.sum / 100) * 100) / 100;
+  const grandTotal = header.sum / 100;
+  const sale = header.loyalty;
+  const account = sale && await prisma.loyaltySale.findFirst({
+    where: { branchId: loaded.data.branchId, shipmentId: demandId, voidedAt: null },
+    orderBy: { revision: "desc" },
+    select: { businessGroupId: true, accountId: true },
+  });
+  const balance = account
+    ? (await loyaltyBalance(prisma, account.businessGroupId, account.accountId)).balance
+    : null;
 
   const oilPick = pickSingleJournalOilNoteFromRawRows(rawRows);
   const manualOilTagLine = findExactAttrNormalized(attributes, "моторное масло").trim();
@@ -554,6 +564,12 @@ export async function buildJobOrderPosterModel(
     worksTotal,
     partsTotal,
     grandTotal,
+    loyalty: sale ? {
+      paidCents: sale.beforeCents - sale.cashCents,
+      spent: sale.spent,
+      earned: sale.earned,
+      balance,
+    } : undefined,
     payMethod,
     next: {
       date: nextDate,

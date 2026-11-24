@@ -62,6 +62,7 @@ export type JobOrderPosterModel = {
   worksTotal: number;
   partsTotal: number;
   grandTotal: number;
+  loyalty?: { paidCents: number; spent: number; earned: number; balance: number | null };
   payMethod: string;
   next: {
     date: string;
