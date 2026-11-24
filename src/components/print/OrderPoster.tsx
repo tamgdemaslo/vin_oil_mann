@@ -195,10 +195,11 @@ function splitWeighted<T>(
 }
 
 function splitPosterContent(o: JobOrderPosterModel) {
-  const works = splitWeighted(o.works, 9, (w) => posterRowWeight(w.name, 42));
+  const capacity = o.loyalty ? 7 : 9;
+  const works = splitWeighted(o.works, capacity, (w) => posterRowWeight(w.name, 42));
   const parts = works.tail.length
     ? { head: [] as JobOrderPosterModel["parts"], tail: o.parts, used: 0 }
-    : splitWeighted(o.parts, Math.max(0, 9 - works.used), (p) => posterRowWeight(p.name, 38));
+    : splitWeighted(o.parts, Math.max(0, capacity - works.used), (p) => posterRowWeight(p.name, 38));
 
   return {
     firstWorks: works.head,
@@ -590,6 +591,24 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
               {bfmt(o.grandTotal)} <span style={{ fontSize: 16 }}>₽</span>
             </span>
           </div>
+          {o.loyalty && (
+            <dl className="poster-muted poster-avoid-break" style={{
+              display: "grid", gridTemplateColumns: "1fr auto", gap: "3px 12px",
+              margin: "5px 0 0", fontSize: 10, fontVariantNumeric: "tabular-nums",
+            }}>
+              <dt>Оплачено бонусами</dt>
+              <dd style={{ margin: 0, textAlign: "right" }}>
+                <b>{(o.loyalty.paidCents / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽</b>
+                {" · "}{o.loyalty.spent.toLocaleString("ru-RU")} б.
+              </dd>
+              <dt>Начислено за заказ</dt>
+              <dd style={{ margin: 0, textAlign: "right" }}>{o.loyalty.earned.toLocaleString("ru-RU")} б.</dd>
+              {o.loyalty.balance !== null && <>
+                <dt>Сейчас на счёте</dt>
+                <dd style={{ margin: 0, textAlign: "right" }}><b>{o.loyalty.balance.toLocaleString("ru-RU")} б.</b></dd>
+              </>}
+            </dl>
+          )}
         </div>
 
         <div>
