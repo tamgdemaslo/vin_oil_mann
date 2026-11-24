@@ -108,10 +108,10 @@ try {
     db.localCounterparty.create({ data: { id: clientId(branch, key), branchId: branchId(branch), name, displayName: name,
       phone, normalizedPhone: phone.replace(/\D/g, ""), companyType: "individual", ...extra } });
   const a = (await personal("g", "a", "Иван Петров", "+7 911 100-00-01")).id;
-  const a2 = (await personal("d", "a", "  Иван  Петров ", "8 911 100 00 01")).id;
+  const a2 = (await personal("d", "a", "Иван", "8 911 100 00 01")).id;
   const family = (await personal("d", "family", "Анна Петрова", "+79111000001")).id;
   const b = (await personal("g", "b", "Михаил Иванов", "+79111000002")).id;
-  const fresh = (await personal("g", "fresh", "Тест Должник", "+79111000003")).id;
+  const fresh = (await personal("g", "fresh", "Клиент", "+79111000003")).id;
   const legal = (await personal("g", "legal", "ООО Тест", "+79111000004", { companyType: "legal" })).id;
   const [ownerG, ownerD, ownerAll, masterG, masterD, manager] = await Promise.all([
     session("owner", "g"), session("owner", "d"), session("owner", "all"),
@@ -151,10 +151,14 @@ try {
   assert.equal(dachnaya.balance, 1350);
   assert.ok(!dachnaya.history.some((entry) => entry.shipmentId === posted[0].id));
   await masterD.call("/api/demands/" + posted[0].id, undefined, { status: 404 });
+  const existingAccount = await db.loyaltyAccount.findFirstOrThrow({ where: { businessGroupId: group } });
+  await db.loyaltyAccount.create({
+    data: { businessGroupId: group, phoneKey: existingAccount.phoneKey, nameKey: "другой клиент", displayName: "Другой клиент" },
+  });
   const review = await readCard(masterD, family);
   assert.equal(review.status, "review");
   assert.equal(review.candidates, undefined);
-  assert.equal((await readCard(manager, family)).candidates.length, 1);
+  assert.equal((await readCard(manager, family)).candidates.length, 2);
   await manager.call("/api/loyalty/clients/" + family, {
     action: "resolve", branchId: branchId("d"), separate: true, reason: "Другой член семьи",
   });

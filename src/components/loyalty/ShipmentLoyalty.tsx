@@ -44,7 +44,7 @@ export function useShipmentLoyalty(counterpartyId: string | undefined, branchId:
 
 const issueLabels: Record<string, string> = {
   review: "Совпадение телефона передано управляющему.",
-  incomplete: "Для бонусного счёта заполните телефон и ФИО клиента.",
+  incomplete: "Для бонусного счёта заполните телефон клиента.",
 };
 export function ShipmentLoyalty({ state, branchId, disabled }: {
   state: ReturnType<typeof useShipmentLoyalty>; branchId?: string; disabled?: boolean;
@@ -97,7 +97,7 @@ export function ShipmentLoyalty({ state, branchId, disabled }: {
         {state.stale && state.quote && <button type="button" className="eco-btn" onClick={() => state.setPoints(quote.spent)}>Подтвердить {loyaltyNumber(quote.spent)} к списанию</button>}
       </>}
       {state.status === "confirm" && <>
-        <p>Найден счёт с таким телефоном и ФИО. Уточните у клиента, что это его счёт.</p>
+        <p>Найден счёт с таким телефоном. Уточните у клиента, что это его счёт.</p>
         <button type="button" className="eco-btn" onClick={() => void confirm()}>Подтвердить со слов клиента</button>
       </>}
       {state.status && issueLabels[state.status] && <p>{issueLabels[state.status]}</p>}

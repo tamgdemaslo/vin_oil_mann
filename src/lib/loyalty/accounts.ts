@@ -75,16 +75,15 @@ export async function inspectLoyaltyClient(tx: Prisma.TransactionClient, scope: 
   const existing = await tx.loyaltyLink.findFirst({ where: { businessGroupId: scope.businessGroupId, branchId: scope.branchId, counterpartyId: client.id } });
   if (existing?.excluded) return { status: "excluded" as const };
   if (existing?.accountId) return { status: "linked" as const, accountId: existing.accountId };
-  if (!identity.phoneKey || identity.nameKey.split(" ").length < 2) return { status: "incomplete" as const };
+  if (!identity.phoneKey) return { status: "incomplete" as const };
   const { phoneKey, nameKey, displayName } = identity;
   if (mode !== "read") await loyaltyLock(tx, `loyalty:phone:${scope.businessGroupId}:${phoneKey}`);
   const accounts = await tx.loyaltyAccount.findMany({
     where: { businessGroupId: scope.businessGroupId, phoneKey },
-    select: { id: true, nameKey: true, displayName: true },
+    select: { id: true, displayName: true },
     orderBy: { id: "asc" },
   });
-  const exact = accounts.filter((item) => item.nameKey === nameKey);
-  const conflict = existing?.review || exact.length > 1 || (accounts.length > 0 && exact.length === 0);
+  const conflict = existing?.review || accounts.length > 1;
   const saveLink = (accountId: string | null, review: boolean) => tx.loyaltyLink.upsert({
     where: { counterpartyId: client.id },
     create: { counterpartyId: client.id, branchId: scope.branchId, businessGroupId: scope.businessGroupId, accountId, review },
@@ -97,10 +96,10 @@ export async function inspectLoyaltyClient(tx: Prisma.TransactionClient, scope: 
     }
     return { status: "review" as const, candidates: accounts.map(({ id, displayName }) => ({ id, displayName })) };
   }
-  if (mode === "confirm" && exact.length !== 1) throw new LoyaltyError("Совпадение изменилось. Обновите карточку");
+  if (mode === "confirm" && accounts.length !== 1) throw new LoyaltyError("Совпадение изменилось. Обновите карточку");
   if (mode === "manage" && !conflict) throw new LoyaltyError("Карточка не ожидает разбора совпадения");
-  if (mode === "read" || (exact.length === 1 && (mode === "sale" || mode === "campaign"))) {
-    return { status: exact.length ? "confirm" as const : "new" as const };
+  if (mode === "read" || (accounts.length === 1 && (mode === "sale" || mode === "campaign"))) {
+    return { status: accounts.length ? "confirm" as const : "new" as const };
   }
   let accountId: string | undefined;
   if (mode === "manage") {
@@ -108,7 +107,7 @@ export async function inspectLoyaltyClient(tx: Prisma.TransactionClient, scope: 
     else if (!allowSeparate) throw new LoyaltyError("Укажите решение по совпадению");
     if (chosenAccountId && !accountId) throw new LoyaltyError("Список счетов изменился. Обновите карточку");
   } else {
-    accountId = exact[0]?.id;
+    accountId = accounts[0]?.id;
   }
   if (!accountId) {
     accountId = (await tx.loyaltyAccount.create({ data: { businessGroupId: scope.businessGroupId, phoneKey, nameKey, displayName } })).id;

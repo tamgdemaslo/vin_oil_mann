@@ -108,7 +108,7 @@ async function makePreview(context: BranchContext, input: Preview) {
   const { clients, missing } = await audience(context, input);
   const identities = new Map(clients.map((client) => [client.id, loyaltyIdentity(client)]));
   const phones = [...new Set([...identities.values()].flatMap((identity) => identity?.phoneKey ? [identity.phoneKey] : []))];
-  const accounts = new Map<string, { id: string; nameKey: string }[]>();
+  const accounts = new Map<string, { id: string }[]>();
   const links = new Map<string, { accountId: string | null; review: boolean; excluded: boolean }>();
   const clientsByBranch = new Map<string, string[]>();
   for (const client of clients) {
@@ -128,15 +128,8 @@ async function makePreview(context: BranchContext, input: Preview) {
   }
   for (let i = 0; i < phones.length; i += 1000) {
     const rows = await prisma.loyaltyAccount.findMany({ where: { businessGroupId: scope.businessGroupId, phoneKey: { in: phones.slice(i, i + 1000) } },
-      select: { id: true, phoneKey: true, nameKey: true } });
+      select: { id: true, phoneKey: true } });
     for (const row of rows) accounts.set(row.phoneKey, [...accounts.get(row.phoneKey) ?? [], row]);
-  }
-  const namesByPhone = new Map<string, Set<string>>();
-  for (const identity of identities.values()) {
-    if (!identity?.phoneKey) continue;
-    const names = namesByPhone.get(identity.phoneKey) ?? new Set();
-    names.add(identity.nameKey);
-    namesByPhone.set(identity.phoneKey, names);
   }
   const seen = new Set<string>();
   const recipients = clients.map((client) => {
@@ -147,13 +140,13 @@ async function makePreview(context: BranchContext, input: Preview) {
     let unique = accountId;
     if (!identity || link?.excluded) error = "Карточка не участвует в программе";
     else if (!accountId) {
-      if (!identity.phoneKey || identity.nameKey.split(" ").length < 2) error = "В карточке нужны телефон и ФИО";
+      if (!identity.phoneKey) error = "В карточке нужен телефон";
       else {
         const matches = accounts.get(identity.phoneKey) ?? [];
-        if (link?.review || (namesByPhone.get(identity.phoneKey)?.size ?? 0) > 1 || (matches.length && matches.filter((row) => row.nameKey === identity.nameKey).length !== 1)) {
+        if (link?.review || matches.length > 1) {
           error = "Совпадение требует проверки управляющим";
         } else if (matches.length) error = "Требуется подтверждение привязки счёта";
-        else unique = requestDigest([identity.phoneKey, identity.nameKey]);
+        else unique = requestDigest([identity.phoneKey]);
       }
     }
     if (!error && unique && seen.has(unique)) error = "Этот бонусный счёт уже включён в акцию";

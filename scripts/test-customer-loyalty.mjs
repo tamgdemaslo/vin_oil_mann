@@ -5,7 +5,23 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, { alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) } });
 const { calculateLoyalty, loyaltyLineCents, returnLineDelta, loyaltyExpiration, LOYALTY_DEFAULTS } = await jiti.import("../src/lib/loyalty/calculation.ts");
 const { priceAqsiLoyaltyLine } = await jiti.import("../src/lib/loyalty/fiscal-price.ts");
-const { loyaltyPermissions } = await jiti.import("../src/lib/loyalty/accounts.ts");
+const { inspectLoyaltyClient, loyaltyPermissions } = await jiti.import("../src/lib/loyalty/accounts.ts");
+const personalCard = { id: "client", branchId: "branch", category: "INDIVIDUAL", companyType: "individual",
+  archived: false, status: "ACTIVE", displayName: "Илья", name: "Илья", phone: "+7 911 000-00-00" };
+const scope = { branchId: "branch", businessGroupId: "group", actor: "master" };
+const existingAccount = { id: "account", displayName: "Илья Иванов" };
+const inspect = (accounts, client = personalCard) => inspectLoyaltyClient({
+  loyaltyLink: { findFirst: async () => null },
+  loyaltyAccount: { findMany: async ({ where }) => {
+    assert.deepEqual(where, { businessGroupId: "group", phoneKey: "9110000000" });
+    return accounts;
+  } },
+}, scope, client);
+assert.equal((await inspect([])).status, "new");
+assert.equal((await inspect([existingAccount])).status, "confirm");
+assert.equal((await inspect([existingAccount, { id: "other", displayName: "Другой клиент" }])).status, "review");
+assert.equal((await inspect([], { ...personalCard, phone: "" })).status, "incomplete");
+
 const line = (beforeCents, rate, quantityMilli = 1000) => ({ beforeCents, rate, quantityMilli });
 const calculate = (lines, balance, spend) => calculateLoyalty(lines, LOYALTY_DEFAULTS, balance, spend);
 
