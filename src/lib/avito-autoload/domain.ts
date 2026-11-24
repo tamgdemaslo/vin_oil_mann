@@ -119,6 +119,7 @@ export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOv
     avitoId: overrides.avitoId ?? "",
     multiItem: overrides.multiItem ?? false,
     multiName: overrides.multiName ?? "",
+    countryOfOrigin: source.countryName?.trim() ?? "",
   };
   let variables = avitoContentVariables(source, settings, values, type);
   const rawTitle = overrides.title?.trim() ?? renderAvitoTemplate(settings.titleTemplate, variables);
@@ -156,7 +157,7 @@ export function buildAvitoListing(source: AvitoProductSource, overrides: AvitoOv
   if (values.avitoId && !/^[1-9]\d{0,24}$/.test(values.avitoId)) error("avitoId", "Номер объявления Авито должен содержать только цифры");
   if (source.article && !/^[A-Za-z0-9-]{1,50}$/.test(source.article)) warning("article", "Артикул не соответствует формату Авито и не попадёт в отдельное поле «Номер»");
   if (values.multiItem && !/^[\p{L}\p{N}]{1,100}$/u.test(values.multiName)) error("multiName", "Задайте общее название вариантов: только буквы и цифры, без пробелов");
-  for (const field of ["title", "description", "brand", "oem", "api", "atf", "acea"] as const) {
+  for (const field of ["title", "description", "brand", "oem", "api", "atf", "acea", "countryOfOrigin"] as const) {
     if (hasInvalidXmlCharacters(values[field])) error(field, "Уберите непечатаемые символы из текста объявления");
     if (/^\s*[=+@-]\s*[A-Za-z_]+\s*\(/.test(values[field])) error(field, "Уберите формулу из текстового поля");
   }
@@ -198,7 +199,7 @@ export const AVITO_CSV_COLUMNS = [
   "Уникальный идентификатор объявления", "Номер объявления на Авито", "Категория", "Вид товара", "Тип товара", "Вид объявления",
   "Название объявления", "Описание объявления", "Цена", "Адрес", "Идентификатор адреса", "Контактное лицо", "Номер телефона", "Способ связи",
   "Производитель", "Класс вязкости SAE", "Объём", "Стандарт ACEA", "Стандарт ATF", "Стандарт API", "Допуски OEM", "Состояние", "Номер",
-  "Ссылки на фото", "Соединять это объявление с другими объявлениями", "Название мультиобъявления", "Способ размещения", "Услуга продвижения",
+  "Ссылки на фото", "Соединять это объявление с другими объявлениями", "Название мультиобъявления", "Способ размещения", "Услуга продвижения", "Страна происхождения",
 ] as const;
 
 function csvCell(value: string | number | null) { return `"${String(value ?? "").replace(/"/g, '""')}"`; }
@@ -217,7 +218,7 @@ export function buildAvitoCsv(listings: AvitoListing[], settings: AvitoSettings,
       value.brand, value.sae, value.volume, listing.type === "motor" ? splitAvitoStandards(value.acea).join(" | ") : "",
       listing.type === "transmission" ? splitAvitoStandards(value.atf).join(" | ") : "", splitAvitoStandards(value.api).join(" | "), splitAvitoStandards(value.oem).join(" | "),
       value.condition, listing.article && /^[A-Za-z0-9-]{1,50}$/.test(listing.article) ? listing.article : "",
-      listing.photos.map((photo) => photoUrl(photo.id)).join(" | "), value.multiItem ? "Да" : "Нет", value.multiItem ? value.multiName : "", settings.listingFee, "Free",
+      listing.photos.map((photo) => photoUrl(photo.id)).join(" | "), value.multiItem ? "Да" : "Нет", value.multiItem ? value.multiName : "", settings.listingFee, "Free", value.countryOfOrigin,
     ]);
   }
   return "\uFEFF" + rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";

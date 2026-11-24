@@ -271,7 +271,7 @@ function ListingEditor({ listing, settings, canEdit, busy, error, onClose, onSav
     </form> : <><div className={styles.inspectorBody}><div className={styles.preview}>
       {live.photos[0] && <Image className={styles.previewImage} src={live.photos[0].url} alt={live.values.title} width={600} height={600} unoptimized />}
       <h3>{live.values.title || "Добавьте заголовок"}</h3><strong className={styles.previewPrice}>{money(live.values.priceRubles)}</strong><p>{settings.address || `Адрес №${settings.sellerAddressId || "не указан"}`}</p>
-      <dl><dt>Тип</dt><dd>{AVITO_TYPE_LABELS[live.type]}</dd><dt>Производитель</dt><dd>{live.values.brand || "—"}</dd><dt>SAE</dt><dd>{live.values.sae || "—"}</dd><dt>Объём</dt><dd>{live.values.volume || "—"}</dd><dt>Состояние</dt><dd>{live.values.condition}</dd></dl>
+      <dl><dt>Тип</dt><dd>{AVITO_TYPE_LABELS[live.type]}</dd><dt>Производитель</dt><dd>{live.values.brand || "—"}</dd><dt>Страна происхождения</dt><dd>{live.values.countryOfOrigin || "—"}</dd><dt>SAE</dt><dd>{live.values.sae || "—"}</dd><dt>Объём</dt><dd>{live.values.volume || "—"}</dd><dt>Состояние</dt><dd>{live.values.condition}</dd></dl>
       <div className={styles.descriptionPreview}>{live.values.description}</div>
       <p className={styles.help}>Предпросмотр данных объявления. Оформление на Авито может отличаться.</p>
     </div></div><footer className={styles.inspectorFooter}><EcoButton onClick={() => setSection("edit")}><ArrowLeft size={15} /> Вернуться к данным</EcoButton></footer></>}
