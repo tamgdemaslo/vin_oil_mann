@@ -99,9 +99,9 @@ export function ClientLoyalty({ clientId, shipmentId }: { clientId: string; ship
         </details>}
       </>}
       {info?.status === "new" && <p>Начальный баланс 0. Счёт открывается с первым начислением.</p>}
-      {info?.status === "incomplete" && <p>Добавьте телефон и ФИО, чтобы открыть бонусный счёт.</p>}
+      {info?.status === "incomplete" && <p>Добавьте телефон, чтобы открыть бонусный счёт.</p>}
       {info?.status === "confirm" && <>
-        <p>Найден счёт по телефону и ФИО. Уточните у клиента, что это его счёт.</p>
+        <p>Найден счёт по телефону. Уточните у клиента, что это его счёт.</p>
         <button type="button" className="eco-btn" onClick={() => void mutate({ action: "confirm" }, "Карточка привязана")}>Подтвердить со слов клиента</button>
       </>}
       {info?.status === "review" && <>
