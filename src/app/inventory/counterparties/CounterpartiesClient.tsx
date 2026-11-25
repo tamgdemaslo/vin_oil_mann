@@ -1,5 +1,7 @@
 "use client";
 
+import { CustomerServiceHistory } from "@/components/shipment/CustomerServiceHistory";
+
 import { ClientLoyalty } from "@/components/loyalty/ClientLoyalty";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -1456,6 +1458,12 @@ function ClientDrawer({
               <p className="eco-muted-value">История отгрузок пока не найдена.</p>
             )}
           </InfoBlock> : null}
+
+          {row.category === "INDIVIDUAL" && row.companyType === "individual" &&
+            canPersistCounterparty(row) && !row.id.startsWith("system:anonymous-retail:") && (
+              <CustomerServiceHistory key={row.id} counterpartyId={row.id} />
+            )}
+
 
           {row.category !== "SUPPLIER" && canPersistCounterparty(row) && <ClientLoyalty key={row.id} clientId={row.id} />}
 
