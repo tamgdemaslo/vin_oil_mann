@@ -1,0 +1,49 @@
+.history {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+  min-width: 0;
+}
+
+.history h3 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.list {
+  margin: 0;
+  list-style: none;
+  padding: 0;
+}
+
+.list li {
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--eco-border, #e3e7ea);
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+}
+
+.summary a,
+.history button {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.history button {
+  justify-self: start;
+}
+
+.services,
+.status {
+  color: var(--eco-muted);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}

@@ -1,4 +1,5 @@
 "use client";
+import { CustomerServiceHistory } from "@/components/shipment/CustomerServiceHistory";
 import { requiresPostingForLoyaltyPrecheck } from "@/components/loyalty/client";
 import { ShipmentLoyalty, useShipmentLoyalty } from "@/components/loyalty/ShipmentLoyalty";
 import ProductKitsWorkspace from "@/components/products/ProductKitsWorkspace";
@@ -2652,7 +2653,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         setCreateAgentError("Сервер не вернул созданного клиента");
         return;
       }
-      setSelectedAgent({ id: data.id, name: data.name, meta: data.meta });
+      setSelectedAgent({ id: data.id, name: data.name, meta: data.meta, companyType: newAgentCompanyType });
       setAgentSearch(data.name);
       setAgentOptions([]);
       setShowCreateAgentForm(false);
@@ -5255,6 +5256,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 </div>
               </div>
             )}
+            {selectedAgent && !replacingAgent && !isAnonymousRetail &&
+              selectedAgent.companyType === "individual" && (
+                <CustomerServiceHistory key={selectedAgent.id} counterpartyId={selectedAgent.id} />
+              )}
             {isAnonymousRetail && hasServicePositions && !replacingAgent && (
               <div className="eco-shipment-anonymous-service-note">
                 <span><strong>Клиент не указан.</strong> История обслуживания не будет сохранена в карточке клиента и автомобиля.</span>
