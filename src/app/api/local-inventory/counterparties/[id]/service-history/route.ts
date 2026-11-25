@@ -26,6 +26,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       businessGroupId: context.businessGroupId,
       canOpenActiveBranchDocuments: hasOpenCashShiftAccess(role, shift),
       cursor,
+      recentOnly: request.nextUrl.searchParams.get("recent") === "1",
     });
   });
   if (!result) return NextResponse.json({ error: "Контрагент не найден" }, { status: 404 });
