@@ -56,12 +56,23 @@ export function CustomerServiceHistory({ counterpartyId, recentOnly = false }: {
           {page.items.map((item) => {
             const positions = item.positions ?? [];
             const label = <><time dateTime={item.date}>{item.date.split("-").reverse().join(".")}</time> · {item.branch}</>;
+            if (!recentOnly) {
+              return (
+                <li key={item.id}>
+                  <div className={styles.summary}>
+                    {item.href ? <Link href={item.href}>{label}</Link> : <span>{label}</span>}
+                    <span className={styles.status}>{item.posted ? "Проведена" : "Черновик"}</span>
+                  </div>
+                  {item.services.length > 0 && <div className={styles.status}>{item.services.join(", ")}</div>}
+                </li>
+              );
+            }
             return (
               <li key={item.id}>
-                <details className={styles.shipment} name={recentOnly ? group : undefined}>
+                <details className={styles.shipment} name={group}>
                   <summary className={styles.summary}>
                     <span>{label}</span>
-                    <span className={styles.status}>{recentOnly ? mileageLabel(item.mileage) : item.posted ? "Проведена" : "Черновик"}</span>
+                    <span className={styles.status}>{mileageLabel(item.mileage)}</span>
                   </summary>
                   <div className={styles.positions}>
                     {positions.length === 0 && <p className={styles.status}>В отгрузке нет позиций.</p>}
