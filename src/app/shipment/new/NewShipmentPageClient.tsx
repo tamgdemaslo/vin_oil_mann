@@ -4057,9 +4057,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         ? "warning"
         : "neutral";
   const vehicleActionLabel = vehicleReady ? "Редактировать" : vehicleHasAnyManualData ? "Дополнить" : "Заполнить автомобиль";
-  const vehicleHelpText = vehicleHasAnyManualData
-    ? "Укажите марку, модель и номер или VIN. Остальные данные система заполнит при подборе."
-    : "Укажите автомобиль вручную или найдите его по VIN при подборе позиций.";
   const readinessItems = [
     { key: "organization", label: "Организация", ready: Boolean(selectedOrg), hint: "выберите организацию", required: true },
     { key: "store", label: "Склад", ready: Boolean(selectedStore), hint: "выберите склад", required: true },
@@ -5057,14 +5054,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 
       <div className="eco-shipment-detail-layout eco-shipment-new-draft-layout">
         <div className="eco-shipment-detail-main eco-shipment-new-main">
-      <section id="shipment-parties" className="eco-shipment-workflow-section eco-shipment-workflow-section--context" aria-labelledby="shipment-parties-title">
-        <header className="eco-shipment-workflow-section-head">
-          <div>
-            <span>Шаг 1</span>
-            <h2 id="shipment-parties-title">Клиент и автомобиль</h2>
-          </div>
-          <p>Без данных клиента можно сразу перейти к товарам. Для сервисной истории укажите клиента.</p>
-        </header>
+      <section id="shipment-parties" className="eco-shipment-workflow-section eco-shipment-workflow-section--context" aria-label="Шаг 1">
         <div className="eco-shipment-entity-grid">
         <article id="shipment-client-card" className="eco-card eco-shipment-entity-card eco-shipment-client-card">
           <EntityCardHeader
@@ -5258,7 +5248,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             )}
             {selectedAgent && !replacingAgent && !isAnonymousRetail &&
               selectedAgent.companyType === "individual" && (
-                <CustomerServiceHistory key={selectedAgent.id} counterpartyId={selectedAgent.id} />
+                <CustomerServiceHistory key={selectedAgent.id} counterpartyId={selectedAgent.id} recentOnly />
               )}
             {isAnonymousRetail && hasServicePositions && !replacingAgent && (
               <div className="eco-shipment-anonymous-service-note">
@@ -5383,25 +5373,19 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             </div>
           ) : (
             <div className="eco-shipment-vehicle-summary">
-              <div className="eco-shipment-vehicle-primary-summary">
-                <strong>{vehicleTitle || "Автомобиль не указан"}</strong>
-                {(attrPlate || documentVin) ? (
-                  <div>
-                    {attrPlate ? <span>{attrPlate}</span> : null}
-                    {documentVin ? <span>VIN {documentVin}</span> : null}
-                  </div>
-                ) : (
-                  <p>{vehicleHelpText}</p>
-                )}
-              </div>
-              <div className="eco-shipment-visit-summary eco-shipment-visit-summary--editable">
-                <div className="eco-shipment-visit-summary-head">
-                  <span>Что залили</span>
-                  <small>Применяется сразу</small>
+              {(vehicleTitle || attrPlate || documentVin) && (
+                <div className="eco-shipment-vehicle-primary-summary">
+                  {vehicleTitle && <strong>{vehicleTitle}</strong>}
+                  {(attrPlate || documentVin) && <div>
+                    {attrPlate && <span>{attrPlate}</span>}
+                    {documentVin && <span>VIN {documentVin}</span>}
+                  </div>}
                 </div>
+              )}
+              <div className="eco-shipment-visit-summary eco-shipment-visit-summary--editable eco-shipment-visit-summary--plain">
                 <div className="eco-shipment-visit-inline-fields">
                   <label className="is-oil">
-                    <span>Моторное масло</span>
+                    <span>Что залили</span>
                     <input
                       type="text"
                       className="eco-input"

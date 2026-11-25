@@ -72483,3 +72483,16 @@ select[size="1"]::-ms-expand {
   .eco-records-booking-form { grid-template-columns: minmax(0, 1fr); }
   .eco-records-booking-form .eco-records-booking-quick-source { display: none; }
 }
+
+.eco-shipment-new-page .eco-shipment-visit-summary.eco-shipment-visit-summary--plain {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.eco-shipment-new-page #shipment-parties .eco-entity-card-head,
+.eco-shipment-new-page #shipment-finalize .eco-shipment-card-head {
+  min-height: 60px !important;
+  align-items: center !important;
+}
