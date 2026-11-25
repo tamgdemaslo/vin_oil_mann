@@ -34,19 +34,6 @@ export async function getCustomerAnalyticsSettings(): Promise<CustomerAnalyticsR
   };
 
   try {
-    await prisma.customerAnalyticsSettings.upsert({
-      where: { branchId_id: { branchId, id: "default" } },
-      create: {
-        branchId,
-        id: "default",
-        inactiveDaysThreshold: envDefaults.inactiveDaysThreshold,
-        regularVisitThreshold: envDefaults.regularVisitThreshold,
-        vipThresholdCents: envDefaults.vipThresholdCents,
-        vipMetric: envDefaults.vipMetric,
-        vipWindow: envDefaults.vipWindow,
-      },
-      update: {},
-    });
     const row = await prisma.customerAnalyticsSettings.findUnique({ where: { branchId_id: { branchId, id: "default" } } });
     if (!row) return envDefaults;
     return {
